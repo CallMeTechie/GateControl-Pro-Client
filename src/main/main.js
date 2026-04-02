@@ -252,19 +252,18 @@ function createTray() {
 
 // ── Fenster ──────────────────────────────────────────────────
 function createWindow() {
-  const dpi = screen.getPrimaryDisplay().scaleFactor;
   mainWindow = new BrowserWindow({
-    width: Math.round(BASE_WIDTH / dpi),
-    minWidth: Math.round(BASE_WIDTH / dpi),
-    height: Math.round(store.get('app.windowHeight', 1280) / dpi),
-    minHeight: Math.round(500 / dpi),
+    width: BASE_WIDTH,
+    minWidth: BASE_WIDTH,
+    height: store.get('app.windowHeight', 800),
+    minHeight: 500,
     resizable: true,
     frame: false,
     backgroundColor: store.get('app.theme', 'dark') === 'light' ? '#F8F9FB' : '#0F1117',
     titleBarStyle: 'hidden',
     show: false,
     icon: app.isPackaged
-      ? path.join(process.resourcesPath, 'resources', 'icons', 'app-icon.png')
+      ? path.join(RESOURCES_PATH, 'icons', 'app-icon.png')
       : path.join(__dirname, '..', '..', 'build', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -304,13 +303,12 @@ function createWindow() {
  */
 function setWindowWidth(expanded) {
   if (!mainWindow) return;
-  const dpi = screen.getPrimaryDisplay().scaleFactor;
   const [, height] = mainWindow.getSize();
   const targetWidth = expanded ? EXPANDED_WIDTH : BASE_WIDTH;
 
-  mainWindow.setMinimumSize(Math.round(targetWidth / dpi), Math.round(500 / dpi));
-  mainWindow.setMaximumSize(Math.round(targetWidth / dpi), 99999);
-  mainWindow.setSize(Math.round(targetWidth / dpi), height, true);
+  mainWindow.setMinimumSize(targetWidth, 500);
+  mainWindow.setMaximumSize(targetWidth, 99999);
+  mainWindow.setSize(targetWidth, height, true);
 
   rdpPanelOpen = expanded;
 }
