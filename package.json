@@ -1,0 +1,76 @@
+{
+  "name": "gatecontrol-client-pro",
+  "version": "1.0.0",
+  "description": "GateControl Pro Client mit RDP-Integration",
+  "main": "src/main/main.js",
+  "author": "GateControl",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "cross-env NODE_ENV=development electron .",
+    "build": "electron-builder --win",
+    "build:portable": "electron-builder --win portable",
+    "build:installer": "electron-builder --win nsis",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@gatecontrol/client-core": "file:../gatecontrol-client-core",
+    "axios": "1.14.0",
+    "electron-log": "^5.1.0",
+    "electron-store": "^8.2.0",
+    "jsqr": "^1.4.0",
+    "koffi": "^2.9.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.0"
+  },
+  "build": {
+    "appId": "com.gatecontrol.client-pro",
+    "productName": "GateControl Pro",
+    "copyright": "Copyright 2026 GateControl",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "GateControl Pro",
+      "include": "build/installer.nsh"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/",
+        "to": "resources/",
+        "filter": ["**/*"]
+      }
+    ],
+    "publish": null
+  }
+}
