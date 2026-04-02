@@ -75,6 +75,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "node_modules/@gatecontrol/client-core/resources/bin/",
+        "to": "bin/",
+        "filter": [
+          "*.dll"
+        ]
       }
     ],
     "publish": null
