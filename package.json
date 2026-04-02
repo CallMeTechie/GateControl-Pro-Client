@@ -28,7 +28,7 @@
   },
   "build": {
     "appId": "com.gatecontrol.client-pro",
-    "productName": "GateControl Pro",
+    "productName": "GateControl Pro Client",
     "copyright": "Copyright 2026 GateControl",
     "directories": {
       "output": "dist",
