@@ -536,8 +536,8 @@ function registerIpcHandlers() {
       const result = await apiClient.register();
       store.set('server.url', opts.url);
       store.set('server.apiKey', opts.apiKey);
-      store.set('server.peerId', result.peerId);
-      return { success: true, peerId: result.peerId };
+      store.set('server.peerId', String(result.peerId || ''));
+      return { success: true, peerId: String(result.peerId || '') };
     } catch (err) {
       return { success: false, error: err.message };
     }
