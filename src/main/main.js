@@ -1,46 +1,75 @@
 /**
  * GateControl Pro Client -- Electron Main Process
- *
- * Extends the community client with RDP integration:
- * - RDP Manager (session lifecycle)
- * - Dynamic window width (590px base, 1040px with panel)
- * - RDP-specific IPC handlers
  */
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen } = require('electron');
-const path = require('path');
+// ── Crash Log (absolute first — writes to file, no dependencies) ──
+const _fs = require('fs');
+const _os = require('os');
+const _path = require('path');
+const _crashLog = _path.join(_os.homedir(), 'gatecontrol-pro-crash.log');
 
-// ── Global Error Handlers (FIRST — before anything can crash) ──
+function writeCrashLog(label, err) {
+  try {
+    const msg = `[${new Date().toISOString()}] ${label}: ${err && err.stack ? err.stack : err}\n`;
+    _fs.appendFileSync(_crashLog, msg);
+  } catch {}
+}
+
 process.on('uncaughtException', (err) => {
+  writeCrashLog('uncaughtException', err);
   try {
     const { dialog: d } = require('electron');
     d.showErrorBox('GateControl Pro Error', `${err.message}\n\n${err.stack}`);
-  } catch {
-    // eslint-disable-next-line no-console
-    console.error('FATAL:', err);
-  }
+  } catch {}
   process.exit(1);
 });
 process.on('unhandledRejection', (reason) => {
-  // eslint-disable-next-line no-console
-  console.error('Unhandled Rejection:', reason);
+  writeCrashLog('unhandledRejection', reason);
 });
 
-const Store = require('electron-store');
-const log = require('electron-log');
+writeCrashLog('STARTUP', 'Process starting...');
 
-const WireGuardService = require('@gatecontrol/client-core/src/services/wireguard-native');
-const KillSwitch = require('@gatecontrol/client-core/src/services/killswitch');
-const ApiClientPro = require('../services/api-client-pro');
-const Updater = require('@gatecontrol/client-core/src/services/updater');
-const ConnectionMonitor = require('@gatecontrol/client-core/src/services/connection-monitor');
-const RdpManager = require('../services/rdp/rdp-manager');
-const RdpWolClient = require('../services/rdp/rdp-wol');
+let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
+let Store, log, WireGuardService, KillSwitch, ApiClientPro, Updater, ConnectionMonitor, RdpManager, RdpWolClient;
+
+try {
+  writeCrashLog('IMPORT', 'Loading electron...');
+  ({ app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen } = require('electron'));
+
+  writeCrashLog('IMPORT', 'Loading electron-store...');
+  Store = require('electron-store');
+
+  writeCrashLog('IMPORT', 'Loading electron-log...');
+  log = require('electron-log');
+
+  writeCrashLog('IMPORT', 'Loading core services...');
+  WireGuardService = require('@gatecontrol/client-core/src/services/wireguard-native');
+  KillSwitch = require('@gatecontrol/client-core/src/services/killswitch');
+
+  writeCrashLog('IMPORT', 'Loading pro services...');
+  ApiClientPro = require('../services/api-client-pro');
+  Updater = require('@gatecontrol/client-core/src/services/updater');
+  ConnectionMonitor = require('@gatecontrol/client-core/src/services/connection-monitor');
+  RdpManager = require('../services/rdp/rdp-manager');
+  RdpWolClient = require('../services/rdp/rdp-wol');
+
+  writeCrashLog('IMPORT', 'All imports successful');
+} catch (err) {
+  writeCrashLog('IMPORT_FAILED', err);
+  try {
+    const { dialog: d } = require('electron');
+    d.showErrorBox('GateControl Pro Import Error', `${err.message}\n\n${err.stack}`);
+  } catch {}
+  process.exit(1);
+}
+
+const path = _path;
 
 // ── Logging ──────────────────────────────────────────────────
 log.transports.file.level = 'info';
 log.transports.file.maxSize = 5 * 1024 * 1024;
 log.transports.console.level = 'debug';
+writeCrashLog('STARTUP', 'Logging configured');
 
 // ── Single Instance Lock ─────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock();
