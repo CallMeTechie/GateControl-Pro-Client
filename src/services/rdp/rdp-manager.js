@@ -112,14 +112,18 @@ class RdpManager extends EventEmitter {
       this._emitProgress(routeId, 'vpn-check', 'done');
 
       // 1b. Get connection details from server
+      this.log.info(`Fetching connection data for route ${routeId}...`);
       const connectData = await this.api.getRdpConnect(routeId);
+      this.log.info(`Connection data received: host=${connectData?.host}, port=${connectData?.port}, mode=${connectData?.credential_mode}`);
       if (!connectData || !connectData.host) {
+        this.log.error('No connection data received from server:', JSON.stringify(connectData));
         return { success: false, error: 'Keine Verbindungsdaten vom Server erhalten.' };
       }
 
       const route = connectData;
       const host = route.host;
       const port = route.port || 3389;
+      this.log.info(`RDP target: ${host}:${port}`);
 
       // 1c. Maintenance window check
       if (route.maintenance_enabled && route.maintenance_active && !opts.forceMaintenanceBypass) {
@@ -148,7 +152,9 @@ class RdpManager extends EventEmitter {
       } catch {}
 
       // 1e. TCP port check
+      this.log.info(`TCP check: ${host}:${port}...`);
       const reachable = await this._tcpCheck(host, port, 5000);
+      this.log.info(`TCP check result: ${reachable ? 'reachable' : 'unreachable'}`);
 
       if (!reachable) {
         // Check if WoL is available
@@ -217,7 +223,9 @@ class RdpManager extends EventEmitter {
 
       // ── Step 3: Generate .rdp file ──────────────────────
       this._emitProgress(routeId, 'rdp-file', 'active');
+      this.log.info('Building .rdp file...');
       const rdpFile = this.configBuilder.build(route);
+      this.log.info(`RDP file created: ${rdpFile}`);
       this._emitProgress(routeId, 'rdp-file', 'done');
 
       // ── Step 4: Store credentials via cmdkey ────────────
@@ -247,6 +255,7 @@ class RdpManager extends EventEmitter {
       }
 
       // Launch mstsc.exe
+      this.log.info(`Launching mstsc.exe with file: ${rdpFile}`);
       const mstscArgs = [rdpFile];
       if (route.admin_session) {
         mstscArgs.push('/admin');

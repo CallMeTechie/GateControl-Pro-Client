@@ -36,7 +36,7 @@ class ApiClientPro extends ApiClient {
   async getRdpConnect(id) {
     if (!this.client) throw new Error('Server nicht konfiguriert');
     const { data } = await this.client.get(`/api/v1/client/rdp/${id}/connect`);
-    return data;
+    return data?.connection || data;
   }
 
   /**
