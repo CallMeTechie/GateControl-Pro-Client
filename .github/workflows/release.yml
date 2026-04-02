@@ -157,7 +157,11 @@ jobs:
           npx electron-builder --win portable --config.win.requestedExecutionLevel=asInvoker
           PORTABLE_EXE=$(ls dist/GateControl*.exe 2>/dev/null | grep -v Setup | head -1)
           if [ -n "$PORTABLE_EXE" ]; then
-            RCEDIT=$(find node_modules -name "rcedit*.exe" -o -name "rcedit-x64.exe" 2>/dev/null | head -1)
+            echo "=== DEBUG: searching for rcedit ==="
+            find node_modules -name "rcedit*" 2>/dev/null || echo "nothing found in node_modules"
+            find . -path ./dist -prune -o -name "rcedit*" -print 2>/dev/null || echo "nothing found in project"
+            echo "=== END DEBUG ==="
+            RCEDIT=$(find node_modules -name "rcedit*.exe" 2>/dev/null | head -1)
             if [ -n "$RCEDIT" ]; then
               "$RCEDIT" "$PORTABLE_EXE" --set-requested-execution-level requireAdministrator
               echo "Patched portable with requireAdministrator: $PORTABLE_EXE"
