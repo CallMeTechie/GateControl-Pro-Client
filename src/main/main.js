@@ -372,12 +372,103 @@ function quitApp() {
 }
 
 // ── Tunnel Functions (stubs -- delegate to core services) ─────
+function broadcastState(status, error = null) {
+  const state = {
+    status,
+    error,
+    connected: tunnelState.connected,
+    endpoint: store.get('server.url', '') || tunnelState.endpoint,
+    handshake: tunnelState.handshake,
+    rxBytes: tunnelState.rxBytes,
+    txBytes: tunnelState.txBytes,
+    rxSpeed: tunnelState.rxSpeed || 0,
+    txSpeed: tunnelState.txSpeed || 0,
+    connectedSince: tunnelState.connectedSince,
+    killSwitch: store.get('tunnel.killSwitch', false),
+  };
+  mainWindow?.webContents.send('tunnel-state', state);
+}
+
 async function connectTunnel() {
-  // Tunnel connect logic (same as community client)
+  if (isReconnecting) {
+    log.debug('Reconnect laeuft bereits, ueberspringe connectTunnel');
+    return;
+  }
+  try {
+    log.info('Tunnel-Verbindung wird aufgebaut...');
+    if (connectionMonitor) connectionMonitor.stop();
+    updateTray('connecting');
+    broadcastState('connecting');
+
+    const serverUrl = store.get('server.url');
+    const apiKey = store.get('server.apiKey');
+
+    if (serverUrl && apiKey) {
+      try {
+        const config = await apiClient.fetchConfig();
+        if (config) {
+          await wgService.writeConfig(WG_CONFIG_FILE, config);
+          log.info('Konfiguration vom Server aktualisiert');
+        }
+      } catch (err) {
+        log.warn('Config-Abruf fehlgeschlagen, nutze lokale Config:', err.message);
+      }
+    }
+
+    if (store.get('tunnel.killSwitch', false)) {
+      await killSwitchSvc.enable(WG_CONFIG_FILE);
+      log.info('Kill-Switch aktiviert');
+    }
+
+    await wgService.connect(WG_CONFIG_FILE, store.get('tunnel.splitTunnel') ? store.get('tunnel.splitRoutes', '') : null);
+
+    tunnelState.connected = true;
+    tunnelState.connectedSince = new Date();
+
+    updateTray('connected');
+    broadcastState('connected');
+
+    if (connectionMonitor) connectionMonitor.start();
+
+    new Notification({ title: 'GateControl Pro', body: 'VPN-Tunnel ist aktiv.' }).show();
+    log.info('Tunnel erfolgreich verbunden');
+
+  } catch (err) {
+    log.error('Tunnel-Verbindung fehlgeschlagen:', err.message);
+    updateTray('disconnected');
+    broadcastState('error', err.message);
+    new Notification({ title: 'Verbindungsfehler', body: err.message }).show();
+  }
 }
 
 async function disconnectTunnel() {
-  // Tunnel disconnect logic (same as community client)
+  try {
+    log.info('Tunnel wird getrennt...');
+
+    if (connectionMonitor) connectionMonitor.stop();
+
+    await wgService.disconnect();
+
+    if (store.get('tunnel.killSwitch', false)) {
+      await killSwitchSvc.disable();
+      log.info('Kill-Switch deaktiviert');
+    }
+
+    tunnelState.connected = false;
+    tunnelState.connectedSince = null;
+    tunnelState.rxBytes = 0;
+    tunnelState.txBytes = 0;
+
+    updateTray('disconnected');
+    broadcastState('disconnected');
+
+    new Notification({ title: 'GateControl Pro', body: 'VPN-Tunnel wurde beendet.' }).show();
+    log.info('Tunnel getrennt');
+
+  } catch (err) {
+    log.error('Fehler beim Trennen:', err.message);
+    broadcastState('error', err.message);
+  }
 }
 
 async function toggleKillSwitch(enabled) {
@@ -416,6 +507,30 @@ function initializeServices() {
   });
 
   rdpWolClient = new RdpWolClient({ apiClient, log });
+
+  connectionMonitor = new ConnectionMonitor({
+    interval: store.get('app.checkInterval', 30) * 1000,
+    onDisconnect: async () => {
+      if (isReconnecting) return;
+      isReconnecting = true;
+      log.info('Verbindung verloren, versuche Reconnect...');
+      try {
+        await disconnectTunnel();
+        await connectTunnel();
+      } catch (err) {
+        log.error('Reconnect fehlgeschlagen:', err.message);
+      }
+      isReconnecting = false;
+    },
+    onStats: (stats) => {
+      tunnelState.rxBytes = stats.rxBytes || 0;
+      tunnelState.txBytes = stats.txBytes || 0;
+      tunnelState.handshake = stats.handshake || null;
+      broadcastState('connected');
+    },
+    wgService,
+    log,
+  });
 
   // Forward RDP events to renderer
   rdpManager.on('session-start', (data) => {
@@ -457,7 +572,14 @@ function registerIpcHandlers() {
 
   // ── Config ──────────────────────────────────────────────
   ipcMain.handle('config:get', (_, key) => store.get(key));
-  ipcMain.handle('config:set', (_, key, value) => store.set(key, value));
+  ipcMain.handle('config:set', (_, key, value) => {
+    try {
+      store.set(key, value);
+    } catch (err) {
+      log.error(`Config set fehlgeschlagen (${key}):`, err.message);
+      throw err;
+    }
+  });
   ipcMain.handle('config:getAll', () => store.store);
 
   // ── Window ──────────────────────────────────────────────
@@ -537,8 +659,10 @@ function registerIpcHandlers() {
       store.set('server.url', opts.url);
       store.set('server.apiKey', opts.apiKey);
       store.set('server.peerId', String(result.peerId || ''));
+      log.info(`Server registriert: peerId=${result.peerId}`);
       return { success: true, peerId: String(result.peerId || '') };
     } catch (err) {
+      log.error('Server-Registrierung fehlgeschlagen:', err.message);
       return { success: false, error: err.message };
     }
   });
@@ -549,6 +673,7 @@ function registerIpcHandlers() {
       await testClient.ping();
       return { success: true };
     } catch (err) {
+      log.error('Server-Test fehlgeschlagen:', err.message);
       return { success: false, error: err.message };
     }
   });
@@ -624,6 +749,25 @@ app.on('ready', () => {
   registerIpcHandlers();
   createWindow();
   createTray();
+
+  // Auto-Update
+  const serverUrl = store.get('server.url', '');
+  const apiKey = store.get('server.apiKey', '');
+  if (serverUrl && apiKey) {
+    updater = new Updater({ serverUrl, apiKey, log });
+    updater.start((release) => {
+      pendingUpdate = release;
+      log.info(`Update bereit: v${release.version}`);
+      updateTray(tunnelState.connected ? 'connected' : 'disconnected');
+      if (mainWindow) {
+        mainWindow.webContents.send('update:ready', release);
+      }
+      new Notification({
+        title: 'GateControl Pro',
+        body: `Update v${release.version} verfuegbar`,
+      }).show();
+    });
+  }
 });
 
 app.on('second-instance', () => showWindow());
