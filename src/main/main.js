@@ -128,7 +128,7 @@ const EXPANDED_WIDTH = BASE_WIDTH + PANEL_WIDTH; // 1040
 
 // ── Pfade ────────────────────────────────────────────────────
 const RESOURCES_PATH = app.isPackaged
-  ? path.join(process.resourcesPath, 'resources')
+  ? process.resourcesPath
   : path.join(__dirname, '..', '..', 'resources');
 
 const WG_CONFIG_DIR = path.join(app.getPath('userData'), 'wireguard');
