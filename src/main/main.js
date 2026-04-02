@@ -9,6 +9,23 @@
 
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen } = require('electron');
 const path = require('path');
+
+// ── Global Error Handlers (FIRST — before anything can crash) ──
+process.on('uncaughtException', (err) => {
+  try {
+    const { dialog: d } = require('electron');
+    d.showErrorBox('GateControl Pro Error', `${err.message}\n\n${err.stack}`);
+  } catch {
+    // eslint-disable-next-line no-console
+    console.error('FATAL:', err);
+  }
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  // eslint-disable-next-line no-console
+  console.error('Unhandled Rejection:', reason);
+});
+
 const Store = require('electron-store');
 const log = require('electron-log');
 
@@ -25,19 +42,10 @@ log.transports.file.level = 'info';
 log.transports.file.maxSize = 5 * 1024 * 1024;
 log.transports.console.level = 'debug';
 
-// ── Global Error Handlers ────────────────────────────────────
-process.on('uncaughtException', (err) => {
-  log.error('Uncaught Exception:', err);
-  dialog.showErrorBox('Error', `${err.message}\n\n${err.stack}`);
-});
-process.on('unhandledRejection', (reason) => {
-  log.error('Unhandled Rejection:', reason);
-});
-
 // ── Single Instance Lock ─────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
-  app.quit();
+  app.exit(0);
 }
 
 // ── Konfiguration ────────────────────────────────────────────
