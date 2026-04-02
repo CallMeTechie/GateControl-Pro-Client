@@ -237,7 +237,7 @@ async function loadRdpServices() {
 
 function updateRdpBadge() {
 	const badge = $('#rdp-badge');
-	const onlineCount = rdpServices.filter(s => s.status === 'online').length;
+	const onlineCount = rdpServices.filter(s => s.status?.online).length;
 	if (onlineCount > 0) {
 		badge.style.display = '';
 	} else {
@@ -263,8 +263,8 @@ function renderRdpCards(svcList) {
 			if (!searchable.includes(filterText)) return false;
 		}
 		// Status filter
-		if (filterStatus === 'online' && svc.status !== 'online') return false;
-		if (filterStatus === 'offline' && svc.status !== 'offline') return false;
+		if (filterStatus === 'online' && !svc.status?.online) return false;
+		if (filterStatus === 'offline' && svc.status?.online) return false;
 		return true;
 	});
 
@@ -301,7 +301,7 @@ function createRdpCard(svc) {
 
 	const statusTag = document.createElement('span');
 	statusTag.className = 'tag';
-	if (svc.status === 'online') {
+	if (svc.status?.online) {
 		statusTag.classList.add('tag-online');
 		statusTag.textContent = 'Online';
 	} else if (svc.maintenance_active) {
@@ -371,7 +371,7 @@ function createRdpCard(svc) {
 	meta.appendChild(credRow);
 
 	// WoL for offline hosts
-	if (svc.status === 'offline' && svc.wol_mac) {
+	if (!svc.status?.online && svc.wol_mac) {
 		const wolRow = document.createElement('div');
 		wolRow.className = 'rdp-card-meta-row';
 		const wolLabel = document.createElement('span');
@@ -410,7 +410,7 @@ function createRdpCard(svc) {
 	actions.className = 'rdp-card-actions';
 
 	// WoL button for offline hosts
-	if (svc.status === 'offline' && svc.wol_mac) {
+	if (!svc.status?.online && svc.wol_mac) {
 		const wolBtn = document.createElement('button');
 		wolBtn.className = 'btn btn-wol';
 		setStaticIcon(wolBtn, 'wol'); // SAFE: static SVG
@@ -428,7 +428,7 @@ function createRdpCard(svc) {
 	// Connect button
 	const connectBtn = document.createElement('button');
 	connectBtn.className = 'btn btn-connect';
-	if (svc.status !== 'online' && !svc.maintenance_active) {
+	if (!svc.status?.online && !svc.maintenance_active) {
 		connectBtn.disabled = true;
 	}
 	const playSpan = document.createElement('span');
@@ -459,7 +459,7 @@ function showRdpDetail(svc) {
 	// Status tag
 	const statusEl = $('#rdp-detail-status');
 	statusEl.className = 'tag';
-	if (svc.status === 'online') {
+	if (svc.status?.online) {
 		statusEl.classList.add('tag-online');
 		statusEl.textContent = 'Online';
 	} else if (svc.maintenance_active) {
@@ -553,7 +553,7 @@ function showRdpDetail(svc) {
 	const connectBtn = document.createElement('button');
 	connectBtn.className = 'btn btn-connect';
 	connectBtn.style.cssText = 'width:100%;padding:11px;font-size:13px';
-	if (svc.status !== 'online' && !svc.maintenance_active) {
+	if (!svc.status?.online && !svc.maintenance_active) {
 		connectBtn.disabled = true;
 	}
 	const playIcon = document.createElement('span');
