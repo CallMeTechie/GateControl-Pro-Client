@@ -25,6 +25,15 @@ log.transports.file.level = 'info';
 log.transports.file.maxSize = 5 * 1024 * 1024;
 log.transports.console.level = 'debug';
 
+// ── Global Error Handlers ────────────────────────────────────
+process.on('uncaughtException', (err) => {
+  log.error('Uncaught Exception:', err);
+  dialog.showErrorBox('Error', `${err.message}\n\n${err.stack}`);
+});
+process.on('unhandledRejection', (reason) => {
+  log.error('Unhandled Rejection:', reason);
+});
+
 // ── Single Instance Lock ─────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -283,7 +292,7 @@ function createWindow() {
 
   mainWindow.on('resize', () => {
     const [, height] = mainWindow.getSize();
-    store.set('app.windowHeight', Math.round(height * dpi));
+    store.set('app.windowHeight', height);
   });
 
   mainWindow.on('close', (e) => {
