@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; script-src 'self';">
+	<title>GateControl Pro</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="styles/app.css">
+</head>
+<body>
+
+	<!-- ── Titlebar (frameless) ──────────────────────────── -->
+	<header class="titlebar" id="titlebar">
+		<div class="titlebar-left">
+			<svg class="titlebar-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<circle cx="12" cy="12" r="3"/>
+				<path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+			</svg>
+			<span class="titlebar-text">GateControl</span>
+			<span class="titlebar-badge">Pro</span>
+			<span class="titlebar-version" id="app-version"></span>
+		</div>
+		<div class="titlebar-controls">
+			<div class="theme-toggle" id="theme-toggle">
+				<button class="theme-btn" id="theme-light" data-theme="light" title="Light">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+				</button>
+				<button class="theme-btn active" id="theme-dark" data-theme="dark" title="Dark">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+				</button>
+			</div>
+			<button class="tb-btn" id="btn-minimize" title="Minimieren">
+				<svg viewBox="0 0 10 10"><path d="M1 5h8" stroke="currentColor" stroke-width="1.2"/></svg>
+			</button>
+			<button class="tb-btn tb-close" id="btn-close" title="In Tray minimieren">
+				<svg viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.2"/></svg>
+			</button>
+		</div>
+	</header>
+
+	<!-- ── App Container ─────────────────────────────────── -->
+	<main class="app">
+
+		<!-- ── Navigation ─────────────────────────────────── -->
+		<nav class="nav" id="nav">
+			<button class="nav-btn active" id="nav-status" data-page="status" title="Status">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+				<span>Status</span>
+			</button>
+			<button class="nav-btn" id="nav-rdp" title="Remote Desktops">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+				<span>RDP</span>
+				<span class="nav-badge" id="rdp-badge" style="display:none"></span>
+			</button>
+			<div class="nav-sep"></div>
+			<button class="nav-btn" id="nav-settings" data-page="settings" title="Einstellungen">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+				<span>Settings</span>
+			</button>
+			<button class="nav-btn" id="nav-logs" data-page="logs" title="Logs">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+				<span>Logs</span>
+			</button>
+		</nav>
+
+		<!-- ── Pages ──────────────────────────────────────── -->
+		<div class="pages">
+
+			<!-- STATUS PAGE -->
+			<section class="page active" id="page-status">
+				<!-- Connection Ring -->
+				<div class="status-hero">
+					<div class="ring-container" id="ring-container">
+						<svg class="ring" viewBox="0 0 200 200">
+							<circle class="ring-track" cx="100" cy="100" r="88" fill="none" stroke-width="4"/>
+							<circle class="ring-fill" id="ring-fill" cx="100" cy="100" r="88" fill="none" stroke-width="4"
+								stroke-dasharray="553" stroke-dashoffset="553"/>
+						</svg>
+						<div class="ring-inner">
+							<div class="status-icon" id="status-icon">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<path d="M18.36 6.64A9 9 0 015.64 18.36M5.64 5.64A9 9 0 0118.36 18.36"/>
+								</svg>
+							</div>
+							<div class="status-label" id="status-label">Getrennt</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Connect Button -->
+				<button class="connect-btn" id="connect-btn">
+					<span class="connect-btn-text">Verbinden</span>
+					<div class="connect-btn-loader" hidden>
+						<div class="spinner"></div>
+					</div>
+				</button>
+
+				<!-- Stats Grid -->
+				<div class="stats-grid" id="stats-grid">
+					<div class="stat-card">
+						<div class="stat-label">Endpoint</div>
+						<div class="stat-value mono" id="stat-endpoint">&mdash;</div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">Handshake</div>
+						<div class="stat-value mono" id="stat-handshake">&mdash;</div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">&#8595; Empfangen</div>
+						<div class="stat-value mono" id="stat-rx">0 B</div>
+						<div class="stat-speed" id="stat-rx-speed"></div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">&#8593; Gesendet</div>
+						<div class="stat-value mono" id="stat-tx">0 B</div>
+						<div class="stat-speed" id="stat-tx-speed"></div>
+					</div>
+				</div>
+
+				<!-- Bandwidth Graph -->
+				<div class="bandwidth-graph" id="bandwidth-section" style="display:none">
+					<canvas id="bandwidth-canvas" width="520" height="80"></canvas>
+					<div class="bandwidth-legend">
+						<div class="bandwidth-legend-item"><div class="bandwidth-legend-dot" style="background:var(--accent)"></div><span>Download</span></div>
+						<div class="bandwidth-legend-item"><div class="bandwidth-legend-dot" style="background:var(--blue)"></div><span>Upload</span></div>
+					</div>
+				</div>
+
+				<!-- Traffic Usage -->
+				<div class="traffic-usage" id="traffic-usage" style="display:none">
+					<div class="section-header">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+						<span class="section-title">Datenverbrauch</span>
+					</div>
+					<div class="traffic-grid" id="traffic-grid"></div>
+				</div>
+
+				<!-- Kill-Switch Toggle -->
+				<div class="toggle-row" id="killswitch-row">
+					<div class="toggle-info">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="toggle-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+						<div>
+							<div class="toggle-label">Kill-Switch</div>
+							<div class="toggle-desc">Blockiert Traffic ohne VPN</div>
+						</div>
+					</div>
+					<label class="switch">
+						<input type="checkbox" id="killswitch-toggle">
+						<span class="slider"></span>
+					</label>
+				</div>
+
+				<!-- Services List -->
+				<div class="services-section" id="services-section" style="display:none">
+					<div class="section-header">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+						<span class="section-title">Erreichbare Dienste</span>
+					</div>
+					<div id="services-list" class="services-list"></div>
+				</div>
+
+				<!-- DNS Leak Test -->
+				<div class="dns-section">
+					<button class="dns-test-btn" id="dns-test-btn">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+						DNS-Leak-Test
+					</button>
+					<div id="dns-result" class="dns-result" style="display:none"></div>
+				</div>
+			</section>
+
+			<!-- SETTINGS PAGE -->
+			<section class="page" id="page-settings">
+				<h2 class="page-title">Einstellungen</h2>
+
+				<!-- Server -->
+				<div class="settings-group">
+					<h3 class="group-title">GateControl Server</h3>
+					<div class="field">
+						<label class="field-label" for="server-url">Server-URL</label>
+						<input class="field-input" id="server-url" type="url" placeholder="https://gate.example.com">
+					</div>
+					<div class="field">
+						<label class="field-label" for="api-key">API-Key</label>
+						<div class="field-row">
+							<input class="field-input mono" id="api-key" type="password" placeholder="gc_xxxxxxxxxxxxxxxx">
+							<button class="field-btn" id="toggle-api-key" title="Anzeigen">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+							</button>
+						</div>
+					</div>
+					<div class="field-actions">
+						<button class="btn btn-ghost" id="btn-test-server">Verbindung testen</button>
+						<button class="btn btn-connect" id="btn-save-server">Speichern & Registrieren</button>
+					</div>
+					<div class="field-status" id="server-status" hidden></div>
+				</div>
+
+				<!-- Config Import -->
+				<div class="settings-group">
+					<h3 class="group-title">Konfiguration importieren</h3>
+					<div class="import-actions">
+						<button class="btn btn-outline" id="btn-import-file">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+							.conf Datei importieren
+						</button>
+						<button class="btn btn-outline" id="btn-import-qr">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="18" y="18" width="3" height="3"/></svg>
+							QR-Code scannen
+						</button>
+					</div>
+					<!-- QR Scanner Preview -->
+					<div class="qr-preview" id="qr-preview" hidden>
+						<video id="qr-video" autoplay playsinline></video>
+						<canvas id="qr-canvas" hidden></canvas>
+						<button class="btn btn-ghost" id="btn-qr-cancel">Abbrechen</button>
+					</div>
+				</div>
+
+				<!-- Split-Tunneling -->
+				<div class="settings-group">
+					<div class="toggle-row compact">
+						<div>
+							<span class="toggle-label">Split-Tunneling</span>
+							<div class="toggle-desc" style="font-size:10px;color:var(--text-3)">Nur bestimmte IPs/Subnetze durch den VPN-Tunnel leiten</div>
+						</div>
+						<label class="switch"><input type="checkbox" id="opt-split-tunnel"><span class="slider"></span></label>
+					</div>
+					<div id="split-routes-section" style="display:none">
+						<div class="field">
+							<label class="field-label" for="opt-split-routes">IPs und Subnetze (eine pro Zeile)</label>
+							<textarea class="field-input mono" id="opt-split-routes" rows="4" placeholder="10.0.0.0/8&#10;192.168.1.0/24&#10;172.16.0.0/12" style="resize:vertical;font-size:11px"></textarea>
+						</div>
+						<div style="font-size:10px;color:var(--text-3);margin-top:4px">
+							Beispiele: <code>10.0.0.0/8</code>, <code>192.168.1.0/24</code>, <code>172.16.5.100</code>
+						</div>
+						<button class="btn btn-ghost" id="btn-save-split" style="margin-top:8px">Speichern</button>
+						<div id="split-status" style="display:none;font-size:10px;margin-top:6px;padding:6px 8px;border-radius:var(--radius-sm)"></div>
+					</div>
+				</div>
+
+				<!-- App Settings -->
+				<div class="settings-group">
+					<h3 class="group-title">Anwendung</h3>
+					<div class="toggle-row compact">
+						<span class="toggle-label">Mit Windows starten</span>
+						<label class="switch"><input type="checkbox" id="opt-autostart" checked><span class="slider"></span></label>
+					</div>
+					<div class="toggle-row compact">
+						<span class="toggle-label">Minimiert starten</span>
+						<label class="switch"><input type="checkbox" id="opt-minimized" checked><span class="slider"></span></label>
+					</div>
+					<div class="toggle-row compact">
+						<span class="toggle-label">Auto-Connect</span>
+						<label class="switch"><input type="checkbox" id="opt-autoconnect" checked><span class="slider"></span></label>
+					</div>
+					<div class="field">
+						<label class="field-label" for="opt-check-interval">Verbindungsprüfung (Sekunden)</label>
+						<input class="field-input" id="opt-check-interval" type="number" value="30" min="5" max="300">
+					</div>
+					<div class="field">
+						<label class="field-label" for="opt-poll-interval">Config-Aktualisierung (Sekunden)</label>
+						<input class="field-input" id="opt-poll-interval" type="number" value="300" min="30" max="3600">
+					</div>
+				</div>
+			</section>
+
+			<!-- LOGS PAGE -->
+			<section class="page" id="page-logs">
+				<div class="page-header">
+					<h2 class="page-title">Logs</h2>
+					<button class="btn btn-ghost" id="btn-refresh-logs">Aktualisieren</button>
+				</div>
+				<pre class="log-output" id="log-output">Lade Logs...</pre>
+			</section>
+
+		</div>
+
+		<!-- ── RDP Slide-Out Panel ────────────────────────── -->
+		<div class="rdp-panel" id="rdp-panel">
+
+			<!-- LIST VIEW -->
+			<div class="rdp-panel-view active" id="rdp-view-list">
+				<div class="rdp-panel-header">
+					<svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" width="16" height="16"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+					<span class="rdp-panel-title">Remote Desktops</span>
+					<div class="rdp-panel-actions">
+						<span class="rdp-panel-count" id="rdp-count"></span>
+						<button class="pin-btn" id="rdp-pin-btn" title="Panel andocken">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17v5"/><path d="M5 17h14v-1.76a2 2 0 00-1.11-1.79l-1.78-.89A2 2 0 0115 10.76V6h1a2 2 0 000-4H8a2 2 0 000 4h1v4.76a2 2 0 01-1.11 1.79l-1.78.89A2 2 0 005 15.24z"/></svg>
+						</button>
+						<button class="panel-close-btn" id="rdp-close-btn" title="Panel schliessen">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+						</button>
+					</div>
+				</div>
+				<div class="rdp-panel-filter">
+					<input class="rdp-filter-input" id="rdp-filter-input" type="text" placeholder="Suche nach Name, Tag...">
+					<select class="rdp-filter-select" id="rdp-filter-select">
+						<option value="all">Alle</option>
+						<option value="online">Online</option>
+						<option value="offline">Offline</option>
+					</select>
+				</div>
+				<div class="rdp-panel-list" id="rdp-list"></div>
+			</div>
+
+			<!-- DETAIL VIEW -->
+			<div class="rdp-panel-view" id="rdp-view-detail">
+				<div class="rdp-detail-header">
+					<button class="rdp-detail-back" id="rdp-detail-back">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="15 18 9 12 15 6"/></svg>
+					</button>
+					<div class="rdp-detail-title" id="rdp-detail-title"></div>
+					<span class="tag" id="rdp-detail-status" style="margin-left:auto"></span>
+				</div>
+				<div class="rdp-detail-body" id="rdp-detail-body"></div>
+			</div>
+
+			<!-- CONNECTING VIEW -->
+			<div class="rdp-panel-view" id="rdp-view-connecting">
+				<div class="rdp-detail-header">
+					<button class="rdp-detail-back" id="rdp-connecting-back">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="15 18 9 12 15 6"/></svg>
+					</button>
+					<div class="rdp-detail-title" id="rdp-connecting-title"></div>
+					<span class="tag tag-blue" style="margin-left:auto">Verbinde...</span>
+				</div>
+				<div class="rdp-detail-body">
+					<div class="rdp-progress" id="rdp-progress">
+						<div class="rdp-progress-title">Verbindung wird hergestellt</div>
+						<div class="rdp-progress-steps" id="rdp-progress-steps"></div>
+					</div>
+					<div id="rdp-connecting-status" style="font-size:11px;color:var(--text-3);text-align:center"></div>
+				</div>
+			</div>
+
+			<!-- PASSWORD VIEW -->
+			<div class="rdp-panel-view" id="rdp-view-password">
+				<div class="rdp-detail-header">
+					<button class="rdp-detail-back" id="rdp-password-back">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="15 18 9 12 15 6"/></svg>
+					</button>
+					<div class="rdp-detail-title" id="rdp-password-title"></div>
+					<span class="tag tag-online" style="margin-left:auto">Online</span>
+				</div>
+				<div class="rdp-detail-body">
+					<div class="pw-prompt">
+						<div class="pw-prompt-title">Passwort erforderlich</div>
+						<div id="rdp-password-user" style="font-size:11px;color:var(--text-3);margin-bottom:2px"></div>
+						<input class="pw-input" id="rdp-password-input" type="password" placeholder="Passwort eingeben...">
+						<div class="pw-actions">
+							<button class="btn btn-ghost" id="rdp-password-cancel">Abbrechen</button>
+							<button class="btn btn-connect" id="rdp-password-submit" style="flex:0">Verbinden</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- MAINTENANCE VIEW -->
+			<div class="rdp-panel-view" id="rdp-view-maintenance">
+				<div class="rdp-detail-header">
+					<button class="rdp-detail-back" id="rdp-maintenance-back">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="15 18 9 12 15 6"/></svg>
+					</button>
+					<div class="rdp-detail-title" id="rdp-maintenance-title"></div>
+					<span class="tag tag-warn" style="margin-left:auto">Wartung</span>
+				</div>
+				<div class="rdp-detail-body">
+					<div class="maintenance-warn">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="flex-shrink:0"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+						<div>
+							<div style="font-weight:700;margin-bottom:2px">Ausserhalb des Wartungsfensters</div>
+							<div id="rdp-maintenance-window"></div>
+						</div>
+					</div>
+					<div style="display:flex;gap:8px">
+						<button class="btn btn-ghost" id="rdp-maintenance-cancel" style="flex:1">Abbrechen</button>
+						<button class="btn btn-connect" id="rdp-maintenance-force" style="flex:1">Trotzdem verbinden</button>
+					</div>
+				</div>
+			</div>
+
+		</div><!-- /rdp-panel -->
+
+	</main>
+
+	<script src="renderer.js"></script>
+</body>
+</html>
