@@ -161,9 +161,14 @@ let tunnelState = {
   handshake: null,
   rxBytes: 0,
   txBytes: 0,
+  rxSpeed: 0,
+  txSpeed: 0,
   uptime: 0,
   connectedSince: null,
 };
+let lastRxBytes = 0;
+let lastTxBytes = 0;
+let lastStatsTime = 0;
 let isReconnecting = false;
 let rdpPanelOpen = false;
 
@@ -523,8 +528,21 @@ function initializeServices() {
       isReconnecting = false;
     },
     onStats: (stats) => {
-      tunnelState.rxBytes = stats.rxBytes || 0;
-      tunnelState.txBytes = stats.txBytes || 0;
+      const now = Date.now();
+      const rx = stats.rxBytes || 0;
+      const tx = stats.txBytes || 0;
+
+      if (lastStatsTime > 0 && now > lastStatsTime) {
+        const dt = (now - lastStatsTime) / 1000;
+        tunnelState.rxSpeed = Math.max(0, (rx - lastRxBytes) / dt);
+        tunnelState.txSpeed = Math.max(0, (tx - lastTxBytes) / dt);
+      }
+
+      lastRxBytes = rx;
+      lastTxBytes = tx;
+      lastStatsTime = now;
+      tunnelState.rxBytes = rx;
+      tunnelState.txBytes = tx;
       tunnelState.handshake = stats.handshake || null;
       broadcastState('connected');
     },

@@ -166,9 +166,9 @@ onNavigate((page) => navigateTo(page));
 //  RDP PANEL - SLIDE OUT
 // ══════════════════════════════════════════════════════════
 function toggleRdpPanel() {
-	if (panelOpen) {
+	if (panelOpen && !pinned) {
 		closeRdpPanel();
-	} else {
+	} else if (!panelOpen) {
 		openRdpPanel();
 	}
 }
