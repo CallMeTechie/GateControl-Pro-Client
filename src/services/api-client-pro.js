@@ -21,7 +21,7 @@ class ApiClientPro extends ApiClient {
     if (!this.client) return [];
     try {
       const { data } = await this.client.get('/api/v1/client/rdp');
-      return data?.services || [];
+      return data?.routes || [];
     } catch (err) {
       this.log.warn('RDP services fetch failed:', err.message);
       return [];
