@@ -49,8 +49,7 @@
           ]
         }
       ],
-      "icon": "build/icon.ico",
-      "requestedExecutionLevel": "requireAdministrator"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -62,7 +61,12 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "GateControl Pro",
-      "include": "build/installer.nsh"
+      "include": "build/installer.nsh",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "portable": {
+      "artifactName": "${productName} ${version}.exe",
+      "requestedExecutionLevel": "asInvoker"
     },
     "files": [
       "src/**/*",
@@ -71,14 +75,14 @@
     "extraResources": [
       {
         "from": "resources/",
-        "to": ".",
+        "to": "resources/",
         "filter": [
           "**/*"
         ]
       },
       {
         "from": "node_modules/@gatecontrol/client-core/resources/bin/",
-        "to": "bin/",
+        "to": "resources/bin/",
         "filter": [
           "*.dll"
         ]
