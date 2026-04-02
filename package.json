@@ -12,7 +12,7 @@
     "build:portable": "electron-builder --win portable",
     "build:installer": "electron-builder --win nsis",
     "postinstall": "electron-builder install-app-deps",
-    "test": "node --test test/"
+    "test": "node --test 'test/**/*.test.js'"
   },
   "dependencies": {
     "@gatecontrol/client-core": "file:../gatecontrol-client-core",
