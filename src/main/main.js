@@ -805,6 +805,12 @@ app.on('ready', () => {
   createWindow();
   createTray();
 
+  // Auto-Connect
+  if (store.get('tunnel.autoConnect', true) && store.get('tunnel.configPath', '')) {
+    log.info('Auto-Connect aktiviert, verbinde...');
+    connectTunnel().catch(err => log.error('Auto-Connect fehlgeschlagen:', err.message));
+  }
+
   // Auto-Update
   const serverUrl = store.get('server.url', '');
   const apiKey = store.get('server.apiKey', '');
