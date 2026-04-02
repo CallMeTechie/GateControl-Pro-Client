@@ -582,6 +582,69 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('config:getAll', () => store.store);
 
+  // ── Config Import ──────────────────────────────────────
+  ipcMain.handle('config:import-file', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'WireGuard-Konfiguration importieren',
+      filters: [
+        { name: 'WireGuard Config', extensions: ['conf'] },
+        { name: 'Alle Dateien', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+    if (result.canceled) return { success: false };
+    try {
+      const content = fsSync.readFileSync(result.filePaths[0], 'utf-8');
+      fsSync.mkdirSync(path.dirname(WG_CONFIG_FILE), { recursive: true });
+      fsSync.writeFileSync(WG_CONFIG_FILE, content, { mode: 0o600 });
+      store.set('tunnel.configPath', WG_CONFIG_FILE);
+      log.info('Config importiert:', result.filePaths[0]);
+      return { success: true, path: result.filePaths[0] };
+    } catch (err) {
+      log.error('Config-Import fehlgeschlagen:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('config:import-qr', async (_, imageData) => {
+    try {
+      const jsQR = require('jsqr');
+      const { data, width, height } = imageData;
+      const code = jsQR(new Uint8ClampedArray(data), width, height);
+      if (!code) return { success: false, error: 'Kein QR-Code erkannt' };
+      fsSync.mkdirSync(path.dirname(WG_CONFIG_FILE), { recursive: true });
+      fsSync.writeFileSync(WG_CONFIG_FILE, code.data, { mode: 0o600 });
+      store.set('tunnel.configPath', WG_CONFIG_FILE);
+      log.info('Config per QR-Code importiert');
+      return { success: true, config: code.data };
+    } catch (err) {
+      log.error('QR-Import fehlgeschlagen:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ── WireGuard ──────────────────────────────────────────
+  ipcMain.handle('wireguard:check', () => ({
+    installed: true,
+    version: 'wireguard-nt (embedded)',
+  }));
+
+  // ── Kill-Switch ────────────────────────────────────────
+  ipcMain.handle('killswitch:toggle', async (_, enabled) => {
+    try {
+      await toggleKillSwitch(enabled);
+      log.info(`Kill-Switch ${enabled ? 'aktiviert' : 'deaktiviert'}`);
+    } catch (err) {
+      log.error('Kill-Switch fehlgeschlagen:', err.message);
+    }
+  });
+
+  // ── Permissions / Traffic / DNS / Peer-Info ─────────────
+  ipcMain.handle('permissions:get', () => apiClient?.getPermissions());
+  ipcMain.handle('traffic:stats', () => apiClient?.getTraffic());
+  ipcMain.handle('dns:leak-test', () => apiClient?.dnsCheck());
+  ipcMain.handle('peer:info', () => apiClient?.getPeerInfo());
+
   // ── Window ──────────────────────────────────────────────
   ipcMain.on('window:minimize', () => mainWindow?.minimize());
   ipcMain.on('window:close', () => mainWindow?.hide());
