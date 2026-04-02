@@ -11,7 +11,27 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  security-gate:
+    name: Security Gate
+    runs-on: ubuntu-latest
+    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Clone core dependency
+        run: |
+          git clone https://github.com/CallMeTechie/gatecontrol-client-core.git .core
+          node -e "const p=require('./package.json'); p.dependencies['@gatecontrol/client-core']='file:.core'; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+      - run: npm install --no-audit --no-fund
+      - name: npm audit (high/critical)
+        run: |
+          CRITICAL=$(npm audit --json 2>/dev/null | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log((d.metadata?.vulnerabilities?.critical||0))}catch{console.log(0)}")
+          if [ "$CRITICAL" -gt 0 ]; then echo "::error::Critical vulnerabilities found"; exit 1; fi
+
   release:
+    needs: security-gate
     runs-on: windows-latest
     # Skip version-bump commits to prevent infinite loop
     if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
