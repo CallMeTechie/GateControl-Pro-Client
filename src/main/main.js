@@ -769,32 +769,6 @@ function registerIpcHandlers() {
     return enabled;
   });
 
-  // ── Kill-Switch ─────────────────────────────────────────
-  ipcMain.handle('killswitch:toggle', async (_, enabled) => {
-    await toggleKillSwitch(enabled);
-    return enabled;
-  });
-
-  // ── Traffic ─────────────────────────────────────────────
-  ipcMain.handle('traffic:stats', async () => {
-    return apiClient.getTraffic();
-  });
-
-  // ── DNS ─────────────────────────────────────────────────
-  ipcMain.handle('dns:leak-test', async () => {
-    return apiClient.dnsCheck();
-  });
-
-  // ── Permissions ─────────────────────────────────────────
-  ipcMain.handle('permissions:get', async () => {
-    return apiClient.getPermissions();
-  });
-
-  // ── WireGuard Check ─────────────────────────────────────
-  ipcMain.handle('wireguard:check', async () => {
-    return wgService.check();
-  });
-
   // ── Update ──────────────────────────────────────────────
   ipcMain.handle('update:check', async () => {
     if (!updater) return null;
