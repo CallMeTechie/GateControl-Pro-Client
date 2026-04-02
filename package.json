@@ -49,7 +49,8 @@
           ]
         }
       ],
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator"
     },
     "nsis": {
       "oneClick": false,
@@ -61,12 +62,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "GateControl Pro",
-      "include": "build/installer.nsh",
-      "requestedExecutionLevel": "requireAdministrator"
+      "include": "build/installer.nsh"
     },
     "portable": {
-      "artifactName": "${productName} ${version}.exe",
-      "requestedExecutionLevel": "asInvoker"
+      "artifactName": "${productName} ${version}.exe"
     },
     "files": [
       "src/**/*",

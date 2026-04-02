@@ -152,7 +152,7 @@ jobs:
 
       - name: Build portable
         if: steps.check_tag.outputs.exists == 'false'
-        run: npm run build:portable
+        run: npx electron-builder --win portable --config.win.requestedExecutionLevel=asInvoker
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
