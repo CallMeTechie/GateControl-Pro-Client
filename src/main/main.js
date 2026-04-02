@@ -361,7 +361,7 @@ function initializeServices() {
 
   apiClient = new ApiClientPro(serverUrl, apiKey, log, peerId);
 
-  wgService = new WireGuardService(RESOURCES_PATH, log);
+  wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
   killSwitchSvc = new KillSwitch(log);
 
   rdpManager = new RdpManager({
