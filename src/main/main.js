@@ -54,6 +54,9 @@ try {
   RdpWolClient = require('../services/rdp/rdp-wol');
 
   writeCrashLog('IMPORT', 'All imports successful');
+
+  writeCrashLog('IMPORT', 'Loading i18n...');
+  var _i18nModule = require('@gatecontrol/client-core').i18n;
 } catch (err) {
   writeCrashLog('IMPORT_FAILED', err);
   try {
@@ -64,6 +67,12 @@ try {
 }
 
 const path = _path;
+
+const { t, setLocale, getLocale, registerTranslations, resolveLocale } = _i18nModule;
+
+// Register Pro-specific translations
+registerTranslations('de', require('../i18n/de.json'));
+registerTranslations('en', require('../i18n/en.json'));
 
 // ── Logging ──────────────────────────────────────────────────
 log.transports.file.level = 'info';
@@ -237,23 +246,23 @@ function updateTray(connState) {
 
   tray.setImage(getIcon(connState));
 
-  const statusText = connState === 'connected' ? 'Verbunden'
-    : connState === 'connecting' ? 'Verbinde...'
-    : 'Getrennt';
+  const statusText = connState === 'connected' ? t('status.connected')
+    : connState === 'connecting' ? t('status.connecting')
+    : t('status.disconnected');
 
   let tooltip = `GateControl Pro - ${statusText}`;
   if (tunnelState.connected && tunnelState.connectedSince) {
     const dur = Math.floor((Date.now() - new Date(tunnelState.connectedSince).getTime()) / 1000);
     const h = Math.floor(dur / 3600);
     const m = Math.floor((dur % 3600) / 60);
-    tooltip += `\nVerbunden seit: ${h > 0 ? h + 'h ' : ''}${m}m`;
+    tooltip += `\n${t('tray.connectedSince', { duration: `${h > 0 ? h + 'h ' : ''}${m}m` })}`;
   }
 
   // RDP active sessions count
   if (rdpManager) {
     const sessions = rdpManager.getActiveSessions();
     if (sessions.length > 0) {
-      tooltip += `\nRDP: ${sessions.length} aktive Session(s)`;
+      tooltip += `\n${t('rdp.sessions', { count: sessions.length })}`;
     }
   }
 
@@ -266,12 +275,12 @@ function updateTray(connState) {
     { label: `GateControl Pro - ${statusText}`, enabled: false, icon: getIcon(connState) },
     { type: 'separator' },
     {
-      label: connState === 'connected' ? 'Trennen' : 'Verbinden',
+      label: connState === 'connected' ? t('action.disconnect') : t('action.connect'),
       click: () => connState === 'connected' ? disconnectTunnel() : connectTunnel(),
     },
     { type: 'separator' },
     {
-      label: 'Kill-Switch',
+      label: t('killswitch.label'),
       type: 'checkbox',
       checked: store.get('tunnel.killSwitch', false),
       click: (item) => toggleKillSwitch(item.checked),
@@ -285,14 +294,14 @@ function updateTray(connState) {
       })),
     ] : []),
     { type: 'separator' },
-    { label: 'Fenster oeffnen', click: () => showWindow() },
+    { label: t('tray.openWindow'), click: () => showWindow() },
     ...(pendingUpdate ? [
       { type: 'separator' },
-      { label: `Update v${pendingUpdate.version} installieren`, click: () => installUpdate() },
+      { label: t('tray.installUpdate', { version: pendingUpdate.version }), click: () => installUpdate() },
     ] : []),
     { type: 'separator' },
     {
-      label: 'Auf Update prüfen',
+      label: t('tray.checkUpdate'),
       click: async () => {
         if (!updater) return;
         const release = await updater.check();
@@ -301,12 +310,12 @@ function updateTray(connState) {
           updateTray(connState);
           if (mainWindow) mainWindow.webContents.send('update:ready', release);
         } else {
-          new Notification({ title: 'GateControl Pro', body: 'Kein Update verfügbar. Sie verwenden die neueste Version.' }).show();
+          new Notification({ title: 'GateControl Pro', body: t('tray.noUpdateAvailable') }).show();
         }
       },
     },
     { type: 'separator' },
-    { label: 'Beenden', click: () => quitApp() },
+    { label: t('tray.quit'), click: () => quitApp() },
   ]);
 
   tray.setContextMenu(contextMenu);
@@ -453,14 +462,14 @@ async function connectTunnel() {
 
     if (connectionMonitor) connectionMonitor.start();
 
-    new Notification({ title: 'GateControl Pro', body: 'VPN-Tunnel ist aktiv.' }).show();
+    new Notification({ title: 'GateControl Pro', body: t('notify.connected') }).show();
     log.info('Tunnel erfolgreich verbunden');
 
   } catch (err) {
     log.error('Tunnel-Verbindung fehlgeschlagen:', err.message);
     updateTray('disconnected');
     broadcastState('error', err.message);
-    new Notification({ title: 'Verbindungsfehler', body: err.message }).show();
+    new Notification({ title: t('notify.connectionError'), body: err.message }).show();
   }
 }
 
@@ -484,7 +493,7 @@ async function disconnectTunnel() {
     updateTray('disconnected');
     broadcastState('disconnected');
 
-    new Notification({ title: 'GateControl Pro', body: 'VPN-Tunnel wurde beendet.' }).show();
+    new Notification({ title: 'GateControl Pro', body: t('notify.disconnected') }).show();
     log.info('Tunnel getrennt');
 
   } catch (err) {
@@ -595,13 +604,31 @@ function initializeServices() {
     mainWindow?.webContents.send('rdp:session-timeout-warning', data);
     new Notification({
       title: 'GateControl Pro',
-      body: `RDP-Sitzung laeuft ab (Route ${data.routeId}). Noch ${Math.round(data.gracePeriod / 60)} Minuten.`,
+      body: t('rdp.sessionTimeout', { routeId: data.routeId, minutes: Math.round(data.gracePeriod / 60) }),
     }).show();
   });
+
+  // Initialize locale from config, fallback to system locale
+  const savedLocale = store.get('app.locale');
+  if (savedLocale) {
+    setLocale(savedLocale);
+  } else {
+    setLocale(resolveLocale(app.getLocale()));
+  }
 }
 
 // ── IPC Handlers ─────────────────────────────────────────────
 function registerIpcHandlers() {
+  // ── Locale ─────────────────────────────────────────────
+  ipcMain.handle('locale:set', (_, locale) => {
+    setLocale(locale);
+    store.set('app.locale', getLocale());
+    updateTray(tunnelState.connected ? 'connected' : 'disconnected');
+    mainWindow?.webContents.send('locale:changed', getLocale());
+  });
+
+  ipcMain.handle('locale:get', () => getLocale());
+
   // ── App ─────────────────────────────────────────────────
   ipcMain.handle('app:version', () => require('../../package.json').version);
 
@@ -620,10 +647,10 @@ function registerIpcHandlers() {
   // ── Config Import ──────────────────────────────────────
   ipcMain.handle('config:import-file', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'WireGuard-Konfiguration importieren',
+      title: t('dialog.importTitle'),
       filters: [
-        { name: 'WireGuard Config', extensions: ['conf'] },
-        { name: 'Alle Dateien', extensions: ['*'] },
+        { name: t('dialog.filterConfig'), extensions: ['conf'] },
+        { name: t('dialog.filterAll'), extensions: ['*'] },
       ],
       properties: ['openFile'],
     });
@@ -646,7 +673,7 @@ function registerIpcHandlers() {
       const jsQR = require('jsqr');
       const { data, width, height } = imageData;
       const code = jsQR(new Uint8ClampedArray(data), width, height);
-      if (!code) return { success: false, error: 'Kein QR-Code erkannt' };
+      if (!code) return { success: false, error: t('server.qrTimeout') };
       fsSync.mkdirSync(path.dirname(WG_CONFIG_FILE), { recursive: true });
       fsSync.writeFileSync(WG_CONFIG_FILE, code.data, { mode: 0o600 });
       store.set('tunnel.configPath', WG_CONFIG_FILE);
@@ -815,7 +842,7 @@ function registerIpcHandlers() {
       const logPath = log.transports.file.getFile().path;
       return fsSync.readFileSync(logPath, 'utf-8');
     } catch {
-      return 'Keine Logs verfuegbar.';
+      return t('logs.empty');
     }
   });
 
@@ -921,7 +948,7 @@ app.on('ready', () => {
       }
       new Notification({
         title: 'GateControl Pro',
-        body: `Update v${release.version} verfuegbar`,
+        body: t('update.available', { version: release.version }),
       }).show();
     });
   }
