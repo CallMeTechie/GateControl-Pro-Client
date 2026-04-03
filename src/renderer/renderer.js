@@ -1115,21 +1115,31 @@ if (dnsBtn) {
 		dnsResult.style.display = 'none';
 
 		try {
-			const result = await dns.leakTest();
-			if (!result) throw new Error('Keine Antwort');
-			const clientIp = result.serverIp || '';
-			const vpnSubnet = result.vpnSubnet || '';
-			const ipInSubnet = (ip, cidr) => {
-				if (!ip || !cidr) return false;
-				const [base, bits] = cidr.split('/');
-				const mask = ~((1 << (32 - parseInt(bits))) - 1) >>> 0;
-				const toInt = s => s.split('.').reduce((a, o) => (a << 8) | parseInt(o), 0) >>> 0;
-				return (toInt(ip) & mask) === (toInt(base) & mask);
-			};
-			if (ipInSubnet(clientIp, vpnSubnet)) {
-				showToast(`Kein DNS-Leak erkannt. Deine IP: ${clientIp}`, 'success', 6000);
+			const [serverInfo, sysCheck] = await Promise.all([
+				dns.leakTest(),
+				dns.checkSystem(),
+			]);
+
+			const { connected, killSwitch, dnsServer, resolveOk } = sysCheck || {};
+			const vpnDns = serverInfo?.vpnDns || '';
+			const expectedDns = vpnDns.split(',').map(s => s.trim()).filter(Boolean);
+
+			if (!connected) {
+				showToast('DNS-Leak möglich — VPN-Tunnel nicht verbunden.', 'error', 8000);
+			} else if (!resolveOk) {
+				showToast('DNS-Auflösung fehlgeschlagen — DNS-Server nicht erreichbar.', 'error', 8000);
+			} else if (killSwitch) {
+				// Kill-Switch aktiv + Tunnel verbunden + DNS löst auf
+				// → DNS MUSS durch den VPN-Tunnel gehen (alles andere ist geblockt)
+				const info = dnsServer ? ` DNS: ${dnsServer}` : '';
+				showToast(`Kein DNS-Leak erkannt — Kill-Switch aktiv, DNS geht durch VPN.${info}`, 'success', 6000);
+			} else if (dnsServer && expectedDns.includes(dnsServer)) {
+				// Kein Kill-Switch, aber DNS-Server stimmt mit VPN-Config überein
+				showToast(`Kein DNS-Leak erkannt. DNS: ${dnsServer}`, 'success', 6000);
 			} else {
-				showToast(`DNS-Leak möglich — DNS-Anfragen gehen am VPN vorbei. Deine IP: ${clientIp || 'unbekannt'}`, 'error', 8000);
+				// Kein Kill-Switch und DNS-Server weicht ab
+				const info = dnsServer ? ` Aktiver DNS: ${dnsServer}` : '';
+				showToast(`DNS-Leak möglich — Kill-Switch nicht aktiv.${info}`, 'warning', 8000);
 			}
 		} catch {
 			showToast('DNS-Leak-Test fehlgeschlagen — Verbindung prüfen.', 'error', 5000);

@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld('gatecontrol', {
   // ── DNS ──────────────────────────────────────────────
   dns: {
     leakTest: () => ipcRenderer.invoke('dns:leak-test'),
+    checkSystem: () => ipcRenderer.invoke('dns:check-system'),
   },
 
   // ── Update ───────────────────────────────────────────

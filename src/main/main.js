@@ -677,6 +677,29 @@ function registerIpcHandlers() {
   ipcMain.handle('permissions:get', () => apiClient?.getPermissions());
   ipcMain.handle('traffic:stats', () => apiClient?.getTraffic());
   ipcMain.handle('dns:leak-test', () => apiClient?.dnsCheck());
+  ipcMain.handle('dns:check-system', async () => {
+    try {
+      const connected = tunnelState.connected;
+      const ksActive = killSwitchSvc?.enabled || false;
+
+      // Run nslookup to determine which DNS server the system uses
+      let dnsServer = null;
+      let resolveOk = false;
+      try {
+        const { stdout } = await execFileAsync('nslookup', ['cloudflare.com'], { timeout: 5000 });
+        const match = stdout.match(/Address:\s*([\d.]+)/);
+        if (match) dnsServer = match[1];
+        resolveOk = stdout.includes('Name:') || stdout.includes('Addresses:');
+      } catch {
+        resolveOk = false;
+      }
+
+      return { connected, killSwitch: ksActive, dnsServer, resolveOk };
+    } catch (err) {
+      log.warn('DNS system check failed:', err.message);
+      return { connected: false, killSwitch: false, dnsServer: null, resolveOk: false };
+    }
+  });
   ipcMain.handle('peer:info', () => apiClient?.getPeerInfo());
 
   // ── Window ──────────────────────────────────────────────
