@@ -4,6 +4,12 @@
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
+const { i18n } = require('@gatecontrol/client-core');
+const { t, setLocale, getLocale, onLocaleChange, registerTranslations, getSupportedLocales } = i18n;
+
+// Register Pro-specific translations
+registerTranslations('de', require('../i18n/de.json'));
+registerTranslations('en', require('../i18n/en.json'));
 
 contextBridge.exposeInMainWorld('gatecontrol', {
   // ── App ──────────────────────────────────────────────
@@ -106,6 +112,34 @@ contextBridge.exposeInMainWorld('gatecontrol', {
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),
     close:    () => ipcRenderer.send('window:close'),
+  },
+
+  // ── i18n ────────────────────────────────────────────────
+  i18n: {
+    t: (key, params) => t(key, params),
+    getLocale: () => getLocale(),
+    getSupportedLocales: () => getSupportedLocales(),
+  },
+
+  // ── Locale ──────────────────────────────────────────────
+  locale: {
+    set: (locale) => {
+      setLocale(locale);
+      ipcRenderer.invoke('locale:set', locale);
+    },
+    get: () => ipcRenderer.invoke('locale:get'),
+    onChange: (cb) => {
+      const ipcHandler = (_, loc) => {
+        setLocale(loc);
+        cb(loc);
+      };
+      ipcRenderer.on('locale:changed', ipcHandler);
+      const unsub = onLocaleChange((loc) => cb(loc));
+      return () => {
+        ipcRenderer.removeListener('locale:changed', ipcHandler);
+        unsub();
+      };
+    },
   },
 
   // ── Navigation ───────────────────────────────────────
