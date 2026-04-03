@@ -77,8 +77,8 @@ class ApiClientPro extends ApiClient {
     try {
       await this.client.delete(`/api/v1/client/rdp/${id}/session`, {
         data: {
-          timestamp: new Date().toISOString(),
-          ...details,
+          sessionId: details.sessionId,
+          endReason: details.endReason || 'normal',
         },
       });
     } catch (err) {

@@ -293,6 +293,7 @@ class RdpManager extends EventEmitter {
           startTime,
           process: proc,
           sessionTimeout: route.session_timeout || null,
+          serverSessionId: sessionData?.session?.id || null,
         });
 
         // Start monitoring
@@ -496,8 +497,14 @@ class RdpManager extends EventEmitter {
     this.credentialHandler.clearCredentials(host);
 
     // Notify server: session end
-    const status = exitCode === 0 ? 'normal' : 'error';
-    this.api.endRdpSession(routeId, { duration, status, exitCode }).catch(() => {});
+    const session = this.activeSessions.get(routeId);
+    const endReason = exitCode === 0 ? 'normal' : 'error';
+    this.api.endRdpSession(routeId, {
+      sessionId: session?.serverSessionId,
+      endReason,
+      duration,
+      exitCode,
+    }).catch(() => {});
 
     // Remove from active sessions
     this.activeSessions.delete(routeId);
