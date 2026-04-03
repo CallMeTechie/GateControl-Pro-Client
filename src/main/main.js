@@ -867,7 +867,7 @@ app.on('ready', () => {
   const serverUrl = store.get('server.url', '');
   const apiKey = store.get('server.apiKey', '');
   if (serverUrl && apiKey) {
-    updater = new Updater({ serverUrl, apiKey, log });
+    updater = new Updater({ serverUrl, apiKey, log, clientType: 'pro' });
     updater.start((release) => {
       pendingUpdate = release;
       log.info(`Update bereit: v${release.version}`);
