@@ -441,7 +441,6 @@ async function connectTunnel() {
 
     if (store.get('tunnel.killSwitch', false)) {
       await killSwitchSvc.enable(WG_CONFIG_FILE);
-      log.info('Kill-Switch aktiviert');
     }
 
     await wgService.connect(WG_CONFIG_FILE, store.get('tunnel.splitTunnel') ? store.get('tunnel.splitRoutes', '') : null);
@@ -475,7 +474,6 @@ async function disconnectTunnel() {
 
     if (store.get('tunnel.killSwitch', false)) {
       await killSwitchSvc.disable();
-      log.info('Kill-Switch deaktiviert');
     }
 
     tunnelState.connected = false;
@@ -670,7 +668,6 @@ function registerIpcHandlers() {
   ipcMain.handle('killswitch:toggle', async (_, enabled) => {
     try {
       await toggleKillSwitch(enabled);
-      log.info(`Kill-Switch ${enabled ? 'aktiviert' : 'deaktiviert'}`);
     } catch (err) {
       log.error('Kill-Switch fehlgeschlagen:', err.message);
     }

@@ -1116,12 +1116,20 @@ if (dnsBtn) {
 
 		try {
 			const result = await dns.leakTest();
-			if (result.passed) {
-				const servers = (result.dnsServers || []).join(', ');
-				showToast(`Kein DNS-Leak erkannt. DNS: ${servers}`, 'success', 6000);
+			if (!result) throw new Error('Keine Antwort');
+			const clientIp = result.serverIp || '';
+			const vpnSubnet = result.vpnSubnet || '';
+			const ipInSubnet = (ip, cidr) => {
+				if (!ip || !cidr) return false;
+				const [base, bits] = cidr.split('/');
+				const mask = ~((1 << (32 - parseInt(bits))) - 1) >>> 0;
+				const toInt = s => s.split('.').reduce((a, o) => (a << 8) | parseInt(o), 0) >>> 0;
+				return (toInt(ip) & mask) === (toInt(base) & mask);
+			};
+			if (ipInSubnet(clientIp, vpnSubnet)) {
+				showToast(`Kein DNS-Leak erkannt. Deine IP: ${clientIp}`, 'success', 6000);
 			} else {
-				const servers = (result.dnsServers || []).join(', ');
-				showToast(`DNS-Leak möglich — DNS-Anfragen gehen am VPN vorbei. DNS: ${servers}`, 'error', 8000);
+				showToast(`DNS-Leak möglich — DNS-Anfragen gehen am VPN vorbei. Deine IP: ${clientIp || 'unbekannt'}`, 'error', 8000);
 			}
 		} catch {
 			showToast('DNS-Leak-Test fehlgeschlagen — Verbindung prüfen.', 'error', 5000);
