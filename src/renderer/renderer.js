@@ -16,6 +16,34 @@ const {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+function showToast(message, type = 'error', duration = 5000) {
+	const toast = document.createElement('div');
+	toast.className = `toast toast-${type}`;
+	toast.textContent = message;
+	toast.style.cssText = 'position:fixed;top:16px;left:16px;z-index:200;padding:10px 16px;border-radius:var(--radius-sm);font-size:12px;max-width:320px;opacity:0;transition:opacity 0.3s ease;pointer-events:auto;cursor:pointer';
+	if (type === 'error') {
+		toast.style.background = 'rgba(239,68,68,0.95)';
+		toast.style.color = '#fff';
+	} else if (type === 'success') {
+		toast.style.background = 'rgba(34,197,94,0.95)';
+		toast.style.color = '#fff';
+	} else {
+		toast.style.background = 'var(--bg-3)';
+		toast.style.color = 'var(--text-1)';
+		toast.style.border = '1px solid var(--border-2)';
+	}
+	toast.addEventListener('click', () => {
+		toast.style.opacity = '0';
+		setTimeout(() => toast.remove(), 300);
+	});
+	document.body.appendChild(toast);
+	requestAnimationFrame(() => { toast.style.opacity = '1'; });
+	setTimeout(() => {
+		toast.style.opacity = '0';
+		setTimeout(() => toast.remove(), 300);
+	}, duration);
+}
+
 function formatBytes(bytes) {
 	if (!bytes || bytes <= 0) return '0 B';
 	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -1115,9 +1143,7 @@ if (dnsBtn) {
 				dnsResult.appendChild(detail);
 			}
 		} catch {
-			dnsResult.style.display = '';
-			dnsResult.className = 'dns-result fail';
-			dnsResult.textContent = 'Test fehlgeschlagen \u2014 Verbindung prüfen.';
+			showToast('DNS-Leak-Test fehlgeschlagen — Verbindung prüfen.', 'error', 5000);
 		}
 
 		dnsBtn.disabled = false;

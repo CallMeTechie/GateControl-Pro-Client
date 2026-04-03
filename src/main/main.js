@@ -805,10 +805,25 @@ app.on('ready', () => {
   createWindow();
   createTray();
 
-  // Auto-Connect
+  // Autostart mit Windows synchronisieren
+  app.setLoginItemSettings({ openAtLogin: store.get('app.startWithWindows', true) });
+
+  // Auto-Connect (warten bis Fenster bereit ist)
   if (store.get('tunnel.autoConnect', true) && store.get('tunnel.configPath', '')) {
-    log.info('Auto-Connect aktiviert, verbinde...');
-    connectTunnel().catch(err => log.error('Auto-Connect fehlgeschlagen:', err.message));
+    const doAutoConnect = () => {
+      log.info('Auto-Connect aktiviert, verbinde...');
+      connectTunnel().catch(err => {
+        log.error('Auto-Connect fehlgeschlagen:', err.message);
+        if (mainWindow) {
+          mainWindow.webContents.send('tunnel:error', err.message);
+        }
+      });
+    };
+    if (mainWindow) {
+      mainWindow.webContents.once('did-finish-load', doAutoConnect);
+    } else {
+      doAutoConnect();
+    }
   }
 
   // Auto-Update

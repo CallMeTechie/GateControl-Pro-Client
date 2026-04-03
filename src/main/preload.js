@@ -91,8 +91,8 @@ contextBridge.exposeInMainWorld('gatecontrol', {
     install: () => ipcRenderer.invoke('update:install'),
     onReady: (cb) => {
       const handler = (_, info) => cb(info);
-      ipcRenderer.on('update-ready', handler);
-      return () => ipcRenderer.removeListener('update-ready', handler);
+      ipcRenderer.on('update:ready', handler);
+      return () => ipcRenderer.removeListener('update:ready', handler);
     },
   },
 
