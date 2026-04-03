@@ -572,30 +572,31 @@ $('#rdp-detail-back').addEventListener('click', () => showRdpView('list'));
 // ══════════════════════════════════════════════════════════
 //  RDP CONNECT FLOW
 // ══════════════════════════════════════════════════════════
-async function startRdpConnect(svc) {
+async function startRdpConnect(svc, opts = {}) {
 	currentRdpRoute = svc;
 
-	try {
-		const result = await rdp.connect(svc.id, {});
+	// Show progress view BEFORE starting connect
+	showConnectingProgress(svc);
 
-		if (result.needsPassword) {
-			// Show password prompt
+	try {
+		const result = await rdp.connect(svc.id, opts);
+
+		if (result && result.needsPassword) {
 			showPasswordPrompt(svc);
 			return;
 		}
 
-		if (result.maintenanceWarning) {
-			// Show maintenance warning
+		if (result && result.maintenanceWarning) {
 			showMaintenanceWarning(svc, result.maintenanceWindow);
 			return;
 		}
 
-		// Success - show connecting progress
-		showConnectingProgress(svc);
+		// Connection started successfully — progress updates come via IPC events
+		if (result && result.success !== false) {
+			$('#rdp-connecting-status').textContent = 'Remote Desktop Verbindung aktiv';
+		}
 	} catch (err) {
-		// Show error in connecting view
-		showConnectingProgress(svc);
-		updateProgressStep('error', err.message || 'Verbindungsfehler');
+		$('#rdp-connecting-status').textContent = err.message || 'Verbindungsfehler';
 	}
 }
 
@@ -617,17 +618,7 @@ $('#rdp-password-cancel').addEventListener('click', () => showRdpView('list'));
 $('#rdp-password-submit').addEventListener('click', async () => {
 	const password = $('#rdp-password-input').value;
 	if (!password || !currentRdpRoute) return;
-
-	try {
-		const result = await rdp.connect(currentRdpRoute.id, { password });
-		if (result.maintenanceWarning) {
-			showMaintenanceWarning(currentRdpRoute, result.maintenanceWindow);
-		} else {
-			showConnectingProgress(currentRdpRoute);
-		}
-	} catch (err) {
-		showConnectingProgress(currentRdpRoute);
-	}
+	startRdpConnect(currentRdpRoute, { password });
 });
 
 // Submit on Enter
@@ -647,28 +638,23 @@ function showMaintenanceWarning(svc, windowText) {
 $('#rdp-maintenance-back').addEventListener('click', () => showRdpView('list'));
 $('#rdp-maintenance-cancel').addEventListener('click', () => showRdpView('list'));
 
-$('#rdp-maintenance-force').addEventListener('click', async () => {
+$('#rdp-maintenance-force').addEventListener('click', () => {
 	if (!currentRdpRoute) return;
-	try {
-		await rdp.connect(currentRdpRoute.id, { forceMaintenanceBypass: true });
-		showConnectingProgress(currentRdpRoute);
-	} catch (err) {
-		showConnectingProgress(currentRdpRoute);
-	}
+	startRdpConnect(currentRdpRoute, { forceMaintenanceBypass: true });
 });
 
 // ── Connecting Progress ──────────────────────────────────
 const PROGRESS_STEPS = [
-	{ id: 'vpn',       label: 'VPN-Tunnel aktiv' },
-	{ id: 'tcp',       label: 'Host erreichbar (TCP-Check)' },
-	{ id: 'e2ee',      label: 'Credentials entschlüsselt (E2EE)' },
-	{ id: 'mstsc',     label: 'RDP-Sitzung wird gestartet...' },
-	{ id: 'tracking',  label: 'Session-Tracking aktiv' },
+	{ id: 'vpn-check',   label: 'VPN-Tunnel aktiv' },
+	{ id: 'tcp-check',   label: 'Host erreichbar (TCP-Check)' },
+	{ id: 'credentials', label: 'Credentials verarbeitet' },
+	{ id: 'rdp-file',    label: 'RDP-Konfiguration erstellt' },
+	{ id: 'mstsc',       label: 'Remote Desktop wird gestartet...' },
 ];
 
 function showConnectingProgress(svc) {
 	$('#rdp-connecting-title').textContent = svc.name;
-	$('#rdp-connecting-status').textContent = 'mstsc.exe wird gestartet...';
+	$('#rdp-connecting-status').textContent = 'Verbindung wird hergestellt...';
 
 	const stepsContainer = $('#rdp-progress-steps');
 	stepsContainer.textContent = '';
@@ -715,9 +701,26 @@ $('#rdp-connecting-back').addEventListener('click', () => showRdpView('list'));
 //  IPC EVENT BINDINGS (RDP)
 // ══════════════════════════════════════════════════════════
 rdp.onProgress((data) => {
-	// data: { step: 'vpn'|'tcp'|'e2ee'|'mstsc'|'tracking', status: 'done'|'active'|'error', message? }
 	if (data.step && data.status) {
-		updateProgressStep(data.step, data.status);
+		// Treat 'skip', 'fallback' as done
+		const normalizedStatus = ['skip', 'fallback'].includes(data.status) ? 'done' : data.status;
+		updateProgressStep(data.step, normalizedStatus);
+
+		// Update status text based on current step
+		const statusMessages = {
+			'vpn-check': 'VPN-Tunnel wird geprüft...',
+			'tcp-check': 'Host-Erreichbarkeit wird geprüft...',
+			'credentials': 'Credentials werden verarbeitet...',
+			'rdp-file': 'RDP-Konfiguration wird erstellt...',
+			'mstsc': 'Remote Desktop wird gestartet...',
+			'cmdkey': 'Credentials werden gespeichert...',
+		};
+		if (data.status === 'active' && statusMessages[data.step]) {
+			$('#rdp-connecting-status').textContent = statusMessages[data.step];
+		}
+		if (data.status === 'done' && data.step === 'mstsc') {
+			$('#rdp-connecting-status').textContent = 'Remote Desktop Verbindung aktiv';
+		}
 	}
 	if (data.message) {
 		$('#rdp-connecting-status').textContent = data.message;
