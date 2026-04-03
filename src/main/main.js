@@ -416,6 +416,7 @@ async function connectTunnel() {
         const config = await apiClient.fetchConfig();
         if (config) {
           await wgService.writeConfig(WG_CONFIG_FILE, config);
+          store.set('tunnel.configPath', WG_CONFIG_FILE);
           log.info('Konfiguration vom Server aktualisiert');
         }
       } catch (err) {
@@ -838,14 +839,20 @@ app.on('ready', () => {
     ]).catch(err => log.warn('Autostart-Sync fehlgeschlagen:', err.message));
   }
 
-  // Auto-Connect (mit Retry bei Netzwerk-Problemen)
-  if (store.get('tunnel.autoConnect', true) && store.get('tunnel.configPath', '')) {
+  // Auto-Connect (Server-URL reicht, configPath nicht zwingend nötig)
+  const hasServer = store.get('server.url', '') && store.get('server.apiKey', '');
+  const hasConfig = !!store.get('tunnel.configPath', '');
+  if (store.get('tunnel.autoConnect', true) && (hasServer || hasConfig)) {
+    log.info(`Auto-Connect: server=${!!hasServer}, configPath=${hasConfig}`);
     const MAX_RETRIES = 5;
     const RETRY_DELAY = 5000;
     const attemptAutoConnect = async (attempt = 1) => {
       log.info(`Auto-Connect Versuch ${attempt}/${MAX_RETRIES}...`);
       try {
         await connectTunnel();
+        if (!tunnelState.connected) {
+          throw new Error('Tunnel nicht verbunden nach connectTunnel()');
+        }
       } catch (err) {
         log.error(`Auto-Connect Versuch ${attempt} fehlgeschlagen: ${err.message}`);
         if (attempt < MAX_RETRIES) {
@@ -861,6 +868,8 @@ app.on('ready', () => {
     } else {
       attemptAutoConnect();
     }
+  } else {
+    log.info(`Auto-Connect übersprungen: autoConnect=${store.get('tunnel.autoConnect', true)}, server=${!!hasServer}, configPath=${hasConfig}`);
   }
 
   // Auto-Update
