@@ -194,8 +194,9 @@ locale.onChange((loc) => {
   const selectEl = $('#locale-select');
   if (selectEl) selectEl.value = loc;
   updateDOM();
+  updateUI();
   // Re-render dynamic RDP cards with new locale
-  if (panelOpen) renderRdpCards(rdpServices);
+  if (rdpServices.length) renderRdpCards(rdpServices);
 });
 
 // Locale dropdown change handler
