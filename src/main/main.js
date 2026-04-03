@@ -80,6 +80,9 @@ if (!gotLock) {
 // ── Konfiguration ────────────────────────────────────────────
 const crypto = require('crypto');
 const fsSync = require('fs');
+const { execFile: _execFile } = require('child_process');
+const { promisify: _promisify } = require('util');
+const execFileAsync = _promisify(_execFile);
 
 const keyStore = new (require('electron-store'))({ name: 'gatecontrol-pro-keyfile', encryptionKey: 'gc-pro-bootstrap' });
 
@@ -780,9 +783,28 @@ function registerIpcHandlers() {
     }
   });
 
-  // ── Autostart ───────────────────────────────────────────
-  ipcMain.handle('autostart:set', (_, enabled) => {
-    app.setLoginItemSettings({ openAtLogin: enabled });
+  // ── Autostart (Task Scheduler wegen requireAdministrator) ──
+  ipcMain.handle('autostart:set', async (_, enabled) => {
+    const taskName = 'GateControlProAutostart';
+    try {
+      if (enabled) {
+        const exePath = app.getPath('exe');
+        await execFileAsync('schtasks', [
+          '/Create', '/F',
+          '/TN', taskName,
+          '/TR', `"${exePath}"`,
+          '/SC', 'ONLOGON',
+          '/RL', 'HIGHEST',
+          '/DELAY', '0000:10',
+        ]);
+        log.info(`Autostart aktiviert: ${exePath}`);
+      } else {
+        await execFileAsync('schtasks', ['/Delete', '/F', '/TN', taskName]);
+        log.info('Autostart deaktiviert');
+      }
+    } catch (err) {
+      log.error('Autostart-Konfiguration fehlgeschlagen:', err.message);
+    }
     store.set('app.startWithWindows', enabled);
     return enabled;
   });
@@ -805,24 +827,39 @@ app.on('ready', () => {
   createWindow();
   createTray();
 
-  // Autostart mit Windows synchronisieren
-  app.setLoginItemSettings({ openAtLogin: store.get('app.startWithWindows', true) });
+  // Autostart mit Windows synchronisieren (Task Scheduler)
+  if (store.get('app.startWithWindows', true)) {
+    const taskName = 'GateControlProAutostart';
+    const exePath = app.getPath('exe');
+    execFileAsync('schtasks', [
+      '/Create', '/F', '/TN', taskName,
+      '/TR', `"${exePath}"`,
+      '/SC', 'ONLOGON', '/RL', 'HIGHEST', '/DELAY', '0000:10',
+    ]).catch(err => log.warn('Autostart-Sync fehlgeschlagen:', err.message));
+  }
 
-  // Auto-Connect (warten bis Fenster bereit ist)
+  // Auto-Connect (mit Retry bei Netzwerk-Problemen)
   if (store.get('tunnel.autoConnect', true) && store.get('tunnel.configPath', '')) {
-    const doAutoConnect = () => {
-      log.info('Auto-Connect aktiviert, verbinde...');
-      connectTunnel().catch(err => {
-        log.error('Auto-Connect fehlgeschlagen:', err.message);
-        if (mainWindow) {
-          mainWindow.webContents.send('tunnel:error', err.message);
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY = 5000;
+    const attemptAutoConnect = async (attempt = 1) => {
+      log.info(`Auto-Connect Versuch ${attempt}/${MAX_RETRIES}...`);
+      try {
+        await connectTunnel();
+      } catch (err) {
+        log.error(`Auto-Connect Versuch ${attempt} fehlgeschlagen: ${err.message}`);
+        if (attempt < MAX_RETRIES) {
+          setTimeout(() => attemptAutoConnect(attempt + 1), RETRY_DELAY);
+        } else {
+          log.error('Auto-Connect endgültig fehlgeschlagen nach allen Versuchen');
+          broadcastState('error', 'Auto-Connect fehlgeschlagen — bitte manuell verbinden.');
         }
-      });
+      }
     };
     if (mainWindow) {
-      mainWindow.webContents.once('did-finish-load', doAutoConnect);
+      mainWindow.webContents.once('did-finish-load', () => attemptAutoConnect());
     } else {
-      doAutoConnect();
+      attemptAutoConnect();
     }
   }
 

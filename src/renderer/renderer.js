@@ -1116,31 +1116,12 @@ if (dnsBtn) {
 
 		try {
 			const result = await dns.leakTest();
-			dnsResult.style.display = '';
-			dnsResult.textContent = '';
-
 			if (result.passed) {
-				dnsResult.className = 'dns-result pass';
-				const title = document.createElement('div');
-				title.style.fontWeight = '600';
-				title.textContent = 'Kein DNS-Leak erkannt';
-				dnsResult.appendChild(title);
-
-				const detail = document.createElement('div');
-				detail.style.marginTop = '4px';
-				detail.textContent = `Dein Traffic läuft über den VPN-Tunnel. DNS: ${(result.dnsServers || []).join(', ')}`;
-				dnsResult.appendChild(detail);
+				const servers = (result.dnsServers || []).join(', ');
+				showToast(`Kein DNS-Leak erkannt. DNS: ${servers}`, 'success', 6000);
 			} else {
-				dnsResult.className = 'dns-result fail';
-				const title = document.createElement('div');
-				title.style.fontWeight = '600';
-				title.textContent = 'DNS-Leak möglich';
-				dnsResult.appendChild(title);
-
-				const detail = document.createElement('div');
-				detail.style.marginTop = '4px';
-				detail.textContent = `DNS-Anfragen gehen möglicherweise am VPN vorbei. Aktiviere den Kill-Switch. DNS: ${(result.dnsServers || []).join(', ')}`;
-				dnsResult.appendChild(detail);
+				const servers = (result.dnsServers || []).join(', ');
+				showToast(`DNS-Leak möglich — DNS-Anfragen gehen am VPN vorbei. DNS: ${servers}`, 'error', 8000);
 			}
 		} catch {
 			showToast('DNS-Leak-Test fehlgeschlagen — Verbindung prüfen.', 'error', 5000);
