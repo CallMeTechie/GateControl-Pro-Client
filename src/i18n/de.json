@@ -47,6 +47,75 @@
     "sessions": "RDP Sessions ({{ count }})",
     "sessionTimeout": "RDP-Sitzung läuft ab (Route {{ routeId }}). Noch {{ minutes }} Minuten."
   },
+  "status": {
+    "connected": "Verbunden",
+    "disconnected": "Getrennt",
+    "connecting": "Verbinde...",
+    "reconnecting": "Reconnecting..."
+  },
+  "action": {
+    "connect": "Verbinden",
+    "disconnect": "Trennen",
+    "importFile": "Datei importieren",
+    "scanQr": "QR scannen"
+  },
+  "dns": {
+    "testBtn": "DNS-Leak-Test",
+    "testing": "Teste...",
+    "testFailed": "DNS-Leak-Test fehlgeschlagen — Verbindung prüfen.",
+    "noLeak": "Kein DNS-Leak erkannt",
+    "noLeakDetail": "Kein DNS-Leak erkannt. DNS: {{ servers }}",
+    "noLeakKillSwitch": "Kein DNS-Leak erkannt — Kill-Switch aktiv, DNS geht durch VPN.",
+    "leak": "DNS-Leak möglich",
+    "leakDetail": "DNS-Anfragen gehen möglicherweise am VPN vorbei. DNS: {{ servers }}",
+    "leakNotConnected": "DNS-Leak möglich — VPN-Tunnel nicht verbunden.",
+    "leakNoKillSwitch": "DNS-Leak möglich — Kill-Switch nicht aktiv.",
+    "resolveFailed": "DNS-Auflösung fehlgeschlagen — DNS-Server nicht erreichbar.",
+    "activeDns": "Aktiver DNS"
+  },
+  "logs": {
+    "loading": "Lade Logs...",
+    "empty": "Keine Logs verfügbar"
+  },
+  "server": {
+    "testInProgress": "Teste Verbindung...",
+    "testSuccess": "Verbindung erfolgreich!",
+    "testError": "Fehler: {{ error }}",
+    "urlAndKeyRequired": "URL und API-Key erforderlich",
+    "registering": "Registriere Client...",
+    "registered": "Registriert! Peer-ID: {{ peerId }}",
+    "configImported": "Config importiert: {{ path }}",
+    "importError": "Import-Fehler: {{ error }}",
+    "qrSuccess": "QR-Code erkannt! Config importiert.",
+    "qrTimeout": "QR-Scan Timeout — kein Code erkannt.",
+    "cameraError": "Kamera-Fehler: {{ error }}"
+  },
+  "split": {
+    "activateOnReconnect": "Split-Tunneling wird nach Neuverbindung aktiv.",
+    "fullTunnelOnReconnect": "Full-Tunnel wird nach Neuverbindung aktiv.",
+    "noRoutes": "Keine Routen eingetragen.",
+    "routesSaved": "{{ count }} Route(n) gespeichert. Verbindung wird neu aufgebaut...",
+    "routesSavedPending": "{{ count }} Route(n) gespeichert. Wird beim nächsten Verbinden aktiv."
+  },
+  "stats": {
+    "period24h": "24h",
+    "period7d": "7 Tage",
+    "period30d": "30 Tage",
+    "periodTotal": "Gesamt"
+  },
+  "update": {
+    "available": "Update v{{ version }}",
+    "readyToInstall": "bereit zur Installation",
+    "later": "Später",
+    "install": "Jetzt neustarten",
+    "noUpdate": "Kein Update verfügbar — neueste Version installiert.",
+    "checkFailed": "Update-Prüfung fehlgeschlagen."
+  },
+  "peer": {
+    "expired": "Dein VPN-Zugang ist abgelaufen!",
+    "expiresToday": "Dein VPN-Zugang läuft heute ab!",
+    "expiresInDays": "Dein VPN-Zugang läuft in {{ days }} Tagen ab"
+  },
   "rdpProgress": {
     "vpnCheck": "VPN-Tunnel aktiv",
     "vpnCheckActive": "VPN-Tunnel wird geprüft...",

@@ -9,8 +9,9 @@
 const {
 	tunnel, server, config, killSwitch, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, getVersion,
-	window: win, rdp, onNavigate,
+	window: win, rdp, onNavigate, locale,
 } = window.gatecontrol;
+const { t } = window.gatecontrol.i18n;
 
 // ── Helpers ─────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -83,6 +84,69 @@ function setStaticIcon(element, iconKey) {
 	element.innerHTML = SVG_ICONS[iconKey]; // SAFE: static string literal from SVG_ICONS
 }
 
+// ── i18n DOM update ─────────────────────────────────────────
+function updateDOM() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    el.placeholder = t(el.dataset.i18nPlaceholder);
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    el.title = t(el.dataset.i18nTitle);
+  });
+  document.documentElement.lang = window.gatecontrol.i18n.getLocale();
+
+  // Elements with mixed content (SVG + text) need special handling
+  updateMixedContentElements();
+}
+
+function updateMixedContentElements() {
+  // DNS test button (SVG icon + text)
+  const dnsTestBtn = $('#dns-test-btn');
+  if (dnsTestBtn && !dnsTestBtn.disabled) {
+    const svg = dnsTestBtn.querySelector('svg');
+    if (svg) {
+      const svgClone = svg.cloneNode(true);
+      dnsTestBtn.textContent = '';
+      dnsTestBtn.appendChild(svgClone);
+      dnsTestBtn.appendChild(document.createTextNode('\n' + t('dns.testBtn')));
+    }
+  }
+
+  // Import file button (SVG + text)
+  const importFileBtn = $('#btn-import-file');
+  if (importFileBtn) {
+    const svg = importFileBtn.querySelector('svg');
+    if (svg) {
+      const svgClone = svg.cloneNode(true);
+      importFileBtn.textContent = '';
+      importFileBtn.appendChild(svgClone);
+      importFileBtn.appendChild(document.createTextNode('\n' + t('action.importFile')));
+    }
+  }
+
+  // Import QR button (SVG + text)
+  const importQrBtn = $('#btn-import-qr');
+  if (importQrBtn) {
+    const svg = importQrBtn.querySelector('svg');
+    if (svg) {
+      const svgClone = svg.cloneNode(true);
+      importQrBtn.textContent = '';
+      importQrBtn.appendChild(svgClone);
+      importQrBtn.appendChild(document.createTextNode('\n' + t('action.scanQr')));
+    }
+  }
+
+  // RDP filter select options
+  const filterSelect = $('#rdp-filter-select');
+  if (filterSelect && filterSelect.options.length >= 3) {
+    filterSelect.options[0].textContent = t('rdp.filterAll');
+    filterSelect.options[1].textContent = t('rdp.filterOnline');
+    filterSelect.options[2].textContent = t('rdp.filterOffline');
+  }
+}
+
 // ── State ────────────────────────────────────────────────
 let state = { status: 'disconnected', connected: false };
 let activePermissions = { services: true, traffic: true, dns: true };
@@ -118,6 +182,27 @@ const el = {
 	splitRoutesSection: $('#split-routes-section'),
 	logOutput:       $('#log-output'),
 };
+
+// ── Locale initialization ───────────────────────────────────
+locale.get().then(loc => {
+  const selectEl = $('#locale-select');
+  if (selectEl) selectEl.value = loc;
+  updateDOM();
+});
+
+locale.onChange((loc) => {
+  const selectEl = $('#locale-select');
+  if (selectEl) selectEl.value = loc;
+  updateDOM();
+});
+
+// Locale dropdown change handler
+const localeSelect = $('#locale-select');
+if (localeSelect) {
+  localeSelect.addEventListener('change', (e) => {
+    locale.set(e.target.value);
+  });
+}
 
 // ── Version ──────────────────────────────────────────────
 getVersion().then(v => {
@@ -229,11 +314,11 @@ function togglePin() {
 	const navBtn = $('#nav-rdp');
 	if (pinned) {
 		btn.classList.add('pinned');
-		btn.title = 'Panel abdocken';
+		btn.title = t('rdp.unpinPanel');
 		navBtn.classList.add('rdp-pinned');
 	} else {
 		btn.classList.remove('pinned');
-		btn.title = 'Panel andocken';
+		btn.title = t('rdp.pinPanel');
 		navBtn.classList.remove('rdp-pinned');
 	}
 	rdp.pinToggle(pinned);
@@ -331,13 +416,13 @@ function createRdpCard(svc) {
 	statusTag.className = 'tag';
 	if (svc.status?.online) {
 		statusTag.classList.add('tag-online');
-		statusTag.textContent = 'Online';
+		statusTag.textContent = t('rdp.statusOnline');
 	} else if (svc.maintenance_active) {
 		statusTag.classList.add('tag-warn');
-		statusTag.textContent = 'Wartung';
+		statusTag.textContent = t('rdp.statusMaintenance');
 	} else {
 		statusTag.classList.add('tag-offline');
-		statusTag.textContent = 'Offline';
+		statusTag.textContent = t('rdp.statusOffline');
 	}
 	top.appendChild(statusTag);
 	card.appendChild(top);
@@ -346,10 +431,10 @@ function createRdpCard(svc) {
 	if (svc.tags && svc.tags.length > 0) {
 		const tagsRow = document.createElement('div');
 		tagsRow.className = 'rdp-card-tags';
-		svc.tags.forEach(t => {
+		svc.tags.forEach(tg => {
 			const tag = document.createElement('span');
 			tag.className = 'tag tag-neutral';
-			tag.textContent = t;
+			tag.textContent = tg;
 			tagsRow.appendChild(tag);
 		});
 		card.appendChild(tagsRow);
@@ -363,17 +448,17 @@ function createRdpCard(svc) {
 	const accessRow = document.createElement('div');
 	accessRow.className = 'rdp-card-meta-row';
 	const accessLabel = document.createElement('span');
-	accessLabel.textContent = 'Zugriff';
+	accessLabel.textContent = t('rdp.access');
 	accessRow.appendChild(accessLabel);
 	const accessTag = document.createElement('span');
 	accessTag.className = 'tag';
 	accessTag.style.fontSize = '9px';
 	if (svc.access_type === 'external') {
 		accessTag.classList.add('tag-purple');
-		accessTag.textContent = 'Extern+Intern';
+		accessTag.textContent = t('rdp.accessExternal');
 	} else {
 		accessTag.classList.add('tag-blue');
-		accessTag.textContent = 'Intern';
+		accessTag.textContent = t('rdp.accessInternal');
 	}
 	accessRow.appendChild(accessTag);
 	meta.appendChild(accessRow);
@@ -382,18 +467,18 @@ function createRdpCard(svc) {
 	const credRow = document.createElement('div');
 	credRow.className = 'rdp-card-meta-row';
 	const credLabel = document.createElement('span');
-	credLabel.textContent = 'Credentials';
+	credLabel.textContent = t('rdp.credentials');
 	credRow.appendChild(credLabel);
 	const credValue = document.createElement('span');
 	if (svc.credential_mode === 'full') {
 		credValue.style.color = 'var(--accent)';
-		credValue.textContent = 'Vollständig';
+		credValue.textContent = t('rdp.credentialsFull');
 	} else if (svc.credential_mode === 'user_only') {
 		credValue.style.color = 'var(--warn)';
-		credValue.textContent = 'Nur Username';
+		credValue.textContent = t('rdp.credentialsUserOnly');
 	} else {
 		credValue.style.color = 'var(--text-3)';
-		credValue.textContent = 'Keine';
+		credValue.textContent = t('rdp.credentialsNone');
 	}
 	credRow.appendChild(credValue);
 	meta.appendChild(credRow);
@@ -418,12 +503,12 @@ function createRdpCard(svc) {
 		const maintRow = document.createElement('div');
 		maintRow.className = 'rdp-card-meta-row';
 		const maintLabel = document.createElement('span');
-		maintLabel.textContent = 'Wartung';
+		maintLabel.textContent = t('rdp.maintenance');
 		maintRow.appendChild(maintLabel);
 		const maintValue = document.createElement('span');
 		if (svc.maintenance_active) {
 			maintValue.style.color = 'var(--warn)';
-			maintValue.textContent = 'Aktiv';
+			maintValue.textContent = t('rdp.maintenanceActive');
 		} else {
 			maintValue.textContent = svc.maintenance_window;
 		}
@@ -446,7 +531,7 @@ function createRdpCard(svc) {
 		wolBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			rdp.wol(svc.id);
-			wolBtn.textContent = 'Gesendet';
+			wolBtn.textContent = t('rdp.wolSent');
 			wolBtn.disabled = true;
 			setTimeout(() => { wolBtn.disabled = false; wolBtn.textContent = 'WoL'; }, 5000);
 		});
@@ -462,7 +547,7 @@ function createRdpCard(svc) {
 	const playSpan = document.createElement('span');
 	setStaticIcon(playSpan, 'play'); // SAFE: static SVG
 	connectBtn.appendChild(playSpan);
-	connectBtn.appendChild(document.createTextNode('Verbinden'));
+	connectBtn.appendChild(document.createTextNode(t('rdp.connect')));
 	connectBtn.addEventListener('click', (e) => {
 		e.stopPropagation();
 		startRdpConnect(svc);
@@ -489,13 +574,13 @@ function showRdpDetail(svc) {
 	statusEl.className = 'tag';
 	if (svc.status?.online) {
 		statusEl.classList.add('tag-online');
-		statusEl.textContent = 'Online';
+		statusEl.textContent = t('rdp.statusOnline');
 	} else if (svc.maintenance_active) {
 		statusEl.classList.add('tag-warn');
-		statusEl.textContent = 'Wartung';
+		statusEl.textContent = t('rdp.statusMaintenance');
 	} else {
 		statusEl.classList.add('tag-offline');
-		statusEl.textContent = 'Offline';
+		statusEl.textContent = t('rdp.statusOffline');
 	}
 
 	// Build detail body
@@ -508,24 +593,24 @@ function showRdpDetail(svc) {
 
 	const fields = [
 		{ label: 'Host', value: `${svc.host}:${svc.port || 3389}`, mono: true },
-		{ label: 'Zugriff', value: svc.access_type === 'external' ? 'Extern+Intern' : 'Nur intern', tag: svc.access_type === 'external' ? 'tag-purple' : 'tag-blue' },
-		{ label: 'Credentials', value: svc.credential_mode === 'full' ? 'Vollständig' : svc.credential_mode === 'user_only' ? 'Nur Username' : 'Keine', color: svc.credential_mode === 'full' ? 'var(--accent)' : svc.credential_mode === 'user_only' ? 'var(--warn)' : null },
+		{ label: t('rdp.access'), value: svc.access_type === 'external' ? t('rdp.accessExternal') : t('rdp.accessInternalOnly'), tag: svc.access_type === 'external' ? 'tag-purple' : 'tag-blue' },
+		{ label: t('rdp.credentials'), value: svc.credential_mode === 'full' ? t('rdp.credentialsFull') : svc.credential_mode === 'user_only' ? t('rdp.credentialsUserOnly') : t('rdp.credentialsNone'), color: svc.credential_mode === 'full' ? 'var(--accent)' : svc.credential_mode === 'user_only' ? 'var(--warn)' : null },
 		{ label: 'Domain', value: svc.domain || '-', mono: true },
-		{ label: 'Auflösung', value: svc.resolution || 'Vollbild' },
-		{ label: 'NLA', value: svc.nla ? 'Erzwungen' : 'Optional', color: svc.nla ? 'var(--accent)' : null },
+		{ label: t('rdp.resolution'), value: svc.resolution || t('rdp.resolutionFullscreen') },
+		{ label: 'NLA', value: svc.nla ? t('rdp.nlaEnforced') : t('rdp.nlaOptional'), color: svc.nla ? 'var(--accent)' : null },
 	];
 
 	if (svc.redirects) {
 		fields.push({ label: 'Redirects', value: svc.redirects });
 	}
 	if (svc.timeout_minutes) {
-		fields.push({ label: 'Timeout', value: `${svc.timeout_minutes} Min` });
+		fields.push({ label: 'Timeout', value: t('rdp.timeoutMin', { minutes: svc.timeout_minutes }) });
 	}
 	if (svc.maintenance_window) {
-		fields.push({ label: 'Wartung', value: svc.maintenance_window, full: true });
+		fields.push({ label: t('rdp.maintenance'), value: svc.maintenance_window, full: true });
 	}
 	if (svc.notes) {
-		fields.push({ label: 'Notizen', value: svc.notes, full: true, dim: true });
+		fields.push({ label: t('rdp.notes'), value: svc.notes, full: true, dim: true });
 	}
 
 	fields.forEach(f => {
@@ -568,10 +653,10 @@ function showRdpDetail(svc) {
 	if (svc.tags && svc.tags.length > 0) {
 		const tagsRow = document.createElement('div');
 		tagsRow.className = 'rdp-card-tags';
-		svc.tags.forEach(t => {
+		svc.tags.forEach(tg => {
 			const tag = document.createElement('span');
 			tag.className = 'tag tag-neutral';
-			tag.textContent = t;
+			tag.textContent = tg;
 			tagsRow.appendChild(tag);
 		});
 		body.appendChild(tagsRow);
@@ -587,7 +672,7 @@ function showRdpDetail(svc) {
 	const playIcon = document.createElement('span');
 	setStaticIcon(playIcon, 'playLarge'); // SAFE: static SVG
 	connectBtn.appendChild(playIcon);
-	connectBtn.appendChild(document.createTextNode('Remote Desktop verbinden'));
+	connectBtn.appendChild(document.createTextNode(t('rdp.connectFull')));
 	connectBtn.addEventListener('click', () => startRdpConnect(svc));
 	body.appendChild(connectBtn);
 
@@ -621,10 +706,10 @@ async function startRdpConnect(svc, opts = {}) {
 
 		// Connection started successfully — progress updates come via IPC events
 		if (result && result.success !== false) {
-			$('#rdp-connecting-status').textContent = 'Remote Desktop Verbindung aktiv';
+			$('#rdp-connecting-status').textContent = t('rdp.connectionActive');
 		}
 	} catch (err) {
-		$('#rdp-connecting-status').textContent = err.message || 'Verbindungsfehler';
+		$('#rdp-connecting-status').textContent = err.message || t('rdp.connectionError');
 	}
 }
 
@@ -634,7 +719,7 @@ function showPasswordPrompt(svc) {
 	const userEl = $('#rdp-password-user');
 	const username = svc.username || '';
 	const domain = svc.domain || 'WORKGROUP';
-	userEl.textContent = `Benutzer: ${domain}\\${username}`;
+	userEl.textContent = t('rdp.user', { user: `${domain}\\${username}` });
 	$('#rdp-password-input').value = '';
 	showRdpView('password');
 	$('#rdp-password-input').focus();
@@ -658,8 +743,8 @@ $('#rdp-password-input').addEventListener('keydown', (e) => {
 function showMaintenanceWarning(svc, windowText) {
 	$('#rdp-maintenance-title').textContent = svc.name;
 	$('#rdp-maintenance-window').textContent =
-		windowText ? `Geplante Wartung: ${windowText}. Trotzdem verbinden?`
-		           : 'Ausserhalb des Wartungsfensters. Trotzdem verbinden?';
+		windowText ? t('rdp.scheduledMaintenance', { window: windowText })
+		           : t('rdp.outsideMaintenanceConnect');
 	showRdpView('maintenance');
 }
 
@@ -672,22 +757,24 @@ $('#rdp-maintenance-force').addEventListener('click', () => {
 });
 
 // ── Connecting Progress ──────────────────────────────────
-const PROGRESS_STEPS = [
-	{ id: 'vpn-check',   label: 'VPN-Tunnel aktiv' },
-	{ id: 'tcp-check',   label: 'Host erreichbar (TCP-Check)' },
-	{ id: 'credentials', label: 'Credentials verarbeitet' },
-	{ id: 'rdp-file',    label: 'RDP-Konfiguration erstellt' },
-	{ id: 'mstsc',       label: 'Remote Desktop wird gestartet...' },
-];
+function getProgressSteps() {
+  return [
+    { id: 'vpn-check',   label: t('rdpProgress.vpnCheck') },
+    { id: 'tcp-check',   label: t('rdpProgress.tcpCheck') },
+    { id: 'credentials', label: t('rdpProgress.credentials') },
+    { id: 'rdp-file',    label: t('rdpProgress.rdpFile') },
+    { id: 'mstsc',       label: t('rdpProgress.mstsc') },
+  ];
+}
 
 function showConnectingProgress(svc) {
 	$('#rdp-connecting-title').textContent = svc.name;
-	$('#rdp-connecting-status').textContent = 'Verbindung wird hergestellt...';
+	$('#rdp-connecting-status').textContent = t('rdp.connectionEstablishing');
 
 	const stepsContainer = $('#rdp-progress-steps');
 	stepsContainer.textContent = '';
 
-	PROGRESS_STEPS.forEach(step => {
+	getProgressSteps().forEach(step => {
 		const stepEl = document.createElement('div');
 		stepEl.className = 'rdp-step';
 		stepEl.id = `rdp-step-${step.id}`;
@@ -736,18 +823,18 @@ rdp.onProgress((data) => {
 
 		// Update status text based on current step
 		const statusMessages = {
-			'vpn-check': 'VPN-Tunnel wird geprüft...',
-			'tcp-check': 'Host-Erreichbarkeit wird geprüft...',
-			'credentials': 'Credentials werden verarbeitet...',
-			'rdp-file': 'RDP-Konfiguration wird erstellt...',
-			'mstsc': 'Remote Desktop wird gestartet...',
-			'cmdkey': 'Credentials werden gespeichert...',
+			'vpn-check': t('rdpProgress.vpnCheckActive'),
+			'tcp-check': t('rdpProgress.tcpCheckActive'),
+			'credentials': t('rdpProgress.credentialsActive'),
+			'rdp-file': t('rdpProgress.rdpFileActive'),
+			'mstsc': t('rdpProgress.mstscActive'),
+			'cmdkey': t('rdpProgress.cmdkeyActive'),
 		};
 		if (data.status === 'active' && statusMessages[data.step]) {
 			$('#rdp-connecting-status').textContent = statusMessages[data.step];
 		}
 		if (data.status === 'done' && data.step === 'mstsc') {
-			$('#rdp-connecting-status').textContent = 'Remote Desktop Verbindung aktiv';
+			$('#rdp-connecting-status').textContent = t('rdp.connectionActive');
 		}
 	}
 	if (data.message) {
@@ -816,18 +903,18 @@ function updateUI() {
 		el.ringFill.classList.add('connected');
 		el.statusIcon.classList.add('connected');
 		setStaticIcon(el.statusIcon, 'connected'); // SAFE: static SVG
-		el.statusLabel.textContent = 'Verbunden';
+		el.statusLabel.textContent = t('status.connected');
 		el.statusLabel.style.color = 'var(--accent)';
 
 		el.connectBtn.classList.add('connected');
 		el.connectBtn.classList.remove('connecting');
-		el.connectBtn.querySelector('.connect-btn-text').textContent = 'Trennen';
+		el.connectBtn.querySelector('.connect-btn-text').textContent = t('action.disconnect');
 
 	} else if (status === 'connecting' || status === 'reconnecting') {
 		el.ringFill.classList.add('connecting');
 		el.statusIcon.classList.add('connecting');
 		setStaticIcon(el.statusIcon, 'connecting'); // SAFE: static SVG
-		el.statusLabel.textContent = status === 'reconnecting' ? 'Reconnecting...' : 'Verbinde...';
+		el.statusLabel.textContent = t(status === 'reconnecting' ? 'status.reconnecting' : 'status.connecting');
 		el.statusLabel.style.color = 'var(--warn)';
 
 		el.connectBtn.classList.remove('connected');
@@ -835,11 +922,11 @@ function updateUI() {
 
 	} else {
 		setStaticIcon(el.statusIcon, 'disconnected'); // SAFE: static SVG
-		el.statusLabel.textContent = 'Getrennt';
+		el.statusLabel.textContent = t('status.disconnected');
 		el.statusLabel.style.color = 'var(--text-3)';
 
 		el.connectBtn.classList.remove('connected', 'connecting');
-		el.connectBtn.querySelector('.connect-btn-text').textContent = 'Verbinden';
+		el.connectBtn.querySelector('.connect-btn-text').textContent = t('action.connect');
 	}
 
 	// Stats
@@ -1073,10 +1160,10 @@ async function loadTraffic() {
 	grid.textContent = '';
 
 	const periods = [
-		{ label: '24h', data: data.last24h },
-		{ label: '7 Tage', data: data.last7d },
-		{ label: '30 Tage', data: data.last30d },
-		{ label: 'Gesamt', data: data.total },
+		{ label: t('stats.period24h'), data: data.last24h },
+		{ label: t('stats.period7d'), data: data.last7d },
+		{ label: t('stats.period30d'), data: data.last30d },
+		{ label: t('stats.periodTotal'), data: data.total },
 	];
 
 	for (const p of periods) {
@@ -1111,7 +1198,7 @@ const dnsResult = $('#dns-result');
 if (dnsBtn) {
 	dnsBtn.addEventListener('click', async () => {
 		dnsBtn.disabled = true;
-		dnsBtn.textContent = 'Teste...';
+		dnsBtn.textContent = t('dns.testing');
 		dnsResult.style.display = 'none';
 
 		try {
@@ -1125,28 +1212,24 @@ if (dnsBtn) {
 			const expectedDns = vpnDns.split(',').map(s => s.trim()).filter(Boolean);
 
 			if (!connected) {
-				showToast('DNS-Leak möglich — VPN-Tunnel nicht verbunden.', 'error', 8000);
+				showToast(t('dns.leakNotConnected'), 'error', 8000);
 			} else if (!resolveOk) {
-				showToast('DNS-Auflösung fehlgeschlagen — DNS-Server nicht erreichbar.', 'error', 8000);
+				showToast(t('dns.resolveFailed'), 'error', 8000);
 			} else if (killSwitch) {
-				// Kill-Switch aktiv + Tunnel verbunden + DNS löst auf
-				// → DNS MUSS durch den VPN-Tunnel gehen (alles andere ist geblockt)
 				const info = dnsServer ? ` DNS: ${dnsServer}` : '';
-				showToast(`Kein DNS-Leak erkannt — Kill-Switch aktiv, DNS geht durch VPN.${info}`, 'success', 6000);
+				showToast(t('dns.noLeakKillSwitch') + info, 'success', 6000);
 			} else if (dnsServer && expectedDns.includes(dnsServer)) {
-				// Kein Kill-Switch, aber DNS-Server stimmt mit VPN-Config überein
-				showToast(`Kein DNS-Leak erkannt. DNS: ${dnsServer}`, 'success', 6000);
+				showToast(t('dns.noLeakDetail', { servers: dnsServer }), 'success', 6000);
 			} else {
-				// Kein Kill-Switch und DNS-Server weicht ab
-				const info = dnsServer ? ` Aktiver DNS: ${dnsServer}` : '';
-				showToast(`DNS-Leak möglich — Kill-Switch nicht aktiv.${info}`, 'warning', 8000);
+				const info = dnsServer ? ` ${t('dns.activeDns')}: ${dnsServer}` : '';
+				showToast(t('dns.leakNoKillSwitch') + info, 'warning', 8000);
 			}
 		} catch {
-			showToast('DNS-Leak-Test fehlgeschlagen — Verbindung prüfen.', 'error', 5000);
+			showToast(t('dns.testFailed'), 'error', 5000);
 		}
 
 		dnsBtn.disabled = false;
-		dnsBtn.textContent = 'DNS-Leak-Test';
+		dnsBtn.textContent = t('dns.testBtn');
 	});
 }
 
@@ -1177,18 +1260,18 @@ $('#toggle-api-key').addEventListener('click', () => {
 
 // Server test
 $('#btn-test-server').addEventListener('click', async () => {
-	showServerStatus('Teste Verbindung...', 'info');
+	showServerStatus(t('server.testInProgress'), 'info');
 	const url = el.serverUrl.value.trim();
 	const key = el.apiKey.value.trim();
 	if (!url || !key) {
-		showServerStatus('URL und API-Key erforderlich', 'error');
+		showServerStatus(t('server.urlAndKeyRequired'), 'error');
 		return;
 	}
 	const result = await server.test({ url, apiKey: key });
 	if (result.success) {
-		showServerStatus('Verbindung erfolgreich!', 'success');
+		showServerStatus(t('server.testSuccess'), 'success');
 	} else {
-		showServerStatus(`Fehler: ${result.error}`, 'error');
+		showServerStatus(t('server.testError', { error: result.error }), 'error');
 	}
 });
 
@@ -1197,15 +1280,15 @@ $('#btn-save-server').addEventListener('click', async () => {
 	const url = el.serverUrl.value.trim();
 	const key = el.apiKey.value.trim();
 	if (!url || !key) {
-		showServerStatus('URL und API-Key erforderlich', 'error');
+		showServerStatus(t('server.urlAndKeyRequired'), 'error');
 		return;
 	}
-	showServerStatus('Registriere Client...', 'info');
+	showServerStatus(t('server.registering'), 'info');
 	const result = await server.setup({ url, apiKey: key });
 	if (result.success) {
-		showServerStatus(`Registriert! Peer-ID: ${result.peerId}`, 'success');
+		showServerStatus(t('server.registered', { peerId: result.peerId }), 'success');
 	} else {
-		showServerStatus(`Fehler: ${result.error}`, 'error');
+		showServerStatus(t('server.testError', { error: result.error }), 'error');
 	}
 });
 
@@ -1222,9 +1305,9 @@ function showServerStatus(message, type) {
 $('#btn-import-file').addEventListener('click', async () => {
 	const result = await config.importFile();
 	if (result.success) {
-		showServerStatus(`Config importiert: ${result.path}`, 'success');
+		showServerStatus(t('server.configImported', { path: result.path }), 'success');
 	} else if (result.error) {
-		showServerStatus(`Import-Fehler: ${result.error}`, 'error');
+		showServerStatus(t('server.importError', { error: result.error }), 'error');
 	}
 });
 
@@ -1242,11 +1325,11 @@ $('#btn-import-qr').addEventListener('click', async () => {
 		setTimeout(() => {
 			if (qrStream) {
 				stopQRScan();
-				showServerStatus('QR-Scan Timeout \u2014 kein Code erkannt.', 'error');
+				showServerStatus(t('server.qrTimeout'), 'error');
 			}
 		}, 60000);
 	} catch (err) {
-		showServerStatus(`Kamera-Fehler: ${err.message}`, 'error');
+		showServerStatus(t('server.cameraError', { error: err.message }), 'error');
 	}
 });
 
@@ -1254,7 +1337,7 @@ $('#btn-qr-cancel').addEventListener('click', stopQRScan);
 
 function stopQRScan() {
 	if (qrStream) {
-		qrStream.getTracks().forEach(t => t.stop());
+		qrStream.getTracks().forEach(tr => tr.stop());
 		qrStream = null;
 	}
 	$('#qr-preview').hidden = true;
@@ -1279,7 +1362,7 @@ async function scanQR() {
 			});
 			if (result.success) {
 				stopQRScan();
-				showServerStatus('QR-Code erkannt! Config importiert.', 'success');
+				showServerStatus(t('server.qrSuccess'), 'success');
 				return;
 			}
 		}
@@ -1320,8 +1403,8 @@ el.optSplitTunnel.addEventListener('change', async (e) => {
 	el.splitRoutesSection.style.display = e.target.checked ? '' : 'none';
 	if (state.connected) {
 		showSplitStatus(e.target.checked
-			? 'Split-Tunneling wird nach Neuverbindung aktiv.'
-			: 'Full-Tunnel wird nach Neuverbindung aktiv.', 'info');
+			? t('split.activateOnReconnect')
+			: t('split.fullTunnelOnReconnect'), 'info');
 		await tunnel.disconnect();
 		await tunnel.connect();
 	}
@@ -1331,16 +1414,16 @@ $('#btn-save-split').addEventListener('click', async () => {
 	const routes = el.optSplitRoutes.value.trim();
 	config.set('tunnel.splitRoutes', routes);
 	if (!routes) {
-		showSplitStatus('Keine Routen eingetragen.', 'warn');
+		showSplitStatus(t('split.noRoutes'), 'warn');
 		return;
 	}
 	const count = routes.split('\n').filter(l => l.trim()).length;
-	showSplitStatus(`${count} Route(n) gespeichert. Verbindung wird neu aufgebaut...`, 'info');
+	showSplitStatus(t('split.routesSaved', { count }), 'info');
 	if (state.connected) {
 		await tunnel.disconnect();
 		await tunnel.connect();
 	} else {
-		showSplitStatus(`${count} Route(n) gespeichert. Wird beim nächsten Verbinden aktiv.`, 'info');
+		showSplitStatus(t('split.routesSavedPending', { count }), 'info');
 	}
 });
 
@@ -1358,9 +1441,9 @@ function showSplitStatus(msg, type) {
 //  LOGS
 // ══════════════════════════════════════════════════════════
 async function refreshLogs() {
-	el.logOutput.textContent = 'Lade Logs...';
+	el.logOutput.textContent = t('logs.loading');
 	const logText = await logs.get();
-	el.logOutput.textContent = logText || 'Keine Logs verfügbar';
+	el.logOutput.textContent = logText || t('logs.empty');
 	el.logOutput.scrollTop = el.logOutput.scrollHeight;
 }
 
@@ -1380,19 +1463,19 @@ function showUpdateBanner(info) {
 	const text = document.createElement('div');
 	text.style.cssText = 'flex:1;font-size:12px;color:var(--text-1)';
 	const strong = document.createElement('strong');
-	strong.textContent = `Update v${info.version}`;
+	strong.textContent = t('update.available', { version: info.version });
 	text.appendChild(strong);
-	text.appendChild(document.createTextNode(' bereit zur Installation'));
+	text.appendChild(document.createTextNode(' ' + t('update.readyToInstall')));
 	banner.appendChild(text);
 
 	const laterBtn = document.createElement('button');
-	laterBtn.textContent = 'Später';
+	laterBtn.textContent = t('update.later');
 	laterBtn.style.cssText = 'padding:6px 12px;font-size:11px;background:transparent;color:var(--text-3);border:1px solid var(--border-2);border-radius:var(--radius-sm);cursor:pointer';
 	laterBtn.addEventListener('click', () => banner.remove());
 	banner.appendChild(laterBtn);
 
 	const installBtn = document.createElement('button');
-	installBtn.textContent = 'Jetzt neustarten';
+	installBtn.textContent = t('update.install');
 	installBtn.style.cssText = 'padding:6px 12px;font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;font-weight:600';
 	installBtn.addEventListener('click', () => update.install());
 	banner.appendChild(installBtn);
@@ -1413,10 +1496,10 @@ $('#nav-update')?.addEventListener('click', async () => {
 		if (info) {
 			showUpdateBanner(info);
 		} else {
-			showToast('Kein Update verfügbar — neueste Version installiert.', 'success');
+			showToast(t('update.noUpdate'), 'success');
 		}
 	} catch {
-		showToast('Update-Prüfung fehlgeschlagen.', 'error');
+		showToast(t('update.checkFailed'), 'error');
 	} finally {
 		btn.classList.remove('checking');
 		btn.style.pointerEvents = '';
@@ -1433,13 +1516,13 @@ peer.onExpiry((info) => {
 
 	let msg, color;
 	if (info.daysLeft <= 0) {
-		msg = 'Dein VPN-Zugang ist abgelaufen!';
+		msg = t('peer.expired');
 		color = 'var(--error)';
 	} else if (info.daysLeft <= 1) {
-		msg = 'Dein VPN-Zugang läuft heute ab!';
+		msg = t('peer.expiresToday');
 		color = 'var(--error)';
 	} else {
-		msg = `Dein VPN-Zugang läuft in ${info.daysLeft} Tagen ab`;
+		msg = t('peer.expiresInDays', { days: info.daysLeft });
 		color = info.daysLeft <= 3 ? 'var(--warn)' : 'var(--text-2)';
 	}
 

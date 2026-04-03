@@ -47,6 +47,75 @@
     "sessions": "RDP Sessions ({{ count }})",
     "sessionTimeout": "RDP session expiring (Route {{ routeId }}). {{ minutes }} minutes remaining."
   },
+  "status": {
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "connecting": "Connecting...",
+    "reconnecting": "Reconnecting..."
+  },
+  "action": {
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "importFile": "Import file",
+    "scanQr": "Scan QR"
+  },
+  "dns": {
+    "testBtn": "DNS Leak Test",
+    "testing": "Testing...",
+    "testFailed": "DNS leak test failed — check connection.",
+    "noLeak": "No DNS leak detected",
+    "noLeakDetail": "No DNS leak detected. DNS: {{ servers }}",
+    "noLeakKillSwitch": "No DNS leak detected — kill switch active, DNS goes through VPN.",
+    "leak": "DNS leak possible",
+    "leakDetail": "DNS requests may bypass VPN. DNS: {{ servers }}",
+    "leakNotConnected": "DNS leak possible — VPN tunnel not connected.",
+    "leakNoKillSwitch": "DNS leak possible — kill switch not active.",
+    "resolveFailed": "DNS resolution failed — DNS server not reachable.",
+    "activeDns": "Active DNS"
+  },
+  "logs": {
+    "loading": "Loading logs...",
+    "empty": "No logs available"
+  },
+  "server": {
+    "testInProgress": "Testing connection...",
+    "testSuccess": "Connection successful!",
+    "testError": "Error: {{ error }}",
+    "urlAndKeyRequired": "URL and API key required",
+    "registering": "Registering client...",
+    "registered": "Registered! Peer ID: {{ peerId }}",
+    "configImported": "Config imported: {{ path }}",
+    "importError": "Import error: {{ error }}",
+    "qrSuccess": "QR code detected! Config imported.",
+    "qrTimeout": "QR scan timeout — no code detected.",
+    "cameraError": "Camera error: {{ error }}"
+  },
+  "split": {
+    "activateOnReconnect": "Split tunneling will activate after reconnect.",
+    "fullTunnelOnReconnect": "Full tunnel will activate after reconnect.",
+    "noRoutes": "No routes configured.",
+    "routesSaved": "{{ count }} route(s) saved. Reconnecting...",
+    "routesSavedPending": "{{ count }} route(s) saved. Will activate on next connect."
+  },
+  "stats": {
+    "period24h": "24h",
+    "period7d": "7 days",
+    "period30d": "30 days",
+    "periodTotal": "Total"
+  },
+  "update": {
+    "available": "Update v{{ version }}",
+    "readyToInstall": "ready to install",
+    "later": "Later",
+    "install": "Restart now",
+    "noUpdate": "No update available — latest version installed.",
+    "checkFailed": "Update check failed."
+  },
+  "peer": {
+    "expired": "Your VPN access has expired!",
+    "expiresToday": "Your VPN access expires today!",
+    "expiresInDays": "Your VPN access expires in {{ days }} days"
+  },
   "rdpProgress": {
     "vpnCheck": "VPN tunnel active",
     "vpnCheckActive": "Checking VPN tunnel...",
