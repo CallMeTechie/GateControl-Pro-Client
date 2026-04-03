@@ -482,7 +482,7 @@ async function disconnectTunnel() {
 
 async function toggleKillSwitch(enabled) {
   if (enabled) {
-    await killSwitchSvc.enable();
+    await killSwitchSvc.enable(WG_CONFIG_FILE);
   } else {
     await killSwitchSvc.disable();
   }

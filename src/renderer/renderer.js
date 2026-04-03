@@ -849,7 +849,7 @@ function updateUI() {
 	el.statTx.textContent = formatBytes(txBytes || 0);
 
 	// Speed + Graph
-	if (connected && activePermissions.traffic && (rxSpeed || txSpeed)) {
+	if (connected && activePermissions.traffic) {
 		el.statRxSpeed.textContent = formatSpeed(rxSpeed || 0);
 		el.statTxSpeed.textContent = formatSpeed(txSpeed || 0);
 		updateBandwidthGraph(rxSpeed || 0, txSpeed || 0);
