@@ -315,6 +315,18 @@ body.panel-open {
 	border: 2px solid var(--bg-1);
 }
 
+.nav-spacer {
+	flex: 1;
+}
+
+.nav-btn.checking svg {
+	animation: spin 1s linear infinite;
+}
+@keyframes spin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
 .nav-sep {
 	width: 24px;
 	height: 1px;

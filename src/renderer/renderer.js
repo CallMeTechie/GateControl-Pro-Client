@@ -1385,6 +1385,26 @@ function showUpdateBanner(info) {
 update.onReady((info) => showUpdateBanner(info));
 update.check().then((info) => { if (info) showUpdateBanner(info); });
 
+// ── Manual Update Check Button ──────────────────────────
+$('#nav-update')?.addEventListener('click', async () => {
+	const btn = $('#nav-update');
+	btn.classList.add('checking');
+	btn.style.pointerEvents = 'none';
+	try {
+		const info = await update.check();
+		if (info) {
+			showUpdateBanner(info);
+		} else {
+			showToast('Kein Update verfügbar — neueste Version installiert.', 'success');
+		}
+	} catch {
+		showToast('Update-Prüfung fehlgeschlagen.', 'error');
+	} finally {
+		btn.classList.remove('checking');
+		btn.style.pointerEvents = '';
+	}
+});
+
 // ── Peer Expiry Warning ──────────────────────────────────
 peer.onExpiry((info) => {
 	const existing = $('#expiry-banner');

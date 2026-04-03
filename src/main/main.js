@@ -291,6 +291,21 @@ function updateTray(connState) {
       { label: `Update v${pendingUpdate.version} installieren`, click: () => installUpdate() },
     ] : []),
     { type: 'separator' },
+    {
+      label: 'Auf Update prüfen',
+      click: async () => {
+        if (!updater) return;
+        const release = await updater.check();
+        if (release) {
+          pendingUpdate = release;
+          updateTray(connState);
+          if (mainWindow) mainWindow.webContents.send('update:ready', release);
+        } else {
+          new Notification({ title: 'GateControl Pro', body: 'Kein Update verfügbar. Sie verwenden die neueste Version.' }).show();
+        }
+      },
+    },
+    { type: 'separator' },
     { label: 'Beenden', click: () => quitApp() },
   ]);
 
