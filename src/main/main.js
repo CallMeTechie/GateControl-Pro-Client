@@ -205,40 +205,80 @@ function formatBytesShort(bytes) {
   return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
 }
 
-// ── Tray Icon ────────────────────────────────────────────────
+// ── Tray Icon (Sun/Star design — circle + 8 rays) ───────────
 function getIcon(state) {
-  const iconName = state === 'connected' ? 'tray-connected'
-    : state === 'connecting' ? 'tray-connecting'
-    : 'tray-disconnected';
+  const color = state === 'connected' ? [0x22, 0xC5, 0x5E]   // green
+    : state === 'connecting' ? [0xF5, 0x9E, 0x0B]             // amber
+    : [0xEF, 0x44, 0x44];                                      // red
 
-  const iconPath = path.join(RESOURCES_PATH, 'icons', `${iconName}.png`);
+  const size = 32;
+  const buf = Buffer.alloc(size * size * 4, 0); // transparent RGBA
+  const cx = size / 2;
+  const cy = size / 2;
 
-  try {
-    return nativeImage.createFromPath(iconPath);
-  } catch {
-    return createFallbackIcon(state);
+  function setPixel(px, py) {
+    const x = Math.round(px);
+    const y = Math.round(py);
+    if (x < 0 || x >= size || y < 0 || y >= size) return;
+    const i = (y * size + x) * 4;
+    buf[i] = color[0]; buf[i + 1] = color[1]; buf[i + 2] = color[2]; buf[i + 3] = 255;
   }
-}
 
-function createFallbackIcon(state) {
-  const size = 16;
-  const canvas = Buffer.alloc(size * size * 4);
-  const color = state === 'connected' ? [0x22, 0xC5, 0x5E, 0xFF]
-    : state === 'connecting' ? [0xF5, 0x9E, 0x0B, 0xFF]
-    : [0x6B, 0x72, 0x80, 0xFF];
+  function setPixelAA(px, py, alpha) {
+    const x = Math.round(px);
+    const y = Math.round(py);
+    if (x < 0 || x >= size || y < 0 || y >= size) return;
+    const i = (y * size + x) * 4;
+    if (buf[i + 3] >= alpha) return; // don't overwrite stronger pixel
+    buf[i] = color[0]; buf[i + 1] = color[1]; buf[i + 2] = color[2]; buf[i + 3] = alpha;
+  }
 
-  for (let i = 0; i < size * size; i++) {
-    const x = i % size;
-    const y = Math.floor(i / size);
-    const cx = size / 2;
-    const cy = size / 2;
-    const r = size / 2 - 1;
-    if ((x - cx) ** 2 + (y - cy) ** 2 <= r ** 2) {
-      canvas.set(color, i * 4);
+  // Draw ring (outer circle)
+  const ringR = 5.0;
+  const ringThick = 1.8;
+  for (let a = 0; a < 360; a += 1) {
+    const rad = a * Math.PI / 180;
+    for (let t = -ringThick / 2; t <= ringThick / 2; t += 0.4) {
+      setPixel(cx + (ringR + t) * Math.cos(rad), cy + (ringR + t) * Math.sin(rad));
     }
   }
 
-  return nativeImage.createFromBuffer(canvas, { width: size, height: size });
+  // Center dot
+  for (let dx = -1.5; dx <= 1.5; dx += 0.5) {
+    for (let dy = -1.5; dy <= 1.5; dy += 0.5) {
+      if (dx * dx + dy * dy <= 2.0) setPixel(cx + dx, cy + dy);
+    }
+  }
+
+  // 8 rays
+  const rayInner = 8.5;
+  const rayOuter = 13.5;
+  const rayThick = 2.0;
+  for (let i = 0; i < 8; i++) {
+    const angle = i * 45 * Math.PI / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const perpCos = Math.cos(angle + Math.PI / 2);
+    const perpSin = Math.sin(angle + Math.PI / 2);
+    for (let d = rayInner; d <= rayOuter; d += 0.3) {
+      for (let t = -rayThick / 2; t <= rayThick / 2; t += 0.4) {
+        setPixel(cx + d * cos + t * perpCos, cy + d * sin + t * perpSin);
+      }
+    }
+    // Rounded ray ends
+    for (let dx = -rayThick / 2; dx <= rayThick / 2; dx += 0.4) {
+      for (let dy = -rayThick / 2; dy <= rayThick / 2; dy += 0.4) {
+        if (dx * dx + dy * dy <= (rayThick / 2) * (rayThick / 2)) {
+          // Inner cap
+          setPixel(cx + rayInner * cos + dx * perpCos + dy * cos, cy + rayInner * sin + dx * perpSin + dy * sin);
+          // Outer cap
+          setPixel(cx + rayOuter * cos + dx * perpCos + dy * cos, cy + rayOuter * sin + dx * perpSin + dy * sin);
+        }
+      }
+    }
+  }
+
+  return nativeImage.createFromBuffer(buf, { width: size, height: size });
 }
 
 function updateTray(connState) {
