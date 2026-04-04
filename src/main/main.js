@@ -76,7 +76,7 @@ registerTranslations('en', require('../i18n/en.json'));
 
 // ── Logging ──────────────────────────────────────────────────
 log.transports.file.level = 'info';
-log.transports.file.maxSize = 5 * 1024 * 1024;
+log.transports.file.maxSize = 1024 * 1024; // 1 MB
 log.transports.console.level = 'debug';
 writeCrashLog('STARTUP', 'Logging configured');
 
@@ -101,7 +101,7 @@ if (!keyStore.get('machineKey')) {
     const configPath = path.join(app.getPath('userData'), 'gatecontrol-pro-config.json');
     if (fsSync.existsSync(configPath)) {
       fsSync.unlinkSync(configPath);
-      log.info('Alte Config-Datei entfernt (einmalige Key-Migration)');
+      log.info('Old config file removed (one-time key migration)');
     }
   } catch {}
   keyStore.set('machineKey', newKey);
@@ -423,11 +423,11 @@ function broadcastState(status, error = null) {
 
 async function connectTunnel() {
   if (isReconnecting) {
-    log.debug('Reconnect laeuft bereits, ueberspringe connectTunnel');
+    log.debug('Reconnect already in progress, skipping connectTunnel');
     return;
   }
   try {
-    log.info('Tunnel-Verbindung wird aufgebaut...');
+    log.info('Establishing tunnel connection...');
     if (connectionMonitor) connectionMonitor.stop();
     updateTray('connecting');
     broadcastState('connecting');
@@ -441,10 +441,10 @@ async function connectTunnel() {
         if (config) {
           await wgService.writeConfig(WG_CONFIG_FILE, config);
           store.set('tunnel.configPath', WG_CONFIG_FILE);
-          log.info('Konfiguration vom Server aktualisiert');
+          log.info('Configuration updated from server');
         }
       } catch (err) {
-        log.warn('Config-Abruf fehlgeschlagen, nutze lokale Config:', err.message);
+        log.warn('Config fetch failed, using local config:', err.message);
       }
     }
 
@@ -463,10 +463,10 @@ async function connectTunnel() {
     if (connectionMonitor) connectionMonitor.start();
 
     new Notification({ title: 'GateControl Pro', body: t('notify.connected') }).show();
-    log.info('Tunnel erfolgreich verbunden');
+    log.info('Tunnel connected successfully');
 
   } catch (err) {
-    log.error('Tunnel-Verbindung fehlgeschlagen:', err.message);
+    log.error('Tunnel connection failed:', err.message);
     updateTray('disconnected');
     broadcastState('error', err.message);
     new Notification({ title: t('notify.connectionError'), body: err.message }).show();
@@ -475,7 +475,7 @@ async function connectTunnel() {
 
 async function disconnectTunnel() {
   try {
-    log.info('Tunnel wird getrennt...');
+    log.info('Disconnecting tunnel...');
 
     if (connectionMonitor) connectionMonitor.stop();
 
@@ -494,10 +494,10 @@ async function disconnectTunnel() {
     broadcastState('disconnected');
 
     new Notification({ title: 'GateControl Pro', body: t('notify.disconnected') }).show();
-    log.info('Tunnel getrennt');
+    log.info('Tunnel disconnected');
 
   } catch (err) {
-    log.error('Fehler beim Trennen:', err.message);
+    log.error('Error disconnecting:', err.message);
     broadcastState('error', err.message);
   }
 }
@@ -544,12 +544,12 @@ function initializeServices() {
     onDisconnect: async () => {
       if (isReconnecting) return;
       isReconnecting = true;
-      log.info('Verbindung verloren, versuche Reconnect...');
+      log.info('Connection lost, attempting reconnect...');
       try {
         await disconnectTunnel();
         await connectTunnel();
       } catch (err) {
-        log.error('Reconnect fehlgeschlagen:', err.message);
+        log.error('Reconnect failed:', err.message);
       }
       isReconnecting = false;
     },
@@ -638,7 +638,7 @@ function registerIpcHandlers() {
     try {
       store.set(key, value);
     } catch (err) {
-      log.error(`Config set fehlgeschlagen (${key}):`, err.message);
+      log.error(`Config set failed (${key}):`, err.message);
       throw err;
     }
   });
@@ -660,10 +660,10 @@ function registerIpcHandlers() {
       fsSync.mkdirSync(path.dirname(WG_CONFIG_FILE), { recursive: true });
       fsSync.writeFileSync(WG_CONFIG_FILE, content, { mode: 0o600 });
       store.set('tunnel.configPath', WG_CONFIG_FILE);
-      log.info('Config importiert:', result.filePaths[0]);
+      log.info('Config imported:', result.filePaths[0]);
       return { success: true, path: result.filePaths[0] };
     } catch (err) {
-      log.error('Config-Import fehlgeschlagen:', err.message);
+      log.error('Config import failed:', err.message);
       return { success: false, error: err.message };
     }
   });
@@ -677,10 +677,10 @@ function registerIpcHandlers() {
       fsSync.mkdirSync(path.dirname(WG_CONFIG_FILE), { recursive: true });
       fsSync.writeFileSync(WG_CONFIG_FILE, code.data, { mode: 0o600 });
       store.set('tunnel.configPath', WG_CONFIG_FILE);
-      log.info('Config per QR-Code importiert');
+      log.info('Config imported via QR code');
       return { success: true, config: code.data };
     } catch (err) {
-      log.error('QR-Import fehlgeschlagen:', err.message);
+      log.error('QR import failed:', err.message);
       return { success: false, error: err.message };
     }
   });
@@ -696,7 +696,7 @@ function registerIpcHandlers() {
     try {
       await toggleKillSwitch(enabled);
     } catch (err) {
-      log.error('Kill-Switch fehlgeschlagen:', err.message);
+      log.error('Kill-switch failed:', err.message);
     }
   });
 
@@ -806,10 +806,10 @@ function registerIpcHandlers() {
       store.set('server.url', opts.url);
       store.set('server.apiKey', opts.apiKey);
       store.set('server.peerId', String(result.peerId || ''));
-      log.info(`Server registriert: peerId=${result.peerId}`);
+      log.info(`Server registered: peerId=${result.peerId}`);
       return { success: true, peerId: String(result.peerId || '') };
     } catch (err) {
-      log.error('Server-Registrierung fehlgeschlagen:', err.message);
+      log.error('Server registration failed:', err.message);
       return { success: false, error: err.message };
     }
   });
@@ -820,7 +820,7 @@ function registerIpcHandlers() {
       await testClient.ping();
       return { success: true };
     } catch (err) {
-      log.error('Server-Test fehlgeschlagen:', err.message);
+      log.error('Server test failed:', err.message);
       return { success: false, error: err.message };
     }
   });
@@ -860,13 +860,13 @@ function registerIpcHandlers() {
           '/RL', 'HIGHEST',
           '/DELAY', '0000:10',
         ]);
-        log.info(`Autostart aktiviert: ${exePath}`);
+        log.info(`Autostart enabled: ${exePath}`);
       } else {
         await execFileAsync('schtasks', ['/Delete', '/F', '/TN', taskName]);
-        log.info('Autostart deaktiviert');
+        log.info('Autostart disabled');
       }
     } catch (err) {
-      log.error('Autostart-Konfiguration fehlgeschlagen:', err.message);
+      log.error('Autostart configuration failed:', err.message);
     }
     store.set('app.startWithWindows', enabled);
     return enabled;
@@ -898,7 +898,7 @@ app.on('ready', () => {
       '/Create', '/F', '/TN', taskName,
       '/TR', `"${exePath}"`,
       '/SC', 'ONLOGON', '/RL', 'HIGHEST', '/DELAY', '0000:10',
-    ]).catch(err => log.warn('Autostart-Sync fehlgeschlagen:', err.message));
+    ]).catch(err => log.warn('Autostart sync failed:', err.message));
   }
 
   // Auto-Connect (Server-URL reicht, configPath nicht zwingend nötig)
@@ -916,12 +916,12 @@ app.on('ready', () => {
           throw new Error('Tunnel nicht verbunden nach connectTunnel()');
         }
       } catch (err) {
-        log.error(`Auto-Connect Versuch ${attempt} fehlgeschlagen: ${err.message}`);
+        log.error(`Auto-connect attempt ${attempt} failed: ${err.message}`);
         if (attempt < MAX_RETRIES) {
           setTimeout(() => attemptAutoConnect(attempt + 1), RETRY_DELAY);
         } else {
-          log.error('Auto-Connect endgültig fehlgeschlagen nach allen Versuchen');
-          broadcastState('error', 'Auto-Connect fehlgeschlagen — bitte manuell verbinden.');
+          log.error('Auto-connect permanently failed after all attempts');
+          broadcastState('error', 'Auto-connect failed — please connect manually.');
         }
       }
     };
@@ -931,7 +931,7 @@ app.on('ready', () => {
       attemptAutoConnect();
     }
   } else {
-    log.info(`Auto-Connect übersprungen: autoConnect=${store.get('tunnel.autoConnect', true)}, server=${!!hasServer}, configPath=${hasConfig}`);
+    log.info(`Auto-connect skipped: autoConnect=${store.get('tunnel.autoConnect', true)}, server=${!!hasServer}, configPath=${hasConfig}`);
   }
 
   // Auto-Update
@@ -941,7 +941,7 @@ app.on('ready', () => {
     updater = new Updater({ serverUrl, apiKey, log, clientType: 'pro' });
     updater.start((release) => {
       pendingUpdate = release;
-      log.info(`Update bereit: v${release.version}`);
+      log.info(`Update ready: v${release.version}`);
       updateTray(tunnelState.connected ? 'connected' : 'disconnected');
       if (mainWindow) {
         mainWindow.webContents.send('update:ready', release);
