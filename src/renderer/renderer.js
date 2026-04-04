@@ -1448,14 +1448,38 @@ function showSplitStatus(msg, type) {
 // ══════════════════════════════════════════════════════════
 //  LOGS
 // ══════════════════════════════════════════════════════════
+let logPeriod = 'all';
+
 async function refreshLogs() {
 	el.logOutput.textContent = t('logs.loading');
-	const logText = await logs.get();
+	const logText = await logs.get({ period: logPeriod });
 	el.logOutput.textContent = logText || t('logs.empty');
-	el.logOutput.scrollTop = el.logOutput.scrollHeight;
+	el.logOutput.scrollTop = 0; // newest on top
 }
 
 $('#btn-refresh-logs').addEventListener('click', refreshLogs);
+
+// Log period filter
+const logPeriodFilter = $('#log-period-filter');
+if (logPeriodFilter) {
+	logPeriodFilter.addEventListener('click', (e) => {
+		const btn = e.target.closest('[data-period]');
+		if (!btn) return;
+		logPeriod = btn.dataset.period;
+		logPeriodFilter.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+		btn.classList.add('active');
+		refreshLogs();
+	});
+}
+
+// Log export
+const exportLogsBtn = $('#btn-export-logs');
+if (exportLogsBtn) {
+	exportLogsBtn.addEventListener('click', async () => {
+		const logPath = await logs.export();
+		if (logPath) shell.openExternal('file://' + logPath.replace(/\\/g, '/'));
+	});
+}
 
 // ══════════════════════════════════════════════════════════
 //  AUTO-UPDATE UI

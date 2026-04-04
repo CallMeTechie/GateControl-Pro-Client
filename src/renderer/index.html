@@ -279,7 +279,16 @@
 			<section class="page" id="page-logs">
 				<div class="page-header">
 					<h2 class="page-title" data-i18n="logs.title">Logs</h2>
-					<button class="btn btn-ghost" id="btn-refresh-logs" data-i18n="action.refresh">Aktualisieren</button>
+					<div style="display:flex;gap:6px;align-items:center">
+						<div class="btn-group" id="log-period-filter">
+							<button class="btn btn-ghost btn-sm active" data-period="all" data-i18n="logs.filterAll">Alle</button>
+							<button class="btn btn-ghost btn-sm" data-period="24h">24h</button>
+							<button class="btn btn-ghost btn-sm" data-period="12h">12h</button>
+							<button class="btn btn-ghost btn-sm" data-period="1h">1h</button>
+						</div>
+						<button class="btn btn-ghost" id="btn-refresh-logs" data-i18n="action.refresh">Aktualisieren</button>
+						<button class="btn btn-ghost" id="btn-export-logs" data-i18n="logs.export">Export</button>
+					</div>
 				</div>
 				<pre class="log-output" id="log-output" data-i18n="logs.loading">Lade Logs...</pre>
 			</section>
