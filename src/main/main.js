@@ -837,12 +837,55 @@ function registerIpcHandlers() {
   });
 
   // ── Logs ────────────────────────────────────────────────
-  ipcMain.handle('logs:get', async () => {
+  ipcMain.handle('logs:get', async (_, opts = {}) => {
     try {
       const logPath = log.transports.file.getFile().path;
-      return fsSync.readFileSync(logPath, 'utf-8');
+      const fs = require('fs');
+      const stat = fs.statSync(logPath);
+
+      // Read max 1 MB from end of file
+      const MAX_READ = 1024 * 1024;
+      let content;
+      if (stat.size > MAX_READ) {
+        const fd = fs.openSync(logPath, 'r');
+        const buf = Buffer.alloc(MAX_READ);
+        fs.readSync(fd, buf, 0, MAX_READ, stat.size - MAX_READ);
+        fs.closeSync(fd);
+        content = buf.toString('utf-8');
+        const firstNl = content.indexOf('\n');
+        if (firstNl > 0) content = content.slice(firstNl + 1);
+      } else {
+        content = fs.readFileSync(logPath, 'utf-8');
+      }
+
+      let lines = content.split('\n').filter(l => l.trim());
+
+      // Time filter
+      if (opts && opts.period && opts.period !== 'all') {
+        const hours = opts.period === '24h' ? 24 : opts.period === '12h' ? 12 : opts.period === '1h' ? 1 : 0;
+        if (hours > 0) {
+          const cutoff = new Date(Date.now() - hours * 3600000);
+          lines = lines.filter(line => {
+            const m = line.match(/\[(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+            if (!m) return true;
+            return new Date(m[1]) >= cutoff;
+          });
+        }
+      }
+
+      // Reverse: newest first
+      lines.reverse();
+      return lines.join('\n');
     } catch {
       return t('logs.empty');
+    }
+  });
+
+  ipcMain.handle('logs:export', async () => {
+    try {
+      return log.transports.file.getFile().path;
+    } catch {
+      return null;
     }
   });
 

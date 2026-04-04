@@ -184,23 +184,23 @@ const el = {
 };
 
 // ── Locale initialization ───────────────────────────────────
+let localeReady = false;
+
 locale.get().then(loc => {
-  // Set the preload engine locale (it starts with 'de' default)
-  locale.set(loc);
+  if (loc) locale.set(loc);
   const selectEl = $('#locale-select');
-  if (selectEl) selectEl.value = loc;
+  if (selectEl) selectEl.value = loc || 'de';
   updateDOM();
   updateUI();
-  // Re-render RDP cards with correct locale
-  if (rdpServices.length) renderRdpCards(rdpServices);
-});
+  localeReady = true;
+}).catch(() => { localeReady = true; });
 
 locale.onChange((loc) => {
+  if (!localeReady) return; // skip initial set echo
   const selectEl = $('#locale-select');
   if (selectEl) selectEl.value = loc;
   updateDOM();
   updateUI();
-  // Re-render dynamic RDP cards with new locale
   if (rdpServices.length) renderRdpCards(rdpServices);
 });
 
