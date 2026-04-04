@@ -185,9 +185,14 @@ const el = {
 
 // ── Locale initialization ───────────────────────────────────
 locale.get().then(loc => {
+  // Set the preload engine locale (it starts with 'de' default)
+  locale.set(loc);
   const selectEl = $('#locale-select');
   if (selectEl) selectEl.value = loc;
   updateDOM();
+  updateUI();
+  // Re-render RDP cards with correct locale
+  if (rdpServices.length) renderRdpCards(rdpServices);
 });
 
 locale.onChange((loc) => {

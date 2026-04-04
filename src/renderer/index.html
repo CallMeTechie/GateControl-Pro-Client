@@ -225,7 +225,7 @@
 					<div class="toggle-row compact">
 						<div>
 							<span class="toggle-label" data-i18n="settings.splitTunnel">Split-Tunneling</span>
-							<div class="toggle-desc" style="font-size:10px;color:var(--text-3)">Nur bestimmte IPs, Subnetze oder Domains durch den VPN-Tunnel leiten</div>
+							<div class="toggle-desc" style="font-size:10px;color:var(--text-3)" data-i18n="settings.splitTunnelDesc">Nur bestimmte IPs, Subnetze oder Domains durch den VPN-Tunnel leiten</div>
 						</div>
 						<label class="switch"><input type="checkbox" id="opt-split-tunnel"><span class="slider"></span></label>
 					</div>
@@ -235,7 +235,7 @@
 							<textarea class="field-input mono" id="opt-split-routes" rows="4" placeholder="10.0.0.0/8&#10;192.168.1.0/24&#10;example.com&#10;172.16.5.100" style="resize:vertical;font-size:11px"></textarea>
 						</div>
 						<div style="font-size:10px;color:var(--text-3);margin-top:4px">
-							Beispiele: <code>10.0.0.0/8</code>, <code>192.168.1.0/24</code>, <code>172.16.5.100</code>, <code>example.com</code>
+							<span data-i18n="settings.splitRoutesExamples">Beispiele:</span> <code>10.0.0.0/8</code>, <code>192.168.1.0/24</code>, <code>172.16.5.100</code>, <code>example.com</code>
 						</div>
 						<button class="btn btn-ghost" id="btn-save-split" style="margin-top:8px" data-i18n="action.save">Speichern</button>
 						<div id="split-status" style="display:none;font-size:10px;margin-top:6px;padding:6px 8px;border-radius:var(--radius-sm)"></div>
@@ -374,7 +374,7 @@
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="15 18 9 12 15 6"/></svg>
 					</button>
 					<div class="rdp-detail-title" id="rdp-maintenance-title"></div>
-					<span class="tag tag-warn" style="margin-left:auto">Wartung</span>
+					<span class="tag tag-warn" style="margin-left:auto" data-i18n="rdp.statusMaintenance">Wartung</span>
 				</div>
 				<div class="rdp-detail-body">
 					<div class="maintenance-warn">
