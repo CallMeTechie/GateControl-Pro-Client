@@ -181,24 +181,26 @@ class RdpManager extends EventEmitter {
       let domain = null;
 
       if (route.credential_mode === 'full') {
-        // E2EE: decrypt credentials from server
-        try {
-          const { publicKey } = this.credentialHandler.generateKeyPair();
-          const encrypted = route.credentials;
-
-          if (!encrypted || !encrypted.data) {
-            throw new Error('No encrypted credentials received from server');
-          }
-
-          const creds = this.credentialHandler.decryptCredentials(encrypted);
-          username = creds.username;
-          password = creds.password;
-          domain = creds.domain || route.domain;
+        // Server sends plain username + password over HTTPS
+        if (route.username && route.password) {
+          username = route.username;
+          password = route.password;
+          domain = route.domain || null;
+          this.log.info('Credentials received from server (plain-text over HTTPS)');
           this._emitProgress(routeId, 'credentials', 'done');
-        } catch (err) {
-          this.log.error('E2EE credential decryption failed:', err.message);
-          // Fallback: let mstsc prompt for credentials
-          this.log.info('Falling back to credential_mode: none (mstsc will prompt)');
+        } else if (route.username_encrypted && route.password_encrypted) {
+          // E2EE path (if server sent encrypted credentials)
+          try {
+            username = this.credentialHandler.decryptField(route.username_encrypted);
+            password = this.credentialHandler.decryptField(route.password_encrypted);
+            domain = route.domain || null;
+            this._emitProgress(routeId, 'credentials', 'done');
+          } catch (err) {
+            this.log.error('Credential decryption failed:', err.message);
+            this._emitProgress(routeId, 'credentials', 'fallback');
+          }
+        } else {
+          this.log.warn('credential_mode is full but no credentials received from server');
           this._emitProgress(routeId, 'credentials', 'fallback');
         }
       } else if (route.credential_mode === 'user_only') {
