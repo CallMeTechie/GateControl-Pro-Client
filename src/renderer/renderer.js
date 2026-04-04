@@ -84,6 +84,12 @@ function setStaticIcon(element, iconKey) {
 	element.innerHTML = SVG_ICONS[iconKey]; // SAFE: static string literal from SVG_ICONS
 }
 
+function parseTags(tags) {
+	if (Array.isArray(tags)) return tags;
+	if (!tags) return [];
+	try { const p = JSON.parse(tags); return Array.isArray(p) ? p : []; } catch { return []; }
+}
+
 // ── i18n DOM update ─────────────────────────────────────────
 function updateDOM() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -379,7 +385,7 @@ function renderRdpCards(svcList) {
 		// Text filter
 		if (filterText) {
 			const searchable = [
-				svc.name, svc.host, ...(svc.tags || []),
+				svc.name, svc.host, ...parseTags(svc.tags),
 			].join(' ').toLowerCase();
 			if (!searchable.includes(filterText)) return false;
 		}
@@ -436,10 +442,11 @@ function createRdpCard(svc) {
 	card.appendChild(top);
 
 	// Tags
-	if (svc.tags && svc.tags.length > 0) {
+	const cardTags = parseTags(svc.tags);
+	if (cardTags.length > 0) {
 		const tagsRow = document.createElement('div');
 		tagsRow.className = 'rdp-card-tags';
-		svc.tags.forEach(tg => {
+		cardTags.forEach(tg => {
 			const tag = document.createElement('span');
 			tag.className = 'tag tag-neutral';
 			tag.textContent = tg;
@@ -658,10 +665,11 @@ function showRdpDetail(svc) {
 	body.appendChild(grid);
 
 	// Tags
-	if (svc.tags && svc.tags.length > 0) {
+	const detailTags = parseTags(svc.tags);
+	if (detailTags.length > 0) {
 		const tagsRow = document.createElement('div');
 		tagsRow.className = 'rdp-card-tags';
-		svc.tags.forEach(tg => {
+		detailTags.forEach(tg => {
 			const tag = document.createElement('span');
 			tag.className = 'tag tag-neutral';
 			tag.textContent = tg;
