@@ -111,10 +111,11 @@ class RdpManager extends EventEmitter {
       }
       this._emitProgress(routeId, 'vpn-check', 'done');
 
-      // 1b. Get connection details from server
+      // 1b. Get connection details from server (with E2EE)
       this.log.info(`Fetching connection data for route ${routeId}...`);
-      const connectData = await this.api.getRdpConnect(routeId);
-      this.log.info(`Connection data received: host=${connectData?.host}, port=${connectData?.port}, mode=${connectData?.credential_mode}`);
+      const { publicKey: ecdhPublicKey } = this.credentialHandler.generateKeyPair();
+      const connectData = await this.api.getRdpConnect(routeId, { ecdhPublicKey });
+      this.log.info(`Connection data received: host=${connectData?.host}, port=${connectData?.port}, mode=${connectData?.credential_mode}, e2ee=${!!connectData?.credentials_e2ee}`);
       if (!connectData || !connectData.host) {
         this.log.error('No connection data received from server:', JSON.stringify(connectData));
         return { success: false, error: 'Keine Verbindungsdaten vom Server erhalten.' };
@@ -181,31 +182,46 @@ class RdpManager extends EventEmitter {
       let domain = null;
 
       if (route.credential_mode === 'full') {
-        // Server sends plain username + password over HTTPS
-        if (route.username && route.password) {
+        if (route.credentials_e2ee) {
+          // E2EE path: decrypt ECDH-encrypted credential blob
+          try {
+            const creds = this.credentialHandler.decryptCredentials(route.credentials_e2ee);
+            username = creds.username;
+            password = creds.password;
+            domain = creds.domain || null;
+            this.log.info('Credentials decrypted successfully (ECDH E2EE)');
+            this._emitProgress(routeId, 'credentials', 'done');
+          } catch (err) {
+            this.log.error('E2EE credential decryption failed:', err.message);
+            this._emitProgress(routeId, 'credentials', 'fallback');
+          }
+        } else if (route.username && route.password) {
+          // Plaintext fallback (server did not receive ecdhPublicKey or E2EE failed)
           username = route.username;
           password = route.password;
           domain = route.domain || null;
-          this.log.info('Credentials received from server (plain-text over HTTPS)');
+          this.log.warn('Credentials received as plain-text (E2EE unavailable)');
           this._emitProgress(routeId, 'credentials', 'done');
-        } else if (route.username_encrypted && route.password_encrypted) {
-          // E2EE path (if server sent encrypted credentials)
-          try {
-            username = this.credentialHandler.decryptField(route.username_encrypted);
-            password = this.credentialHandler.decryptField(route.password_encrypted);
-            domain = route.domain || null;
-            this._emitProgress(routeId, 'credentials', 'done');
-          } catch (err) {
-            this.log.error('Credential decryption failed:', err.message);
-            this._emitProgress(routeId, 'credentials', 'fallback');
-          }
         } else {
           this.log.warn('credential_mode is full but no credentials received from server');
           this._emitProgress(routeId, 'credentials', 'fallback');
         }
       } else if (route.credential_mode === 'user_only') {
-        username = route.username;
-        domain = route.domain;
+        // user_only: username may arrive via E2EE or plaintext
+        if (route.credentials_e2ee) {
+          try {
+            const creds = this.credentialHandler.decryptCredentials(route.credentials_e2ee);
+            username = creds.username;
+            domain = creds.domain || null;
+          } catch (err) {
+            this.log.warn('E2EE decryption failed for user_only, using plaintext:', err.message);
+            username = route.username;
+            domain = route.domain;
+          }
+        } else {
+          username = route.username;
+          domain = route.domain;
+        }
 
         if (!opts.password) {
           // Need password from user

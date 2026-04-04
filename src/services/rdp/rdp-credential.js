@@ -29,7 +29,7 @@ class RdpCredentialHandler {
 
   /**
    * Decrypt credentials received from server (encrypted with our public key).
-   * Server encrypts with AES-256-GCM using the ECDH shared secret.
+   * Server encrypts with AES-256-GCM using ECDH shared secret + HKDF-SHA256.
    * @param {object} encrypted - { data, iv, authTag, serverPublicKey }
    * @returns {{ username: string, password: string, domain?: string }}
    */
@@ -39,17 +39,21 @@ class RdpCredentialHandler {
     }
 
     // Derive shared secret from server's public key + our private key
-    const serverPubKeyBuffer = Buffer.from(encrypted.serverPublicKey, 'base64');
-    const sharedSecret = this._clientKeyPair.privateKey.computeSecret(serverPubKeyBuffer);
+    const serverPubBuf = Buffer.from(encrypted.serverPublicKey, 'base64');
+    const sharedSecret = this._clientKeyPair.privateKey.computeSecret(serverPubBuf);
 
-    // Derive AES key from shared secret
-    const aesKey = crypto.createHash('sha256').update(sharedSecret).digest();
+    // Derive AES-256 key via HKDF-SHA256 (must match server parameters)
+    const clientPubBuf = this._clientKeyPair.privateKey.getPublicKey();
+    const salt = Buffer.concat([clientPubBuf, serverPubBuf]);
+    const aesKey = crypto.hkdfSync('sha256', sharedSecret, salt, 'gatecontrol-rdp-e2ee-v1', 32);
 
     // Decrypt AES-256-GCM
-    const iv = Buffer.from(encrypted.iv, 'base64');
-    const authTag = Buffer.from(encrypted.authTag, 'base64');
-    const decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, iv);
-    decipher.setAuthTag(authTag);
+    const decipher = crypto.createDecipheriv(
+      'aes-256-gcm',
+      Buffer.from(aesKey),
+      Buffer.from(encrypted.iv, 'base64')
+    );
+    decipher.setAuthTag(Buffer.from(encrypted.authTag, 'base64'));
 
     const decrypted = Buffer.concat([
       decipher.update(Buffer.from(encrypted.data, 'base64')),

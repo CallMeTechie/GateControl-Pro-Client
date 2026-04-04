@@ -31,11 +31,18 @@ class ApiClientPro extends ApiClient {
   /**
    * Get connection details + credentials for a specific RDP route.
    * GET /api/v1/client/rdp/:id/connect
-   * Returns: { host, port, credentials, settings, ... }
+   * @param {number} id - RDP route ID
+   * @param {object} [opts]
+   * @param {string} [opts.ecdhPublicKey] - Base64-encoded ECDH public key for E2EE
+   * @returns {{ host, port, credentials_e2ee?, username?, password?, ... }}
    */
-  async getRdpConnect(id) {
+  async getRdpConnect(id, opts = {}) {
     if (!this.client) throw new Error('Server nicht konfiguriert');
-    const { data } = await this.client.get(`/api/v1/client/rdp/${id}/connect`);
+    const params = {};
+    if (opts.ecdhPublicKey) {
+      params.ecdhPublicKey = opts.ecdhPublicKey;
+    }
+    const { data } = await this.client.get(`/api/v1/client/rdp/${id}/connect`, { params });
     return data?.connection || data;
   }
 
