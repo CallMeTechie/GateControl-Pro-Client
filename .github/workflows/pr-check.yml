@@ -1,0 +1,33 @@
+name: PR Check
+
+on:
+  pull_request:
+    branches: [master]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test:
+    name: Test & Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Clone core dependency
+        run: |
+          git clone https://github.com/CallMeTechie/gatecontrol-client-core.git .core
+          node -e "const p=require('./package.json'); p.dependencies['@gatecontrol/client-core']='file:.core'; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run tests
+        run: npm test
+
+      - name: Check for security issues
+        run: npm audit --audit-level=high || true
