@@ -494,6 +494,24 @@ async function connectTunnel() {
 
     await wgService.connect(WG_CONFIG_FILE, store.get('tunnel.splitTunnel') ? store.get('tunnel.splitRoutes', '') : null);
 
+    // Verify handshake before declaring connected — a stale config can
+    // create the adapter successfully but never complete a handshake.
+    let handshakeOk = false;
+    for (let i = 0; i < 5; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const stats = await wgService.getStats();
+      if (stats?.handshake) {
+        handshakeOk = true;
+        break;
+      }
+      log.debug(`Waiting for handshake (${i + 1}/5)...`);
+    }
+
+    if (!handshakeOk) {
+      await wgService.disconnect();
+      throw new Error(t('error.noHandshake') || 'No WireGuard handshake — config may be invalid');
+    }
+
     tunnelState.connected = true;
     tunnelState.connectedSince = new Date();
 
