@@ -33,15 +33,18 @@ class RdpManager extends EventEmitter {
    * @param {object} opts
    * @param {object} opts.apiClient - ApiClientPro instance
    * @param {object} opts.log - electron-log instance
+   * @param {object} [opts.store] - electron-store instance for config
    * @param {function} opts.getTunnelState - Returns current tunnel state { connected }
    * @param {function} opts.getPeerInfo - Returns peer info { expiresAt }
    */
-  constructor({ apiClient, log, getTunnelState, getPeerInfo }) {
+  constructor({ apiClient, log, store, getTunnelState, getPeerInfo }) {
     super();
     this.api = apiClient;
     this.log = log;
+    this.store = store;
     this.getTunnelState = getTunnelState;
     this.getPeerInfo = getPeerInfo;
+    this.requireE2ee = store?.get('security.requireE2ee', false) || false;
 
     this.configBuilder = new RdpConfigBuilder(log);
     this.credentialHandler = new RdpCredentialHandler(log);
@@ -97,7 +100,9 @@ class RdpManager extends EventEmitter {
    * @returns {Promise<{ success: boolean, error?: string, needsPassword?: boolean, maintenanceWarning?: object }>}
    */
   async connect(routeId, opts = {}) {
-    this.log.info(`RDP connect requested for route ${routeId}`);
+    // Re-read E2EE enforcement setting (may have changed since construction)
+    this.requireE2ee = this.store?.get('security.requireE2ee', false) || false;
+    this.log.info(`RDP connect requested for route ${routeId} (requireE2ee=${this.requireE2ee})`);
 
     try {
       // ── Step 1: Pre-Flight Checks ───────────────────────
@@ -193,10 +198,19 @@ class RdpManager extends EventEmitter {
             this._emitProgress(routeId, 'credentials', 'done');
           } catch (err) {
             this.log.error('E2EE credential decryption failed:', err.message);
+            if (this.requireE2ee) {
+              this._emitProgress(routeId, 'credentials', 'error');
+              return { success: false, error: 'E2EE required but decryption failed.' };
+            }
             this._emitProgress(routeId, 'credentials', 'fallback');
           }
         } else if (route.username && route.password) {
           // Plaintext fallback (server did not receive ecdhPublicKey or E2EE failed)
+          if (this.requireE2ee) {
+            this.log.error('E2EE enforcement: rejecting plaintext credentials');
+            this._emitProgress(routeId, 'credentials', 'error');
+            return { success: false, error: 'E2EE required but server sent plaintext credentials.' };
+          }
           username = route.username;
           password = route.password;
           domain = route.domain || null;
@@ -214,11 +228,21 @@ class RdpManager extends EventEmitter {
             username = creds.username;
             domain = creds.domain || null;
           } catch (err) {
-            this.log.warn('E2EE decryption failed for user_only, using plaintext:', err.message);
+            this.log.warn('E2EE decryption failed for user_only:', err.message);
+            if (this.requireE2ee) {
+              this._emitProgress(routeId, 'credentials', 'error');
+              return { success: false, error: 'E2EE required but decryption failed.' };
+            }
+            this.log.warn('Falling back to plaintext username');
             username = route.username;
             domain = route.domain;
           }
         } else {
+          if (this.requireE2ee) {
+            this.log.error('E2EE enforcement: rejecting plaintext username');
+            this._emitProgress(routeId, 'credentials', 'error');
+            return { success: false, error: 'E2EE required but server sent plaintext credentials.' };
+          }
           username = route.username;
           domain = route.domain;
         }

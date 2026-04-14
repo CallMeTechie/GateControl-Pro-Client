@@ -591,6 +591,7 @@ function initializeServices() {
   rdpManager = new RdpManager({
     apiClient,
     log,
+    store,
     getTunnelState: () => tunnelState,
     getPeerInfo: () => apiClient.getPeerInfo(),
   });
