@@ -7,8 +7,8 @@ const ApiClient = require('../../node_modules/@gatecontrol/client-core/src/servi
  * Extends the core ApiClient with RDP-specific endpoints.
  */
 class ApiClientPro extends ApiClient {
-  constructor(serverUrl, apiKey, log, peerId = null) {
-    super(serverUrl, apiKey, log, peerId);
+  constructor(serverUrl, apiKey, log, peerId = null, options = {}) {
+    super(serverUrl, apiKey, log, peerId, options);
   }
 
   // ── RDP Services ────────────────────────────────────────

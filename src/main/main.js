@@ -583,7 +583,9 @@ function initializeServices() {
   const apiKey = store.get('server.apiKey', '');
   const peerId = store.get('server.peerId', '');
 
-  apiClient = new ApiClientPro(serverUrl, apiKey, log, peerId);
+  apiClient = new ApiClientPro(serverUrl, apiKey, log, peerId, {
+    clientVersion: require('../../package.json').version,
+  });
 
   wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
   killSwitchSvc = new KillSwitch(log);
