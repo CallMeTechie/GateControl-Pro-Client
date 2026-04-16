@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld('gatecontrol', {
     toggle: (enabled) => ipcRenderer.invoke('killswitch:toggle', enabled),
   },
 
+  // ── RDP Allow ──────────────────────────────────────
+  rdpAllow: {
+    toggle: (enabled) => ipcRenderer.invoke('rdp-allow:toggle', enabled),
+  },
+
   // ── Autostart ────────────────────────────────────────
   autostart: {
     set: (enabled) => ipcRenderer.invoke('autostart:set', enabled),

@@ -7,7 +7,7 @@
  */
 
 const {
-	tunnel, server, config, killSwitch, autostart, logs, update,
+	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, getVersion,
 	window: win, rdp, onNavigate, locale,
 } = window.gatecontrol;
@@ -175,6 +175,7 @@ const el = {
 	statRxSpeed:     $('#stat-rx-speed'),
 	statTxSpeed:     $('#stat-tx-speed'),
 	killswitchToggle: $('#killswitch-toggle'),
+	rdpAllowToggle:  $('#rdp-allow-toggle'),
 	serverUrl:       $('#server-url'),
 	apiKey:          $('#api-key'),
 	serverStatus:    $('#server-status'),
@@ -967,6 +968,9 @@ function updateUI() {
 
 	// Kill-Switch
 	el.killswitchToggle.checked = ks || false;
+
+	// RDP Allow
+	el.rdpAllowToggle.checked = state.rdpAllow || false;
 }
 
 // ── Connect Button ───────────────────────────────────────
@@ -982,6 +986,11 @@ el.connectBtn.addEventListener('click', async () => {
 // ── Kill-Switch Toggle ───────────────────────────────────
 el.killswitchToggle.addEventListener('change', (e) => {
 	killSwitch.toggle(e.target.checked);
+});
+
+// ── RDP Allow Toggle ─────────────────────────────────────
+el.rdpAllowToggle.addEventListener('change', (e) => {
+	rdpAllow.toggle(e.target.checked);
 });
 
 // ══════════════════════════════════════════════════════════

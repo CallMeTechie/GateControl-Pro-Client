@@ -30,7 +30,7 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
-let Store, log, WireGuardService, KillSwitch, ApiClientPro, Updater, ConnectionMonitor, RdpManager, RdpWolClient;
+let Store, log, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, RdpManager, RdpWolClient;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
@@ -45,6 +45,7 @@ try {
   writeCrashLog('IMPORT', 'Loading core services...');
   WireGuardService = require('@gatecontrol/client-core/src/services/wireguard-native');
   KillSwitch = require('@gatecontrol/client-core/src/services/killswitch');
+  RdpAllowSvc = require('@gatecontrol/client-core/src/services/rdp-allow');
 
   writeCrashLog('IMPORT', 'Loading pro services...');
   ApiClientPro = require('../services/api-client-pro');
@@ -126,6 +127,7 @@ const store = new Store({
         interfaceName: { type: 'string', default: 'gatecontrol0' },
         autoConnect:   { type: 'boolean', default: true },
         killSwitch:    { type: 'boolean', default: false },
+        rdpAllow:      { type: 'boolean', default: false },
         splitTunnel:   { type: 'boolean', default: false },
         splitRoutes:   { type: 'string', default: '' },
         configPath:    { type: 'string', default: '' },
@@ -158,6 +160,7 @@ let mainWindow = null;
 let tray = null;
 let wgService = null;
 let killSwitchSvc = null;
+let rdpAllowSvc = null;
 let apiClient = null;
 let connectionMonitor = null;
 let updater = null;
@@ -457,6 +460,7 @@ function broadcastState(status, error = null) {
     txSpeed: tunnelState.txSpeed || 0,
     connectedSince: tunnelState.connectedSince,
     killSwitch: store.get('tunnel.killSwitch', false),
+    rdpAllow: store.get('tunnel.rdpAllow', false),
   };
   mainWindow?.webContents.send('tunnel-state', state);
 }
@@ -569,6 +573,16 @@ async function toggleKillSwitch(enabled) {
   store.set('tunnel.killSwitch', enabled);
 }
 
+async function toggleRdpAllow(enabled) {
+  store.set('tunnel.rdpAllow', enabled);
+  if (enabled) {
+    await rdpAllowSvc.enable(WG_CONFIG_FILE);
+  } else {
+    await rdpAllowSvc.disable();
+  }
+  broadcastState(tunnelState.connected ? 'connected' : 'disconnected');
+}
+
 function installUpdate() {
   if (pendingUpdate?.installerPath) {
     const { shell } = require('electron');
@@ -589,6 +603,7 @@ function initializeServices() {
 
   wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
   killSwitchSvc = new KillSwitch(log);
+  rdpAllowSvc = new RdpAllowSvc(log);
 
   rdpManager = new RdpManager({
     apiClient,
@@ -758,6 +773,15 @@ function registerIpcHandlers() {
       await toggleKillSwitch(enabled);
     } catch (err) {
       log.error('Kill-switch failed:', err.message);
+    }
+  });
+
+  // ── RDP Allow ─────────────────────────────────────────
+  ipcMain.handle('rdp-allow:toggle', async (_, enabled) => {
+    try {
+      await toggleRdpAllow(enabled);
+    } catch (err) {
+      log.error('RDP Allow failed:', err.message);
     }
   });
 
@@ -1071,4 +1095,8 @@ app.on('before-quit', () => {
 
 app.on('will-quit', async () => {
   if (killSwitchSvc) await killSwitchSvc.disable();
+  if (rdpAllowSvc?.enabled) {
+    await rdpAllowSvc.disable().catch(() => {});
+    store.set('tunnel.rdpAllow', false);
+  }
 });
