@@ -87,6 +87,41 @@ describe('RdpConfigBuilder', () => {
     assert.ok(content.includes('gatewayhostname:s:gw.example.com'));
   });
 
+  it('uses peer FQDN when available (internal_dns feature)', () => {
+    const route = {
+      host: '10.8.0.5', port: 3389, peer_fqdn: 'desktop-8f36qk8.gc.internal',
+      resolution_mode: 'fullscreen', color_depth: 32, nla_enabled: 1,
+      redirect_clipboard: 1, redirect_printers: 0, redirect_drives: 0,
+      redirect_usb: 0, redirect_smartcard: 0, audio_mode: 'local',
+    };
+    const rdpPath = builder.build(route);
+    tempFiles.push(rdpPath);
+    const content = fs.readFileSync(rdpPath, 'utf-8');
+    // primary address is the FQDN
+    assert.ok(content.includes('full address:s:desktop-8f36qk8.gc.internal:3389'),
+      'expected FQDN as primary address');
+    // IP is the alternate / fallback
+    assert.ok(content.includes('alternate full address:s:10.8.0.5:3389'),
+      'expected IP as alternate fallback');
+  });
+
+  it('ignores FQDN when access_mode is external', () => {
+    const route = {
+      host: '10.8.0.5', port: 3389, peer_fqdn: 'desktop.gc.internal',
+      external_hostname: 'rdp.example.com', external_port: 3389,
+      access_mode: 'external',
+      resolution_mode: 'fullscreen', color_depth: 32, nla_enabled: 1,
+      redirect_clipboard: 1, redirect_printers: 0, redirect_drives: 0,
+      redirect_usb: 0, redirect_smartcard: 0, audio_mode: 'local',
+    };
+    const rdpPath = builder.build(route);
+    tempFiles.push(rdpPath);
+    const content = fs.readFileSync(rdpPath, 'utf-8');
+    assert.ok(content.includes('full address:s:rdp.example.com:3389'));
+    assert.ok(!content.includes('desktop.gc.internal'),
+      'internal FQDN must not leak into external-mode .rdp');
+  });
+
   it('cleanup removes temp files', () => {
     const route = { host: '10.0.0.1', port: 3389, resolution_mode: 'fullscreen', color_depth: 32, nla_enabled: 1, redirect_clipboard: 1, redirect_printers: 0, redirect_drives: 0, redirect_usb: 0, redirect_smartcard: 0, audio_mode: 'local' };
     const rdpPath = builder.build(route);

@@ -182,7 +182,12 @@ class RdpManager extends EventEmitter {
       const route = connectData;
       const host = route.host;
       const port = route.port || 3389;
-      this.log.info(`RDP target: ${host}:${port}`);
+      // credTarget = what we hand to cmdkey /generic. If the peer has an
+      // internal FQDN, use that — matches the CredSSP SPN the server
+      // presents via its cert CN and avoids the "credentials did not
+      // work" dialog on hosts whose cert CN differs from the VPN IP.
+      const credTarget = (route.access_mode !== 'external' && route.peer_fqdn) ? route.peer_fqdn : host;
+      this.log.info(`RDP target: ${host}:${port}${credTarget !== host ? ` (credSSP target: ${credTarget})` : ''}`);
 
       // 1c. Maintenance window check
       if (route.maintenance_enabled && route.maintenance_active && !opts.forceMaintenanceBypass) {
@@ -327,7 +332,13 @@ class RdpManager extends EventEmitter {
       if (username && password) {
         this._emitProgress(routeId, 'cmdkey', 'active');
         try {
-          this.credentialHandler.storeCredentials(host, username, password, domain);
+          this.credentialHandler.storeCredentials(credTarget, username, password, domain);
+          // When using FQDN, ALSO store under IP as a fallback — some
+          // scenarios (e.g. first connect before DNS propagation) may
+          // have mstsc fall back to the alternate address.
+          if (credTarget !== host) {
+            try { this.credentialHandler.storeCredentials(host, username, password, domain); } catch {}
+          }
           this._emitProgress(routeId, 'cmdkey', 'done');
         } catch (err) {
           this.log.error('cmdkey failed:', err.message);
@@ -372,13 +383,16 @@ class RdpManager extends EventEmitter {
           this.log.info(`mstsc.exe exited for route ${routeId} (duration: ${duration}s, exit: ${exitCode})`);
 
           // ── Step 6: Cleanup ───────────────────────────
-          this._cleanupSession(routeId, host, rdpFile, duration, exitCode);
+          this._cleanupSession(routeId, host, rdpFile, duration, exitCode, credTarget);
         });
 
         if (!proc.pid) {
           this.log.error('Failed to start mstsc.exe');
           this.configBuilder.cleanup(rdpFile);
-          this.credentialHandler.clearCredentials(host);
+          this.credentialHandler.clearCredentials(credTarget);
+          if (credTarget !== host) {
+            try { this.credentialHandler.clearCredentials(host); } catch {}
+          }
           resolve({ success: false, error: 'mstsc.exe konnte nicht gestartet werden.' });
           return;
         }
@@ -388,6 +402,7 @@ class RdpManager extends EventEmitter {
           pid: proc.pid,
           rdpFile,
           host,
+          credTarget,
           startTime,
           process: proc,
           sessionTimeout: route.session_timeout || null,
@@ -494,8 +509,12 @@ class RdpManager extends EventEmitter {
       // Cleanup temp files
       this.configBuilder.cleanup(session.rdpFile);
 
-      // Clear credentials
+      // Clear credentials — under both the FQDN and the IP if we stored
+      // both during connect.
       this.credentialHandler.clearCredentials(session.host);
+      if (session.credTarget && session.credTarget !== session.host) {
+        try { this.credentialHandler.clearCredentials(session.credTarget); } catch {}
+      }
 
       // End session on server
       const duration = Math.floor((Date.now() - session.startTime) / 1000);
@@ -585,15 +604,20 @@ class RdpManager extends EventEmitter {
   /**
    * Cleanup after mstsc.exe exits.
    */
-  _cleanupSession(routeId, host, rdpFile, duration, exitCode) {
+  _cleanupSession(routeId, host, rdpFile, duration, exitCode, credTarget) {
     // Stop monitoring
     this.monitor.stopTracking(routeId);
 
     // Delete temp .rdp file
     this.configBuilder.cleanup(rdpFile);
 
-    // Clear credentials from Credential Manager
+    // Clear credentials from Credential Manager — under both the
+    // FQDN and the IP, if different, so no stale TERMSRV/* entry
+    // lingers after the session ends.
     this.credentialHandler.clearCredentials(host);
+    if (credTarget && credTarget !== host) {
+      try { this.credentialHandler.clearCredentials(credTarget); } catch {}
+    }
 
     // Notify server: session end
     const session = this.activeSessions.get(routeId);

@@ -527,6 +527,20 @@ async function connectTunnel() {
     new Notification({ title: 'GateControl Pro', body: t('notify.connected') }).show();
     log.info('Tunnel connected successfully');
 
+    // Report OS hostname for internal DNS resolution (best-effort).
+    // Server rate-limits to 3/min/token; calling once on connect is
+    // within budget and populates the admin UI automatically.
+    // ApiClientPro extends ApiClient, so the static helper is inherited.
+    try {
+      const os = require('os');
+      const sanitized = ApiClientPro.sanitizeHostnameForDns(os.hostname());
+      if (sanitized && apiClient) {
+        apiClient.reportHostname(sanitized).catch(() => { /* best-effort */ });
+      }
+    } catch (err) {
+      log.debug('Hostname report skipped:', err.message);
+    }
+
   } catch (err) {
     log.error('Tunnel connection failed:', err.message);
     updateTray('disconnected');

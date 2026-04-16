@@ -23,15 +23,25 @@ class RdpConfigBuilder {
     const lines = [];
 
     // ── Connection ─────────────────────────────────────────
-    const host = route.external_hostname && route.access_mode !== 'internal'
+    const ipHost = route.external_hostname && route.access_mode !== 'internal'
       ? route.external_hostname
       : route.host;
     const port = route.external_port && route.access_mode !== 'internal'
       ? route.external_port
       : (route.port || 3389);
 
-    lines.push(`full address:s:${host}:${port}`);
+    // Prefer the peer FQDN (feature: internal_dns) so the RDP server
+    // cert CN matches the target name and CredSSP can send the
+    // credentials. Fall back to the IP via "alternate full address"
+    // so connect still works if DNS fails.
+    const useFqdn = route.access_mode !== 'external' && route.peer_fqdn;
+    const primaryHost = useFqdn ? route.peer_fqdn : ipHost;
+
+    lines.push(`full address:s:${primaryHost}:${port}`);
     lines.push(`server port:i:${port}`);
+    if (useFqdn && ipHost && ipHost !== primaryHost) {
+      lines.push(`alternate full address:s:${ipHost}:${port}`);
+    }
 
     // ── Authentication ────────────────────────────────────
     if (route.username) {
