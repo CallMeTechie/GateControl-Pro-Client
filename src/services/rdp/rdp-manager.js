@@ -56,6 +56,10 @@ class RdpManager extends EventEmitter {
     // Cached RDP services list
     this.rdpServices = [];
 
+    // Status polling
+    this._statusPollInterval = null;
+    this._statusPollMs = 30000; // 30 seconds
+
     // Forward monitor events
     this.monitor.on('session-timeout', (data) => {
       this.log.warn(`RDP session timeout for route ${data.routeId}`);
@@ -88,6 +92,55 @@ class RdpManager extends EventEmitter {
    */
   getServices() {
     return this.rdpServices;
+  }
+
+  /**
+   * Start periodic polling of RDP host status.
+   * Fetches bulk status and merges into cached services.
+   * Emits 'services-update' only when status changes.
+   */
+  startStatusPolling() {
+    this.stopStatusPolling();
+    this.log.info(`RDP status polling started (${this._statusPollMs / 1000}s interval)`);
+
+    this._statusPollInterval = setInterval(async () => {
+      try {
+        const statuses = await this.api.getRdpBulkStatus();
+        if (!statuses || typeof statuses !== 'object') return;
+
+        let changed = false;
+        for (const svc of this.rdpServices) {
+          const newStatus = statuses[svc.id];
+          if (!newStatus) continue;
+
+          const wasOnline = svc.status?.online;
+          const isOnline = newStatus.online;
+
+          if (wasOnline !== isOnline) {
+            svc.status = { ...svc.status, ...newStatus };
+            changed = true;
+            this.log.info(`RDP route ${svc.id} (${svc.name}): ${wasOnline ? 'online' : 'offline'} → ${isOnline ? 'online' : 'offline'}`);
+          }
+        }
+
+        if (changed) {
+          this.emit('services-update', this.rdpServices);
+        }
+      } catch (err) {
+        this.log.debug('RDP status poll failed:', err.message);
+      }
+    }, this._statusPollMs);
+  }
+
+  /**
+   * Stop periodic status polling.
+   */
+  stopStatusPolling() {
+    if (this._statusPollInterval) {
+      clearInterval(this._statusPollInterval);
+      this._statusPollInterval = null;
+      this.log.debug('RDP status polling stopped');
+    }
   }
 
   /**
@@ -285,6 +338,9 @@ class RdpManager extends EventEmitter {
       // Clear password from memory
       password = null;
 
+      // ── Step 4b: Suppress RDP "unknown publisher" warning ──
+      await this._ensureRdpRegistryKeys();
+
       // ── Step 5: Start mstsc.exe ─────────────────────────
       this._emitProgress(routeId, 'mstsc', 'active');
 
@@ -448,6 +504,7 @@ class RdpManager extends EventEmitter {
 
     this.activeSessions.clear();
     this.monitor.stopAll();
+    this.stopStatusPolling();
 
     // Cleanup any orphaned temp files
     this.configBuilder.cleanupAll();
@@ -585,6 +642,32 @@ class RdpManager extends EventEmitter {
    */
   _emitProgress(routeId, step, status) {
     this.emit('progress', { routeId, step, status });
+  }
+
+  /**
+   * Ensure registry keys are set to suppress the "unknown publisher" RDP warning.
+   * Sets HKCU\SOFTWARE\Microsoft\Terminal Server Client\AuthenticationLevelOverride = 0
+   */
+  async _ensureRdpRegistryKeys() {
+    try {
+      await new Promise((resolve, reject) => {
+        execFile('reg', [
+          'add',
+          'HKCU\\SOFTWARE\\Microsoft\\Terminal Server Client',
+          '/v', 'AuthenticationLevelOverride',
+          '/t', 'REG_DWORD',
+          '/d', '0',
+          '/f',
+        ], { timeout: 5000 }, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      this.log.debug('RDP registry key set (AuthenticationLevelOverride=0)');
+    } catch (err) {
+      this.log.warn('Failed to set RDP registry key:', err.message);
+      // Non-fatal: mstsc will still work, just with the warning dialog
+    }
   }
 
   /**

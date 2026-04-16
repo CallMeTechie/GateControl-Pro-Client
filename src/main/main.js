@@ -821,11 +821,13 @@ function registerIpcHandlers() {
   // ── Panel Resize ────────────────────────────────────────
   ipcMain.handle('panel:open', () => {
     setWindowWidth(true);
+    if (rdpManager) rdpManager.startStatusPolling();
     return true;
   });
 
   ipcMain.handle('panel:close', () => {
     setWindowWidth(false);
+    if (rdpManager) rdpManager.stopStatusPolling();
     return true;
   });
 
