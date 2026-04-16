@@ -617,6 +617,7 @@ function initializeServices() {
 
   connectionMonitor = new ConnectionMonitor({
     interval: store.get('app.checkInterval', 30) * 1000,
+    apiClient,
     onDisconnect: async () => {
       if (isReconnecting) return;
       isReconnecting = true;
@@ -628,6 +629,14 @@ function initializeServices() {
         log.error('Reconnect failed:', err.message);
       }
       isReconnecting = false;
+    },
+    onPeerDisabled: async (peerInfo) => {
+      log.warn(`Peer disabled on server (id: ${peerInfo?.id}, name: ${peerInfo?.name}) — disconnecting`);
+      await disconnectTunnel();
+      new Notification({
+        title: 'GateControl Pro',
+        body: t('notify.peerDisabled'),
+      }).show();
     },
     onStats: (stats) => {
       const now = Date.now();
