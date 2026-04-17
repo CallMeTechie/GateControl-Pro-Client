@@ -30,7 +30,7 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
-let Store, log, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, RdpManager, RdpWolClient;
+let Store, log, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, RdpWolClient;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
@@ -51,6 +51,7 @@ try {
   ApiClientPro = require('../services/api-client-pro');
   Updater = require('@gatecontrol/client-core/src/services/updater');
   ConnectionMonitor = require('@gatecontrol/client-core/src/services/connection-monitor');
+  DnsPolicy = require('@gatecontrol/client-core/src/services/dns-policy');
   RdpManager = require('../services/rdp/rdp-manager');
   RdpWolClient = require('../services/rdp/rdp-wol');
 
@@ -164,6 +165,7 @@ let rdpAllowSvc = null;
 let apiClient = null;
 let connectionMonitor = null;
 let updater = null;
+let dnsPolicy = null;
 let rdpManager = null;
 let rdpWolClient = null;
 let pendingUpdate = null;
@@ -541,6 +543,25 @@ async function connectTunnel() {
       log.debug('Hostname report skipped:', err.message);
     }
 
+    // Install NRPT rule so Windows routes *.gc.internal queries to the
+    // VPN-internal dnsmasq on 10.8.0.1. Without this, Windows fans the
+    // query out to all configured resolvers and caches the NXDOMAIN
+    // that a public resolver returns first — which was exactly why the
+    // RDP cred-SSP target (desktop-xxx.gc.internal) previously failed
+    // to resolve and mstsc fell back to the IP (SPN mismatch again).
+    try {
+      if (DnsPolicy && !dnsPolicy) dnsPolicy = new DnsPolicy(log);
+      if (dnsPolicy) {
+        // Keep the namespace hardcoded to match the server default.
+        // If we later expose the domain via the config API, plug it
+        // in here; for now it matches GC_DNS_DOMAIN's default.
+        dnsPolicy.add('.gc.internal', '10.8.0.1').catch((e) =>
+          log.debug('NRPT install failed:', e && e.message));
+      }
+    } catch (err) {
+      log.debug('NRPT skipped:', err.message);
+    }
+
   } catch (err) {
     log.error('Tunnel connection failed:', err.message);
     updateTray('disconnected');
@@ -554,6 +575,12 @@ async function disconnectTunnel() {
     log.info('Disconnecting tunnel...');
 
     if (connectionMonitor) connectionMonitor.stop();
+
+    // Strip NRPT rule first so a stale *.gc.internal -> 10.8.0.1 pin
+    // doesn't linger after the tunnel is torn down (would block DNS).
+    if (dnsPolicy) {
+      try { await dnsPolicy.removeAll(); } catch (e) { log.debug('NRPT cleanup:', e.message); }
+    }
 
     await wgService.disconnect();
 
