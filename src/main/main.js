@@ -556,6 +556,8 @@ async function connectTunnel() {
         // Keep the namespace hardcoded to match the server default.
         // If we later expose the domain via the config API, plug it
         // in here; for now it matches GC_DNS_DOMAIN's default.
+        // dnsPolicy.add() is now idempotent across legacy rule comments
+        // (pre-1.17 'GateControl' tag) — see client-core dns-policy.js.
         dnsPolicy.add('.gc.internal', '10.8.0.1').catch((e) =>
           log.debug('NRPT install failed:', e && e.message));
       }
