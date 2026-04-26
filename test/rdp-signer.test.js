@@ -96,9 +96,12 @@ describe('RdpSigner', () => {
   it('sign() invokes rdpsign.exe with /sha256 + thumbprint + path', async () => {
     fs.writeFileSync(path.join(certDir, 'thumbprint.txt'), FAKE_THUMBPRINT);
     const calls = [];
+    // path.win32.basename so this passes on Linux CI too — the source
+    // resolves rdpsign.exe to a Windows-style absolute path regardless
+    // of the runtime platform.
     const runCmd = async (file, args) => {
       calls.push({ file, args });
-      const base = path.basename(file).toLowerCase();
+      const base = path.win32.basename(file).toLowerCase();
       if (base === 'powershell.exe') return { stdout: 'yes\n', stderr: '' };
       if (base === 'rdpsign.exe') return { stdout: '', stderr: '' };
       throw new Error(`unexpected: ${file}`);
@@ -107,10 +110,10 @@ describe('RdpSigner', () => {
     const ok = await signer.sign('C:/tmp/foo.rdp');
 
     assert.equal(ok, true);
-    const signCall = calls.find(c => path.basename(c.file).toLowerCase() === 'rdpsign.exe');
+    const signCall = calls.find(c => path.win32.basename(c.file).toLowerCase() === 'rdpsign.exe');
     assert.ok(signCall, 'rdpsign.exe should have been invoked');
-    // Resolved to an absolute Windows path so WoW64 redirection can't
-    // hide rdpsign.exe in SysWOW64 (where it doesn't ship).
+    // Absolute Windows path so WoW64 redirection can't hide rdpsign.exe
+    // in SysWOW64 (where it doesn't ship).
     assert.ok(/^[A-Z]:\\.*\\(System32|Sysnative)\\rdpsign\.exe$/i.test(signCall.file),
       `expected absolute System32/Sysnative path, got: ${signCall.file}`);
     assert.deepEqual(signCall.args, ['/sha256', FAKE_THUMBPRINT, 'C:/tmp/foo.rdp']);
