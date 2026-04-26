@@ -118,8 +118,9 @@ class RdpSigner {
   _rdpsignPath() {
     const winDir = process.env.windir || process.env.SystemRoot || 'C:\\Windows';
     const useSysnative = process.arch === 'ia32' && !!process.env.PROCESSOR_ARCHITEW6432;
-    const sysDir = path.join(winDir, useSysnative ? 'Sysnative' : 'System32');
-    return path.join(sysDir, 'rdpsign.exe');
+    // path.win32 so the result is backslash-canonical even when tests
+    // run on Linux CI; rdpsign.exe is Windows-only anyway.
+    return path.win32.join(winDir, useSysnative ? 'Sysnative' : 'System32', 'rdpsign.exe');
   }
 
   // ── internals ────────────────────────────────────────────
