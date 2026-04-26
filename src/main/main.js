@@ -30,7 +30,7 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
-let Store, log, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, RdpWolClient;
+let Store, log, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, RdpSigner, RdpWolClient;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
@@ -53,6 +53,7 @@ try {
   ConnectionMonitor = require('@gatecontrol/client-core/src/services/connection-monitor');
   DnsPolicy = require('@gatecontrol/client-core/src/services/dns-policy');
   RdpManager = require('../services/rdp/rdp-manager');
+  RdpSigner = require('../services/rdp/rdp-signer');
   RdpWolClient = require('../services/rdp/rdp-wol');
 
   writeCrashLog('IMPORT', 'All imports successful');
@@ -646,12 +647,20 @@ function initializeServices() {
   killSwitchSvc = new KillSwitch(log);
   rdpAllowSvc = new RdpAllowSvc(log);
 
+  const rdpSigner = process.platform === 'win32'
+    ? new RdpSigner({
+        log,
+        certDir: path.join(app.getPath('userData'), 'rdp-signing'),
+      })
+    : null;
+
   rdpManager = new RdpManager({
     apiClient,
     log,
     store,
     getTunnelState: () => tunnelState,
     getPeerInfo: () => apiClient.getPeerInfo(),
+    signer: rdpSigner,
   });
 
   rdpWolClient = new RdpWolClient({ apiClient, log });

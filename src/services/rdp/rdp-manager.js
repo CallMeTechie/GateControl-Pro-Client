@@ -36,8 +36,11 @@ class RdpManager extends EventEmitter {
    * @param {object} [opts.store] - electron-store instance for config
    * @param {function} opts.getTunnelState - Returns current tunnel state { connected }
    * @param {function} opts.getPeerInfo - Returns peer info { expiresAt }
+   * @param {object} [opts.signer] - optional RdpSigner; when present, .rdp
+   *   files are signed so mstsc shows "Trusted Publisher" instead of the
+   *   "Unbekannter Herausgeber" warning
    */
-  constructor({ apiClient, log, store, getTunnelState, getPeerInfo }) {
+  constructor({ apiClient, log, store, getTunnelState, getPeerInfo, signer = null }) {
     super();
     this.api = apiClient;
     this.log = log;
@@ -45,8 +48,9 @@ class RdpManager extends EventEmitter {
     this.getTunnelState = getTunnelState;
     this.getPeerInfo = getPeerInfo;
     this.requireE2ee = store?.get('security.requireE2ee', false) || false;
+    this.signer = signer;
 
-    this.configBuilder = new RdpConfigBuilder(log);
+    this.configBuilder = new RdpConfigBuilder(log, signer);
     this.credentialHandler = new RdpCredentialHandler(log);
     this.monitor = new RdpMonitor({ apiClient, log });
 
@@ -324,7 +328,7 @@ class RdpManager extends EventEmitter {
       // ── Step 3: Generate .rdp file ──────────────────────
       this._emitProgress(routeId, 'rdp-file', 'active');
       this.log.info('Building .rdp file...');
-      const rdpFile = this.configBuilder.build(route);
+      const rdpFile = await this.configBuilder.build(route);
       this.log.info(`RDP file created: ${rdpFile}`);
       this._emitProgress(routeId, 'rdp-file', 'done');
 
@@ -349,7 +353,10 @@ class RdpManager extends EventEmitter {
       // Clear password from memory
       password = null;
 
-      // ── Step 4b: Suppress RDP "unknown publisher" warning ──
+      // ── Step 4b: Relax server-auth check (NLA fallback) ──
+      // Sets AuthenticationLevelOverride=0 so NLA mismatches don't block
+      // the connect. Does NOT affect the file-signature warning — that one
+      // is handled by signing the .rdp file (see RdpSigner / configBuilder).
       await this._ensureRdpRegistryKeys();
 
       // ── Step 5: Start mstsc.exe ─────────────────────────
@@ -669,8 +676,16 @@ class RdpManager extends EventEmitter {
   }
 
   /**
-   * Ensure registry keys are set to suppress the "unknown publisher" RDP warning.
-   * Sets HKCU\SOFTWARE\Microsoft\Terminal Server Client\AuthenticationLevelOverride = 0
+   * Relax NLA server-authentication so a CredSSP/Kerberos hiccup does not
+   * block the connect (e.g. SPN cache lag right after the FQDN was first
+   * resolved). Sets HKCU\SOFTWARE\Microsoft\Terminal Server Client\
+   * AuthenticationLevelOverride = 0 — the same as ticking
+   * "Connect anyway" once.
+   *
+   * NOTE: This does NOT touch the "Unknown Publisher" warning shown for
+   * unsigned .rdp files. That warning is suppressed by signing the file
+   * (see RdpSigner / configBuilder). There is no registry-only bypass for
+   * the file-signature check.
    */
   async _ensureRdpRegistryKeys() {
     try {

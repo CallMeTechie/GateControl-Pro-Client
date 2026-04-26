@@ -8,18 +8,27 @@ const crypto = require('crypto');
 /**
  * Generates temporary .rdp files from server-provided settings.
  * Each file is written to %TEMP% with a random suffix for parallel session support.
+ *
+ * If a signer is provided, the generated file is signed via rdpsign.exe so
+ * mstsc.exe shows the calmer "Trusted Publisher" prompt instead of the
+ * orange "Unbekannter Herausgeber" warning. Signing failures are non-fatal.
  */
 class RdpConfigBuilder {
-  constructor(log) {
+  /**
+   * @param {object} log - electron-log instance
+   * @param {object} [signer] - optional RdpSigner; if null, files stay unsigned
+   */
+  constructor(log, signer = null) {
     this.log = log;
+    this.signer = signer;
   }
 
   /**
    * Build a .rdp file from route settings and return the file path.
    * @param {object} route - RDP route settings from the server
-   * @returns {string} Absolute path to the generated .rdp file
+   * @returns {Promise<string>} Absolute path to the generated .rdp file
    */
-  build(route) {
+  async build(route) {
     const lines = [];
 
     // ── Connection ─────────────────────────────────────────
@@ -181,6 +190,14 @@ class RdpConfigBuilder {
 
     fs.writeFileSync(filePath, content, { encoding: 'utf-8' });
     this.log.info(`RDP config written: ${filePath}`);
+
+    if (this.signer) {
+      try {
+        await this.signer.sign(filePath);
+      } catch (err) {
+        this.log.warn(`RDP signing skipped due to error: ${err.message}`);
+      }
+    }
 
     return filePath;
   }
