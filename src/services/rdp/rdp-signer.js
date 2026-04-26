@@ -102,13 +102,24 @@ class RdpSigner {
     if (!thumbprint) return false;
 
     try {
-      await this.runCmd('rdpsign.exe', ['/sha256', thumbprint, filePath], { timeout: 10000 });
+      await this.runCmd(this._rdpsignPath(), ['/sha256', thumbprint, filePath], { timeout: 10000 });
       this.log.debug(`RDP file signed: ${path.basename(filePath)}`);
       return true;
     } catch (err) {
       this.log.warn(`rdpsign.exe failed for ${path.basename(filePath)}:`, err.message);
       return false;
     }
+  }
+
+  // rdpsign.exe ships only in the 64-bit System32 — never in SysWOW64.
+  // A 32-bit Electron build on 64-bit Windows would hit File-System
+  // Redirection and resolve System32 → SysWOW64 (no rdpsign), so we
+  // explicitly use Sysnative in that case to reach the real System32.
+  _rdpsignPath() {
+    const winDir = process.env.windir || process.env.SystemRoot || 'C:\\Windows';
+    const useSysnative = process.arch === 'ia32' && !!process.env.PROCESSOR_ARCHITEW6432;
+    const sysDir = path.join(winDir, useSysnative ? 'Sysnative' : 'System32');
+    return path.join(sysDir, 'rdpsign.exe');
   }
 
   // ── internals ────────────────────────────────────────────
