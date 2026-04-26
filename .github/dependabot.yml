@@ -1,8 +1,18 @@
 version: 2
 updates:
-  # npm disabled: @gatecontrol/client-core uses file: reference which
-  # Dependabot cannot resolve in its sandbox. Core library deps are
-  # managed separately in gatecontrol-client-core repo.
+  # npm disabled: @gatecontrol/client-core uses a file: reference
+  # ("file:../gatecontrol-client-core") which Dependabot cannot resolve
+  # in its sandbox -- file fetching aborts with
+  #   "path based dependencies could not be retrieved: @gatecontrol/client-core".
+  # Core library deps are managed in the gatecontrol-client-core repo.
+  #
+  # Note: Dependabot *security* updates run independently of this file
+  # and would still trigger on vulnerability alerts, hitting the same
+  # sandbox failure. Therefore "Automated security fixes" are also
+  # disabled at the repo level via the GitHub API:
+  #   gh api -X DELETE repos/<owner>/<repo>/automated-security-fixes
+  # Re-enable with PUT once the file: dep is replaced (e.g. by a git URL
+  # or npm workspace).
 
   - package-ecosystem: "github-actions"
     directory: "/"
