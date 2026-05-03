@@ -37,9 +37,45 @@ imports its public part into three user-scoped certificate stores:
 
 All three stores are **per-user**, so cert creation requires no admin/UAC
 elevation. The thumbprint is persisted in
-`%APPDATA%\GateControl Pro Client\rdp-signing\thumbprint.txt`. On subsequent
+`%APPDATA%\gatecontrol-client-pro\rdp-signing\thumbprint.txt`. On subsequent
 runs, the signer probes the store and only recreates the cert if it has been
 removed manually.
+
+## Locating `rdpsign.exe`
+
+Normally `rdpsign.exe` ships in `C:\Windows\System32\` on every Windows
+install. Some systems (debloat scripts, partial in-place upgrades from
+older Windows versions, lean editions) end up missing it. The signer
+resolves the binary via a memoized three-step chain on first signing
+attempt:
+
+1. **System32 / Sysnative** — `C:\Windows\System32\rdpsign.exe`. For 32-bit
+   Electron builds on 64-bit Windows we use `Sysnative` to bypass File
+   System Redirection (which would route to SysWOW64, where `rdpsign.exe`
+   does **not** ship).
+2. **User cache** — `<userData>\bin\rdpsign.exe` (populated by step 3 on
+   a prior run).
+3. **WinSxS auto-restore** — scan
+   `C:\Windows\WinSxS\amd64_microsoft-windows-t..lishing-wmiprovider_*\`,
+   pick the newest version (parsed from the `_a.b.c.d_` build number in
+   the directory name), and copy `rdpsign.exe` into the user-cache
+   location. Uses the user's own Microsoft-signed binary, so no
+   redistribution concern, no Admin, no UAC.
+
+If all three miss, the signer marks itself as unavailable, sets
+`signingUnavailableReason = 'missing'`, and emits an `'unavailable'`
+event exactly once. `RdpManager` re-emits `'signing-unavailable'`; the
+main process shows a desktop Notification (`notify.rdpSigningUnavailable`)
+and forwards an IPC message to the renderer, which displays a long-dwell
+info toast pointing the user at `sfc /scannow` for repair.
+
+A user can confirm the state with:
+
+```powershell
+Test-Path C:\Windows\System32\rdpsign.exe
+Test-Path "$env:APPDATA\gatecontrol-client-pro\bin\rdpsign.exe"
+Get-ChildItem C:\Windows\WinSxS\amd64_microsoft-windows-t..lishing-wmiprovider_*\rdpsign.exe
+```
 
 `RdpConfigBuilder` calls `signer.sign(filePath)` after writing each
 `.rdp` file. `rdpsign.exe /sha256 <thumbprint> <file>` adds `signscope:s:s`
@@ -74,7 +110,10 @@ the client recreates it on the next launch.
 ## Tests
 
 - `test/rdp-signer.test.js` — covers cert creation, cache reuse, recreation
-  on store eviction, malformed-output handling, sign-call shape, and the
-  in-flight-promise dedupe for concurrent callers.
+  on store eviction, malformed-output handling, sign-call shape, the
+  in-flight-promise dedupe for concurrent callers, plus the path-resolver
+  chain (System32 fast-path, cache hit, WinSxS restore picks newest
+  version, total miss → null + single `unavailable` emission, sign()
+  short-circuit when path is null, version sort).
 - `test/rdp-config-builder.test.js` — adds two cases: signer is invoked once
   per generated file, and a throwing signer does not break the connect.
