@@ -226,5 +226,11 @@ contextBridge.exposeInMainWorld('gatecontrol', {
       ipcRenderer.on('rdp:session-timeout-warning', handler);
       return () => ipcRenderer.removeListener('rdp:session-timeout-warning', handler);
     },
+
+    onSigningUnavailable: (cb) => {
+      const handler = (_, data) => cb(data);
+      ipcRenderer.on('rdp:signing-unavailable', handler);
+      return () => ipcRenderer.removeListener('rdp:signing-unavailable', handler);
+    },
   },
 });

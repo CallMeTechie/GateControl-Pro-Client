@@ -27,6 +27,11 @@ const RdpMonitor = require('./rdp-monitor');
  *   'session-error'   - { routeId, error }
  *   'progress'        - { routeId, step, status }
  *   'services-update' - rdpServices[]
+ *   'signing-unavailable' - { reason } — emitted at most once per process
+ *                           when rdpsign.exe can neither be found nor
+ *                           restored from WinSxS, so the UI can show a
+ *                           one-time notice that mstsc will keep showing
+ *                           the publisher warning.
  */
 class RdpManager extends EventEmitter {
   /**
@@ -69,6 +74,14 @@ class RdpManager extends EventEmitter {
       this.log.warn(`RDP session timeout for route ${data.routeId}`);
       this._handleSessionTimeout(data);
     });
+
+    // Bubble up the one-time signing-unavailable signal so the renderer
+    // can tell the user why mstsc keeps showing the publisher warning.
+    if (this.signer && typeof this.signer.on === 'function') {
+      this.signer.on('unavailable', (data) => {
+        this.emit('signing-unavailable', data);
+      });
+    }
   }
 
   // ══════════════════════════════════════════════════════════

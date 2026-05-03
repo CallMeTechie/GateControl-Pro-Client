@@ -665,6 +665,25 @@ function initializeServices() {
     signer: rdpSigner,
   });
 
+  // One-time UI notice when rdpsign.exe is missing on this machine and
+  // can't be auto-restored from WinSxS. Delivered via Notification (so
+  // the user sees it even with the window minimized) AND IPC (so the
+  // renderer can show an inline hint in the RDP view if it wants to).
+  rdpManager.on('signing-unavailable', (data) => {
+    log.warn(`RDP signing unavailable on this machine (${data?.reason || 'unknown'})`);
+    try {
+      new Notification({
+        title: 'GateControl Pro',
+        body: t('notify.rdpSigningUnavailable'),
+      }).show();
+    } catch (err) {
+      log.debug('Failed to show signing-unavailable notification:', err.message);
+    }
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('rdp:signing-unavailable', data);
+    }
+  });
+
   rdpWolClient = new RdpWolClient({ apiClient, log });
 
   connectionMonitor = new ConnectionMonitor({
