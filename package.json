@@ -27,6 +27,10 @@
     "electron": "^41.2.0",
     "electron-builder": "^26.8.1"
   },
+  "overrides": {
+    "@xmldom/xmldom": "0.8.13",
+    "fast-uri": "3.1.2"
+  },
   "build": {
     "appId": "com.gatecontrol.client-pro",
     "productName": "GateControl Pro Client",
