@@ -39,8 +39,9 @@ class RdpConfigBuilder {
       || (route.external_hostname && route.access_mode !== 'internal'
         ? route.external_hostname
         : route.host);
-    const port = route.connect_port
-      || (route.external_port && route.access_mode !== 'internal'
+    const port = route.connect_port != null
+      ? route.connect_port
+      : (route.external_port && route.access_mode !== 'internal'
         ? route.external_port
         : (route.port || 3389));
 

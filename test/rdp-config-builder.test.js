@@ -131,6 +131,18 @@ describe('RdpConfigBuilder', () => {
     tempFiles.push(rdpPath);
     const content = fs.readFileSync(rdpPath, 'utf8');
     assert.match(content, /full address:s:gc\.example\.com:13389/);
+    assert.doesNotMatch(content, /full address:s:192\.168\.2\.100/);
+  });
+
+  it('falls back to host when connect_address/connect_port are null', async () => {
+    const file = await builder.build({
+      name: 'fallback', access_mode: 'gateway',
+      host: '10.8.0.9', port: 3389,
+      connect_address: null, connect_port: null,
+    });
+    tempFiles.push(file);
+    const content = fs.readFileSync(file, 'utf8');
+    assert.match(content, /full address:s:10\.8\.0\.9:3389/);
   });
 
   it('cleanup removes temp files', async () => {
