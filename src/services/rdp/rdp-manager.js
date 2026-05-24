@@ -178,15 +178,11 @@ class RdpManager extends EventEmitter {
       // ── Step 1: Pre-Flight Checks ───────────────────────
       this._emitProgress(routeId, 'preflight', 'active');
 
-      // 1a. VPN tunnel must be active
-      const tunnelState = this.getTunnelState();
-      if (!tunnelState || !tunnelState.connected) {
-        this._emitProgress(routeId, 'preflight', 'error');
-        return { success: false, error: 'VPN-Tunnel ist nicht aktiv. Bitte zuerst verbinden.' };
-      }
-      this._emitProgress(routeId, 'vpn-check', 'done');
-
-      // 1b. Get connection details from server (with E2EE)
+      // 1a. Get connection details from server (with E2EE) FIRST.
+      // The connect API call goes to the GateControl server and does not need
+      // the WG tunnel. We fetch it before the VPN check because gateway-mode
+      // routes reach the public server endpoint (connect_address) and need no
+      // tunnel — and we need the server-resolved access_mode to decide.
       this.log.info(`Fetching connection data for route ${routeId}...`);
       const { publicKey: ecdhPublicKey } = this.credentialHandler.generateKeyPair();
       const connectData = await this.api.getRdpConnect(routeId, { ecdhPublicKey });
@@ -197,14 +193,39 @@ class RdpManager extends EventEmitter {
       }
 
       const route = connectData;
+      const isGateway = route.access_mode === 'gateway';
+      // host/port = the LAN target. Used only for server-side WoL routing,
+      // logging, the cmdkey fallback entry, and session bookkeeping — NOT as the
+      // address the client connects to. The real connect target is checkHost/
+      // checkPort below (for gateway routes that is the public connect_address,
+      // not this LAN host). The manager intentionally does not fall back to
+      // external_hostname for gateway; the server always sends connect_address there.
       const host = route.host;
       const port = route.port || 3389;
-      // credTarget = what we hand to cmdkey /generic. If the peer has an
-      // internal FQDN, use that — matches the CredSSP SPN the server
-      // presents via its cert CN and avoids the "credentials did not
-      // work" dialog on hosts whose cert CN differs from the VPN IP.
-      const credTarget = (route.access_mode !== 'external' && route.peer_fqdn) ? route.peer_fqdn : host;
-      this.log.info(`RDP target: ${host}:${port}${credTarget !== host ? ` (credSSP target: ${credTarget})` : ''}`);
+      // Effective endpoint the client actually connects to. For gateway routes
+      // this is the public <server>:<listen_port> (connect_address), not the LAN
+      // host. Used for the reachability check; the .rdp full address (B1) and the
+      // credTarget below use the same value so cmdkey matches mstsc.
+      const checkHost = route.connect_address || host;
+      const checkPort = route.connect_port != null ? route.connect_port : port;
+      // credTarget = what we hand to cmdkey /generic; it MUST match the .rdp
+      // "full address". For gateway that is connect_address; otherwise prefer the
+      // internal FQDN (matches the CredSSP SPN from the server cert CN).
+      const credTarget = isGateway
+        ? (route.connect_address || host)
+        : ((route.access_mode !== 'external' && route.peer_fqdn) ? route.peer_fqdn : host);
+      this.log.info(`RDP target: ${checkHost}:${checkPort}${credTarget !== checkHost ? ` (credSSP target: ${credTarget})` : ''}`);
+
+      // 1b. VPN tunnel must be active — EXCEPT gateway routes, whose endpoint
+      // is the public server:listen_port (reachable without the tunnel).
+      if (!isGateway) {
+        const tunnelState = this.getTunnelState();
+        if (!tunnelState || !tunnelState.connected) {
+          this._emitProgress(routeId, 'preflight', 'error');
+          return { success: false, error: 'VPN-Tunnel ist nicht aktiv. Bitte zuerst verbinden.' };
+        }
+      }
+      this._emitProgress(routeId, 'vpn-check', 'done');
 
       // 1c. Maintenance window check
       if (route.maintenance_enabled && route.maintenance_active && !opts.forceMaintenanceBypass) {
@@ -233,23 +254,23 @@ class RdpManager extends EventEmitter {
       } catch {}
 
       // 1e. TCP port check
-      this.log.info(`TCP check: ${host}:${port}...`);
-      const reachable = await this._tcpCheck(host, port, 5000);
+      this.log.info(`TCP check: ${checkHost}:${checkPort}...`);
+      const reachable = await this._tcpCheck(checkHost, checkPort, 5000);
       this.log.info(`TCP check result: ${reachable ? 'reachable' : 'unreachable'}`);
 
       if (!reachable) {
         // Check if WoL is available
         if (route.wol_enabled && route.wol_mac_address) {
           this._emitProgress(routeId, 'wol', 'active');
-          const wolResult = await this._performWol(routeId, host, port);
+          const wolResult = await this._performWol(routeId, checkHost, checkPort);
           if (!wolResult) {
             this._emitProgress(routeId, 'wol', 'error');
-            return { success: false, error: `Host ${host}:${port} ist nicht erreichbar. Wake-on-LAN fehlgeschlagen.` };
+            return { success: false, error: `Host ${checkHost}:${checkPort} ist nicht erreichbar. Wake-on-LAN fehlgeschlagen.` };
           }
           this._emitProgress(routeId, 'wol', 'done');
         } else {
           this._emitProgress(routeId, 'tcp-check', 'error');
-          return { success: false, error: `Host ${host}:${port} ist nicht erreichbar.` };
+          return { success: false, error: `Host ${checkHost}:${checkPort} ist nicht erreichbar.` };
         }
       }
       this._emitProgress(routeId, 'tcp-check', 'done');

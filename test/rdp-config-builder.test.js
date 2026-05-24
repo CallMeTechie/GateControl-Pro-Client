@@ -122,6 +122,42 @@ describe('RdpConfigBuilder', () => {
       'internal FQDN must not leak into external-mode .rdp');
   });
 
+  it('gateway route uses connect_address:connect_port as full address', async () => {
+    const rdpPath = await builder.build({
+      name: 'gw', access_mode: 'gateway',
+      host: '192.168.2.100', port: 3389,
+      connect_address: 'gc.example.com', connect_port: 13389,
+    });
+    tempFiles.push(rdpPath);
+    const content = fs.readFileSync(rdpPath, 'utf8');
+    assert.match(content, /full address:s:gc\.example\.com:13389/);
+    assert.doesNotMatch(content, /full address:s:192\.168\.2\.100/);
+  });
+
+  it('falls back to host when connect_address/connect_port are null', async () => {
+    const file = await builder.build({
+      name: 'fallback', access_mode: 'gateway',
+      host: '10.8.0.9', port: 3389,
+      connect_address: null, connect_port: null,
+    });
+    tempFiles.push(file);
+    const content = fs.readFileSync(file, 'utf8');
+    assert.match(content, /full address:s:10\.8\.0\.9:3389/);
+  });
+
+  it('gateway route ignores peer_fqdn; connect_address stays primary full address', async () => {
+    const file = await builder.build({
+      name: 'gw-fqdn', access_mode: 'gateway',
+      host: '192.168.2.100', port: 3389,
+      connect_address: 'gc.example.com', connect_port: 13389,
+      peer_fqdn: 'desktop.gc.internal',
+    });
+    tempFiles.push(file);
+    const content = fs.readFileSync(file, 'utf8');
+    assert.match(content, /full address:s:gc\.example\.com:13389/);
+    assert.doesNotMatch(content, /full address:s:desktop\.gc\.internal/);
+  });
+
   it('cleanup removes temp files', async () => {
     const route = { host: '10.0.0.1', port: 3389, resolution_mode: 'fullscreen', color_depth: 32, nla_enabled: 1, redirect_clipboard: 1, redirect_printers: 0, redirect_drives: 0, redirect_usb: 0, redirect_smartcard: 0, audio_mode: 'local' };
     const rdpPath = await builder.build(route);
