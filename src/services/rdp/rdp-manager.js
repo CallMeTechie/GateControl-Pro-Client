@@ -194,6 +194,12 @@ class RdpManager extends EventEmitter {
 
       const route = connectData;
       const isGateway = route.access_mode === 'gateway';
+      // host/port = the LAN target. Used only for server-side WoL routing,
+      // logging, the cmdkey fallback entry, and session bookkeeping — NOT as the
+      // address the client connects to. The real connect target is checkHost/
+      // checkPort below (for gateway routes that is the public connect_address,
+      // not this LAN host). The manager intentionally does not fall back to
+      // external_hostname for gateway; the server always sends connect_address there.
       const host = route.host;
       const port = route.port || 3389;
       // Effective endpoint the client actually connects to. For gateway routes
@@ -256,7 +262,7 @@ class RdpManager extends EventEmitter {
         // Check if WoL is available
         if (route.wol_enabled && route.wol_mac_address) {
           this._emitProgress(routeId, 'wol', 'active');
-          const wolResult = await this._performWol(routeId, host, port);
+          const wolResult = await this._performWol(routeId, checkHost, checkPort);
           if (!wolResult) {
             this._emitProgress(routeId, 'wol', 'error');
             return { success: false, error: `Host ${checkHost}:${checkPort} ist nicht erreichbar. Wake-on-LAN fehlgeschlagen.` };
