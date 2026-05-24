@@ -49,7 +49,7 @@ class RdpConfigBuilder {
     // cert CN matches the target name and CredSSP can send the
     // credentials. Fall back to the IP via "alternate full address"
     // so connect still works if DNS fails.
-    const useFqdn = route.access_mode !== 'external' && route.peer_fqdn;
+    const useFqdn = route.access_mode !== 'external' && route.access_mode !== 'gateway' && route.peer_fqdn;
     const primaryHost = useFqdn ? route.peer_fqdn : ipHost;
 
     lines.push(`full address:s:${primaryHost}:${port}`);
