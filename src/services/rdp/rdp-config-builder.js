@@ -32,12 +32,17 @@ class RdpConfigBuilder {
     const lines = [];
 
     // ── Connection ─────────────────────────────────────────
-    const ipHost = route.external_hostname && route.access_mode !== 'internal'
-      ? route.external_hostname
-      : route.host;
-    const port = route.external_port && route.access_mode !== 'internal'
-      ? route.external_port
-      : (route.port || 3389);
+    // Prefer the server-resolved connect endpoint (set for gateway/external
+    // routes by the server). Falls back to legacy host/port resolution for
+    // older servers that don't send connect_address.
+    const ipHost = route.connect_address
+      || (route.external_hostname && route.access_mode !== 'internal'
+        ? route.external_hostname
+        : route.host);
+    const port = route.connect_port
+      || (route.external_port && route.access_mode !== 'internal'
+        ? route.external_port
+        : (route.port || 3389));
 
     // Prefer the peer FQDN (feature: internal_dns) so the RDP server
     // cert CN matches the target name and CredSSP can send the

@@ -122,6 +122,17 @@ describe('RdpConfigBuilder', () => {
       'internal FQDN must not leak into external-mode .rdp');
   });
 
+  it('gateway route uses connect_address:connect_port as full address', async () => {
+    const rdpPath = await builder.build({
+      name: 'gw', access_mode: 'gateway',
+      host: '192.168.2.100', port: 3389,
+      connect_address: 'gc.example.com', connect_port: 13389,
+    });
+    tempFiles.push(rdpPath);
+    const content = fs.readFileSync(rdpPath, 'utf8');
+    assert.match(content, /full address:s:gc\.example\.com:13389/);
+  });
+
   it('cleanup removes temp files', async () => {
     const route = { host: '10.0.0.1', port: 3389, resolution_mode: 'fullscreen', color_depth: 32, nla_enabled: 1, redirect_clipboard: 1, redirect_printers: 0, redirect_drives: 0, redirect_usb: 0, redirect_smartcard: 0, audio_mode: 'local' };
     const rdpPath = await builder.build(route);
