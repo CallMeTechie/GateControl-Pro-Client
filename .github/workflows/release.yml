@@ -9,6 +9,8 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Auth for transitive @callmetechie/gatecontrol-config-hash via GitHub Packages (.npmrc).
+  NODE_AUTH_TOKEN: ${{ secrets.GC_PAT }}
 
 jobs:
   security-gate:
