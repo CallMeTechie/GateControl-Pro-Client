@@ -1,6 +1,6 @@
 {
   "name": "gatecontrol-client-pro",
-  "version": "1.19.5",
+  "version": "1.19.6",
   "description": "GateControl Pro Client mit RDP-Integration",
   "main": "src/main/main.js",
   "author": "GateControl",
