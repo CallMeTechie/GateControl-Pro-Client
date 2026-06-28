@@ -133,6 +133,8 @@
     "open": "Open Portal"
   },
   "notify": {
+    "reconnected": "VPN reconnected",
+    "reconnectFailed": "Reconnect failed — please reconnect manually",
     "rdpSigningUnavailable": "rdpsign.exe is missing on this machine. RDP connections still work, but Windows will show a security warning. Repair: run \"sfc /scannow\" as Administrator."
   }
 }

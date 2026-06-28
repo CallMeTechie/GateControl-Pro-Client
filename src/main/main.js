@@ -15,6 +15,9 @@ function writeCrashLog(label, err) {
   } catch {}
 }
 
+// Pure tunnel/portal decision logic (unit-tested in test/tunnel-logic.test.js).
+const { reconnectDelay, shouldOpenPortal } = require('./tunnel-logic');
+
 process.on('uncaughtException', (err) => {
   writeCrashLog('uncaughtException', err);
   try {
@@ -483,11 +486,10 @@ function broadcastState(status, error = null) {
   mainWindow?.webContents.send('tunnel-state', state);
 }
 
-async function connectTunnel(opts = {}) {
-  // The guard blocks EXTERNAL concurrent connect calls while a reconnect is
-  // running. The reconnect handler itself passes fromReconnect so it can drive
-  // connectTunnel (which owns the full connect sequence) without self-blocking.
-  if (isReconnecting && !opts.fromReconnect) {
+async function connectTunnel() {
+  // Block external (user/tray) connect calls while the reconnect loop owns the
+  // tunnel; the reconnect loop drives wgService directly and never calls this.
+  if (isReconnecting) {
     log.debug('Reconnect already in progress, skipping connectTunnel');
     return;
   }
@@ -556,9 +558,9 @@ async function connectTunnel(opts = {}) {
     updateTray('connected'); // refresh so portal tray item appears
     if (mainWindow) mainWindow.webContents.send('portal-url', portalUrl);
     const since = tunnelState.connectedSince ? tunnelState.connectedSince.getTime() : Date.now();
-    // Suppress auto-open on reconnect (a reconnect mints a fresh connectedSince,
-    // so the connectedSince guard alone would re-open) — FORK B: only user connects open.
-    if (portalUrl && autoOpenPortal && !opts.fromReconnect && portalOpenedSince !== since) {
+    // Auto-open only on a user-initiated connect. The reconnect loop uses a
+    // separate path that never runs this block, so a reconnect can't re-open.
+    if (shouldOpenPortal({ portalUrl, autoOpenPortal, connectedSince: since, lastOpenedSince: portalOpenedSince })) {
       portalOpenedSince = since;
       openPortalSafe();
     }
@@ -737,14 +739,41 @@ function initializeServices() {
     onDisconnect: async () => {
       if (isReconnecting) return;
       isReconnecting = true;
-      log.info('Connection lost, attempting reconnect...');
-      try {
-        await disconnectTunnel();
-        await connectTunnel({ fromReconnect: true });
-      } catch (err) {
-        log.error('Reconnect failed:', err.message);
+      log.warn('Connection lost, attempting reconnect...');
+      tunnelState.connected = false;
+      updateTray('connecting');
+      broadcastState('reconnecting');
+
+      const maxRetries = 10;
+      const splitRoutes = store.get('tunnel.splitTunnel') ? store.get('tunnel.splitRoutes', '') : null;
+      for (let i = 0; i < maxRetries; i++) {
+        await new Promise(r => setTimeout(r, reconnectDelay(i)));
+        log.info(`Reconnect attempt ${i + 1}/${maxRetries}...`);
+        try {
+          await wgService.disconnect().catch(() => {});
+          await wgService.connect(WG_CONFIG_FILE, splitRoutes);
+          tunnelState.connected = true;
+          tunnelState.connectedSince = new Date();
+          isReconnecting = false;
+          updateTray('connected');
+          broadcastState('connected');
+          // Restore the portal button/tray after a reconnect, but do NOT
+          // auto-open (FORK B: only user-initiated connects open the browser).
+          if (mainWindow) mainWindow.webContents.send('portal-url', portalUrl);
+          connectionMonitor.start();
+          new Notification({ title: 'GateControl Pro', body: t('notify.reconnected') }).show();
+          log.info('Reconnect successful');
+          return;
+        } catch (err) {
+          log.warn(`Reconnect attempt ${i + 1} failed: ${err.message}`);
+        }
       }
+
       isReconnecting = false;
+      updateTray('disconnected');
+      broadcastState('error', t('notify.reconnectFailed'));
+      new Notification({ title: 'GateControl Pro', body: t('notify.reconnectFailed') }).show();
+      log.error('All reconnect attempts failed');
     },
     onPeerDisabled: async (peerInfo) => {
       log.warn(`Peer disabled on server (id: ${peerInfo?.id}, name: ${peerInfo?.name}) — disconnecting`);
