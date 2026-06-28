@@ -483,8 +483,11 @@ function broadcastState(status, error = null) {
   mainWindow?.webContents.send('tunnel-state', state);
 }
 
-async function connectTunnel() {
-  if (isReconnecting) {
+async function connectTunnel(opts = {}) {
+  // The guard blocks EXTERNAL concurrent connect calls while a reconnect is
+  // running. The reconnect handler itself passes fromReconnect so it can drive
+  // connectTunnel (which owns the full connect sequence) without self-blocking.
+  if (isReconnecting && !opts.fromReconnect) {
     log.debug('Reconnect already in progress, skipping connectTunnel');
     return;
   }
@@ -553,7 +556,9 @@ async function connectTunnel() {
     updateTray('connected'); // refresh so portal tray item appears
     if (mainWindow) mainWindow.webContents.send('portal-url', portalUrl);
     const since = tunnelState.connectedSince ? tunnelState.connectedSince.getTime() : Date.now();
-    if (portalUrl && autoOpenPortal && portalOpenedSince !== since) {
+    // Suppress auto-open on reconnect (a reconnect mints a fresh connectedSince,
+    // so the connectedSince guard alone would re-open) — FORK B: only user connects open.
+    if (portalUrl && autoOpenPortal && !opts.fromReconnect && portalOpenedSince !== since) {
       portalOpenedSince = since;
       openPortalSafe();
     }
@@ -735,7 +740,7 @@ function initializeServices() {
       log.info('Connection lost, attempting reconnect...');
       try {
         await disconnectTunnel();
-        await connectTunnel();
+        await connectTunnel({ fromReconnect: true });
       } catch (err) {
         log.error('Reconnect failed:', err.message);
       }
