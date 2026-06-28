@@ -8,7 +8,7 @@
 
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
-	services, traffic, dns, shell, peer, permissions, getVersion,
+	services, traffic, dns, shell, peer, permissions, onPortalUrl, getVersion,
 	window: win, rdp, onNavigate, locale,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
@@ -160,6 +160,7 @@ let rdpServices = [];
 let panelOpen = false;
 let pinned = false;
 let currentRdpRoute = null; // route being viewed/connected
+let currentPortalUrl = null; // pushed from main on connect/disconnect
 
 // ── DOM Elements ─────────────────────────────────────────
 const el = {
@@ -168,6 +169,7 @@ const el = {
 	statusIcon:      $('#status-icon'),
 	statusLabel:     $('#status-label'),
 	connectBtn:      $('#connect-btn'),
+	portalBtn:       $('#portal-btn'),
 	statEndpoint:    $('#stat-endpoint'),
 	statHandshake:   $('#stat-handshake'),
 	statRx:          $('#stat-rx'),
@@ -978,6 +980,9 @@ function updateUI() {
 
 	// RDP Allow
 	el.rdpAllowToggle.checked = state.rdpAllow || false;
+
+	// Portal button visibility
+	togglePortalBtn();
 }
 
 // ── Connect Button ───────────────────────────────────────
@@ -988,6 +993,21 @@ el.connectBtn.addEventListener('click', async () => {
 	} else {
 		await tunnel.connect();
 	}
+});
+
+// ── Portal Button ────────────────────────────────────────
+function togglePortalBtn() {
+	const show = !!(currentPortalUrl && state.connected);
+	el.portalBtn?.toggleAttribute('hidden', !show);
+}
+
+onPortalUrl?.((url) => {
+	currentPortalUrl = url;
+	togglePortalBtn();
+});
+
+el.portalBtn?.addEventListener('click', () => {
+	if (currentPortalUrl) shell.openExternal(currentPortalUrl);
 });
 
 // ── Kill-Switch Toggle ───────────────────────────────────

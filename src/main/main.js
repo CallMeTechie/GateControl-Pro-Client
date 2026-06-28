@@ -190,6 +190,11 @@ let lastStatsTime = 0;
 let isReconnecting = false;
 let rdpPanelOpen = false;
 
+// ── Portal state ─────────────────────────────────────────────
+let portalUrl = null;
+let autoOpenPortal = false;
+let portalOpenedSince = null;
+
 // ── Constants ────────────────────────────────────────────────
 const BASE_WIDTH = 590;
 const PANEL_WIDTH = 450;
@@ -204,6 +209,12 @@ const WG_CONFIG_DIR = path.join(app.getPath('userData'), 'wireguard');
 const WG_CONFIG_FILE = path.join(WG_CONFIG_DIR, 'gatecontrol0.conf');
 
 // ── Helpers ──────────────────────────────────────────────────
+function openPortalSafe() {
+  if (portalUrl && /^https:\/\//i.test(portalUrl)) {
+    require('electron').shell.openExternal(portalUrl).catch(() => {});
+  }
+}
+
 function formatBytesShort(bytes) {
   if (!bytes || bytes <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -344,6 +355,10 @@ function updateTray(connState) {
     ...(pendingUpdate ? [
       { type: 'separator' },
       { label: t('tray.installUpdate', { version: pendingUpdate.version }), click: () => installUpdate() },
+    ] : []),
+    ...(portalUrl ? [
+      { type: 'separator' },
+      { label: t('portal.open'), click: () => openPortalSafe() },
     ] : []),
     { type: 'separator' },
     {
@@ -525,6 +540,24 @@ async function connectTunnel() {
     updateTray('connected');
     broadcastState('connected');
 
+    // ── Portal auto-open ─────────────────────────────────────
+    async function refreshPortalUrl() {
+      await apiClient.getPermissions();
+      portalUrl = apiClient.portalUrl;
+      autoOpenPortal = apiClient.autoOpenPortal;
+      // ponytail: getPermissions() catches internally; on failure portalUrl retains prior value
+      if (!portalUrl) log.warn('portal url fetch returned empty');
+    }
+    await refreshPortalUrl();
+    if (!portalUrl) { await new Promise(r => setTimeout(r, 1500)); await refreshPortalUrl(); }
+    updateTray('connected'); // refresh so portal tray item appears
+    if (mainWindow) mainWindow.webContents.send('portal-url', portalUrl);
+    const since = tunnelState.connectedSince ? tunnelState.connectedSince.getTime() : Date.now();
+    if (portalUrl && autoOpenPortal && portalOpenedSince !== since) {
+      portalOpenedSince = since;
+      openPortalSafe();
+    }
+
     if (connectionMonitor) connectionMonitor.start();
 
     new Notification({ title: 'GateControl Pro', body: t('notify.connected') }).show();
@@ -595,6 +628,13 @@ async function disconnectTunnel() {
     tunnelState.connectedSince = null;
     tunnelState.rxBytes = 0;
     tunnelState.txBytes = 0;
+
+    // Reset portal only on real disconnect, not during a reconnect transient
+    if (!isReconnecting) {
+      portalOpenedSince = null;
+      portalUrl = null;
+      if (mainWindow) mainWindow.webContents.send('portal-url', null);
+    }
 
     updateTray('disconnected');
     broadcastState('disconnected');

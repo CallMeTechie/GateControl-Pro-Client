@@ -129,6 +129,9 @@
     "mstscActive": "Remote Desktop wird gestartet...",
     "cmdkeyActive": "Credentials werden gespeichert..."
   },
+  "portal": {
+    "open": "Portal öffnen"
+  },
   "notify": {
     "rdpSigningUnavailable": "rdpsign.exe fehlt auf diesem System. RDP-Verbindungen funktionieren, aber Windows zeigt eine Sicherheitswarnung. Reparatur: \"sfc /scannow\" als Administrator ausführen."
   }
