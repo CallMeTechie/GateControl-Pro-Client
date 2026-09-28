@@ -81,14 +81,15 @@
     "testInProgress": "Teste Verbindung...",
     "testSuccess": "Verbindung erfolgreich!",
     "testError": "Fehler: {{ error }}",
-    "urlAndKeyRequired": "URL und API-Key erforderlich",
+    "urlAndKeyRequired": "URL und API-Key oder Einrichtungscode erforderlich",
     "registering": "Registriere Client...",
     "registered": "Registriert! Peer-ID: {{ peerId }}",
     "configImported": "Config importiert: {{ path }}",
     "importError": "Import-Fehler: {{ error }}",
     "qrSuccess": "QR-Code erkannt! Config importiert.",
     "qrTimeout": "QR-Scan Timeout — kein Code erkannt.",
-    "cameraError": "Kamera-Fehler: {{ error }}"
+    "cameraError": "Kamera-Fehler: {{ error }}",
+    "enrolled": "Gerät eingerichtet (Peer-ID: {{ peerId }})"
   },
   "split": {
     "activateOnReconnect": "Split-Tunneling wird nach Neuverbindung aktiv.",
