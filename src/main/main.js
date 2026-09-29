@@ -33,7 +33,7 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
-let Store, log, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, RdpSigner, RdpWolClient;
+let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, RdpSigner, RdpWolClient;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
@@ -47,6 +47,7 @@ try {
 
   writeCrashLog('IMPORT', 'Loading core services...');
   WireGuardService = require('@gatecontrol/client-core/src/services/wireguard-native');
+  ({ validateWgConfig } = require('@gatecontrol/client-core'));
   KillSwitch = require('@gatecontrol/client-core/src/services/killswitch');
   RdpAllowSvc = require('@gatecontrol/client-core/src/services/rdp-allow');
 
@@ -58,6 +59,7 @@ try {
   RdpManager = require('../services/rdp/rdp-manager');
   RdpSigner = require('../services/rdp/rdp-signer');
   RdpWolClient = require('../services/rdp/rdp-wol');
+  ({ registerProIpc } = require('./ipc-pro'));
 
   writeCrashLog('IMPORT', 'All imports successful');
 
@@ -495,15 +497,25 @@ async function connectTunnel() {
     const apiKey = store.get('server.apiKey');
 
     if (serverUrl && apiKey) {
+      let config = null;
       try {
-        const config = await apiClient.fetchConfig();
-        if (config) {
-          await wgService.writeConfig(WG_CONFIG_FILE, config);
-          store.set('tunnel.configPath', WG_CONFIG_FILE);
-          log.info('Configuration updated from server');
-        }
+        config = await apiClient.fetchConfig();
       } catch (err) {
         log.warn('Config fetch failed, using local config:', err.message);
+      }
+      if (config) {
+        // Fail-closed: a bad server answer must not clobber a good local
+        // config (and must not become the tunnel config) — abort the connect.
+        const validation = validateWgConfig(config);
+        if (!validation.ok) {
+          throw new Error('Invalid WireGuard config: ' + validation.errors.join(', '));
+        }
+        if (validation.warnings && validation.warnings.length > 0) {
+          log.warn('Config warnings: ' + validation.warnings.join(', '));
+        }
+        await wgService.writeConfig(WG_CONFIG_FILE, config);
+        store.set('tunnel.configPath', WG_CONFIG_FILE);
+        log.info('Configuration updated from server');
       }
     }
 
@@ -684,6 +696,8 @@ function initializeServices() {
     clientVersion: require('../../package.json').version,
   });
 
+  updater = new Updater({ serverUrl, apiKey, log, clientType: 'pro' });
+
   wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
   killSwitchSvc = new KillSwitch(log);
   rdpAllowSvc = new RdpAllowSvc(log);
@@ -840,323 +854,97 @@ function initializeServices() {
 }
 
 // ── IPC Handlers ─────────────────────────────────────────────
+const AUTOSTART_TASK = 'GateControlProAutostart';
+
+// Autostart via Task Scheduler (requireAdministrator: login items would not
+// start the app elevated).
+async function setAutostartTask(enabled) {
+  if (enabled) {
+    const exePath = app.getPath('exe');
+    await execFileAsync('schtasks', [
+      '/Create', '/F',
+      '/TN', AUTOSTART_TASK,
+      '/TR', `"${exePath}"`,
+      '/SC', 'ONLOGON',
+      '/RL', 'HIGHEST',
+      '/DELAY', '0000:10',
+    ]);
+    log.info(`Autostart enabled: ${exePath}`);
+  } else {
+    await execFileAsync('schtasks', ['/Delete', '/F', '/TN', AUTOSTART_TASK]);
+    log.info('Autostart disabled');
+  }
+}
+
+// Which DNS server does the system use right now?
+async function checkSystemDns() {
+  try {
+    const connected = tunnelState.connected;
+    const ksActive = killSwitchSvc?.enabled || false;
+
+    let dnsServer = null;
+    let resolveOk = false;
+    try {
+      const { stdout } = await execFileAsync('nslookup', ['cloudflare.com'], { timeout: 5000 });
+      const match = stdout.match(/Address:\s*([\d.]+)/);
+      if (match) dnsServer = match[1];
+      resolveOk = stdout.includes('Name:') || stdout.includes('Addresses:');
+    } catch {
+      resolveOk = false;
+    }
+
+    return { connected, killSwitch: ksActive, dnsServer, resolveOk };
+  } catch (err) {
+    log.warn('DNS system check failed:', err.message);
+    return { connected: false, killSwitch: false, dnsServer: null, resolveOk: false };
+  }
+}
+
+// Common channels come from the hardened core handlers (config:set allowlist,
+// validated config imports, setup codes incl. setup QR, https-only server
+// setup, http(s)-only shell:open-external); Pro adds/overrides the rest.
 function registerIpcHandlers() {
-  // ── Locale ─────────────────────────────────────────────
-  ipcMain.handle('locale:set', (_, locale) => {
-    setLocale(locale);
-    store.set('app.locale', getLocale());
-    updateTray(tunnelState.connected ? 'connected' : 'disconnected');
-    mainWindow?.webContents.send('locale:changed', getLocale());
-  });
-
-  ipcMain.handle('locale:get', () => getLocale());
-
-  // ── App ─────────────────────────────────────────────────
-  ipcMain.handle('app:version', () => require('../../package.json').version);
-
-  // ── Config ──────────────────────────────────────────────
-  ipcMain.handle('config:get', (_, key) => store.get(key));
-  ipcMain.handle('config:set', (_, key, value) => {
-    try {
-      store.set(key, value);
-    } catch (err) {
-      log.error(`Config set failed (${key}):`, err.message);
-      throw err;
-    }
-  });
-  ipcMain.handle('config:getAll', () => store.store);
-
-  // ── Config Import ──────────────────────────────────────
-  ipcMain.handle('config:import-file', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: t('dialog.importTitle'),
-      filters: [
-        { name: t('dialog.filterConfig'), extensions: ['conf'] },
-        { name: t('dialog.filterAll'), extensions: ['*'] },
-      ],
-      properties: ['openFile'],
-    });
-    if (result.canceled) return { success: false };
-    try {
-      const content = fsSync.readFileSync(result.filePaths[0], 'utf-8');
-      fsSync.mkdirSync(path.dirname(WG_CONFIG_FILE), { recursive: true });
-      fsSync.writeFileSync(WG_CONFIG_FILE, content, { mode: 0o600 });
-      store.set('tunnel.configPath', WG_CONFIG_FILE);
-      log.info('Config imported:', result.filePaths[0]);
-      return { success: true, path: result.filePaths[0] };
-    } catch (err) {
-      log.error('Config import failed:', err.message);
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('config:import-qr', async (_, imageData) => {
-    try {
-      const jsQR = require('jsqr');
-      const { data, width, height } = imageData;
-      const code = jsQR(new Uint8ClampedArray(data), width, height);
-      if (!code) return { success: false, error: t('server.qrTimeout') };
-      fsSync.mkdirSync(path.dirname(WG_CONFIG_FILE), { recursive: true });
-      fsSync.writeFileSync(WG_CONFIG_FILE, code.data, { mode: 0o600 });
-      store.set('tunnel.configPath', WG_CONFIG_FILE);
-      log.info('Config imported via QR code');
-      return { success: true, config: code.data };
-    } catch (err) {
-      log.error('QR import failed:', err.message);
-      return { success: false, error: err.message };
-    }
-  });
-
-  // ── WireGuard ──────────────────────────────────────────
-  ipcMain.handle('wireguard:check', () => ({
-    installed: true,
-    version: 'wireguard-nt (embedded)',
-  }));
-
-  // ── Kill-Switch ────────────────────────────────────────
-  ipcMain.handle('killswitch:toggle', async (_, enabled) => {
-    try {
-      await toggleKillSwitch(enabled);
-    } catch (err) {
-      log.error('Kill-switch failed:', err.message);
-    }
-  });
-
-  // ── RDP Allow ─────────────────────────────────────────
-  ipcMain.handle('rdp-allow:toggle', async (_, enabled) => {
-    try {
-      await toggleRdpAllow(enabled);
-    } catch (err) {
-      log.error('RDP Allow failed:', err.message);
-    }
-  });
-
-  // ── Permissions / Traffic / DNS / Peer-Info ─────────────
-  ipcMain.handle('permissions:get', () => apiClient?.getPermissions());
-  ipcMain.handle('traffic:stats', () => apiClient?.getTraffic());
-  ipcMain.handle('dns:leak-test', () => apiClient?.dnsCheck());
-  ipcMain.handle('dns:check-system', async () => {
-    try {
-      const connected = tunnelState.connected;
-      const ksActive = killSwitchSvc?.enabled || false;
-
-      // Run nslookup to determine which DNS server the system uses
-      let dnsServer = null;
-      let resolveOk = false;
+  registerProIpc(ipcMain, {
+    app,
+    dialog,
+    getMainWindow: () => mainWindow,
+    store,
+    wgService,
+    apiClient,
+    ApiClientClass: ApiClientPro,
+    killSwitch: killSwitchSvc,
+    getUpdater: () => updater,
+    log,
+    connectTunnel,
+    disconnectTunnel,
+    toggleKillSwitch: async (enabled) => {
       try {
-        const { stdout } = await execFileAsync('nslookup', ['cloudflare.com'], { timeout: 5000 });
-        const match = stdout.match(/Address:\s*([\d.]+)/);
-        if (match) dnsServer = match[1];
-        resolveOk = stdout.includes('Name:') || stdout.includes('Addresses:');
-      } catch {
-        resolveOk = false;
+        await toggleKillSwitch(enabled === true);
+      } catch (err) {
+        log.error('Kill-switch failed:', err.message);
       }
-
-      return { connected, killSwitch: ksActive, dnsServer, resolveOk };
-    } catch (err) {
-      log.warn('DNS system check failed:', err.message);
-      return { connected: false, killSwitch: false, dnsServer: null, resolveOk: false };
-    }
-  });
-  ipcMain.handle('peer:info', () => apiClient?.getPeerInfo());
-
-  // ── Window ──────────────────────────────────────────────
-  ipcMain.on('window:minimize', () => mainWindow?.minimize());
-  ipcMain.on('window:close', () => mainWindow?.hide());
-
-  // ── Remote Desktops page visibility ─────────────────────
-  // Host status is only polled while the Remote Desktops page is open.
-  ipcMain.handle('panel:open', () => {
-    rdpPanelOpen = true;
-    if (rdpManager) rdpManager.startStatusPolling();
-    return true;
-  });
-
-  ipcMain.handle('panel:close', () => {
-    rdpPanelOpen = false;
-    if (rdpManager) rdpManager.stopStatusPolling();
-    return true;
-  });
-
-  // ── RDP Handlers ────────────────────────────────────────
-  ipcMain.handle('rdp:list', async () => {
-    return rdpManager.refreshServices();
-  });
-
-  ipcMain.handle('rdp:connect', async (_, routeId, opts) => {
-    return rdpManager.connect(routeId, opts);
-  });
-
-  ipcMain.handle('rdp:disconnect', async (_, routeId) => {
-    rdpManager.disconnect(routeId);
-    return true;
-  });
-
-  ipcMain.handle('rdp:detail', async (_, routeId) => {
-    try {
-      return await apiClient.getRdpConnect(routeId);
-    } catch (err) {
-      log.warn('RDP detail fetch failed:', err.message);
-      return null;
-    }
-  });
-
-  ipcMain.handle('rdp:wol', async (_, routeId) => {
-    return rdpWolClient.wake(routeId);
-  });
-
-  ipcMain.handle('rdp:status', async (_, routeId) => {
-    if (routeId) {
-      return apiClient.getRdpStatus(routeId);
-    }
-    return apiClient.getRdpBulkStatus();
-  });
-
-  ipcMain.handle('rdp:active-sessions', () => {
-    return rdpManager.getActiveSessions();
-  });
-
-  ipcMain.handle('rdp:pin-toggle', (_, pinned) => {
-    store.set('rdp.panelPinned', pinned);
-    return pinned;
-  });
-
-  // ── Tunnel ──────────────────────────────────────────────
-  ipcMain.handle('tunnel:connect', async () => {
-    await connectTunnel();
-  });
-
-  ipcMain.handle('tunnel:disconnect', async () => {
-    await disconnectTunnel();
-  });
-
-  ipcMain.handle('tunnel:status', () => tunnelState);
-
-  // ── Server ──────────────────────────────────────────────
-  ipcMain.handle('server:setup', async (_, opts) => {
-    try {
-      apiClient.configure(opts.url, opts.apiKey);
-      const result = await apiClient.register();
-      store.set('server.url', opts.url);
-      store.set('server.apiKey', opts.apiKey);
-      store.set('server.peerId', String(result.peerId || ''));
-      log.info(`Server registered: peerId=${result.peerId}`);
-      return { success: true, peerId: String(result.peerId || '') };
-    } catch (err) {
-      log.error('Server registration failed:', err.message);
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('server:test', async (_, opts) => {
-    try {
-      const testClient = new ApiClientPro(opts.url, opts.apiKey, log);
-      await testClient.ping();
-      return { success: true };
-    } catch (err) {
-      log.error('Server test failed:', err.message);
-      return { success: false, error: err.message };
-    }
-  });
-
-  // ── Shell ───────────────────────────────────────────────
-  ipcMain.handle('shell:open-external', (_, url) => {
-    const { shell } = require('electron');
-    return shell.openExternal(url);
-  });
-
-  // ── Services ────────────────────────────────────────────
-  ipcMain.handle('services:list', async () => {
-    return apiClient.getServices();
-  });
-
-  // ── Logs ────────────────────────────────────────────────
-  ipcMain.handle('logs:get', async (_, opts = {}) => {
-    try {
-      const logPath = log.transports.file.getFile().path;
-      const fs = require('fs');
-      const stat = fs.statSync(logPath);
-
-      // Read max 1 MB from end of file
-      const MAX_READ = 1024 * 1024;
-      let content;
-      if (stat.size > MAX_READ) {
-        const fd = fs.openSync(logPath, 'r');
-        const buf = Buffer.alloc(MAX_READ);
-        fs.readSync(fd, buf, 0, MAX_READ, stat.size - MAX_READ);
-        fs.closeSync(fd);
-        content = buf.toString('utf-8');
-        const firstNl = content.indexOf('\n');
-        if (firstNl > 0) content = content.slice(firstNl + 1);
-      } else {
-        content = fs.readFileSync(logPath, 'utf-8');
+    },
+    toggleRdpAllow: async (enabled) => {
+      try {
+        await toggleRdpAllow(enabled === true);
+      } catch (err) {
+        log.error('RDP Allow failed:', err.message);
       }
-
-      let lines = content.split('\n').filter(l => l.trim());
-
-      // Time filter
-      if (opts && opts.period && opts.period !== 'all') {
-        const hours = opts.period === '24h' ? 24 : opts.period === '12h' ? 12 : opts.period === '1h' ? 1 : 0;
-        if (hours > 0) {
-          const cutoff = new Date(Date.now() - hours * 3600000);
-          lines = lines.filter(line => {
-            const m = line.match(/\[(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
-            if (!m) return true;
-            return new Date(m[1]) >= cutoff;
-          });
-        }
-      }
-
-      // Reverse: newest first
-      lines.reverse();
-      return lines.join('\n');
-    } catch {
-      return t('logs.empty');
-    }
-  });
-
-  ipcMain.handle('logs:export', async () => {
-    try {
-      return log.transports.file.getFile().path;
-    } catch {
-      return null;
-    }
-  });
-
-  // ── Autostart (Task Scheduler wegen requireAdministrator) ──
-  ipcMain.handle('autostart:set', async (_, enabled) => {
-    const taskName = 'GateControlProAutostart';
-    try {
-      if (enabled) {
-        const exePath = app.getPath('exe');
-        await execFileAsync('schtasks', [
-          '/Create', '/F',
-          '/TN', taskName,
-          '/TR', `"${exePath}"`,
-          '/SC', 'ONLOGON',
-          '/RL', 'HIGHEST',
-          '/DELAY', '0000:10',
-        ]);
-        log.info(`Autostart enabled: ${exePath}`);
-      } else {
-        await execFileAsync('schtasks', ['/Delete', '/F', '/TN', taskName]);
-        log.info('Autostart disabled');
-      }
-    } catch (err) {
-      log.error('Autostart configuration failed:', err.message);
-    }
-    store.set('app.startWithWindows', enabled);
-    return enabled;
-  });
-
-  // ── Update ──────────────────────────────────────────────
-  ipcMain.handle('update:check', async () => {
-    if (!updater) return null;
-    return updater.check();
-  });
-
-  ipcMain.handle('update:install', async () => {
-    installUpdate();
+    },
+    installUpdate: async () => installUpdate(),
+    getTunnelState: () => tunnelState,
+    wgConfigFile: WG_CONFIG_FILE,
+    setLocale,
+    getLocale,
+    onLocaleChanged: (locale) => {
+      updateTray(tunnelState.connected ? 'connected' : 'disconnected');
+      mainWindow?.webContents.send('locale:changed', locale);
+    },
+    checkSystemDns,
+    setAutostart: setAutostartTask,
+    rdpManager,
+    rdpWolClient,
+    setRdpPanelOpen: (open) => { rdpPanelOpen = open; },
   });
 }
 
@@ -1169,13 +957,7 @@ app.on('ready', () => {
 
   // Autostart mit Windows synchronisieren (Task Scheduler)
   if (store.get('app.startWithWindows', true)) {
-    const taskName = 'GateControlProAutostart';
-    const exePath = app.getPath('exe');
-    execFileAsync('schtasks', [
-      '/Create', '/F', '/TN', taskName,
-      '/TR', `"${exePath}"`,
-      '/SC', 'ONLOGON', '/RL', 'HIGHEST', '/DELAY', '0000:10',
-    ]).catch(err => log.warn('Autostart sync failed:', err.message));
+    setAutostartTask(true).catch(err => log.warn('Autostart sync failed:', err.message));
   }
 
   // Auto-Connect (Server-URL reicht, configPath nicht zwingend nötig)
@@ -1211,11 +993,10 @@ app.on('ready', () => {
     log.info(`Auto-connect skipped: autoConnect=${store.get('tunnel.autoConnect', true)}, server=${!!hasServer}, configPath=${hasConfig}`);
   }
 
-  // Auto-Update
-  const serverUrl = store.get('server.url', '');
-  const apiKey = store.get('server.apiKey', '');
-  if (serverUrl && apiKey) {
-    updater = new Updater({ serverUrl, apiKey, log, clientType: 'pro' });
+  // Auto-Update (the updater exists from initializeServices on, so a setup
+  // done later — e.g. with a setup code — configures it; checks without a
+  // server are skipped by the updater itself)
+  if (updater) {
     updater.start((release) => {
       pendingUpdate = release;
       log.info(`Update ready: v${release.version}`);
