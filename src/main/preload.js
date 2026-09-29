@@ -187,10 +187,10 @@ contextBridge.exposeInMainWorld('gatecontrol', {
     /** Toggle pin state */
     pinToggle: (pinned) => ipcRenderer.invoke('rdp:pin-toggle', pinned),
 
-    /** Panel open (triggers window resize) */
+    /** Remote Desktops page opened (starts host status polling) */
     panelOpen: () => ipcRenderer.invoke('panel:open'),
 
-    /** Panel close (triggers window resize) */
+    /** Remote Desktops page closed (stops host status polling) */
     panelClose: () => ipcRenderer.invoke('panel:close'),
 
     // ── Events from Main ────────────────────────────────

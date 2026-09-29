@@ -199,9 +199,12 @@ let autoOpenPortal = false;
 let portalOpenedSince = null;
 
 // ── Constants ────────────────────────────────────────────────
-const BASE_WIDTH = 590;
-const PANEL_WIDTH = 450;
-const EXPANDED_WIDTH = BASE_WIDTH + PANEL_WIDTH; // 1040
+// Sidebar layout (240px navigation + content). Remote Desktops is a regular
+// page now, so the window no longer grows for a slide-out panel.
+const DEFAULT_WIDTH = 1280;
+const DEFAULT_HEIGHT = 800;
+const MIN_WIDTH = 1000;
+const MIN_HEIGHT = 640;
 
 // ── Pfade ────────────────────────────────────────────────────
 const RESOURCES_PATH = app.isPackaged
@@ -394,14 +397,17 @@ function createTray() {
 
 // ── Fenster ──────────────────────────────────────────────────
 function createWindow() {
+  const storedTheme = store.get('app.theme', 'dark');
+  const lightBg = storedTheme === 'light'
+    || (storedTheme === 'system' && !require('electron').nativeTheme.shouldUseDarkColors);
   mainWindow = new BrowserWindow({
-    width: BASE_WIDTH,
-    minWidth: BASE_WIDTH,
-    height: store.get('app.windowHeight', 800),
-    minHeight: 500,
+    width: Math.max(MIN_WIDTH, store.get('app.windowWidth', DEFAULT_WIDTH)),
+    minWidth: MIN_WIDTH,
+    height: Math.max(MIN_HEIGHT, store.get('app.windowHeight', DEFAULT_HEIGHT)),
+    minHeight: MIN_HEIGHT,
     resizable: true,
     frame: false,
-    backgroundColor: store.get('app.theme', 'dark') === 'light' ? '#F8F9FB' : '#0F1117',
+    backgroundColor: lightBg ? '#F3F5F8' : '#0D1015',
     titleBarStyle: 'hidden',
     show: false,
     icon: app.isPackaged
@@ -424,7 +430,8 @@ function createWindow() {
   });
 
   mainWindow.on('resize', () => {
-    const [, height] = mainWindow.getSize();
+    const [width, height] = mainWindow.getSize();
+    store.set('app.windowWidth', width);
     store.set('app.windowHeight', height);
   });
 
@@ -438,21 +445,6 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-}
-
-/**
- * Resize window for RDP panel open/close.
- */
-function setWindowWidth(expanded) {
-  if (!mainWindow) return;
-  const [, height] = mainWindow.getSize();
-  const targetWidth = expanded ? EXPANDED_WIDTH : BASE_WIDTH;
-
-  mainWindow.setMinimumSize(targetWidth, 500);
-  mainWindow.setMaximumSize(targetWidth, 99999);
-  mainWindow.setSize(targetWidth, height, true);
-
-  rdpPanelOpen = expanded;
 }
 
 function showWindow() {
@@ -972,15 +964,16 @@ function registerIpcHandlers() {
   ipcMain.on('window:minimize', () => mainWindow?.minimize());
   ipcMain.on('window:close', () => mainWindow?.hide());
 
-  // ── Panel Resize ────────────────────────────────────────
+  // ── Remote Desktops page visibility ─────────────────────
+  // Host status is only polled while the Remote Desktops page is open.
   ipcMain.handle('panel:open', () => {
-    setWindowWidth(true);
+    rdpPanelOpen = true;
     if (rdpManager) rdpManager.startStatusPolling();
     return true;
   });
 
   ipcMain.handle('panel:close', () => {
-    setWindowWidth(false);
+    rdpPanelOpen = false;
     if (rdpManager) rdpManager.stopStatusPolling();
     return true;
   });

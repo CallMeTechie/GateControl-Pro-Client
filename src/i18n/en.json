@@ -137,5 +137,175 @@
     "reconnected": "VPN reconnected",
     "reconnectFailed": "Reconnect failed — please reconnect manually",
     "rdpSigningUnavailable": "rdpsign.exe is missing on this machine. RDP connections still work, but Windows will show a security warning. Repair: run \"sfc /scannow\" as Administrator."
+  },
+  "ui": {
+    "nav": {
+      "label": "Main navigation",
+      "overview": "Overview",
+      "services": "Services",
+      "logs": "Log",
+      "activeSessions": "Active sessions"
+    },
+    "theme": {
+      "toggle": "Switch theme"
+    },
+    "conn": {
+      "toggle": "VPN connection"
+    },
+    "status": {
+      "error": "Error"
+    },
+    "close": "Close",
+    "dismiss": "Dismiss notice",
+    "hero": {
+      "status": "Status",
+      "protected": "Protected",
+      "failed": "Connection failed",
+      "disconnected": "Not connected",
+      "subOn": "Your traffic is encrypted via {{ host }}",
+      "subConnecting": "This usually takes only a few seconds.",
+      "subOff": "Your traffic goes unprotected over the local network.",
+      "retry": "Try again",
+      "showLog": "Show log"
+    },
+    "stats": {
+      "since": "Connected for",
+      "transferred": "Transferred"
+    },
+    "protection": {
+      "title": "Protection",
+      "routing": "Routing",
+      "fullTunnel": "All traffic",
+      "splitCount": "Split · {{ count }} targets"
+    },
+    "dns": {
+      "title": "DNS leak test",
+      "run": "Test",
+      "idle": "Not checked yet in this session."
+    },
+    "throughput": {
+      "title": "Throughput",
+      "window": "· last 60 seconds",
+      "noData": "No live data",
+      "noDataHint": "Connect to see throughput in real time."
+    },
+    "services": {
+      "showAll": "Show all",
+      "subtitle": "Internal applications reachable through this tunnel.",
+      "needVpn": "These services are only reachable with an active VPN connection.",
+      "connectNow": "Connect now",
+      "open": "Open",
+      "auth": "Sign-in",
+      "empty": "No services shared"
+    },
+    "rdp": {
+      "summary": "{{ total }} hosts · {{ online }} online",
+      "sessionActive": "Session active",
+      "empty": "No hosts found",
+      "emptyHint": "Nothing matches the current search or filter.",
+      "resetFilter": "Reset filter",
+      "noHosts": "No remote desktops",
+      "noHostsHint": "No remote desktops are shared with this device.",
+      "selectHost": "Select a host on the left.",
+      "wake": "Wake up",
+      "offlineHint": "This host is offline and has no Wake-on-LAN configured.",
+      "endSession": "End session",
+      "runningFor": "running for {{ minutes }} min",
+      "security": "Security",
+      "done": "Done"
+    },
+    "logs": {
+      "count": "{{ count }} entries · newest first",
+      "search": "Search messages",
+      "info": "Info",
+      "warn": "Warning",
+      "error": "Error",
+      "debug": "Debug",
+      "time": "Time",
+      "level": "Level",
+      "message": "Message",
+      "noMatch": "No entries for these filters."
+    },
+    "settings": {
+      "tabConn": "Connection",
+      "tabSplit": "Split tunneling",
+      "tabAdv": "Advanced",
+      "tabAbout": "About",
+      "setupTitle": "Set up device again",
+      "setupDesc": "With a new setup code, a configuration file or a QR code. The existing registration will be replaced.",
+      "openWizard": "Open setup assistant"
+    },
+    "split": {
+      "question": "Which traffic goes through the VPN?",
+      "allTitle": "All traffic",
+      "allDesc": "All internet and network traffic goes through the VPN. Most secure.",
+      "onlyTitle": "Selected targets only",
+      "onlyDesc": "Only the IPs, subnets and domains listed below go through the VPN.",
+      "targets": "Targets in the tunnel",
+      "count": "{{ count }} targets",
+      "placeholder": "IP, subnet (CIDR) or domain",
+      "add": "Add",
+      "remove": "Remove {{ value }}",
+      "kindSubnet": "Subnet",
+      "kindIp": "IP",
+      "kindDomain": "Domain",
+      "apply": "Apply changes",
+      "dirty": "Unsaved changes"
+    },
+    "app": {
+      "themeDesc": "“System” follows the Windows setting.",
+      "themeSystem": "System",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "autostart": "Start with Windows",
+      "autostartDesc": "GateControl starts in the notification area when you sign in.",
+      "autoConnectDesc": "Connect immediately on start.",
+      "minimizedDesc": "No window on start, only the notification area icon."
+    },
+    "adv": {
+      "checkInterval": "Connection check",
+      "checkRange": "seconds (5–300)",
+      "checkDesc": "How often the tunnel is checked for reachability.",
+      "pollInterval": "Configuration refresh",
+      "pollRange": "seconds (30–3600)",
+      "pollDesc": "How often routes and permissions are loaded from the server.",
+      "logFile": "Log file",
+      "logFileDesc": "Export and open the log file for support."
+    },
+    "about": {
+      "title": "About GateControl",
+      "version": "Version {{ version }}",
+      "upToDate": "GateControl is up to date",
+      "checking": "Checking …"
+    },
+    "update": {
+      "ready": "Update {{ version }} ready",
+      "readyDesc": "It will be installed when you restart. The VPN connection is briefly interrupted.",
+      "restart": "Restart"
+    },
+    "statusbar": {
+      "ksOn": "Kill switch on",
+      "ksOff": "Kill switch off"
+    },
+    "setup": {
+      "step": "Step {{ n }} of {{ total }}",
+      "title": "Connect this device to GateControl",
+      "subtitle": "Choose what your administrator gave you.",
+      "code": "Setup code",
+      "recommended": "Recommended",
+      "codeDesc": "Server address and code in the format XXXX-XXXX-XXXX-XXXX",
+      "file": "Configuration file",
+      "fileDesc": "Import a WireGuard file (.conf)",
+      "qr": "QR code via webcam",
+      "qrDesc": "Scan the setup QR from the admin portal",
+      "qrHint": "Hold the QR code in front of the camera.",
+      "cancel": "Cancel and go back",
+      "codeTitle": "Server and setup code",
+      "serverLabel": "Server address",
+      "codeHint": "You can also paste an API key (gc_…).",
+      "back": "Back",
+      "submit": "Set up device",
+      "doneTitle": "Device set up"
+    }
   }
 }

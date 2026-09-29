@@ -137,5 +137,175 @@
     "reconnected": "VPN wieder verbunden",
     "reconnectFailed": "Reconnect fehlgeschlagen — bitte manuell neu verbinden",
     "rdpSigningUnavailable": "rdpsign.exe fehlt auf diesem System. RDP-Verbindungen funktionieren, aber Windows zeigt eine Sicherheitswarnung. Reparatur: \"sfc /scannow\" als Administrator ausführen."
+  },
+  "ui": {
+    "nav": {
+      "label": "Hauptnavigation",
+      "overview": "Übersicht",
+      "services": "Dienste",
+      "logs": "Protokoll",
+      "activeSessions": "Aktive Sitzungen"
+    },
+    "theme": {
+      "toggle": "Design wechseln"
+    },
+    "conn": {
+      "toggle": "VPN-Verbindung"
+    },
+    "status": {
+      "error": "Fehler"
+    },
+    "close": "Schließen",
+    "dismiss": "Hinweis ausblenden",
+    "hero": {
+      "status": "Status",
+      "protected": "Geschützt",
+      "failed": "Verbindung fehlgeschlagen",
+      "disconnected": "Nicht verbunden",
+      "subOn": "Dein Verkehr läuft verschlüsselt über {{ host }}",
+      "subConnecting": "Das dauert normalerweise nur wenige Sekunden.",
+      "subOff": "Dein Verkehr läuft ungeschützt über das lokale Netz.",
+      "retry": "Erneut versuchen",
+      "showLog": "Protokoll anzeigen"
+    },
+    "stats": {
+      "since": "Verbunden seit",
+      "transferred": "Übertragen"
+    },
+    "protection": {
+      "title": "Schutz",
+      "routing": "Routing",
+      "fullTunnel": "Gesamter Verkehr",
+      "splitCount": "Split · {{ count }} Ziele"
+    },
+    "dns": {
+      "title": "DNS-Leak-Test",
+      "run": "Testen",
+      "idle": "Noch nicht geprüft in dieser Sitzung."
+    },
+    "throughput": {
+      "title": "Durchsatz",
+      "window": "· letzte 60 Sekunden",
+      "noData": "Keine Live-Daten",
+      "noDataHint": "Verbinde dich, um den Durchsatz in Echtzeit zu sehen."
+    },
+    "services": {
+      "showAll": "Alle anzeigen",
+      "subtitle": "Interne Anwendungen, die über diesen Tunnel erreichbar sind.",
+      "needVpn": "Diese Dienste sind nur mit aktiver VPN-Verbindung erreichbar.",
+      "connectNow": "Jetzt verbinden",
+      "open": "Öffnen",
+      "auth": "Anmeldung",
+      "empty": "Keine Dienste freigegeben"
+    },
+    "rdp": {
+      "summary": "{{ total }} Hosts · {{ online }} online",
+      "sessionActive": "Sitzung aktiv",
+      "empty": "Keine Hosts gefunden",
+      "emptyHint": "Kein Treffer für die aktuelle Suche oder den Filter.",
+      "resetFilter": "Filter zurücksetzen",
+      "noHosts": "Keine Remote Desktops",
+      "noHostsHint": "Für dieses Gerät sind keine Remote Desktops freigegeben.",
+      "selectHost": "Wähle links einen Host aus.",
+      "wake": "Aufwecken",
+      "offlineHint": "Dieser Host ist offline und hat kein Wake-on-LAN hinterlegt.",
+      "endSession": "Sitzung beenden",
+      "runningFor": "läuft seit {{ minutes }} Min",
+      "security": "Sicherheit",
+      "done": "Fertig"
+    },
+    "logs": {
+      "count": "{{ count }} Einträge · neueste zuerst",
+      "search": "Meldungen durchsuchen",
+      "info": "Info",
+      "warn": "Warnung",
+      "error": "Fehler",
+      "debug": "Debug",
+      "time": "Zeit",
+      "level": "Stufe",
+      "message": "Meldung",
+      "noMatch": "Keine Einträge für diese Filter."
+    },
+    "settings": {
+      "tabConn": "Verbindung",
+      "tabSplit": "Split-Tunneling",
+      "tabAdv": "Erweitert",
+      "tabAbout": "Über",
+      "setupTitle": "Gerät neu einrichten",
+      "setupDesc": "Mit einem neuen Einrichtungscode, einer Konfigurationsdatei oder einem QR-Code. Die bestehende Registrierung wird ersetzt.",
+      "openWizard": "Einrichtungsassistent öffnen"
+    },
+    "split": {
+      "question": "Welcher Verkehr geht durch das VPN?",
+      "allTitle": "Gesamter Verkehr",
+      "allDesc": "Aller Internet- und Netzwerkverkehr läuft durch das VPN. Am sichersten.",
+      "onlyTitle": "Nur ausgewählte Ziele",
+      "onlyDesc": "Nur die unten eingetragenen IPs, Subnetze und Domains laufen durch das VPN.",
+      "targets": "Ziele im Tunnel",
+      "count": "{{ count }} Ziele",
+      "placeholder": "IP, Subnetz (CIDR) oder Domain",
+      "add": "Hinzufügen",
+      "remove": "{{ value }} entfernen",
+      "kindSubnet": "Subnetz",
+      "kindIp": "IP",
+      "kindDomain": "Domain",
+      "apply": "Änderungen übernehmen",
+      "dirty": "Nicht gespeicherte Änderungen"
+    },
+    "app": {
+      "themeDesc": "„System“ folgt der Windows-Einstellung.",
+      "themeSystem": "System",
+      "themeLight": "Hell",
+      "themeDark": "Dunkel",
+      "autostart": "Mit Windows starten",
+      "autostartDesc": "GateControl startet bei der Anmeldung im Infobereich.",
+      "autoConnectDesc": "Beim Start sofort eine Verbindung herstellen.",
+      "minimizedDesc": "Kein Fenster beim Start, nur das Symbol im Infobereich."
+    },
+    "adv": {
+      "checkInterval": "Verbindungsprüfung",
+      "checkRange": "Sekunden (5–300)",
+      "checkDesc": "Wie oft der Tunnel auf Erreichbarkeit geprüft wird.",
+      "pollInterval": "Konfiguration aktualisieren",
+      "pollRange": "Sekunden (30–3600)",
+      "pollDesc": "Wie oft Routen und Berechtigungen vom Server geladen werden.",
+      "logFile": "Protokolldatei",
+      "logFileDesc": "Die Protokolldatei für den Support exportieren und öffnen."
+    },
+    "about": {
+      "title": "Über GateControl",
+      "version": "Version {{ version }}",
+      "upToDate": "GateControl ist aktuell",
+      "checking": "Suche …"
+    },
+    "update": {
+      "ready": "Update {{ version }} bereit",
+      "readyDesc": "Wird installiert, sobald du neu startest. Die VPN-Verbindung wird kurz unterbrochen.",
+      "restart": "Neu starten"
+    },
+    "statusbar": {
+      "ksOn": "Kill-Switch an",
+      "ksOff": "Kill-Switch aus"
+    },
+    "setup": {
+      "step": "Schritt {{ n }} von {{ total }}",
+      "title": "Dieses Gerät mit GateControl verbinden",
+      "subtitle": "Wähle, was dir dein Administrator gegeben hat.",
+      "code": "Einrichtungscode",
+      "recommended": "Empfohlen",
+      "codeDesc": "Server-Adresse und Code im Format XXXX-XXXX-XXXX-XXXX",
+      "file": "Konfigurationsdatei",
+      "fileDesc": "Eine WireGuard-Datei (.conf) importieren",
+      "qr": "QR-Code per Webcam",
+      "qrDesc": "Den Einrichtungs-QR aus dem Admin-Portal scannen",
+      "qrHint": "Halte den QR-Code vor die Kamera.",
+      "cancel": "Abbrechen und zurück",
+      "codeTitle": "Server und Einrichtungscode",
+      "serverLabel": "Server-Adresse",
+      "codeHint": "Alternativ kannst du einen API-Schlüssel (gc_…) einfügen.",
+      "back": "Zurück",
+      "submit": "Gerät einrichten",
+      "doneTitle": "Gerät eingerichtet"
+    }
   }
 }
