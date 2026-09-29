@@ -1,6 +1,6 @@
 'use strict';
 
-const ApiClient = require('../../node_modules/@gatecontrol/client-core/src/services/api-client');
+const ApiClient = require('@gatecontrol/client-core/src/services/api-client');
 
 /**
  * GateControl Pro API Client

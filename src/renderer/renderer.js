@@ -1722,9 +1722,9 @@ bindSeg($('#log-level-filter'), 'level', (lvl) => { logLevel = lvl; renderLogs()
 bindSeg($('#log-period-filter'), 'period', (period) => { logPeriod = period; refreshLogs(); });
 
 // Log export
+// Shows the log file in Explorer (shell:open-external only takes http(s)).
 async function exportLogs() {
-	const logPath = await logs.export();
-	if (logPath) shell.openExternal('file://' + logPath.replace(/\\/g, '/'));
+	await logs.show();
 }
 $('#btn-export-logs').addEventListener('click', exportLogs);
 $('#btn-export-logs-adv').addEventListener('click', exportLogs);
