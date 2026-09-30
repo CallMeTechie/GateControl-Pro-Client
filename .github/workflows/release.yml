@@ -174,8 +174,9 @@ jobs:
           git add package.json package-lock.json CHANGELOG.md 2>/dev/null || true
           git add package.json
           git commit -m "chore: bump version to $NEW_VERSION"
-          git tag "$TAG"
-          git push origin master --tags
+          # Commit und Tag werden erst nach erfolgreichem Build gepusht
+          # (Schritt "Push version bump"), damit ein Build-Abbruch keinen
+          # Tag ohne Release hinterlässt.
 
       - name: Checkout pinned gatecontrol-client-core (core.ref)
         if: steps.check_tag.outputs.exists == 'false'
@@ -215,6 +216,26 @@ jobs:
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: node scripts/sign-update.js --product pro --dist dist
+
+      - name: Push version bump
+        if: steps.check_tag.outputs.exists == 'false'
+        shell: bash
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          # Commit und Tag atomar pushen. Hat sich master inzwischen bewegt,
+          # neu aufsetzen (das Arbeitsverzeichnis ist durch den Core-Link
+          # verändert, daher --autostash) und erneut taggen.
+          for attempt in 1 2 3; do
+            git tag -f "$TAG"
+            if git push --atomic origin HEAD:master "refs/tags/$TAG"; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt), rebasing onto origin/master"
+            git pull --rebase --autostash origin master
+          done
+          echo "::error::Could not push version bump after 3 attempts"
+          exit 1
 
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'
