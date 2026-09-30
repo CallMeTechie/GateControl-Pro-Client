@@ -12,11 +12,13 @@
     "build:portable": "electron-builder --win portable",
     "build:installer": "electron-builder --win nsis",
     "postinstall": "electron-builder install-app-deps",
-    "test": "node --test 'test/**/*.test.js'"
+    "test": "node --test 'test/**/*.test.js'",
+    "core:fetch": "bash scripts/fetch-core.sh",
+    "core:bump": "bash scripts/bump-core.sh"
   },
   "dependencies": {
     "@gatecontrol/client-core": "file:../gatecontrol-client-core",
-    "axios": "^1.16.1",
+    "axios": "^1.20.0",
     "electron-log": "^5.1.0",
     "electron-store": "^8.2.0",
     "jsqr": "^1.4.0",
@@ -24,12 +26,12 @@
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
-    "electron": "^41.2.0",
+    "electron": "^44.5.1",
     "electron-builder": "^26.8.1"
   },
   "overrides": {
     "@xmldom/xmldom": "0.8.13",
-    "fast-uri": "3.1.2",
+    "fast-uri": "3.1.8",
     "tar": "7.5.22"
   },
   "build": {

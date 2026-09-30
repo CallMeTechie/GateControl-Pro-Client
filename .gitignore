@@ -3,3 +3,4 @@ dist/
 *.tar.gz
 *.log
 .env
+.core/
