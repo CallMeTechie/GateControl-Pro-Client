@@ -1215,13 +1215,6 @@ rdp.onServicesUpdate((data) => {
 	renderRdp();
 });
 
-// Long-dwell info toast: rdpsign.exe is missing on this system and we
-// couldn't restore it from WinSxS, so mstsc will keep showing the
-// publisher warning. The main process also raises a desktop Notification.
-rdp.onSigningUnavailable(() => {
-	showToast(t('notify.rdpSigningUnavailable'), 'info', 15000);
-});
-
 // Badge on start-up (without starting the status polling)
 rdp.list().then((list) => { rdpServices = list || []; renderRdp(); }).catch(() => {});
 loadRdpSessions();
