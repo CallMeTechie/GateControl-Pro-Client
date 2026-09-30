@@ -17,6 +17,8 @@ function writeCrashLog(label, err) {
 
 // Pure tunnel/portal decision logic (unit-tested in test/tunnel-logic.test.js).
 const { reconnectDelay, shouldOpenPortal } = require('./tunnel-logic');
+// Kill-Switch-Aufräumen beim Start (unit-tested in test/killswitch-startup.test.js).
+const { recoverKillSwitch } = require('./killswitch-startup');
 
 process.on('uncaughtException', (err) => {
   writeCrashLog('uncaughtException', err);
@@ -633,7 +635,7 @@ async function disconnectTunnel() {
 
     await wgService.disconnect();
 
-    if (store.get('tunnel.killSwitch', false)) {
+    if (killSwitchSvc.enabled || store.get('tunnel.killSwitch', false)) {
       await killSwitchSvc.disable();
     }
 
@@ -900,7 +902,10 @@ function registerIpcHandlers() {
         await toggleKillSwitch(enabled === true);
       } catch (err) {
         log.error('Kill-switch failed:', err.message);
+        new Notification({ title: 'GateControl Pro', body: `Kill-Switch: ${err.message}` }).show();
       }
+      // UI auf den tatsächlichen Zustand zurücksetzen (auch nach Fehler)
+      broadcastState(tunnelState.connected ? 'connected' : 'disconnected');
     },
     toggleRdpAllow: async (enabled) => {
       try {
@@ -940,6 +945,9 @@ app.on('ready', () => {
     userDataDir: app.getPath('userData'),
   }).catch(err => log.warn('RDP trust migration failed:', err.message));
 
+  // Reste eines Absturzes (Regeln + Block-Policy) entfernen, bevor
+  // irgendetwas verbindet; connectTunnel aktiviert den Kill-Switch neu.
+  const killSwitchRecovery = recoverKillSwitch({ killSwitch: killSwitchSvc, store, wgService, log });
   registerIpcHandlers();
   createWindow();
   createTray();
@@ -958,6 +966,7 @@ app.on('ready', () => {
     const RETRY_DELAY = 5000;
     const attemptAutoConnect = async (attempt = 1) => {
       log.info(`Auto-Connect Versuch ${attempt}/${MAX_RETRIES}...`);
+      await killSwitchRecovery;
       try {
         await connectTunnel();
         if (!tunnelState.connected) {
@@ -1003,19 +1012,42 @@ app.on('ready', () => {
 
 app.on('second-instance', () => showWindow());
 
-app.on('before-quit', () => {
+// Firewall-Regeln beim Beenden entfernen. Electron wartet nicht auf async
+// 'will-quit'-Handler — deshalb wird das Beenden einmal angehalten, bis
+// Kill-Switch/RDP-Allow aufgeräumt sind (mit Zeitlimit). Die
+// Kill-Switch-Einstellung bleibt erhalten; schlägt das Aufräumen fehl,
+// erledigt es der nächste Start (Zustandsdatei im userData).
+let quitCleanupDone = false;
+async function releaseFirewallOnQuit() {
+  if (killSwitchSvc?.enabled) {
+    try {
+      await killSwitchSvc.disable();
+    } catch (err) {
+      log.error('Kill-switch could not be disabled on quit:', err.message);
+    }
+  }
+  if (rdpAllowSvc?.enabled) {
+    try {
+      await rdpAllowSvc.disable();
+      store.set('tunnel.rdpAllow', false);
+    } catch (err) {
+      log.error('RDP allow could not be disabled on quit:', err.message);
+    }
+  }
+}
+
+app.on('before-quit', (e) => {
   app.isQuitting = true;
+  if (quitCleanupDone) return;
+  quitCleanupDone = true;
 
   // Critical: cleanup all RDP sessions
   if (rdpManager) {
     rdpManager.cleanupAll();
   }
-});
 
-app.on('will-quit', async () => {
-  if (killSwitchSvc) await killSwitchSvc.disable();
-  if (rdpAllowSvc?.enabled) {
-    await rdpAllowSvc.disable().catch(() => {});
-    store.set('tunnel.rdpAllow', false);
-  }
+  if (!killSwitchSvc?.enabled && !rdpAllowSvc?.enabled) return;
+  e.preventDefault();
+  const timeout = new Promise((resolve) => setTimeout(resolve, 15000));
+  Promise.race([releaseFirewallOnQuit(), timeout]).finally(() => app.quit());
 });
