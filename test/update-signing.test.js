@@ -144,7 +144,7 @@ describe('scripts/sign-update.js', () => {
     const r = runSign(['--product', PRODUCT, '--dist', f.dist, '--pub', f.pubFile], { UPDATE_SIGNING_KEY: f.keys.priv });
     assert.equal(r.status, 0, r.stderr);
     const fileName = `${SETUP_PREFIX.replace(/ /g, '.')}.${pkg.version}.exe`;
-    assert.match(r.stdout, new RegExp(`fileName=${fileName.replace(/\./g, '\\.')}`));
+    assert.ok(r.stdout.includes(`fileName=${fileName}`), r.stdout);
     assert.ok(fs.existsSync(path.join(f.dist, fileName)));
 
     const manifest = fs.readFileSync(path.join(f.dist, 'update-manifest.json'), 'utf8');
