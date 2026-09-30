@@ -186,8 +186,11 @@
 
 !macro customInstall
   ; Add firewall rules for WireGuard tunnel
+  ; Programmpfad ueber ${APP_EXECUTABLE_FILENAME} (von electron-builder aus
+  ; productName/executableName abgeleitet, hier "GateControl Pro Client.exe"),
+  ; damit er nicht erneut vom echten Dateinamen abweicht.
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="GateControl Pro WireGuard"'
-  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="GateControl Pro WireGuard" dir=out action=allow program="$INSTDIR\GateControl Pro.exe" enable=yes'
+  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="GateControl Pro WireGuard" dir=out action=allow program="$INSTDIR\${APP_EXECUTABLE_FILENAME}" enable=yes'
 
   ; Allow mstsc.exe outbound (usually already allowed, but ensure)
   nsExec::ExecToLog 'netsh advfirewall firewall add rule name="GateControl Pro RDP" dir=out action=allow program="%SystemRoot%\system32\mstsc.exe" enable=yes'
