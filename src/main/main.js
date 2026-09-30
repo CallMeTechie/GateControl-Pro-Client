@@ -604,12 +604,40 @@ async function toggleRdpAllow(enabled) {
   broadcastState(tunnelState.connected ? 'connected' : 'disconnected');
 }
 
-function installUpdate() {
-  if (pendingUpdate?.installerPath) {
-    const { shell } = require('electron');
-    shell.openPath(pendingUpdate.installerPath);
-    setTimeout(() => app.quit(), 1000);
+// Installs the update the updater has downloaded and verified. Relies on the
+// updater's state, not on pendingUpdate: a manual "check for updates" stores
+// the release info without an installer path, so "Neustart" in the toast and
+// the tray entry used to do nothing.
+async function installUpdate() {
+  if (!updater?.isUpdateReady()) {
+    log.warn('Update-Installation angefordert, aber kein geprüftes Update bereit');
+    return false;
   }
+
+  log.info('Update-Installation gestartet...');
+
+  // Tunnel down and firewall lifted so the installer can replace the files;
+  // the kill-switch preference stays and applies again on the next connect.
+  if (tunnelState.connected) {
+    try {
+      await disconnectTunnel();
+    } catch (err) {
+      log.error('Tunnel konnte vor dem Update nicht getrennt werden:', err.message);
+    }
+  }
+  if (killSwitchSvc?.enabled) {
+    try {
+      await killSwitchSvc.disable();
+    } catch (err) {
+      log.error('Kill-Switch konnte vor dem Update nicht deaktiviert werden:', err.message);
+    }
+  }
+
+  // Re-hashes the installer before starting it.
+  if (!updater.install()) return false;
+
+  setTimeout(() => quitApp(), 1500);
+  return true;
 }
 
 // ── Services initialisieren ──────────────────────────────────
