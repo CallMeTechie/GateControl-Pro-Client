@@ -166,32 +166,22 @@ describe('RdpConfigBuilder', () => {
     assert.ok(!fs.existsSync(rdpPath));
   });
 
-  it('invokes signer.sign() after writing the file', async () => {
-    const calls = [];
-    const fakeSigner = {
-      sign: async (filePath) => { calls.push(filePath); return true; },
-    };
-    const signedBuilder = new RdpConfigBuilder(
-      { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
-      fakeSigner,
-    );
-    const route = { host: '10.0.0.2', port: 3389, resolution_mode: 'fullscreen', color_depth: 32, nla_enabled: 1, redirect_clipboard: 1, redirect_printers: 0, redirect_drives: 0, redirect_usb: 0, redirect_smartcard: 0, audio_mode: 'local' };
-    const rdpPath = await signedBuilder.build(route);
-    tempFiles.push(rdpPath);
-
-    assert.equal(calls.length, 1, 'signer.sign should be called exactly once');
-    assert.equal(calls[0], rdpPath, 'signer.sign should receive the generated file path');
+  it('scopes server authentication to the .rdp file (no global override)', async () => {
+    for (const nla of [1, false]) {
+      const route = { host: '10.0.0.2', port: 3389, resolution_mode: 'fullscreen', color_depth: 32, nla_enabled: nla, redirect_clipboard: 1, redirect_printers: 0, redirect_drives: 0, redirect_usb: 0, redirect_smartcard: 0, audio_mode: 'local' };
+      const rdpPath = await builder.build(route);
+      tempFiles.push(rdpPath);
+      const content = fs.readFileSync(rdpPath, 'utf-8');
+      assert.match(content, /^authentication level:i:0\r$/m);
+      assert.equal((content.match(/^authentication level:/gm) || []).length, 1);
+    }
   });
 
-  it('still returns the file when signer.sign rejects (graceful fallback)', async () => {
-    const failingSigner = { sign: async () => { throw new Error('rdpsign explosion'); } };
-    const signedBuilder = new RdpConfigBuilder(
-      { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
-      failingSigner,
-    );
+  it('writes plain unsigned .rdp files (no signscope/signature)', async () => {
     const route = { host: '10.0.0.3', port: 3389, resolution_mode: 'fullscreen', color_depth: 32, nla_enabled: 1, redirect_clipboard: 1, redirect_printers: 0, redirect_drives: 0, redirect_usb: 0, redirect_smartcard: 0, audio_mode: 'local' };
-    const rdpPath = await signedBuilder.build(route);
+    const rdpPath = await builder.build(route);
     tempFiles.push(rdpPath);
-    assert.ok(fs.existsSync(rdpPath), 'connect must still work even when signing fails');
+    const content = fs.readFileSync(rdpPath, 'utf-8');
+    assert.doesNotMatch(content, /^(signscope|signature):/m);
   });
 });

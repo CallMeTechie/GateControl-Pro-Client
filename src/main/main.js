@@ -34,7 +34,7 @@ writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
 let loadUpdatePublicKey;
-let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, RdpSigner, RdpWolClient;
+let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
@@ -59,7 +59,7 @@ try {
   ConnectionMonitor = require('@gatecontrol/client-core/src/services/connection-monitor');
   DnsPolicy = require('@gatecontrol/client-core/src/services/dns-policy');
   RdpManager = require('../services/rdp/rdp-manager');
-  RdpSigner = require('../services/rdp/rdp-signer');
+  ({ runRdpTrustMigration } = require('../services/rdp/rdp-trust-migration'));
   RdpWolClient = require('../services/rdp/rdp-wol');
   ({ registerProIpc } = require('./ipc-pro'));
 
@@ -707,39 +707,12 @@ function initializeServices() {
   killSwitchSvc = new KillSwitch(log);
   rdpAllowSvc = new RdpAllowSvc(log);
 
-  const rdpSigner = process.platform === 'win32'
-    ? new RdpSigner({
-        log,
-        certDir: path.join(app.getPath('userData'), 'rdp-signing'),
-      })
-    : null;
-
   rdpManager = new RdpManager({
     apiClient,
     log,
     store,
     getTunnelState: () => tunnelState,
     getPeerInfo: () => apiClient.getPeerInfo(),
-    signer: rdpSigner,
-  });
-
-  // One-time UI notice when rdpsign.exe is missing on this machine and
-  // can't be auto-restored from WinSxS. Delivered via Notification (so
-  // the user sees it even with the window minimized) AND IPC (so the
-  // renderer can show an inline hint in the RDP view if it wants to).
-  rdpManager.on('signing-unavailable', (data) => {
-    log.warn(`RDP signing unavailable on this machine (${data?.reason || 'unknown'})`);
-    try {
-      new Notification({
-        title: 'GateControl Pro',
-        body: t('notify.rdpSigningUnavailable'),
-      }).show();
-    } catch (err) {
-      log.debug('Failed to show signing-unavailable notification:', err.message);
-    }
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('rdp:signing-unavailable', data);
-    }
   });
 
   rdpWolClient = new RdpWolClient({ apiClient, log });
@@ -956,6 +929,17 @@ function registerIpcHandlers() {
 // ── App Lifecycle ────────────────────────────────────────────
 app.on('ready', () => {
   initializeServices();
+
+  // Ältere Versionen haben mstsc global die Zertifikatswarnung abgewöhnt
+  // (AuthenticationLevelOverride) und ein selbstsigniertes Code-Signing-
+  // Zertifikat in CurrentUser\Root installiert. Beides wird einmalig
+  // zurückgebaut (nur was GateControl selbst angelegt hat).
+  runRdpTrustMigration({
+    store,
+    log,
+    userDataDir: app.getPath('userData'),
+  }).catch(err => log.warn('RDP trust migration failed:', err.message));
+
   registerIpcHandlers();
   createWindow();
   createTray();

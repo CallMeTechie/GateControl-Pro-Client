@@ -9,18 +9,17 @@ const crypto = require('crypto');
  * Generates temporary .rdp files from server-provided settings.
  * Each file is written to %TEMP% with a random suffix for parallel session support.
  *
- * If a signer is provided, the generated file is signed via rdpsign.exe so
- * mstsc.exe shows the calmer "Trusted Publisher" prompt instead of the
- * orange "Unbekannter Herausgeber" warning. Signing failures are non-fatal.
+ * Files are intentionally NOT signed: signing with a self-signed cert only
+ * suppresses mstsc's publisher warning if that cert is a trusted root, and a
+ * user-trusted root with code-signing EKU is a far bigger risk than the
+ * warning itself.
  */
 class RdpConfigBuilder {
   /**
    * @param {object} log - electron-log instance
-   * @param {object} [signer] - optional RdpSigner; if null, files stay unsigned
    */
-  constructor(log, signer = null) {
+  constructor(log) {
     this.log = log;
-    this.signer = signer;
   }
 
   /**
@@ -71,7 +70,17 @@ class RdpConfigBuilder {
 
     // NLA (Network Level Authentication)
     lines.push(`enablecredsspsupport:i:${route.nla_enabled !== false ? 1 : 0}`);
-    lines.push(`authentication level:i:${route.nla_enabled !== false ? 2 : 0}`);
+
+    // Server authentication, scoped to THIS connection file only.
+    // 0 = connect without the certificate warning. RDP hosts behind
+    // GateControl typically use self-signed certificates and are reached
+    // through the authenticated WireGuard tunnel / gateway, so the warning
+    // is noise here. Older versions achieved this by setting the global
+    // HKCU\...\Terminal Server Client\AuthenticationLevelOverride, which
+    // silenced the warning for every mstsc connection of the user — that
+    // value is removed again by rdp-trust-migration.js and must not be
+    // reintroduced.
+    lines.push('authentication level:i:0');
 
     // ── Display ───────────────────────────────────────────
     if (route.resolution_mode === 'fullscreen') {
@@ -196,14 +205,6 @@ class RdpConfigBuilder {
 
     fs.writeFileSync(filePath, content, { encoding: 'utf-8' });
     this.log.info(`RDP config written: ${filePath}`);
-
-    if (this.signer) {
-      try {
-        await this.signer.sign(filePath);
-      } catch (err) {
-        this.log.warn(`RDP signing skipped due to error: ${err.message}`);
-      }
-    }
 
     return filePath;
   }
