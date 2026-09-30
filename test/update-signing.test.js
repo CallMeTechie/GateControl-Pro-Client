@@ -94,8 +94,14 @@ describe('update public key', () => {
     assert.match(wf, /UPDATE_SIGNING_KEY: \$\{\{ secrets\.UPDATE_SIGNING_KEY \}\}/);
     assert.match(wf, /dist\/update-manifest\.json\.sig/);
     assert.match(wf, /dist\/\$\{\{ steps\.sign\.outputs\.fileName \}\}/);
-    // the gate runs before the version bump is pushed
-    assert.ok(wf.indexOf('--check') < wf.indexOf('git push origin master'));
+    // the gate runs before the version bump is pushed, and the push only
+    // happens after the build was signed (no tag without a release)
+    const push = wf.indexOf('git push --atomic origin HEAD:master');
+    assert.ok(push > 0, 'atomic push of commit + tag');
+    assert.ok(wf.indexOf('--check') < push);
+    assert.ok(wf.indexOf(`--product ${PRODUCT} --dist dist`) < push);
+    assert.ok(push < wf.indexOf('name: Create GitHub Release'));
+    assert.ok(!wf.includes('git push origin master --tags'), 'no push before the build');
   });
 });
 
