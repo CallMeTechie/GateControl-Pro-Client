@@ -48,14 +48,9 @@
     "sessionTimeout": "RDP session expiring (Route {{ routeId }}). {{ minutes }} minutes remaining."
   },
   "status": {
-    "connected": "Connected",
-    "disconnected": "Disconnected",
-    "connecting": "Connecting...",
     "reconnecting": "Reconnecting..."
   },
   "action": {
-    "connect": "Connect",
-    "disconnect": "Disconnect",
     "importFile": "Import file",
     "scanQr": "Scan QR"
   },
@@ -74,7 +69,6 @@
     "activeDns": "Active DNS"
   },
   "logs": {
-    "loading": "Loading logs...",
     "empty": "No logs available"
   },
   "server": {
@@ -88,8 +82,7 @@
     "importError": "Import error: {{ error }}",
     "qrSuccess": "QR code detected! Config imported.",
     "qrTimeout": "QR scan timeout — no code detected.",
-    "cameraError": "Camera error: {{ error }}",
-    "enrolled": "Device set up (peer ID: {{ peerId }})"
+    "cameraError": "Camera error: {{ error }}"
   },
   "split": {
     "activateOnReconnect": "Split tunneling will activate after reconnect.",
@@ -99,15 +92,11 @@
     "routesSavedPending": "{{ count }} route(s) saved. Will activate on next connect."
   },
   "stats": {
-    "period24h": "24h",
-    "period7d": "7 days",
-    "period30d": "30 days",
-    "periodTotal": "Total"
+    "period24h": "24h"
   },
   "update": {
     "available": "Update v{{ version }}",
     "readyToInstall": "ready to install",
-    "later": "Later",
     "install": "Restart now",
     "noUpdate": "No update available — latest version installed.",
     "checkFailed": "Update check failed."
@@ -140,16 +129,11 @@
   "ui": {
     "nav": {
       "label": "Main navigation",
-      "overview": "Overview",
-      "services": "Services",
       "logs": "Log",
       "activeSessions": "Active sessions"
     },
     "theme": {
       "toggle": "Switch theme"
-    },
-    "conn": {
-      "toggle": "VPN connection"
     },
     "status": {
       "error": "Error"
@@ -161,19 +145,13 @@
       "protected": "Protected",
       "failed": "Connection failed",
       "disconnected": "Not connected",
-      "subOn": "Your traffic is encrypted via {{ host }}",
-      "subConnecting": "This usually takes only a few seconds.",
-      "subOff": "Your traffic goes unprotected over the local network.",
-      "retry": "Try again",
-      "showLog": "Show log"
+      "subConnecting": "This usually takes only a few seconds."
     },
     "stats": {
       "since": "Connected for",
       "transferred": "Transferred"
     },
     "protection": {
-      "title": "Protection",
-      "routing": "Routing",
       "fullTunnel": "All traffic",
       "splitCount": "Split · {{ count }} targets"
     },
@@ -183,18 +161,13 @@
       "idle": "Not checked yet in this session."
     },
     "throughput": {
-      "title": "Throughput",
       "window": "· last 60 seconds",
       "noData": "No live data",
       "noDataHint": "Connect to see throughput in real time."
     },
     "services": {
-      "showAll": "Show all",
       "subtitle": "Internal applications reachable through this tunnel.",
       "needVpn": "These services are only reachable with an active VPN connection.",
-      "connectNow": "Connect now",
-      "open": "Open",
-      "auth": "Sign-in",
       "empty": "No services shared"
     },
     "rdp": {
@@ -214,22 +187,17 @@
       "done": "Done"
     },
     "logs": {
-      "count": "{{ count }} entries · newest first",
-      "search": "Search messages",
       "info": "Info",
       "warn": "Warning",
       "error": "Error",
       "debug": "Debug",
       "time": "Time",
       "level": "Level",
-      "message": "Message",
-      "noMatch": "No entries for these filters."
+      "message": "Message"
     },
     "settings": {
       "tabConn": "Connection",
-      "tabSplit": "Split tunneling",
       "tabAdv": "Advanced",
-      "tabAbout": "About",
       "setupTitle": "Set up device again",
       "setupDesc": "With a new setup code, a configuration file or a QR code. The existing registration will be replaced.",
       "openWizard": "Open setup assistant"
@@ -281,10 +249,6 @@
       "ready": "Update {{ version }} ready",
       "readyDesc": "It will be installed when you restart. The VPN connection is briefly interrupted.",
       "restart": "Restart"
-    },
-    "statusbar": {
-      "ksOn": "Kill switch on",
-      "ksOff": "Kill switch off"
     },
     "setup": {
       "step": "Step {{ n }} of {{ total }}",

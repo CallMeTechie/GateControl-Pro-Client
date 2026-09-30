@@ -48,14 +48,9 @@
     "sessionTimeout": "RDP-Sitzung läuft ab (Route {{ routeId }}). Noch {{ minutes }} Minuten."
   },
   "status": {
-    "connected": "Verbunden",
-    "disconnected": "Getrennt",
-    "connecting": "Verbinde...",
     "reconnecting": "Reconnecting..."
   },
   "action": {
-    "connect": "Verbinden",
-    "disconnect": "Trennen",
     "importFile": "Datei importieren",
     "scanQr": "QR scannen"
   },
@@ -74,7 +69,6 @@
     "activeDns": "Aktiver DNS"
   },
   "logs": {
-    "loading": "Lade Logs...",
     "empty": "Keine Logs verfügbar"
   },
   "server": {
@@ -88,8 +82,7 @@
     "importError": "Import-Fehler: {{ error }}",
     "qrSuccess": "QR-Code erkannt! Config importiert.",
     "qrTimeout": "QR-Scan Timeout — kein Code erkannt.",
-    "cameraError": "Kamera-Fehler: {{ error }}",
-    "enrolled": "Gerät eingerichtet (Peer-ID: {{ peerId }})"
+    "cameraError": "Kamera-Fehler: {{ error }}"
   },
   "split": {
     "activateOnReconnect": "Split-Tunneling wird nach Neuverbindung aktiv.",
@@ -99,15 +92,11 @@
     "routesSavedPending": "{{ count }} Route(n) gespeichert. Wird beim nächsten Verbinden aktiv."
   },
   "stats": {
-    "period24h": "24h",
-    "period7d": "7 Tage",
-    "period30d": "30 Tage",
-    "periodTotal": "Gesamt"
+    "period24h": "24h"
   },
   "update": {
     "available": "Update v{{ version }}",
     "readyToInstall": "bereit zur Installation",
-    "later": "Später",
     "install": "Jetzt neustarten",
     "noUpdate": "Kein Update verfügbar — neueste Version installiert.",
     "checkFailed": "Update-Prüfung fehlgeschlagen."
@@ -140,16 +129,11 @@
   "ui": {
     "nav": {
       "label": "Hauptnavigation",
-      "overview": "Übersicht",
-      "services": "Dienste",
       "logs": "Protokoll",
       "activeSessions": "Aktive Sitzungen"
     },
     "theme": {
       "toggle": "Design wechseln"
-    },
-    "conn": {
-      "toggle": "VPN-Verbindung"
     },
     "status": {
       "error": "Fehler"
@@ -161,19 +145,13 @@
       "protected": "Geschützt",
       "failed": "Verbindung fehlgeschlagen",
       "disconnected": "Nicht verbunden",
-      "subOn": "Dein Verkehr läuft verschlüsselt über {{ host }}",
-      "subConnecting": "Das dauert normalerweise nur wenige Sekunden.",
-      "subOff": "Dein Verkehr läuft ungeschützt über das lokale Netz.",
-      "retry": "Erneut versuchen",
-      "showLog": "Protokoll anzeigen"
+      "subConnecting": "Das dauert normalerweise nur wenige Sekunden."
     },
     "stats": {
       "since": "Verbunden seit",
       "transferred": "Übertragen"
     },
     "protection": {
-      "title": "Schutz",
-      "routing": "Routing",
       "fullTunnel": "Gesamter Verkehr",
       "splitCount": "Split · {{ count }} Ziele"
     },
@@ -183,18 +161,13 @@
       "idle": "Noch nicht geprüft in dieser Sitzung."
     },
     "throughput": {
-      "title": "Durchsatz",
       "window": "· letzte 60 Sekunden",
       "noData": "Keine Live-Daten",
       "noDataHint": "Verbinde dich, um den Durchsatz in Echtzeit zu sehen."
     },
     "services": {
-      "showAll": "Alle anzeigen",
       "subtitle": "Interne Anwendungen, die über diesen Tunnel erreichbar sind.",
       "needVpn": "Diese Dienste sind nur mit aktiver VPN-Verbindung erreichbar.",
-      "connectNow": "Jetzt verbinden",
-      "open": "Öffnen",
-      "auth": "Anmeldung",
       "empty": "Keine Dienste freigegeben"
     },
     "rdp": {
@@ -214,22 +187,17 @@
       "done": "Fertig"
     },
     "logs": {
-      "count": "{{ count }} Einträge · neueste zuerst",
-      "search": "Meldungen durchsuchen",
       "info": "Info",
       "warn": "Warnung",
       "error": "Fehler",
       "debug": "Debug",
       "time": "Zeit",
       "level": "Stufe",
-      "message": "Meldung",
-      "noMatch": "Keine Einträge für diese Filter."
+      "message": "Meldung"
     },
     "settings": {
       "tabConn": "Verbindung",
-      "tabSplit": "Split-Tunneling",
       "tabAdv": "Erweitert",
-      "tabAbout": "Über",
       "setupTitle": "Gerät neu einrichten",
       "setupDesc": "Mit einem neuen Einrichtungscode, einer Konfigurationsdatei oder einem QR-Code. Die bestehende Registrierung wird ersetzt.",
       "openWizard": "Einrichtungsassistent öffnen"
@@ -281,10 +249,6 @@
       "ready": "Update {{ version }} bereit",
       "readyDesc": "Wird installiert, sobald du neu startest. Die VPN-Verbindung wird kurz unterbrochen.",
       "restart": "Neu starten"
-    },
-    "statusbar": {
-      "ksOn": "Kill-Switch an",
-      "ksOff": "Kill-Switch aus"
     },
     "setup": {
       "step": "Schritt {{ n }} von {{ total }}",
