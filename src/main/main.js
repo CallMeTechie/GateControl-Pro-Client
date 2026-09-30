@@ -630,7 +630,7 @@ function initializeServices() {
 
   wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
   killSwitchSvc = new KillSwitch(log, { edition: 'pro' });
-  rdpAllowSvc = new RdpAllowSvc(log);
+  rdpAllowSvc = new RdpAllowSvc(log, { edition: 'pro' });
 
   rdpManager = new RdpManager({
     apiClient,
@@ -871,6 +871,15 @@ app.on('ready', () => {
   // Reste eines Absturzes (Regeln + Block-Policy) entfernen, bevor
   // irgendetwas verbindet; connectTunnel aktiviert den Kill-Switch neu.
   const killSwitchRecovery = recoverKillSwitch({ killSwitch: killSwitchSvc, store, wgService, log });
+
+  // RDP-Freigabe mit der Einstellung abgleichen (verwaiste Regel nach
+  // Absturz entfernen bzw. Regel wiederherstellen). Die alte gemeinsame
+  // Regel GateControl_RDP_Allow_In_3389 entfernt der Core nur, wenn die
+  // Community-Edition weder installiert ist noch laeuft.
+  const rdpWanted = store.get('tunnel.rdpAllow', false);
+  rdpAllowSvc.reconcile({ wanted: rdpWanted, configPath: WG_CONFIG_FILE })
+    .then((active) => { if (rdpWanted && !active) store.set('tunnel.rdpAllow', false); })
+    .catch(err => log.warn('RDP allow reconcile failed:', err.message));
   registerIpcHandlers();
   createWindow();
   createTray();

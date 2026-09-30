@@ -24,6 +24,12 @@ const EDITION = 'pro';
 const OWN_PREFIX = 'GateControl_Pro_KS';
 const OTHER_PREFIX = 'GateControl_Community_KS';
 const LEGACY_PREFIX = 'GateControl_KS';
+// RDP-Freigaberegel (core rdp-allow.js / editions.rdpAllowRuleName)
+const OWN_RDP_RULE = 'GateControl_Pro_RDP_Allow_In_3389';
+const OTHER_RDP_RULE = 'GateControl_Community_RDP_Allow_In_3389';
+const LEGACY_RDP_RULE = 'GateControl_RDP_Allow_In_3389';
+const MAIN_JS = 'src/main/main.js';
+const RDP_ALLOW_CTOR_RE = /rdpAllowSvc = new RdpAllowSvc\(log, \{ edition: 'pro' \}\)/;
 
 // !define NAME "WERT" aus dem Skript
 const defines = Object.fromEntries([...code.matchAll(/^!define (\w+) "([^"]*)"/gm)].map(m => [m[1], m[2]]));
@@ -181,6 +187,61 @@ describe('NSIS installer script (build/installer.nsh)', () => {
     assert.ok(!/DefaultInboundAction|AllowInboundRules/.test(ps));
     // Policy zuruecksetzen, bevor die Regeln geloescht werden
     assert.ok(ps.indexOf('Set-NetFirewallProfile') < ps.indexOf('Remove-NetFirewallRule'));
+    }
+  });
+
+  it('uses this edition\'s RDP allow rule name, derived like the core does', () => {
+    assert.equal(defines.GC_RDP_RULE, OWN_RDP_RULE);
+    assert.equal(defines.GC_LEGACY_RDP_RULE, LEGACY_RDP_RULE);
+    const editionsFile = coreModule('src/services/editions.js');
+    if (!editionsFile) return;
+    const editions = require(editionsFile);
+    assert.equal(editions.rdpAllowRuleName(EDITION), OWN_RDP_RULE);
+    assert.equal(editions.LEGACY_RDP_ALLOW_RULE_NAME, LEGACY_RDP_RULE);
+    const [other] = editions.otherEditions(EDITION);
+    assert.equal(editions.rdpAllowRuleName(other.id), OTHER_RDP_RULE);
+  });
+
+  it('main process passes its edition to the core RDP allow service', () => {
+    const main = fs.readFileSync(path.join(ROOT, MAIN_JS), 'utf8');
+    assert.match(main, RDP_ALLOW_CTOR_RE);
+    assert.ok(!/new RdpAllow(Svc)?\(log\)/.test(main), 'RdpAllow ohne Edition erzeugt');
+    assert.match(main, /\.reconcile\(\{ wanted: /, 'RDP-Regel wird beim Start nicht abgeglichen');
+  });
+
+  it('never references the other edition\'s RDP allow rule', () => {
+    const resolved = resolveDefines(nsh);
+    assert.ok(!resolved.includes(OTHER_RDP_RULE), OTHER_RDP_RULE + ' im Skript');
+    // Jeder RDP-Regelname im Skript ist der eigene oder die Altregel
+    const names = new Set(resolved.match(/GateControl_[A-Za-z0-9_]*RDP[A-Za-z0-9_]*/g) || []);
+    assert.deepEqual([...names].sort(), [LEGACY_RDP_RULE, OWN_RDP_RULE].sort());
+  });
+
+  it('customUnInstall removes this edition\'s RDP rule, but not on updates', () => {
+    const body = macroBody('customUnInstall');
+    const m = body.match(/\$\{IfNot\} \$\{isUpdated\}\n([\s\S]*?)\$\{EndIf\}/);
+    assert.ok(m, 'isUpdated-Block fehlt');
+    assert.match(m[1], /!insertmacro GC_CLEANUP_RDP_FIREWALL/);
+    assert.equal([...code.matchAll(/!insertmacro GC_CLEANUP_RDP_FIREWALL\b/g)].length, 1);
+    const rdp = macroBody('GC_CLEANUP_RDP_FIREWALL');
+    assert.match(rdp, /nsExec::ExecToLog `"\$1" advfirewall firewall delete rule name=\$\{GC_RDP_RULE\}`/);
+  });
+
+  it('removes the legacy RDP rule only when the other edition is absent', () => {
+    // Die Altregel wird nirgends direkt, sondern nur ueber den Define geloescht
+    assert.equal(code.split('\n').filter(l => l.includes(LEGACY_RDP_RULE)).length, 1, 'Altregel ausserhalb des Defines');
+    const rdp = macroBody('GC_CLEANUP_RDP_FIREWALL');
+    const detect = rdp.indexOf('!insertmacro GC_DETECT_OTHER_EDITION');
+    const legacyDelete = rdp.indexOf('name=${GC_LEGACY_RDP_RULE}');
+    assert.ok(detect >= 0 && legacyDelete > detect, 'Erkennung muss vor dem Loeschen der Altregel laufen');
+    assert.equal([...code.matchAll(/\$\{GC_LEGACY_RDP_RULE\}`/g)].length, 1);
+    const m = rdp.match(/\$\{If\} \$6 == 0\n([\s\S]*?)\$\{Else\}\n([\s\S]*?)\$\{EndIf\}/);
+    assert.ok(m, 'Verzweigung ueber $6 fehlt');
+    assert.match(m[1], /delete rule name=\$\{GC_LEGACY_RDP_RULE\}/);
+    assert.ok(!m[2].includes('delete rule'), 'Loeschen im Zweig "andere Edition vorhanden"');
+    // Register, die GC_DETECT_OTHER_EDITION veraendert, werden gesichert
+    for (const r of ['$1', '$3', '$4', '$5', '$6']) {
+      assert.ok(rdp.includes('Push ' + r) && rdp.includes('Pop ' + r), r + ' nicht gesichert');
     }
   });
 
