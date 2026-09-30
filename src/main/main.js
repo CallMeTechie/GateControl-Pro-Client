@@ -706,7 +706,7 @@ function initializeServices() {
   });
 
   wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
-  killSwitchSvc = new KillSwitch(log);
+  killSwitchSvc = new KillSwitch(log, { edition: 'pro' });
   rdpAllowSvc = new RdpAllowSvc(log);
 
   rdpManager = new RdpManager({

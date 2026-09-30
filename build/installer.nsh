@@ -1,41 +1,63 @@
 ; GateControl Pro - NSIS-Anpassungen (electron-builder "nsis.include")
 
+; Edition dieses Installers. Muss zu gatecontrol-client-core
+; src/services/editions.js passen (Kill-Switch-Regelpraefix sowie GUID
+; und productName der jeweils ANDEREN Edition); test/installer-nsh.test.js
+; prueft das.
+!define GC_KS_PREFIX "GateControl_Pro_KS"
+!define GC_OTHER_EDITION_GUID "aa07f3aa-9926-52f3-be30-dbe287d6b2ea"
+!define GC_OTHER_EDITION_PRODUCT "GateControl Community Client"
+
 ; ======================================================================
 ; Kill-Switch-Aufraeumen beim Deinstallieren
-; (Dieser Block ist in Pro- und Community-Client identisch.)
+; (Dieser Block ist in Pro- und Community-Client identisch; die Edition
+; steckt nur in den Defines GC_KS_PREFIX / GC_OTHER_EDITION_* oben.)
 ;
 ; Der Kill-Switch (gatecontrol-client-core, services/killswitch.js) legt
-; Firewall-Regeln mit dem Praefix "GateControl_KS_" an und setzt die
+; Firewall-Regeln mit dem Praefix "${GC_KS_PREFIX}_" an (pro Edition
+; eigenes Praefix, abgeleitet in core services/editions.js) und setzt die
 ; Outbound-Policy der Profile Domain/Private/Public auf "blockoutbound".
 ; Wird deinstalliert, waehrend er aktiv ist, bliebe der PC ohne Internet.
+; Regeln der anderen Edition werden nie angefasst.
+;
+; Altregeln: Versionen vor der Trennung nutzten in BEIDEN Apps das
+; Praefix "GateControl_KS_". Diese Regeln tragen kein program= und sind
+; keiner App zuzuordnen. Sie werden nur mitgeloescht, wenn die andere
+; Edition weder installiert ist (Registry Software\<GUID> in HKLM/HKCU,
+; Exe im Programmverzeichnis) noch laeuft (tasklist, deckt die portable
+; Version ab) - sonst koennten sie zum aktiven Kill-Switch einer alten
+; Version der anderen App gehoeren. Dieselbe Regel gilt im Core.
 ;
 ; Ablauf (die App ist zu diesem Zeitpunkt bereits beendet: electron-builder
 ; ruft CHECK_APP_RUNNING in un.onInit bzw. am Anfang der Uninstall-Section
 ; auf, also vor customUnInstall):
-;   1. Alle Regeln, deren Anzeigename mit "GateControl_KS_" beginnt, per
-;      PowerShell suchen. netsh "name=" setzt den Anzeigenamen
-;      (DisplayName); der interne Name ist eine GUID. Deshalb wird nach
-;      DisplayName gefiltert. Das erfasst auch dynamische Namen wie
-;      GateControl_KS_Allow_PhysNet_<Subnetz>.
+;   0. Pruefen, ob die andere Edition vorhanden ist ($6).
+;   1. Alle Regeln, deren Anzeigename mit "${GC_KS_PREFIX}_" (und ggf.
+;      "GateControl_KS_") beginnt, per PowerShell suchen. netsh "name="
+;      setzt den Anzeigenamen (DisplayName); der interne Name ist eine
+;      GUID. Deshalb wird nach DisplayName gefiltert. Das erfasst auch
+;      dynamische Namen wie <Praefix>_Allow_PhysNet_<Subnetz>. Bei -like
+;      ist "_" kein Platzhalter; "GateControl_KS_*" passt daher nicht auf
+;      "GateControl_Pro_KS_..." oder "GateControl_Community_KS_...".
 ;   2. Nur wenn solche Regeln existierten: fuer jedes Profil mit
 ;      Outbound "Block" die Outbound-Policy auf "Allow" (Windows-Standard)
 ;      zuruecksetzen. Der Inbound-Teil bleibt unveraendert.
 ;   3. Die Regeln loeschen.
 ;   4. Fallback, falls PowerShell/NetSecurity nicht nutzbar ist: bekannte
-;      feste Regelnamen per netsh loeschen und die Policy per netsh
-;      (Inbound-Teil erhalten) zuruecksetzen, falls dabei Regeln gefunden
-;      wurden.
+;      feste Regelnamen per netsh loeschen (netsh "name=" ist ein exakter
+;      Vergleich, keine Wildcard) und die Policy per netsh (Inbound-Teil
+;      erhalten) zuruecksetzen, falls dabei Regeln gefunden wurden.
 ;
 ; Sicherheitsentscheidung: Die gesicherte Original-Policy in
 ; %APPDATA%\...\killswitch-state.json wird bewusst NICHT gelesen. Die
 ; Datei ist vom Benutzer beschreibbar, der Deinstaller laeuft mit
 ; Administratorrechten; ihr Inhalt darf keine Firewall-Einstellungen
-; steuern. Stattdessen gilt: Existieren noch GateControl_KS_-Regeln,
-; stammt ein "blockoutbound" praktisch sicher vom Kill-Switch (dieselbe
-; Annahme wie _repairPolicyIfLeftover() im Core), also wird der
-; Windows-Standard "allowoutbound" wiederhergestellt. Existieren keine
-; Kill-Switch-Regeln, bleibt die Policy unangetastet - der Benutzer
-; koennte "blockoutbound" absichtlich eingestellt haben.
+; steuern. Stattdessen gilt: Existieren noch Kill-Switch-Regeln dieser
+; App, stammt ein "blockoutbound" praktisch sicher vom Kill-Switch
+; (dieselbe Annahme wie _repairPolicyIfLeftover() im Core), also wird der
+; Windows-Standard "allowoutbound" wiederhergestellt. Existieren keine,
+; bleibt die Policy unangetastet - der Benutzer koennte "blockoutbound"
+; absichtlich eingestellt haben.
 ;
 ; Die Zustandsdatei selbst wird nicht geloescht: Der Deinstaller behaelt
 ; die Benutzerdaten (deleteAppDataOnUninstall ist nicht gesetzt); nur mit
@@ -44,8 +66,8 @@
 ; einer Neuinstallation raeumt recoverStaleState() im Core sie auf.
 ;
 ; Register: $0 = powershell.exe, $1 = netsh.exe, $2 = Regeln gefunden,
-; $3 = Rueckgabewert, $4 = netsh-Ausgabe, $5 = Treffer. Alle werden
-; gesichert und wiederhergestellt.
+; $3 = Rueckgabewert, $4 = Ausgabe, $5 = Treffer, $6 = andere Edition
+; vorhanden. Alle werden gesichert und wiederhergestellt.
 ; ======================================================================
 
 ; ${OUT} = 1, wenn ${HAYSTACK} ${NEEDLE} enthaelt (ohne Beachtung der
@@ -73,6 +95,41 @@
   Pop $R7
 !macroend
 
+; $6 = 1, wenn die andere Edition installiert ist oder laeuft; im Zweifel 1.
+; Registry-Ansicht: electron-builder setzt in un.onInit bereits
+; SetRegView 64 (x64), dieselbe Ansicht, in die auch die andere Edition
+; ihren Schluessel Software\<GUID> schreibt.
+!macro GC_DETECT_OTHER_EDITION
+  StrCpy $6 0
+  ReadRegStr $4 HKLM "Software\${GC_OTHER_EDITION_GUID}" InstallLocation
+  ${If} $4 != ""
+    StrCpy $6 1
+  ${EndIf}
+  ReadRegStr $4 HKCU "Software\${GC_OTHER_EDITION_GUID}" InstallLocation
+  ${If} $4 != ""
+    StrCpy $6 1
+  ${EndIf}
+  ${If} ${FileExists} "$PROGRAMFILES64\${GC_OTHER_EDITION_PRODUCT}\${GC_OTHER_EDITION_PRODUCT}.exe"
+    StrCpy $6 1
+  ${EndIf}
+  ${If} ${FileExists} "$PROGRAMFILES32\${GC_OTHER_EDITION_PRODUCT}\${GC_OTHER_EDITION_PRODUCT}.exe"
+    StrCpy $6 1
+  ${EndIf}
+  ${If} $6 == 0
+    nsExec::ExecToStack `"$SYSDIR\tasklist.exe" /FI "IMAGENAME eq ${GC_OTHER_EDITION_PRODUCT}.exe" /FO CSV /NH`
+    Pop $3
+    Pop $4
+    ${If} $3 != 0
+      StrCpy $6 1
+    ${Else}
+      !insertmacro GC_STR_CONTAINS $5 $4 "${GC_OTHER_EDITION_PRODUCT}.exe"
+      ${If} $5 == 1
+        StrCpy $6 1
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+!macroend
+
 ; Fallback: Regel per netsh loeschen; $2 = 1, wenn sie existierte.
 !macro GC_NETSH_DELETE_KS_RULE NAME
   nsExec::ExecToLog `"$1" advfirewall firewall delete rule name=${NAME}`
@@ -80,6 +137,32 @@
   ${If} $3 == 0
     StrCpy $2 1
   ${EndIf}
+!macroend
+
+; Fallback: alle festen Regelnamen aus killswitch.js (Core) plus aeltere
+; Versionen mit dem Praefix ${PREFIX} loeschen. Dynamische Namen
+; (Allow_PhysNet_<Subnetz>) erfasst nur PowerShell.
+!macro GC_NETSH_DELETE_KS_RULES PREFIX
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_WG_Endpoint
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_WG_Endpoint_In
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_API
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_VPN_Out
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_VPN_Subnet
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_VPN_DNS
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_VPN_DNS_TCP
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_VPN_In
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_Loopback
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_Loopback_In
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_LAN_10_0_0_0_8
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_LAN_172_16_0_0_12
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_LAN_192_168_0_0_16
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_LAN_In_10_0_0_0_8
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_LAN_In_172_16_0_0_12
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_LAN_In_192_168_0_0_16
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_DHCP
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Allow_DHCP_In
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Block_All_Out
+  !insertmacro GC_NETSH_DELETE_KS_RULE ${PREFIX}_Block_All_In
 !macroend
 
 ; Fallback: steht die Policy von ${PROFILE} auf "${INBOUND},BlockOutbound",
@@ -116,6 +199,7 @@
   Push $3
   Push $4
   Push $5
+  Push $6
 
   ; Der Deinstaller ist ein 32-Bit-Prozess. Ueber Sysnative werden auf
   ; 64-Bit-Windows die nativen 64-Bit-Programme gestartet.
@@ -127,14 +211,25 @@
     StrCpy $1 "$SYSDIR\netsh.exe"
   ${EndIf}
 
-  DetailPrint "GateControl: Kill-Switch-Firewallregeln entfernen ..."
+  !insertmacro GC_DETECT_OTHER_EDITION
+  ${If} $6 == 1
+    DetailPrint "GateControl: ${GC_OTHER_EDITION_PRODUCT} vorhanden - Altregeln GateControl_KS_* bleiben erhalten."
+  ${EndIf}
+
+  DetailPrint "GateControl: Kill-Switch-Firewallregeln (${GC_KS_PREFIX}_*) entfernen ..."
   StrCpy $2 0
 
   ; Exit-Codes: 10 = Regeln gefunden, Policy geprueft und Regeln geloescht;
   ; 0 = keine Kill-Switch-Regeln vorhanden (Policy bleibt unveraendert);
   ; alles andere (auch "error" von nsExec) = Fallback ueber netsh.
   ; Hinweis: "$$" ist in NSIS ein literales "$" fuer PowerShell.
-  nsExec::ExecToLog `"$0" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference='Stop'; try { $$ks = @(Get-NetFirewallRule -PolicyStore PersistentStore | Where-Object { $$_.DisplayName -like 'GateControl_KS_*' }); if ($$ks.Count -eq 0) { exit 0 }; foreach ($$p in 'Domain','Private','Public') { if ((Get-NetFirewallProfile -PolicyStore PersistentStore -Name $$p).DefaultOutboundAction -eq 'Block') { Set-NetFirewallProfile -PolicyStore PersistentStore -Name $$p -DefaultOutboundAction Allow } }; $$ks | Remove-NetFirewallRule; exit 10 } catch { exit 2 }"`
+  ${If} $6 == 1
+    ; Nur eigene Regeln
+    nsExec::ExecToLog `"$0" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference='Stop'; try { $$ks = @(Get-NetFirewallRule -PolicyStore PersistentStore | Where-Object { $$_.DisplayName -like '${GC_KS_PREFIX}_*' }); if ($$ks.Count -eq 0) { exit 0 }; foreach ($$p in 'Domain','Private','Public') { if ((Get-NetFirewallProfile -PolicyStore PersistentStore -Name $$p).DefaultOutboundAction -eq 'Block') { Set-NetFirewallProfile -PolicyStore PersistentStore -Name $$p -DefaultOutboundAction Allow } }; $$ks | Remove-NetFirewallRule; exit 10 } catch { exit 2 }"`
+  ${Else}
+    ; Eigene Regeln plus Altregeln (andere Edition nicht vorhanden)
+    nsExec::ExecToLog `"$0" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference='Stop'; try { $$ks = @(Get-NetFirewallRule -PolicyStore PersistentStore | Where-Object { $$_.DisplayName -like '${GC_KS_PREFIX}_*' -or $$_.DisplayName -like 'GateControl_KS_*' }); if ($$ks.Count -eq 0) { exit 0 }; foreach ($$p in 'Domain','Private','Public') { if ((Get-NetFirewallProfile -PolicyStore PersistentStore -Name $$p).DefaultOutboundAction -eq 'Block') { Set-NetFirewallProfile -PolicyStore PersistentStore -Name $$p -DefaultOutboundAction Allow } }; $$ks | Remove-NetFirewallRule; exit 10 } catch { exit 2 }"`
+  ${EndIf}
   Pop $3
 
   ${If} $3 == 10
@@ -143,28 +238,10 @@
     DetailPrint "GateControl: Keine Kill-Switch-Regeln vorhanden."
   ${Else}
     DetailPrint "GateControl: PowerShell nicht nutzbar ($3), Fallback ueber netsh."
-    ; Feste Regelnamen aus killswitch.js (Core) plus aeltere Versionen.
-    ; Dynamische Namen (Allow_PhysNet_<Subnetz>) erfasst nur PowerShell.
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_WG_Endpoint
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_WG_Endpoint_In
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_API
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_VPN_Out
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_VPN_Subnet
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_VPN_DNS
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_VPN_DNS_TCP
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_VPN_In
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_Loopback
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_Loopback_In
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_LAN_10_0_0_0_8
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_LAN_172_16_0_0_12
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_LAN_192_168_0_0_16
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_LAN_In_10_0_0_0_8
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_LAN_In_172_16_0_0_12
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_LAN_In_192_168_0_0_16
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_DHCP
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Allow_DHCP_In
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Block_All_Out
-    !insertmacro GC_NETSH_DELETE_KS_RULE GateControl_KS_Block_All_In
+    !insertmacro GC_NETSH_DELETE_KS_RULES ${GC_KS_PREFIX}
+    ${If} $6 == 0
+      !insertmacro GC_NETSH_DELETE_KS_RULES GateControl_KS
+    ${EndIf}
 
     ${If} $2 == 1
       !insertmacro GC_NETSH_RESTORE_OUTBOUND domain
@@ -175,6 +252,7 @@
     ${EndIf}
   ${EndIf}
 
+  Pop $6
   Pop $5
   Pop $4
   Pop $3
