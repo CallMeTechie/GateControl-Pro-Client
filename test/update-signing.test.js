@@ -80,6 +80,17 @@ describe('update public key', () => {
     assert.match(main, /loadUpdatePublicKey[\s\S]*?require\('@gatecontrol\/client-core[^']*'\)/);
   });
 
+  it('installing an update goes through the verified updater state', () => {
+    const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.js'), 'utf8');
+    const fn = main.match(/async function installUpdate\(\) \{([\s\S]*?)\n\}/);
+    assert.ok(fn, 'async installUpdate() not found');
+    // Ready check and start both come from the updater (re-hash before start),
+    // never from a cached installer path that a manual check does not carry.
+    assert.match(fn[1], /updater\?\.isUpdateReady\(\)/);
+    assert.match(fn[1], /updater\.install\(\)/);
+    assert.ok(!/installerPath|shell\.openPath|pendingUpdate/.test(fn[1]));
+  });
+
   it('the release workflow signs, gates on the key and uploads manifest + signature', () => {
     const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
     assert.match(wf, new RegExp(`sign-update\\.js --product ${PRODUCT} --check`));
