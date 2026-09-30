@@ -33,6 +33,7 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
+let loadUpdatePublicKey;
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, RdpSigner, RdpWolClient;
 
 try {
@@ -54,6 +55,7 @@ try {
   writeCrashLog('IMPORT', 'Loading pro services...');
   ApiClientPro = require('../services/api-client-pro');
   Updater = require('@gatecontrol/client-core/src/services/updater');
+  ({ loadUpdatePublicKey } = require('./update-public-key'));
   ConnectionMonitor = require('@gatecontrol/client-core/src/services/connection-monitor');
   DnsPolicy = require('@gatecontrol/client-core/src/services/dns-policy');
   RdpManager = require('../services/rdp/rdp-manager');
@@ -696,7 +698,10 @@ function initializeServices() {
     clientVersion: require('../../package.json').version,
   });
 
-  updater = new Updater({ serverUrl, apiKey, log, clientType: 'pro' });
+  // Nur signierte Updates: ohne echten Public Key bleibt der Updater aus.
+  updater = new Updater({
+    serverUrl, apiKey, log, clientType: 'pro', product: 'pro', publicKey: loadUpdatePublicKey(),
+  });
 
   wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
   killSwitchSvc = new KillSwitch(log);
