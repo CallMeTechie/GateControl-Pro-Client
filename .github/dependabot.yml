@@ -16,6 +16,9 @@ updates:
 
   - package-ecosystem: "github-actions"
     directory: "/"
+    # "ci:" commits land without a release (see release.yml "decide").
+    commit-message:
+      prefix: "ci"
     schedule:
       interval: "weekly"
       day: "monday"
