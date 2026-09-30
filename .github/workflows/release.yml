@@ -62,6 +62,15 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Signierte Updates: ohne echten Public Key (build/update-signing.pub)
+      # und passendes Secret UPDATE_SIGNING_KEY bricht das Release ab, bevor
+      # Version/Tag gepusht werden.
+      - name: Check update signing key
+        shell: bash
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node scripts/sign-update.js --product pro --check
+
       - name: Determine version bump
         id: bump
         shell: bash
@@ -197,6 +206,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Sign update manifest
+        id: sign
+        if: steps.check_tag.outputs.exists == 'false'
+        shell: bash
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node scripts/sign-update.js --product pro --dist dist
+
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
@@ -205,5 +222,8 @@ jobs:
           name: GateControl Pro Client ${{ steps.bump.outputs.tag }}
           generate_release_notes: true
           files: |
-            dist/*.exe
+            dist/${{ steps.sign.outputs.fileName }}
             dist/*.zip
+            dist/update-manifest.json
+            dist/update-manifest.json.sig
+          fail_on_unmatched_files: true
