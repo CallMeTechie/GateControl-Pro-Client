@@ -53,6 +53,42 @@ if (coreDir) {
 
 const skip = coreUsable ? false : 'gatecontrol-client-core (with dependencies) not available';
 
+// Load the real preload with a fake electron and call every exposed function
+// once; returns the channels it invokes (core bridge + Pro additions).
+function preloadInvokedChannels() {
+  const invoked = new Set();
+  let api = null;
+  const electron = {
+    contextBridge: { exposeInMainWorld: (_key, value) => { api = value; } },
+    ipcRenderer: {
+      invoke: (ch) => { invoked.add(ch); return Promise.resolve(); },
+      send() {}, on() {}, removeListener() {},
+    },
+  };
+  const realLoad = Module._load;
+  Module._load = function (request, ...rest) {
+    if (request === 'electron') return electron;
+    return realLoad.call(this, request, ...rest);
+  };
+  const file = path.join(ROOT, 'src', 'main', 'preload.js');
+  try {
+    delete require.cache[file];
+    require(file);
+  } finally {
+    Module._load = realLoad;
+  }
+  const walk = (obj) => {
+    for (const v of Object.values(obj)) {
+      if (typeof v === 'function') {
+        const r = v(() => {});
+        if (typeof r === 'function') r();
+      } else if (v && typeof v === 'object') walk(v);
+    }
+  };
+  walk(api);
+  return [...invoked];
+}
+
 const CODE = 'AB12-CD34-EF56-7890';
 const VALID_CONFIG = '[Interface]\nPrivateKey = x\nAddress = 10.8.0.2/32\n[Peer]\nPublicKey = y\nEndpoint = gate.example.com:51820';
 
@@ -155,8 +191,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
   });
 
   it('every channel the Pro preload invokes is handled', () => {
-    const preload = fs.readFileSync(path.join(ROOT, 'src', 'main', 'preload.js'), 'utf8');
-    const invoked = [...preload.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].map((m) => m[1]);
+    const invoked = preloadInvokedChannels();
+    assert.ok(invoked.includes('tunnel:connect') && invoked.includes('rdp:list') && invoked.includes('dns:check-system'));
     const { handlers } = setup();
     for (const ch of invoked) assert.equal(typeof handlers[ch], 'function', ch);
   });

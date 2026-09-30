@@ -17,7 +17,7 @@ const { spawnSync } = require('node:child_process');
 const ROOT = path.join(__dirname, '..');
 const PRODUCT = 'pro';
 const SETUP_PREFIX = 'GateControl Pro Client Setup';
-const { loadUpdatePublicKey, PLACEHOLDER } = require('../src/main/update-public-key');
+const PLACEHOLDER = 'REPLACE_WITH_UPDATE_PUBLIC_KEY';
 const pkg = require('../package.json');
 
 function tmpDir() {
@@ -49,29 +49,22 @@ function findCore() {
   return null;
 }
 
+// The key loader itself lives in core (src/utils/update-public-key.js, unit-
+// tested there); here it is checked against this app's committed key file.
+const coreDir = findCore();
+const loadUpdatePublicKey = coreDir
+  ? require(path.join(coreDir, 'src', 'utils', 'update-public-key.js')).loadUpdatePublicKey
+  : null;
+
 describe('update public key', () => {
   it('the committed key file is either the placeholder or an Ed25519 SPKI PEM', () => {
     const text = fs.readFileSync(path.join(ROOT, 'build', 'update-signing.pub'), 'utf8');
     if (text.includes(PLACEHOLDER)) {
-      assert.equal(loadUpdatePublicKey(), null, 'placeholder must disable the updater');
+      if (loadUpdatePublicKey) assert.equal(loadUpdatePublicKey({ appRoot: ROOT }), null, 'placeholder must disable the updater');
     } else {
       assert.equal(crypto.createPublicKey(text).asymmetricKeyType, 'ed25519');
-      assert.equal(loadUpdatePublicKey(), text);
+      if (loadUpdatePublicKey) assert.equal(loadUpdatePublicKey({ appRoot: ROOT }), text);
     }
-  });
-
-  it('loads a real key and treats placeholder / missing / non-PEM as no key', () => {
-    const dir = tmpDir();
-    const { pub } = keyPair();
-    fs.writeFileSync(path.join(dir, 'real.pub'), pub);
-    fs.writeFileSync(path.join(dir, 'placeholder.pub'), `${PLACEHOLDER}\n`);
-    fs.writeFileSync(path.join(dir, 'junk.pub'), 'hello');
-    assert.equal(loadUpdatePublicKey([path.join(dir, 'real.pub')]), pub);
-    assert.equal(loadUpdatePublicKey([path.join(dir, 'missing.pub'), path.join(dir, 'real.pub')]), pub);
-    assert.equal(loadUpdatePublicKey([path.join(dir, 'placeholder.pub')]), null);
-    assert.equal(loadUpdatePublicKey([path.join(dir, 'junk.pub')]), null);
-    assert.equal(loadUpdatePublicKey([path.join(dir, 'missing.pub')]), null);
-    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it('ships build/update-signing.pub as resources/update-signing.pub', () => {
@@ -82,9 +75,9 @@ describe('update public key', () => {
     const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.js'), 'utf8');
     const call = main.match(/new Updater\(\{([\s\S]*?)\}\)/);
     assert.ok(call, 'new Updater({...}) not found');
-    assert.match(call[1], /publicKey:\s*loadUpdatePublicKey\(\)/);
+    assert.match(call[1], /publicKey:\s*loadUpdatePublicKey\(\{ appRoot: path\.join\(__dirname, '\.\.', '\.\.'\)/);
     assert.match(call[1], new RegExp(`product:\\s*'${PRODUCT}'`));
-    assert.match(main, /require\('\.\/update-public-key'\)/);
+    assert.match(main, /loadUpdatePublicKey[\s\S]*?require\('@gatecontrol\/client-core[^']*'\)/);
   });
 
   it('the release workflow signs, gates on the key and uploads manifest + signature', () => {
