@@ -22,7 +22,7 @@ jobs:
     if: github.actor != 'dependabot[bot]'
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -40,21 +40,23 @@ jobs:
     name: Dependency Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
 
-      - name: Clone core dependency
-        run: |
-          git clone https://github.com/CallMeTechie/gatecontrol-client-core.git .core
-          node -e "const p=require('./package.json'); p.dependencies['@gatecontrol/client-core']='file:.core'; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+      - name: Checkout pinned core (core.ref)
+        shell: bash
+        run: bash scripts/fetch-core.sh --link
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Run npm audit
+      - name: Audit production dependencies (blocking, high/critical)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit all dependencies (informational)
         run: npm audit --audit-level=high || true
 
       - name: Check for critical vulnerabilities
@@ -77,11 +79,11 @@ jobs:
     name: ESLint Security
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Install ESLint with security plugin
         run: npm install --no-save eslint@8 eslint-plugin-security@1.7.1
