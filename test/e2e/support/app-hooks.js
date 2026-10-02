@@ -161,6 +161,21 @@ function install({ app, env }) {
     return setContextMenu.call(this, menu);
   };
 
+  // Native message boxes (e.g. the support bundle confirmation): answered
+  // from a queue the test fills (state.dialogAnswers); without a queued
+  // answer the real dialog is shown.
+  const { dialog } = require('electron');
+  const realShowMessageBox = dialog.showMessageBox.bind(dialog);
+  state.dialogAnswers = [];
+  state.dialogs = [];
+  dialog.showMessageBox = async (...args) => {
+    if (!state.dialogAnswers.length) return realShowMessageBox(...args);
+    const opts = args[args.length - 1] || {};
+    state.dialogs.push({ message: opts.message, detail: opts.detail, buttons: opts.buttons });
+    record('dialog.messageBox', { message: opts.message });
+    return { response: state.dialogAnswers.shift(), checkboxChecked: false };
+  };
+
   app.on('before-quit', () => record('app.before-quit'));
 
   state.record = record;

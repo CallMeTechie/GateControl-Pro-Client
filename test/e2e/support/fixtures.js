@@ -106,6 +106,9 @@ const test = base.test.extend({
         events: () => readEvents(dir),
         /** Runs the periodic update check now (same path as the 6h timer). */
         runScheduledUpdateCheck: () => app.evaluate(() => globalThis.__gcE2E.updater._check()),
+        /** Queues answers (button index) for the next native message boxes. */
+        answerDialogs: (answers) => app.evaluate((_e, a) => { globalThis.__gcE2E.dialogAnswers.push(...a); }, answers),
+        dialogs: () => app.evaluate(() => globalThis.__gcE2E.dialogs),
         trayLabels: () => app.evaluate(() => globalThis.__gcE2E.trayLabels()),
         clickTrayItem: (pattern) => app.evaluate((_e, p) => globalThis.__gcE2E.clickTrayItem(p), pattern),
       };

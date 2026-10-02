@@ -30,7 +30,7 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
-let loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, recoverKillSwitch, createTrayIcon, updateMenuItems, mandatoryNotice;
+let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, recoverKillSwitch, createTrayIcon, updateMenuItems, mandatoryNotice;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 
@@ -69,6 +69,7 @@ try {
   ({ runRdpTrustMigration } = require('../services/rdp/rdp-trust-migration'));
   RdpWolClient = require('../services/rdp/rdp-wol');
   ({ registerProIpc } = require('./ipc-pro'));
+  ({ createSupportBundleSender } = require('@gatecontrol/client-core/src/support/sender'));
 
   writeCrashLog('IMPORT', 'All imports successful');
 
@@ -183,6 +184,7 @@ let updater = null;
 let dnsPolicy = null;
 let rdpManager = null;
 let rdpWolClient = null;
+let supportBundle = null; // "Support-Paket senden" (core src/support/sender.js)
 let pendingUpdate = null;
 // Version for which the "Update erforderlich" notification was already shown
 // in this session (shown again on every app start while still required).
@@ -762,8 +764,11 @@ function initializeServices() {
       tunnelState.rxBytes = rx;
       tunnelState.txBytes = tx;
       tunnelState.handshake = stats.handshake || null;
+      tunnelState.handshakeTimestamp = stats.handshakeTimestamp || null;
       broadcastState('connected');
     },
+    // Admin asked for a support bundle → ask the user (core sender).
+    onSupportBundleRequest: (request) => supportBundle?.onServerRequest(request),
     wgService,
     log,
   });
@@ -860,7 +865,7 @@ async function checkSystemDns() {
 // validated config imports, setup codes incl. setup QR, https-only server
 // setup, http(s)-only shell:open-external); Pro adds/overrides the rest.
 function registerIpcHandlers() {
-  registerProIpc(ipcMain, {
+  const ctx = {
     app,
     dialog,
     getMainWindow: () => mainWindow,
@@ -904,7 +909,16 @@ function registerIpcHandlers() {
     rdpManager,
     rdpWolClient,
     setRdpPanelOpen: (open) => { rdpPanelOpen = open; },
-  });
+    edition: 'pro',
+    // Result of a bundle the admin requested (the button shows its own toast).
+    onSupportResult: (res) => {
+      if (!res || res.cancelled) return;
+      new Notification({ title: 'GateControl Pro', body: res.success ? t('support.success') : res.error }).show();
+    },
+  };
+  // One sender for the Settings button and admin requests (connection monitor).
+  supportBundle = createSupportBundleSender(ctx);
+  registerProIpc(ipcMain, { ...ctx, supportBundle });
 }
 
 // ── App Lifecycle ────────────────────────────────────────────

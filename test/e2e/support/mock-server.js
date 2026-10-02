@@ -5,7 +5,7 @@
  * self-signed certificate that only the app under test trusts).
  *
  * Answers what the client needs: ping, register, enroll, config, heartbeat/
- * status, permissions/services/peer info, and /api/v1/client/update/check
+ * status, permissions/services/peer info, support-bundle upload, and /api/v1/client/update/check
  * with an Ed25519-signed update manifest plus the installer download.
  *
  * The update offer is configurable per test (`server.setUpdate(...)`), all
@@ -72,10 +72,18 @@ async function startMockServer() {
 
   const server = https.createServer({ cert, key }, (req, res) => {
     const url = new URL(req.url, 'https://127.0.0.1');
-    let body = '';
-    req.on('data', (c) => { body += c; });
+    const chunks = [];
+    req.on('data', (c) => { chunks.push(c); });
     req.on('end', () => {
-      requests.push({ method: req.method, path: url.pathname, query: Object.fromEntries(url.searchParams), token: req.headers['x-api-token'] || null });
+      const raw = Buffer.concat(chunks);
+      requests.push({
+        method: req.method,
+        path: url.pathname,
+        query: Object.fromEntries(url.searchParams),
+        token: req.headers['x-api-token'] || null,
+        contentType: req.headers['content-type'] || null,
+        raw,
+      });
       const json = (status, obj) => {
         res.writeHead(status, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(obj));
@@ -107,6 +115,7 @@ async function startMockServer() {
         case 'peer-info': return json(200, { ok: true, peer: { id: PEER_ID, name: 'e2e', enabled: true } });
         case 'traffic': return json(200, { ok: true, traffic: {} });
         case 'dns-check': return json(200, { ok: true });
+        case 'support-bundle': return json(201, { ok: true, bundle: { id: 1, created_at: '2026-10-02 10:00:00', size_bytes: raw.length } });
         case 'update/check': {
           if (!update) return json(200, { ok: true, available: false });
           const port = server.address().port;
