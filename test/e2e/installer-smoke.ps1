@@ -105,7 +105,10 @@ function LaunchProbe([string]$label, [int]$Seconds = 15) {
   New-Item -ItemType Directory -Force -Path $logDir | Out-Null
   $since = Get-Date
   $env:ELECTRON_ENABLE_LOGGING = '1'
-  $proc = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput (Join-Path $logDir 'stdout.txt') -RedirectStandardError (Join-Path $logDir 'stderr.txt')
+  # The GPU process sandbox cannot start in the runner's elevated service
+  # session (GPU process launch failed: error_code=18 -> FATAL "GPU process
+  # isn't usable"), so only the GPU sandbox is switched off for this probe.
+  $proc = Start-Process -FilePath $exe -ArgumentList '--disable-gpu-sandbox' -PassThru -RedirectStandardOutput (Join-Path $logDir 'stdout.txt') -RedirectStandardError (Join-Path $logDir 'stderr.txt')
   Remove-Item Env:ELECTRON_ENABLE_LOGGING
   Start-Sleep -Seconds $Seconds
   $running = AppProcesses
