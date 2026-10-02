@@ -313,6 +313,19 @@ describe('NSIS installer script (build/installer.nsh)', () => {
     assert.ok(!/GateControl Pro\.exe/.test(code), 'veralteter Exe-Name "GateControl Pro.exe" im Skript');
   });
 
+  it('removes the autostart task the app registers, only on a real uninstall', () => {
+    const main = fs.readFileSync(path.join(ROOT, MAIN_JS), 'utf8');
+    const task = main.match(/const AUTOSTART_TASK = '([^']+)'/);
+    assert.ok(task, 'AUTOSTART_TASK in main.js nicht gefunden');
+    const body = macroBody('customUnInstall');
+    const del = body.indexOf('schtasks /Delete /F /TN "' + task[1] + '"');
+    assert.ok(del > 0, 'customUnInstall loescht die Autostart-Aufgabe ' + task[1] + ' nicht');
+    // inside ${IfNot} ${isUpdated} ... ${EndIf}: an update keeps the task
+    const start = body.indexOf('${IfNot} ${isUpdated}');
+    const end = body.indexOf('${EndIf}', start);
+    assert.ok(start >= 0 && start < del && del < end, 'Autostart-Aufgabe darf nur bei echter Deinstallation geloescht werden');
+  });
+
   it('release workflow patches the real app exe in win-unpacked', () => {
     const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/release.yml'), 'utf8');
     const refs = [...wf.matchAll(/win-unpacked\/([^"'\n]+\.exe)/g)].map(m => m[1]);

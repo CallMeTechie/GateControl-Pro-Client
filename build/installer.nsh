@@ -341,6 +341,11 @@
 
     ; RDP-Freigabe dieser Edition (Altregel nur ohne andere Edition)
     !insertmacro GC_CLEANUP_RDP_FIREWALL
+
+    ; Autostart-Aufgabe, die die App beim Aktivieren von "Mit Windows
+    ; starten" anlegt (schtasks, weil die App Adminrechte braucht). Bei einem
+    ; Update bleibt sie erhalten: Der Pfad zur Exe aendert sich nicht.
+    nsExec::ExecToLog 'schtasks /Delete /F /TN "GateControlProAutostart"'
   ${EndIf}
 
   ; Remove firewall rules
