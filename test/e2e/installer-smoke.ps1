@@ -22,14 +22,14 @@ $cfg = @{
     RulePrefix    = 'GateControl_Pro'
     # Created by build/installer.nsh customInstall, removed by customUnInstall.
     InstallRules  = @('GateControl Pro WireGuard', 'GateControl Pro RDP')
-    CrashLog      = 'gatecontrol-pro-crash.log'
+    DataDir       = 'gatecontrol-client-pro'
   }
   community = @{
     Product       = 'GateControl Community Client'
     Shortcut      = 'GateControl'
     RulePrefix    = 'GateControl_Community'
     InstallRules  = @()
-    CrashLog      = $null
+    DataDir       = 'gatecontrol-client'
   }
 }[$Edition]
 
@@ -96,30 +96,56 @@ if ($wgRule) {
 }
 
 # ── Launch the packaged app briefly ──────────────────────
-Write-Host "`n== Launch packaged app (with GC_E2E set, must be ignored)"
+function AppProcesses { @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($instDir, [StringComparison]::OrdinalIgnoreCase) }) }
+$userData = Join-Path $env:APPDATA $cfg.DataDir
+
+# Starts the packaged app for $Seconds, prints diagnostics, returns $true if it kept running.
+function LaunchProbe([string]$label, [int]$Seconds = 15) {
+  $logDir = Join-Path $env:RUNNER_TEMP "gc-launch-$label"
+  New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+  $since = Get-Date
+  $env:ELECTRON_ENABLE_LOGGING = '1'
+  $proc = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput (Join-Path $logDir 'stdout.txt') -RedirectStandardError (Join-Path $logDir 'stderr.txt')
+  Remove-Item Env:ELECTRON_ENABLE_LOGGING
+  Start-Sleep -Seconds $Seconds
+  $running = AppProcesses
+  $alive = -not $proc.HasExited
+  Write-Host "[$label] main process alive: $alive $(if (-not $alive) { "(exit code $($proc.ExitCode) / 0x{0:X8})" -f $proc.ExitCode }); app processes: $($running.Count)"
+  if (-not $alive) {
+    foreach ($f in 'stdout.txt', 'stderr.txt') {
+      $path = Join-Path $logDir $f
+      if ((Test-Path $path) -and (Get-Item $path).Length -gt 0) { Write-Host "--- $f (tail)"; Get-Content $path -Tail 40 | ForEach-Object { Write-Host "  $_" } }
+    }
+    $mainLog = Join-Path $userData 'logs\main.log'
+    if (Test-Path $mainLog) { Write-Host "--- main.log (tail)"; Get-Content $mainLog -Tail 30 | ForEach-Object { Write-Host "  $_" } }
+    Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $since } -ErrorAction SilentlyContinue |
+      Where-Object { $_.Id -in 1000, 1001, 1026 } | Select-Object -First 3 | ForEach-Object { Write-Host "--- event $($_.Id): $($_.Message)" }
+  }
+  $running | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 3
+  return $alive
+}
+
+Write-Host "`n== Launch packaged app"
+$ok = LaunchProbe 'plain'
+Check $ok "packaged app keeps running for 15 s"
+Check (Test-Path $userData) "packaged app uses its normal userData ($userData)"
+
+Write-Host "`n== Launch packaged app with GC_E2E set (must be ignored)"
 $e2eDir = Join-Path $env:RUNNER_TEMP "gc-packaged-e2e-probe"
 New-Item -ItemType Directory -Force -Path $e2eDir | Out-Null
 $env:GC_E2E = '1'
 $env:GC_E2E_DIR = $e2eDir
 $env:GC_E2E_UPDATE_PUBKEY = Join-Path $e2eDir 'attacker.pub'
 '-----BEGIN PUBLIC KEY-----' | Set-Content $env:GC_E2E_UPDATE_PUBKEY
-$userData = Join-Path $env:APPDATA $product
-$app = Start-Process -FilePath $exe -PassThru
-Start-Sleep -Seconds 15
-$running = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($instDir, [StringComparison]::OrdinalIgnoreCase) })
-Write-Host "Launcher process exited: $($app.HasExited) $(if ($app.HasExited) { "(exit code $($app.ExitCode))" }); app processes: $($running.Count)"
-Get-ChildItem $env:APPDATA, $env:LOCALAPPDATA -Directory -ErrorAction SilentlyContinue | Where-Object Name -like '*gatecontrol*' | ForEach-Object { Write-Host "  data dir: $($_.FullName)" }
-$crashLog = Join-Path $env:USERPROFILE $cfg.CrashLog
-if ($cfg.CrashLog -and (Test-Path $crashLog)) { Write-Host "--- $crashLog (tail)"; Get-Content $crashLog -Tail 40 | ForEach-Object { Write-Host "  $_" } }
-Check ($running.Count -ge 1) "packaged app is running after 15 s"
+$ok = LaunchProbe 'with-gc-e2e'
+Remove-Item Env:GC_E2E, Env:GC_E2E_DIR, Env:GC_E2E_UPDATE_PUBKEY
+Check $ok "packaged app keeps running for 15 s with GC_E2E set"
 Check (-not (Test-Path (Join-Path $e2eDir 'events.jsonl'))) "packaged app ignored GC_E2E (no e2e hooks)"
 Check (-not (Test-Path (Join-Path $e2eDir 'userData'))) "packaged app ignored GC_E2E_DIR"
-Check (Test-Path $userData) "packaged app uses its normal userData ($userData)"
-Remove-Item Env:GC_E2E, Env:GC_E2E_DIR, Env:GC_E2E_UPDATE_PUBKEY
+
 $ksRules = @(GcRules | Where-Object { $_.DisplayName -like "$($cfg.RulePrefix)_*" })
 Check ($ksRules.Count -eq 0) "no kill-switch/RDP-allow rules after app start"
-Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($instDir, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force
-Start-Sleep -Seconds 3
 
 # ── Uninstall ────────────────────────────────────────────
 Write-Host "`n== Silent uninstall"
