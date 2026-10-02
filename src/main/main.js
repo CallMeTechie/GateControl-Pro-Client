@@ -33,6 +33,7 @@ let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, 
 let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, recoverKillSwitch, createTrayIcon, updateMenuItems, mandatoryNotice;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
+let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
@@ -65,6 +66,11 @@ try {
   ({ updateMenuItems, mandatoryNotice } = require('@gatecontrol/client-core/src/utils/update-notice'));
   ConnectionMonitor = require('@gatecontrol/client-core/src/services/connection-monitor');
   DnsPolicy = require('@gatecontrol/client-core/src/services/dns-policy');
+  // Client policies from the server (kill switch / auto-connect / autostart /
+  // split modes / settings + server lock), cached for offline use.
+  ClientPolicyService = require('@gatecontrol/client-core/src/services/client-policy');
+  clientPolicyUtil = require('@gatecontrol/client-core/src/utils/client-policy');
+  ({ applyPolicyToStore } = require('@gatecontrol/client-core/src/ipc/base-handlers'));
   RdpManager = require('../services/rdp/rdp-manager');
   ({ runRdpTrustMigration } = require('../services/rdp/rdp-trust-migration'));
   RdpWolClient = require('../services/rdp/rdp-wol');
@@ -182,6 +188,7 @@ let apiClient = null;
 let connectionMonitor = null;
 let updater = null;
 let dnsPolicy = null;
+let clientPolicy = null;
 let rdpManager = null;
 let rdpWolClient = null;
 let supportBundle = null; // "Support-Paket senden" (core src/support/sender.js)
@@ -286,13 +293,16 @@ function updateTray(connState) {
     ...updateItems.top,
     {
       label: connState === 'connected' ? t('action.disconnect') : t('action.connect'),
+      // Always-on policy: no manual disconnect (hint in the label)
+      enabled: !(connState === 'connected' && policyLocks().disconnect),
       click: () => connState === 'connected' ? disconnectTunnel() : connectTunnel(),
     },
     { type: 'separator' },
     {
-      label: t('killswitch.label'),
+      label: policyLocks().killSwitch ? `${t('killswitch.label')} (${t('policy.lockedHint')})` : t('killswitch.label'),
       type: 'checkbox',
       checked: store.get('tunnel.killSwitch', false),
+      enabled: !policyLocks().killSwitch,
       click: (item) => toggleKillSwitch(item.checked),
     },
     ...(rdpSessions.length > 0 ? [
@@ -401,6 +411,42 @@ function showWindow() {
 function quitApp() {
   app.isQuitting = true;
   app.quit();
+}
+
+// ── Client-Richtlinie ────────────────────────────────────────
+function policyLocks() {
+  return clientPolicyUtil.locks(clientPolicy ? clientPolicy.getPolicy() : null);
+}
+
+/**
+ * Apply the (cached or freshly fetched) client policy: force the store
+ * values and act on what changed. Runs at start-up with the cached policy
+ * (offline-safe) and on every policy change.
+ */
+async function applyClientPolicy({ startup = false } = {}) {
+  if (!clientPolicy) return;
+  const policy = clientPolicy.getPolicy();
+  const changed = applyPolicyToStore(store, policy, log);
+  if (Object.keys(changed).length) log.info(`Client policy applied: ${JSON.stringify(changed)}`);
+
+  if (changed['tunnel.killSwitch'] === true && tunnelState.connected && !killSwitchSvc.enabled) {
+    try { await killSwitchSvc.enable(WG_CONFIG_FILE); } catch (err) { log.error('Kill-switch (policy) failed:', err.message); }
+  }
+  if (Object.prototype.hasOwnProperty.call(changed, 'app.startWithWindows') && !e2e) {
+    setAutostartTask(changed['app.startWithWindows']).catch((err) => log.warn('Autostart (policy) failed:', err.message));
+  }
+  if (!startup) {
+    const hasServer = store.get('server.url', '') && store.get('server.apiKey', '');
+    if (Object.prototype.hasOwnProperty.call(changed, 'tunnel.splitTunnel') && tunnelState.connected && !isReconnecting) {
+      await disconnectTunnel();
+      await connectTunnel();
+    } else if (policy.autoConnect !== 'user' && hasServer && !tunnelState.connected && !isReconnecting) {
+      connectTunnel().catch(() => {});
+    }
+  }
+  broadcastState(tunnelState.connected ? 'connected' : 'disconnected');
+  updateTray(tunnelState.connected ? 'connected' : 'disconnected');
+  mainWindow?.webContents.send('policy:changed', clientPolicy.getState());
 }
 
 // ── Tunnel Functions (stubs -- delegate to core services) ─────
@@ -683,6 +729,14 @@ function initializeServices() {
     publicKey: loadUpdatePublicKey({ appRoot: path.join(__dirname, '..', '..') }),
   });
 
+  clientPolicy = new ClientPolicyService({
+    apiClient, store, log,
+    interval: store.get('app.configPollInterval', 300) * 1000,
+  });
+  // Heartbeat / permissions answers carry the server's policy version.
+  apiClient.onPolicyVersion = (v) => { clientPolicy.noteVersion(v); };
+  clientPolicy.onChange(() => { applyClientPolicy().catch((err) => log.warn('Client policy apply failed:', err.message)); });
+
   wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
   killSwitchSvc = new KillSwitch(log, { edition: 'pro' });
   rdpAllowSvc = new RdpAllowSvc(log, { edition: 'pro' });
@@ -874,6 +928,7 @@ function registerIpcHandlers() {
     apiClient,
     ApiClientClass: ApiClientPro,
     killSwitch: killSwitchSvc,
+    clientPolicy,
     getUpdater: () => updater,
     log,
     connectTunnel,
@@ -947,6 +1002,21 @@ app.on('ready', () => {
   rdpAllowSvc.reconcile({ wanted: rdpWanted, configPath: WG_CONFIG_FILE })
     .then((active) => { if (rdpWanted && !active) store.set('tunnel.rdpAllow', false); })
     .catch(err => log.warn('RDP allow reconcile failed:', err.message));
+  // Last known client policy first (works offline), then ask the server.
+  applyClientPolicy({ startup: true }).catch((err) => log.warn('Client policy apply failed:', err.message));
+  clientPolicy.start();
+
+  // Always-on policy: bring the tunnel back when it is down (e.g. after the
+  // reconnect loop gave up). Checked once a minute.
+  let alwaysOnAttempt = null;
+  setInterval(() => {
+    if (clientPolicy.getPolicy().autoConnect !== 'always_on') return;
+    if (tunnelState.connected || isReconnecting || alwaysOnAttempt) return;
+    if (!(store.get('server.url', '') && store.get('server.apiKey', ''))) return;
+    log.info('Always-on policy: tunnel is down, reconnecting');
+    alwaysOnAttempt = connectTunnel().catch(() => {}).finally(() => { alwaysOnAttempt = null; });
+  }, 60 * 1000).unref?.();
+
   registerIpcHandlers();
   createWindow();
   createTray();
@@ -954,6 +1024,8 @@ app.on('ready', () => {
   // Autostart mit Windows synchronisieren (Task Scheduler; nicht im E2E-Test)
   if (!e2e && store.get('app.startWithWindows', true)) {
     setAutostartTask(true).catch(err => log.warn('Autostart sync failed:', err.message));
+  } else if (!e2e && clientPolicy.getPolicy().autostart === 'forbidden') {
+    setAutostartTask(false).catch(() => { /* task did not exist */ });
   }
 
   // Auto-Connect (Server-URL reicht, configPath nicht zwingend nötig)

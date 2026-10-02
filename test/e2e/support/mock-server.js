@@ -5,7 +5,8 @@
  * self-signed certificate that only the app under test trusts).
  *
  * Answers what the client needs: ping, register, enroll, config, heartbeat/
- * status, permissions/services/peer info, support-bundle upload, and /api/v1/client/update/check
+ * status, permissions/services/peer info, the client policy, support-bundle
+ * upload, and /api/v1/client/update/check
  * with an Ed25519-signed update manifest plus the installer download.
  *
  * The update offer is configurable per test (`server.setUpdate(...)`), all
@@ -69,6 +70,7 @@ async function startMockServer() {
   const { cert, key } = await createCertificate();
   const requests = [];
   let update = null; // { version, fileName, manifest, signature, served }
+  let policy = null; // client policy (GET /api/v1/client/policy), null = old server (404)
 
   const server = https.createServer({ cert, key }, (req, res) => {
     const url = new URL(req.url, 'https://127.0.0.1');
@@ -112,6 +114,9 @@ async function startMockServer() {
         case 'status': return json(200, { ok: true });
         case 'permissions': return json(200, { ok: true, permissions: {}, portalUrl: null, autoOpenPortal: false });
         case 'services': return json(200, { ok: true, services: [] });
+        case 'policy':
+          if (!policy) return json(404, { ok: false });
+          return json(200, { ok: true, version: 'e2e0000000000001', managed: true, policy, sources: {} });
         case 'peer-info': return json(200, { ok: true, peer: { id: PEER_ID, name: 'e2e', enabled: true } });
         case 'traffic': return json(200, { ok: true, traffic: {} });
         case 'dns-check': return json(200, { ok: true });
@@ -146,6 +151,7 @@ async function startMockServer() {
     peerId: PEER_ID,
     requests,
     setUpdate(offer) { update = offer; },
+    setPolicy(p) { policy = p; },
     count(pathname) { return requests.filter((r) => r.path === pathname).length; },
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };

@@ -74,3 +74,18 @@ Welche Builds ein Client angeboten bekommt, legt der GateControl-Server fest (Ei
 - **Mindestversion** pro Produkt. Liegt die installierte Version darunter und ist ein geprüftes, neueres Update heruntergeladen, erscheint „Update erforderlich“: ein nicht ausblendbares Banner auf der Übersicht, die Update-Karte in der Seitenleiste ohne „Später“, ein Eintrag ganz oben im Tray-Menü und eine Benachrichtigung (bei jedem App-Start erneut).
 - Kanal, Mindestversion und `mandatory` sind **nicht** signiert und dienen nur der Anzeige. Signatur, Produkt, Version (strikt neuer – kein Downgrade), Größe und SHA-256 werden immer geprüft; der Server kann so weder unsignierte Builds noch ältere Versionen ausrollen.
 - Ein Pflicht-Update wird **nicht automatisch** installiert: Der Installer beendet die App und trennt den VPN-Tunnel (Kill-Switch wird vorher gelöst). Das soll nicht ohne Zutun mitten in einer Sitzung passieren – der Nutzer startet die Installation über Banner, Karte oder Tray.
+
+## Client-Richtlinien vom Server
+
+Der Administrator kann auf dem Server (Einstellungen → Client-Richtlinien, pro Peer-Gruppe oder pro Peer) festlegen, was der Client erzwingt. Der Client lädt die Richtlinie über `GET /api/v1/client/policy`, speichert die zuletzt bekannte verschlüsselt im Config-Store und wendet sie auch offline an. Ist der Server nicht erreichbar, bleibt die letzte bekannte Richtlinie aktiv; wurde nie eine geladen, gibt es keine Einschränkung.
+
+| Richtlinie | Wirkung im Client |
+|---|---|
+| Kill-Switch erzwungen | Kill-Switch an, Schalter (Einstellungen, Übersicht, Tray) gesperrt |
+| Automatisch verbinden erzwungen / immer verbunden | Auto-Connect an und gesperrt; bei „immer verbunden“ kein manuelles Trennen, Neuverbindung im Minutentakt |
+| Autostart erzwungen / verboten | Autostart an bzw. aus, Schalter gesperrt |
+| Split-Tunnel-Modi | nur erlaubte Modi wählbar (Windows: „Gesamter Verkehr“ / „Nur ausgewählte Ziele“; bleibt keiner übrig, gilt Full Tunnel) |
+| Einstellungen sperren | alle Einstellungen außer Sprache und Design gesperrt |
+| Serverwechsel ausblenden | Server-/Einrichtungsbereich ausgeblendet, `server:setup` und Config-Import abgelehnt |
+
+Gesperrte Einstellungen zeigen den Hinweis „Vom Administrator festgelegt“. Die Sperren prüft der Main-Prozess (IPC), nicht nur die Oberfläche. Die Richtlinie ist eine Verwaltungshilfe und **keine Sicherheitsgrenze** gegen Benutzer mit lokalen Administratorrechten.
