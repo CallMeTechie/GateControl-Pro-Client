@@ -196,3 +196,5 @@ if ($failures.Count -gt 0) {
   exit 1
 }
 Write-Host "`nInstaller smoke test passed."
+# Explicit: the last native command (schtasks /Query on a removed task) exits 1.
+exit 0
