@@ -1,0 +1,90 @@
+name: E2E (Windows)
+
+# End-to-end tests on Windows: Playwright against the unpackaged app in e2e
+# mode (mock server, signed test updates, stubbed tunnel/firewall), plus a
+# smoke test of the packaged NSIS installer. Not part of the release gate yet.
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Auth for transitive @callmetechie/gatecontrol-config-hash via GitHub Packages (.npmrc).
+  NODE_AUTH_TOKEN: ${{ secrets.GC_PAT }}
+
+jobs:
+  playwright:
+    name: Playwright (electron .)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Checkout pinned core (core.ref)
+        shell: bash
+        run: bash scripts/fetch-core.sh --link
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install --no-audit --no-fund
+
+      - name: Run e2e suite
+        shell: bash
+        run: npm run test:e2e
+
+      - name: Upload traces, screenshots and logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-results
+          path: |
+            test/e2e/test-results/
+            test/e2e/playwright-report/
+          retention-days: 7
+
+  installer-smoke:
+    name: Installer smoke (NSIS install/uninstall)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Checkout pinned core (core.ref)
+        shell: bash
+        run: bash scripts/fetch-core.sh --link
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install --no-audit --no-fund
+
+      # Same target as the release (electron-builder --win nsis), but unsigned
+      # and without publishing; no signing secrets are used.
+      - name: Build NSIS installer
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win nsis --publish never
+
+      - name: Install, launch, uninstall
+        shell: pwsh
+        run: ./test/e2e/installer-smoke.ps1 -Edition pro
