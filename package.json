@@ -14,7 +14,8 @@
     "postinstall": "electron-builder install-app-deps",
     "test": "node --test 'test/**/*.test.js'",
     "core:fetch": "bash scripts/fetch-core.sh",
-    "core:bump": "bash scripts/bump-core.sh"
+    "core:bump": "bash scripts/bump-core.sh",
+    "test:e2e": "playwright test -c test/e2e/playwright.config.js"
   },
   "dependencies": {
     "@gatecontrol/client-core": "file:../gatecontrol-client-core",
@@ -25,9 +26,11 @@
     "koffi": "^2.9.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "cross-env": "^7.0.3",
     "electron": "^44.5.1",
-    "electron-builder": "^26.17.0"
+    "electron-builder": "^26.17.0",
+    "selfsigned": "5.5.0"
   },
   "build": {
     "appId": "com.gatecontrol.client-pro",

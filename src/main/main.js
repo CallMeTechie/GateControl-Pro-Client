@@ -31,11 +31,15 @@ writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
 let loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, recoverKillSwitch, createTrayIcon;
+let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
   ({ app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen } = require('electron'));
+
+  // Before any core service is required; a packaged build never loads it.
+  e2e = require('./e2e-guard').loadE2eHooks({ app });
 
   writeCrashLog('IMPORT', 'Loading electron-store...');
   Store = require('electron-store');
@@ -912,8 +916,8 @@ app.on('ready', () => {
   createWindow();
   createTray();
 
-  // Autostart mit Windows synchronisieren (Task Scheduler)
-  if (store.get('app.startWithWindows', true)) {
+  // Autostart mit Windows synchronisieren (Task Scheduler; nicht im E2E-Test)
+  if (!e2e && store.get('app.startWithWindows', true)) {
     setAutostartTask(true).catch(err => log.warn('Autostart sync failed:', err.message));
   }
 
