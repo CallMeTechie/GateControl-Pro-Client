@@ -1804,6 +1804,25 @@ $('#nav-update')?.addEventListener('click', async () => {
 	}
 });
 
+// ── Support bundle (Settings → About) ───────────────────
+// Main asks for confirmation (native dialog), collects the redacted bundle
+// and uploads it; cancelled → no toast.
+$('#support-send')?.addEventListener('click', async () => {
+	const btn = $('#support-send');
+	btn.disabled = true;
+	btn.textContent = t('support.sending');
+	try {
+		const res = await window.gatecontrol.support.send();
+		if (res?.success) showToast(t('support.success'), 'success');
+		else if (!res?.cancelled) showToast(res?.error || t('support.failed', { error: '' }), 'error');
+	} catch (err) {
+		showToast(t('support.failed', { error: err?.message || '' }), 'error');
+	} finally {
+		btn.disabled = false;
+		btn.textContent = t('support.button');
+	}
+});
+
 // ── Peer Expiry Warning ─────────────────────────────────
 peer.onExpiry((info) => {
 	expiryInfo = info;
