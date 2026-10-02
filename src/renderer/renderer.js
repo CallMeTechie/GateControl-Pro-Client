@@ -10,7 +10,7 @@
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, getVersion,
-	window: win, rdp, onNavigate, locale,
+	window: win, rdp, onNavigate, locale, policy: clientPolicy,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
 
@@ -182,6 +182,7 @@ function refreshTexts() {
 	renderUpdateCard();
 	renderExpiry();
 	renderAbout();
+	applyPolicyUi();
 }
 
 // ── State ───────────────────────────────────────────────
@@ -213,6 +214,9 @@ let splitSaved = { enabled: false, routes: [] };
 let splitDraft = { enabled: false, routes: [] };
 let setupStep = 'choose';
 let setupDone = null;
+// Client policy from the server (core ClientPolicyService state):
+// { fetched, managed, policy, locks, splitModes }. Unmanaged until loaded.
+let policyState = { fetched: false, managed: false, policy: null, locks: {}, splitModes: ['off', 'include'] };
 
 // ── DOM Elements ────────────────────────────────────────
 const el = {
@@ -329,6 +333,11 @@ const PAGES = ['status', 'rdp', 'services', 'logs', 'settings', 'setup'];
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
 	if (!PAGES.includes(page)) return;
+	// Server change / re-setup locked by the client policy
+	if (page === 'setup' && policyState.locks.server) {
+		showToast(t('policy.serverLocked'), 'error');
+		return;
+	}
 	const prev = currentPage;
 	currentPage = page;
 
@@ -417,7 +426,12 @@ function updateUI() {
 
 	el.connSub.textContent = connected ? `${formatDuration(connectedSeconds())} · ${host}` : host;
 	setSwitch(el.connSwitch, cs === 'connected' || cs === 'connecting');
-	el.connSwitch.disabled = cs === 'connecting';
+	// Always-on policy: no manual disconnect
+	const disconnectLocked = !!policyState.locks.disconnect && cs === 'connected';
+	el.connSwitch.disabled = cs === 'connecting' || disconnectLocked;
+	el.connSwitch.title = disconnectLocked ? t('policy.disconnectLocked') : '';
+	el.disconnectBtn.disabled = disconnectLocked;
+	el.disconnectBtn.title = disconnectLocked ? t('policy.disconnectLocked') : '';
 
 	// Hero
 	const titles = {
@@ -1404,6 +1418,8 @@ function renderSplit() {
 	$('#split-dirty').hidden = !dirty;
 	$('#split-add-btn').disabled = !$('#split-new-route').value.trim();
 
+	applySplitPolicy();
+
 	// Overview routing label reflects the saved (active) setting
 	$('#routing-btn').textContent = splitSaved.enabled
 		? t('ui.protection.splitCount', { count: splitSaved.routes.length })
@@ -1446,8 +1462,7 @@ $('#btn-save-split').addEventListener('click', async () => {
 	if (state.connected) {
 		if (!splitDraft.enabled) showSplitStatus(t('split.fullTunnelOnReconnect'), 'info');
 		else showSplitStatus(modeChanged ? t('split.activateOnReconnect') : t('split.routesSaved', { count }), 'info');
-		await tunnel.disconnect();
-		await tunnel.connect();
+		await tunnel.reconnect();
 	} else if (splitDraft.enabled) {
 		showSplitStatus(t('split.routesSavedPending', { count }), 'info');
 	}
@@ -1826,6 +1841,108 @@ function renderExpiry() {
 }
 
 $('#expiry-dismiss').addEventListener('click', () => { expiryHidden = true; renderExpiry(); });
+
+// ══════════════════════════════════════════════════════════
+//  CLIENT POLICY (vom Server, "Vom Administrator festgelegt")
+// ══════════════════════════════════════════════════════════
+/** Disable a control and show/remove the "set by your administrator" hint in its row. */
+function setPolicyLock(control, locked, hintHost, hintKey = 'policy.lockedHint') {
+	if (control) {
+		control.disabled = !!locked;
+		control.classList.toggle('policy-locked', !!locked);
+	}
+	if (!hintHost) return;
+	let hint = hintHost.querySelector(':scope > .policy-hint');
+	if (locked) {
+		if (!hint) {
+			hint = h('div', 'policy-hint');
+			hintHost.appendChild(hint);
+		}
+		hint.textContent = t(hintKey);
+	} else if (hint) {
+		hint.remove();
+	}
+}
+
+const rowOf = (node) => node?.closest('.set-row, .prot-row, .field')?.querySelector('.grow') || node?.closest('.field');
+
+function applySplitPolicy() {
+	const p = policyState.policy || {};
+	const modes = policyState.splitModes || ['off', 'include'];
+	const frozen = !!(p.lockSettings || p.splitTunnelLocked);
+	const all = $('#split-mode-all');
+	const only = $('#split-mode-split');
+	if (!all || !only) return;
+	setPolicyLock(all, frozen || !modes.includes('off'), null);
+	setPolicyLock(only, frozen || !modes.includes('include'), null);
+	const locked = frozen || modes.length < 2;
+	const section = all.closest('.set-card');
+	setPolicyLock(null, locked, section, p.splitTunnelLocked ? 'policy.splitModeLocked' : 'policy.lockedHint');
+	const routesLocked = !!policyState.locks.splitRoutes;
+	$('#split-new-route').disabled = routesLocked;
+	if (routesLocked) $('#split-add-btn').disabled = true;
+	$$('#split-route-list button').forEach((b) => { b.disabled = routesLocked; });
+	if (frozen) $('#btn-save-split').disabled = true;
+}
+
+function applyPolicyUi() {
+	const l = policyState.locks || {};
+	const p = policyState.policy || {};
+	setPolicyLock(el.killswitchToggle, l.killSwitch, rowOf(el.killswitchToggle), p.killSwitch === 'required' ? 'policy.killSwitchRequired' : 'policy.lockedHint');
+	setPolicyLock(el.killswitchQuick, l.killSwitch, null);
+	if (el.killswitchQuick) el.killswitchQuick.title = l.killSwitch ? t('policy.lockedHint') : '';
+	setPolicyLock(el.rdpAllowToggle, l.settings, rowOf(el.rdpAllowToggle));
+	setPolicyLock(el.optAutostart, l.autostart, rowOf(el.optAutostart), p.autostart === 'forbidden' ? 'policy.autostartForbidden' : 'policy.lockedHint');
+	setPolicyLock(el.optAutoconnect, l.autoConnect, rowOf(el.optAutoconnect));
+	setPolicyLock(el.optMinimized, l.settings, rowOf(el.optMinimized));
+	setPolicyLock(el.optCheckInterval, l.settings, rowOf(el.optCheckInterval));
+	setPolicyLock(el.optPollInterval, l.settings, rowOf(el.optPollInterval));
+
+	// Server change / re-setup
+	const serverCard = el.serverUrl?.closest('section');
+	const setupCard = $('#btn-open-setup')?.closest('section');
+	if (serverCard) serverCard.hidden = !!l.server;
+	if (setupCard) setupCard.hidden = !!l.server;
+	const serverHint = $('#policy-server-hint');
+	if (serverHint) {
+		serverHint.hidden = !l.server;
+		serverHint.textContent = t('policy.serverLocked');
+	}
+	// The "done" step of a setup that just finished stays readable.
+	if (l.server && currentPage === 'setup' && setupStep !== 'done') navigateTo('status');
+
+	const banner = $('#policy-banner');
+	if (banner) {
+		banner.hidden = !policyState.managed;
+		banner.textContent = t('policy.managedBanner');
+	}
+	applySplitPolicy();
+}
+
+/** Policy changed in main: re-read the (possibly forced) settings and lock the UI. */
+async function onPolicyState(st) {
+	if (!st) return;
+	policyState = st;
+	try {
+		const cfg = await config.getAll();
+		if (cfg) {
+			setSwitch(el.optAutostart, cfg.app?.startWithWindows ?? true);
+			setSwitch(el.optAutoconnect, cfg.tunnel?.autoConnect ?? true);
+			state.killSwitch = cfg.tunnel?.killSwitch ?? state.killSwitch;
+			const enabled = cfg.tunnel?.splitTunnel ?? false;
+			if (enabled !== splitSaved.enabled) {
+				splitSaved = { ...splitSaved, enabled };
+				splitDraft = { ...splitDraft, enabled };
+			}
+		}
+	} catch { /* keep the current view */ }
+	updateUI();
+	renderSplit();
+	applyPolicyUi();
+}
+
+clientPolicy.onChange((st) => { onPolicyState(st); });
+clientPolicy.get().then((st) => onPolicyState(st)).catch(() => {});
 
 // Initial paint (before the locale round-trip finishes)
 updateDOM();
