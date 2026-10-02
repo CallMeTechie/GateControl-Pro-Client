@@ -150,6 +150,18 @@ Check (-not (Test-Path (Join-Path $e2eDir 'userData'))) "packaged app ignored GC
 $ksRules = @(GcRules | Where-Object { $_.DisplayName -like "$($cfg.RulePrefix)_*" })
 Check ($ksRules.Count -eq 0) "no kill-switch/RDP-allow rules after app start"
 
+# Pro: the app registers this task when "start with Windows" is enabled
+# (schtasks, because the app needs admin rights). Make sure it exists so the
+# uninstall check below is meaningful.
+if ($Edition -eq 'pro') {
+  schtasks /Query /TN GateControlProAutostart *> $null
+  if ($LASTEXITCODE -ne 0) {
+    schtasks /Create /F /TN GateControlProAutostart /TR "`"$exe`" --hidden" /SC ONLOGON /RL HIGHEST *> $null
+  }
+  schtasks /Query /TN GateControlProAutostart *> $null
+  Check ($LASTEXITCODE -eq 0) "autostart task GateControlProAutostart present before uninstall"
+}
+
 # ── Uninstall ────────────────────────────────────────────
 Write-Host "`n== Silent uninstall"
 $p = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
@@ -170,11 +182,12 @@ $left = @(GcRules | Where-Object { $n = $_.Name; -not ($rulesBefore | Where-Obje
 Check ($left.Count -eq 0) "all GateControl firewall rules removed: $(($left | ForEach-Object DisplayName) -join ', ')"
 Check ((OutboundPolicy) -eq $policyBefore) "outbound firewall policy unchanged after uninstall"
 
-# Informational: leftovers outside the install dir (not failures).
 if ($Edition -eq 'pro') {
   schtasks /Query /TN GateControlProAutostart *> $null
-  if ($LASTEXITCODE -eq 0) { Write-Host "::warning::Autostart task GateControlProAutostart still exists after uninstall" }
+  Check ($LASTEXITCODE -ne 0) "autostart task GateControlProAutostart removed by uninstall"
 }
+
+# Informational: leftovers outside the install dir (not failures).
 if (Test-Path $instDir) { Write-Host "Note: $instDir still exists: $((Get-ChildItem -Recurse $instDir | ForEach-Object FullName) -join ', ')" }
 
 if ($failures.Count -gt 0) {
@@ -183,3 +196,5 @@ if ($failures.Count -gt 0) {
   exit 1
 }
 Write-Host "`nInstaller smoke test passed."
+# Explicit: the last native command (schtasks /Query on a removed task) exits 1.
+exit 0
