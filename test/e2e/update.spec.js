@@ -5,7 +5,8 @@ const { test, expect, OFFERED_VERSION } = require('./support/fixtures');
 const { setupWithApiKey, checkForUpdatesManually, updateBanner, updateInstallButton } = require('./support/ui');
 
 const DOWNLOAD = (offer) => `/download/${offer.fileName}`;
-const VERSION_RE = new RegExp(OFFERED_VERSION.replace(/\./g, '\\.'));
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const VERSION_RE = new RegExp(escapeRegExp(OFFERED_VERSION));
 
 /** Waits for the app to exit (installUpdate quits ~1.5 s after the launch). */
 async function expectQuit(exited) {
@@ -51,7 +52,7 @@ test.describe('signed auto-update', () => {
 
     // Tray menus cannot be opened by Playwright; the recorded menu item's
     // click handler is the one the tray would run.
-    expect(await clickTrayItem(OFFERED_VERSION.replace(/\./g, '\\.'))).toBe(true);
+    expect(await clickTrayItem(escapeRegExp(OFFERED_VERSION))).toBe(true);
     await expectQuit(exited);
     expectInstallerLaunched(events(), offer);
   });
