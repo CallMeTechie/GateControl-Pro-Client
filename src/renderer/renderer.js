@@ -201,6 +201,9 @@ let trafficData = null;
 let usagePeriod = 'last7d';
 let pendingUpdate = null;
 let updateCardHidden = false;
+// Server policy (channel / minimum version / mandatory) from the core updater.
+// Channel and minimum version are assigned by the server, read-only here.
+let updatePolicy = null;
 let expiryInfo = null;
 let expiryHidden = false;
 let logText = '';
@@ -1732,20 +1735,50 @@ function showUpdateBanner(info) {
 }
 
 function renderUpdateCard() {
+	const state = window.GCUpdateState.updateCardState(pendingUpdate, updatePolicy, updateCardHidden);
 	const card = $('#update-card');
-	card.hidden = !pendingUpdate || updateCardHidden;
+	card.hidden = !state.visible;
+	card.classList.toggle('mandatory', state.mandatory);
+	$('#update-later').hidden = !state.dismissable;
+
+	// Persistent banner on the overview (no dismiss button)
+	const banner = $('#update-required-banner');
+	banner.hidden = !state.mandatory;
+
 	if (pendingUpdate) {
-		$('#update-title').textContent = t('ui.update.ready', { version: pendingUpdate.version });
-		$('#update-status-title').textContent = t('update.available', { version: pendingUpdate.version });
-		$('#update-status-desc').textContent = t('update.readyToInstall');
+		const requiredDesc = state.minVersion
+			? t('update.requiredDesc', { minVersion: state.minVersion, version: state.version })
+			: t('update.requiredDescNoMin', { version: state.version });
+		$('#update-title').textContent = state.mandatory ? t('update.required') : t('ui.update.ready', { version: state.version });
+		$('#update-desc').textContent = state.mandatory
+			? `${requiredDesc} ${t('update.requiredTunnelHint')}`
+			: t('ui.update.readyDesc');
+		$('#update-status-title').textContent = state.mandatory ? t('update.required') : t('update.available', { version: state.version });
+		$('#update-status-desc').textContent = state.mandatory ? requiredDesc : t('update.readyToInstall');
+		$('#update-required-text').textContent = `${requiredDesc} ${t('update.requiredTunnelHint')}`;
+	}
+
+	const channel = $('#update-channel');
+	if (channel) {
+		const ch = updatePolicy && updatePolicy.channel;
+		channel.textContent = t(window.GCUpdateState.channelLabelKey(ch));
+		channel.classList.toggle('c-warn', ch === 'beta');
 	}
 }
 
+function applyUpdatePolicy(policy) {
+	updatePolicy = policy || null;
+	renderUpdateCard();
+}
+
 $('#update-install').addEventListener('click', () => update.install());
+$('#update-required-install').addEventListener('click', () => update.install());
 $('#update-later').addEventListener('click', () => { updateCardHidden = true; renderUpdateCard(); });
 
 update.onReady((info) => showUpdateBanner(info));
+update.onPolicy((policy) => applyUpdatePolicy(policy));
 update.check().then((info) => { if (info) showUpdateBanner(info); }).catch(() => {});
+update.policy().then((policy) => applyUpdatePolicy(policy)).catch(() => {});
 
 // ── Manual Update Check Button (Settings → About) ───────
 $('#nav-update')?.addEventListener('click', async () => {
@@ -1754,6 +1787,7 @@ $('#nav-update')?.addEventListener('click', async () => {
 	btn.textContent = t('ui.about.checking');
 	try {
 		const info = await update.check();
+		update.policy().then((policy) => applyUpdatePolicy(policy)).catch(() => {});
 		if (info) {
 			showUpdateBanner(info);
 		} else {

@@ -73,10 +73,10 @@
 
 			<div class="card update-card" id="update-card" hidden>
 				<div style="display:flex;align-items:center;gap:8px">
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="update-card-icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
 					<span style="font-weight:600" id="update-title"></span>
 				</div>
-				<p class="desc" data-i18n="ui.update.readyDesc">Wird installiert, sobald du neu startest. Die VPN-Verbindung wird kurz unterbrochen.</p>
+				<p class="desc" id="update-desc">Wird installiert, sobald du neu startest. Die VPN-Verbindung wird kurz unterbrochen.</p>
 				<div style="display:flex;gap:6px">
 					<button class="btn btn-sec btn-sm" id="update-install" type="button" data-i18n="ui.update.restart">Neu starten</button>
 					<button class="btn btn-ghost btn-sm" id="update-later" type="button" data-i18n="update.later">Später</button>
@@ -99,6 +99,15 @@
 							<span data-i18n="portal.open">Portal öffnen</span>
 							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
 						</button>
+					</div>
+
+					<div class="banner banner-err" id="update-required-banner" role="alert" hidden>
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--err)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+						<div class="grow">
+							<strong data-i18n="update.required">Update erforderlich</strong>
+							<div class="desc" id="update-required-text"></div>
+						</div>
+						<button class="btn btn-sec" id="update-required-install" type="button" data-i18n="update.install">Jetzt installieren</button>
 					</div>
 
 					<div class="banner banner-warn" id="expiry-banner" role="status" hidden>
@@ -515,6 +524,10 @@
 							<div class="grow"><div class="set-row-title" id="update-status-title" data-i18n="update.title">Update</div><div class="set-row-desc" id="update-status-desc"></div></div>
 							<button class="btn btn-sec" id="nav-update" type="button" data-i18n="update.checkBtn">Nach Updates suchen</button>
 						</section>
+						<section class="card set-card" style="flex-direction:row;align-items:center">
+							<div class="grow"><div class="set-row-title" data-i18n="update.channel">Update-Kanal</div><div class="set-row-desc" data-i18n="update.channelHint">Vom Server zugewiesen</div></div>
+							<span class="chip" id="update-channel">–</span>
+						</section>
 					</div>
 				</div>
 			</section>
@@ -619,6 +632,7 @@
 
 	<div class="toasts" id="toasts" aria-live="polite"></div>
 
+	<script src="update-state.js"></script>
 	<script src="renderer.js"></script>
 </body>
 </html>
