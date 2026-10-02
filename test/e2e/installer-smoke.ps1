@@ -22,12 +22,14 @@ $cfg = @{
     RulePrefix    = 'GateControl_Pro'
     # Created by build/installer.nsh customInstall, removed by customUnInstall.
     InstallRules  = @('GateControl Pro WireGuard', 'GateControl Pro RDP')
+    CrashLog      = 'gatecontrol-pro-crash.log'
   }
   community = @{
     Product       = 'GateControl Community Client'
     Shortcut      = 'GateControl'
     RulePrefix    = 'GateControl_Community'
     InstallRules  = @()
+    CrashLog      = $null
   }
 }[$Edition]
 
@@ -104,7 +106,11 @@ $env:GC_E2E_UPDATE_PUBKEY = Join-Path $e2eDir 'attacker.pub'
 $userData = Join-Path $env:APPDATA $product
 $app = Start-Process -FilePath $exe -PassThru
 Start-Sleep -Seconds 15
-$running = @(Get-Process -Name $product -ErrorAction SilentlyContinue)
+$running = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($instDir, [StringComparison]::OrdinalIgnoreCase) })
+Write-Host "Launcher process exited: $($app.HasExited) $(if ($app.HasExited) { "(exit code $($app.ExitCode))" }); app processes: $($running.Count)"
+Get-ChildItem $env:APPDATA, $env:LOCALAPPDATA -Directory -ErrorAction SilentlyContinue | Where-Object Name -like '*gatecontrol*' | ForEach-Object { Write-Host "  data dir: $($_.FullName)" }
+$crashLog = Join-Path $env:USERPROFILE $cfg.CrashLog
+if ($cfg.CrashLog -and (Test-Path $crashLog)) { Write-Host "--- $crashLog (tail)"; Get-Content $crashLog -Tail 40 | ForEach-Object { Write-Host "  $_" } }
 Check ($running.Count -ge 1) "packaged app is running after 15 s"
 Check (-not (Test-Path (Join-Path $e2eDir 'events.jsonl'))) "packaged app ignored GC_E2E (no e2e hooks)"
 Check (-not (Test-Path (Join-Path $e2eDir 'userData'))) "packaged app ignored GC_E2E_DIR"
@@ -112,7 +118,7 @@ Check (Test-Path $userData) "packaged app uses its normal userData ($userData)"
 Remove-Item Env:GC_E2E, Env:GC_E2E_DIR, Env:GC_E2E_UPDATE_PUBKEY
 $ksRules = @(GcRules | Where-Object { $_.DisplayName -like "$($cfg.RulePrefix)_*" })
 Check ($ksRules.Count -eq 0) "no kill-switch/RDP-allow rules after app start"
-Get-Process -Name $product -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($instDir, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force
 Start-Sleep -Seconds 3
 
 # ── Uninstall ────────────────────────────────────────────
