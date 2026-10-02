@@ -258,6 +258,10 @@ select.inp { padding-right: 8px; }
 .side-session-name { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-session-sub { font-size: 12px; }
 .update-card { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.update-card .update-card-icon { color: var(--info); }
+/* Mandatory update (server: below the minimum version) — cannot be dismissed */
+.update-card.mandatory { background: var(--err-bg); }
+.update-card.mandatory .update-card-icon { color: var(--err); }
 .side-foot { padding: 0 12px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--faint); }
 
 .main { flex-grow: 1; min-width: 0; position: relative; display: flex; flex-direction: column; }

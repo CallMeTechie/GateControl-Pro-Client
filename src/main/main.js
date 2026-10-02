@@ -30,7 +30,7 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
-let loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, recoverKillSwitch, createTrayIcon;
+let loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, recoverKillSwitch, createTrayIcon, updateMenuItems, mandatoryNotice;
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 
 try {
@@ -58,6 +58,7 @@ try {
   ({ reconnectDelay, shouldOpenPortal } = require('@gatecontrol/client-core/src/utils/tunnel-logic'));
   ({ recoverKillSwitch } = require('@gatecontrol/client-core/src/lifecycle/killswitch-startup'));
   ({ createTrayIcon } = require('@gatecontrol/client-core/src/utils/tray-icon'));
+  ({ updateMenuItems, mandatoryNotice } = require('@gatecontrol/client-core/src/utils/update-notice'));
   ConnectionMonitor = require('@gatecontrol/client-core/src/services/connection-monitor');
   DnsPolicy = require('@gatecontrol/client-core/src/services/dns-policy');
   RdpManager = require('../services/rdp/rdp-manager');
@@ -179,6 +180,9 @@ let dnsPolicy = null;
 let rdpManager = null;
 let rdpWolClient = null;
 let pendingUpdate = null;
+// Version for which the "Update erforderlich" notification was already shown
+// in this session (shown again on every app start while still required).
+let mandatoryNotifiedVersion = null;
 
 // ── State ────────────────────────────────────────────────────
 let tunnelState = {
@@ -262,9 +266,18 @@ function updateTray(connState) {
   // Build context menu with RDP status
   const rdpSessions = rdpManager ? rdpManager.getActiveSessions() : [];
 
+  // Ready update: a mandatory one goes to the top, an optional one stays below
+  const updateItems = updateMenuItems({
+    update: pendingUpdate,
+    mandatory: !!updater?.isMandatory(),
+    t,
+    install: () => installUpdate(),
+  });
+
   const contextMenu = Menu.buildFromTemplate([
     { label: `GateControl Pro - ${statusText}`, enabled: false, icon: getIcon(connState) },
     { type: 'separator' },
+    ...updateItems.top,
     {
       label: connState === 'connected' ? t('action.disconnect') : t('action.connect'),
       click: () => connState === 'connected' ? disconnectTunnel() : connectTunnel(),
@@ -286,10 +299,7 @@ function updateTray(connState) {
     ] : []),
     { type: 'separator' },
     { label: t('tray.openWindow'), click: () => showWindow() },
-    ...(pendingUpdate ? [
-      { type: 'separator' },
-      { label: t('tray.installUpdate', { version: pendingUpdate.version }), click: () => installUpdate() },
-    ] : []),
+    ...updateItems.bottom,
     ...(portalUrl ? [
       { type: 'separator' },
       { label: t('portal.open'), click: () => openPortalSafe() },
@@ -604,6 +614,16 @@ async function toggleRdpAllow(enabled) {
   broadcastState(tunnelState.connected ? 'connected' : 'disconnected');
 }
 
+// "Update erforderlich" notification, once per version and app session.
+function notifyMandatoryUpdate(info) {
+  if (!info?.version || mandatoryNotifiedVersion === info.version) return;
+  mandatoryNotifiedVersion = info.version;
+  const notice = mandatoryNotice(info, t);
+  const n = new Notification({ title: `GateControl Pro - ${notice.title}`, body: notice.body });
+  n.on('click', () => showWindow());
+  n.show();
+}
+
 // Installs the update the updater has downloaded and verified. Relies on the
 // updater's state, not on pendingUpdate: a manual "check for updates" stores
 // the release info without an installer path, so "Neustart" in the toast and
@@ -648,6 +668,7 @@ function initializeServices() {
 
   apiClient = new ApiClientPro(serverUrl, apiKey, log, peerId, {
     clientVersion: require('../../package.json').version,
+    clientType: 'pro',
   });
 
   // Nur signierte Updates: ohne echten Public Key bleibt der Updater aus.
@@ -954,18 +975,34 @@ app.on('ready', () => {
   // Auto-Update (the updater exists from initializeServices on, so a setup
   // done later — e.g. with a setup code — configures it; checks without a
   // server are skipped by the updater itself)
+  // Mandatory updates (server: below the minimum version) are never
+  // installed automatically: the installer ends the app and the tunnel, so the
+  // user starts it (banner, sidebar card, tray). The notice cannot be
+  // dismissed and is shown again on every start while it is still required.
   if (updater) {
     updater.start((release) => {
       pendingUpdate = release;
-      log.info(`Update ready: v${release.version}`);
+      log.info(`Update ready: v${release.version}${release.mandatory ? ' (mandatory)' : ''}`);
       updateTray(tunnelState.connected ? 'connected' : 'disconnected');
       if (mainWindow) {
         mainWindow.webContents.send('update:ready', release);
       }
-      new Notification({
-        title: 'GateControl Pro',
-        body: t('update.available', { version: release.version }),
-      }).show();
+      if (release.mandatory) {
+        notifyMandatoryUpdate(release);
+      } else {
+        new Notification({
+          title: 'GateControl Pro',
+          body: t('update.available', { version: release.version }),
+        }).show();
+      }
+    }, {
+      onPolicyChange: (policy) => {
+        if (mainWindow) mainWindow.webContents.send('update:policy', policy);
+        updateTray(tunnelState.connected ? 'connected' : 'disconnected');
+        if (policy.mandatory && pendingUpdate) {
+          notifyMandatoryUpdate({ version: policy.version, minVersion: policy.minVersion });
+        }
+      },
     });
   }
 });
