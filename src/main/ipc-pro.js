@@ -15,6 +15,7 @@
 'use strict';
 
 const { registerBaseHandlers } = require('@gatecontrol/client-core/src/ipc/base-handlers');
+const { shortDeviceId } = require('./device-id');
 
 /**
  * @param {Electron.IpcMain} ipcMain
@@ -25,6 +26,8 @@ const { registerBaseHandlers } = require('@gatecontrol/client-core/src/ipc/base-
  * @param {object} ctx.rdpManager
  * @param {object} ctx.rdpWolClient
  * @param {Function} ctx.setRdpPanelOpen - (open) => void
+ * @param {Function} ctx.getMachineFingerprint - () => 64-hex fingerprint (core);
+ *   only its 8-character short form is handed to the renderer
  * @returns {string[]} registered channels
  */
 function registerProIpc(ipcMain, ctx) {
@@ -64,6 +67,8 @@ function registerProIpc(ipcMain, ctx) {
 
     // ── Pro-only channels ──────────────────────────────────
     'dns:check-system': () => ctx.checkSystemDns(),
+    // Short device ID (first 8 hex) for Settings → About; never the full value.
+    'app:device-id': () => shortDeviceId(ctx.getMachineFingerprint || (() => null), log),
     'peer:info': () => apiClient?.getPeerInfo(),
 
     // Host status is only polled while the Remote Desktops page is open.

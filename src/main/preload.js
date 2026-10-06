@@ -17,6 +17,9 @@ const subscribe = createSubscriber(ipcRenderer);
 // Pro announces downloaded updates on 'update:ready'.
 const api = createBridgeApi(ipcRenderer, i18n, { updateReadyChannel: 'update:ready' });
 
+// Short device ID (first 8 hex of the machine fingerprint) or null.
+api.getDeviceId = () => ipcRenderer.invoke('app:device-id');
+
 // Pro: system DNS check (Settings → DNS)
 api.dns.checkSystem = () => ipcRenderer.invoke('dns:check-system');
 
