@@ -9,7 +9,7 @@
 
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
-	services, traffic, dns, shell, peer, permissions, onPortalUrl, getVersion,
+	services, traffic, dns, shell, peer, permissions, onPortalUrl, getVersion, getDeviceId,
 	window: win, rdp, onNavigate, locale, policy: clientPolicy,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
@@ -281,9 +281,23 @@ getVersion().then((v) => {
 	renderAbout();
 });
 
+// ── Device ID ───────────────────────────────────────────
+// Short form only (first 8 hex of the machine fingerprint), as on the
+// server's Users page ("Gerätebindung"). null = unavailable.
+let deviceId;
+Promise.resolve()
+	.then(() => getDeviceId())
+	.then((id) => { deviceId = typeof id === 'string' && /^[0-9a-f]{8}$/.test(id) ? id : null; })
+	.catch(() => { deviceId = null; })
+	.then(() => renderAbout());
+
 function renderAbout() {
 	const aboutEl = $('#about-version');
 	if (aboutEl) aboutEl.textContent = appVersion ? t('ui.about.version', { version: appVersion }) : '';
+	const idEl = $('#about-device-id');
+	if (idEl && deviceId !== undefined) {
+		idEl.textContent = t('ui.about.deviceId', { id: deviceId ? `${deviceId}…` : t('ui.about.deviceIdUnavailable') });
+	}
 }
 
 // ══════════════════════════════════════════════════════════

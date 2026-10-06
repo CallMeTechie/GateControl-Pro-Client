@@ -90,6 +90,7 @@ function preloadInvokedChannels() {
 }
 
 const CODE = 'AB12-CD34-EF56-7890';
+const FINGERPRINT = 'a41f09c2' + '7e3b5d19c0aa48f2b6e1d3c5f7092a4b6c8d0e1f2a3b4c5d6e7f8091';
 const VALID_CONFIG = '[Interface]\nPrivateKey = x\nAddress = 10.8.0.2/32\n[Peer]\nPublicKey = y\nEndpoint = gate.example.com:51820';
 
 describe('Pro IPC on core handlers', { skip }, () => {
@@ -153,6 +154,7 @@ describe('Pro IPC on core handlers', { skip }, () => {
       setAutostart: async (on) => { calls.autostart.push(on); },
       rdpManager: { refreshServices: async () => [], getActiveSessions: () => [], startStatusPolling() {}, stopStatusPolling() {} },
       rdpWolClient: { wake: async () => true },
+      getMachineFingerprint: extra.getMachineFingerprint || (() => FINGERPRINT),
     };
     const registered = registerProIpc(ipcMain, ctx);
     return { handlers, stored, written, calls, registered, apiClient };
@@ -184,7 +186,7 @@ describe('Pro IPC on core handlers', { skip }, () => {
       // Pro-specific / overrides
       'autostart:set', 'dns:leak-test', 'dns:check-system', 'peer:info', 'update:check',
       'panel:open', 'panel:close', 'rdp:list', 'rdp:connect', 'rdp:disconnect', 'rdp:detail',
-      'rdp:wol', 'rdp:status', 'rdp:active-sessions', 'rdp:pin-toggle', 'locale:set', 'locale:get',
+      'rdp:wol', 'rdp:status', 'rdp:active-sessions', 'rdp:pin-toggle', 'locale:set', 'locale:get', 'app:device-id',
     ]) {
       assert.equal(typeof handlers[ch], 'function', ch);
     }
@@ -195,6 +197,62 @@ describe('Pro IPC on core handlers', { skip }, () => {
     assert.ok(invoked.includes('tunnel:connect') && invoked.includes('rdp:list') && invoked.includes('dns:check-system'));
     const { handlers } = setup();
     for (const ch of invoked) assert.equal(typeof handlers[ch], 'function', ch);
+  });
+
+  it('app:device-id returns only the 8-character lowercase-hex short form', async () => {
+    assert.equal(FINGERPRINT.length, 64);
+    const { handlers } = setup();
+    const id = await handlers['app:device-id']();
+    assert.equal(id, 'a41f09c2');
+    assert.match(id, /^[0-9a-f]{8}$/);
+    const upper = setup({ getMachineFingerprint: () => FINGERPRINT.toUpperCase() });
+    assert.equal(await upper.handlers['app:device-id'](), 'a41f09c2');
+  });
+
+  it('app:device-id: the full fingerprint never reaches the renderer', async () => {
+    // Preload passes the main-process answer through unchanged ...
+    let api = null;
+    const electron = {
+      contextBridge: { exposeInMainWorld: (_key, value) => { api = value; } },
+      ipcRenderer: {
+        invoke: (ch, ...args) => Promise.resolve(handlers[ch] ? handlers[ch]({}, ...args) : undefined),
+        send() {}, on() {}, removeListener() {},
+      },
+    };
+    const { handlers } = setup();
+    const realLoad = Module._load;
+    Module._load = function (request, ...rest) {
+      if (request === 'electron') return electron;
+      return realLoad.call(this, request, ...rest);
+    };
+    const file = path.join(ROOT, 'src', 'main', 'preload.js');
+    try {
+      delete require.cache[file];
+      require(file);
+    } finally {
+      Module._load = realLoad;
+    }
+    const seen = await api.getDeviceId();
+    assert.equal(seen, 'a41f09c2');
+    assert.ok(!JSON.stringify(seen).includes(FINGERPRINT.slice(8)));
+    // ... and nothing in the preload/renderer reads the fingerprint itself.
+    for (const f of ['src/main/preload.js', 'src/renderer/renderer.js']) {
+      const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+      assert.doesNotMatch(src, /getMachineFingerprint|machine-id|X-Machine-Fingerprint/, f);
+    }
+  });
+
+  it('app:device-id returns null (no throw, no fingerprint in the log) when the fingerprint fails', async () => {
+    const warned = [];
+    const failing = setup({ getMachineFingerprint: () => { throw new Error('reg query failed'); } });
+    assert.equal(await failing.handlers['app:device-id'](), null);
+    const garbage = setup({ getMachineFingerprint: () => 'not-a-fingerprint' });
+    assert.equal(await garbage.handlers['app:device-id'](), null);
+    const { shortDeviceId } = require('../src/main/device-id');
+    assert.equal(shortDeviceId(() => FINGERPRINT, { warn: (m) => warned.push(m) }), 'a41f09c2');
+    assert.equal(shortDeviceId(() => { throw new Error('boom'); }, { warn: (m) => warned.push(m) }), null);
+    assert.equal(warned.length, 1);
+    assert.ok(!warned.join(' ').includes('a41f09c2'));
   });
 
   it('settings: a setup code in the key field enrolls via ApiClientPro and stores token + config', async () => {

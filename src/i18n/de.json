@@ -242,6 +242,9 @@
     "about": {
       "title": "Über GateControl",
       "version": "Version {{ version }}",
+      "deviceId": "Geräte-ID: {{ id }}",
+      "deviceIdUnavailable": "nicht verfügbar",
+      "deviceIdHint": "Damit ordnet der Administrator die Gerätebindung zu.",
       "upToDate": "GateControl ist aktuell",
       "checking": "Suche …"
     },

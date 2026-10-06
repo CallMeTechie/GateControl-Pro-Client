@@ -437,6 +437,8 @@ body:not([data-conn="connected"]) .show-connected { display: none !important; }
 .sticky-actions { display: flex; align-items: center; gap: 12px; position: sticky; bottom: -32px; padding: 12px 0; background: var(--bg); }
 .about-card { padding: 24px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .about-logo { width: 64px; height: 64px; border-radius: 18px; background: var(--acc-bg); display: flex; align-items: center; justify-content: center; }
+.about-card .device-id { margin-top: 2px; user-select: text; }
+.about-card .device-id-hint { font-size: 12px; margin-top: 2px; }
 
 /* ── Setup wizard ──────────────────────────────────────── */
 .setup-page { min-height: 100%; width: 100%; display: flex; align-items: center; justify-content: center; padding: 32px; }

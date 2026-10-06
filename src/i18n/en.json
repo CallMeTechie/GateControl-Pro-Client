@@ -242,6 +242,9 @@
     "about": {
       "title": "About GateControl",
       "version": "Version {{ version }}",
+      "deviceId": "Device ID: {{ id }}",
+      "deviceIdUnavailable": "unavailable",
+      "deviceIdHint": "Lets your administrator match the device binding.",
       "upToDate": "GateControl is up to date",
       "checking": "Checking …"
     },

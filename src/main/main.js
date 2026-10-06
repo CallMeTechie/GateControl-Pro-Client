@@ -34,6 +34,7 @@ let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPo
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
+let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
@@ -76,6 +77,9 @@ try {
   RdpWolClient = require('../services/rdp/rdp-wol');
   ({ registerProIpc } = require('./ipc-pro'));
   ({ createSupportBundleSender } = require('@gatecontrol/client-core/src/support/sender'));
+  ({ collectSupportBundle } = require('@gatecontrol/client-core/src/support/collector'));
+  ({ getMachineFingerprint } = require('@gatecontrol/client-core/src/utils/machine-id'));
+  ({ shortDeviceId, withDeviceId } = require('./device-id'));
 
   writeCrashLog('IMPORT', 'All imports successful');
 
@@ -964,6 +968,7 @@ function registerIpcHandlers() {
     rdpManager,
     rdpWolClient,
     setRdpPanelOpen: (open) => { rdpPanelOpen = open; },
+    getMachineFingerprint,
     edition: 'pro',
     // Result of a bundle the admin requested (the button shows its own toast).
     onSupportResult: (res) => {
@@ -972,7 +977,10 @@ function registerIpcHandlers() {
     },
   };
   // One sender for the Settings button and admin requests (connection monitor).
-  supportBundle = createSupportBundleSender(ctx);
+  // The bundle carries the short device ID (client.deviceId) for the admin.
+  supportBundle = createSupportBundleSender(ctx, {
+    collect: withDeviceId(collectSupportBundle, () => shortDeviceId(getMachineFingerprint, log)),
+  });
   registerProIpc(ipcMain, { ...ctx, supportBundle });
 }
 
