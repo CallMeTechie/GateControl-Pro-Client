@@ -9,7 +9,7 @@
 
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
-	services, traffic, dns, shell, peer, permissions, onPortalUrl, getVersion, getDeviceId,
+	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
 	window: win, rdp, onNavigate, locale, policy: clientPolicy,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
@@ -544,7 +544,8 @@ onPortalUrl?.((url) => {
 });
 
 el.portalBtn?.addEventListener('click', () => {
-	if (currentPortalUrl && /^https:\/\//i.test(currentPortalUrl)) shell.openExternal(currentPortalUrl);
+	// Main fetches a fresh one-time login link and falls back to the portal URL.
+	if (currentPortalUrl) portal.open();
 });
 
 // ── Kill-Switch / RDP allow ─────────────────────────────

@@ -30,7 +30,7 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
-let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, recoverKillSwitch, createTrayIcon, updateMenuItems, mandatoryNotice;
+let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, mandatoryNotice;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
@@ -62,6 +62,7 @@ try {
   // kill-switch startup recovery, tray icon (unit-tested in core).
   ({ loadUpdatePublicKey } = require('@gatecontrol/client-core/src/utils/update-public-key'));
   ({ reconnectDelay, shouldOpenPortal } = require('@gatecontrol/client-core/src/utils/tunnel-logic'));
+  ({ createPortalOpener } = require('@gatecontrol/client-core/src/utils/portal'));
   ({ recoverKillSwitch } = require('@gatecontrol/client-core/src/lifecycle/killswitch-startup'));
   ({ createTrayIcon } = require('@gatecontrol/client-core/src/utils/tray-icon'));
   ({ updateMenuItems, mandatoryNotice } = require('@gatecontrol/client-core/src/utils/update-notice'));
@@ -242,10 +243,13 @@ const WG_CONFIG_DIR = path.join(app.getPath('userData'), 'wireguard');
 const WG_CONFIG_FILE = path.join(WG_CONFIG_DIR, 'gatecontrol0.conf');
 
 // ── Helpers ──────────────────────────────────────────────────
+// Opens the portal (https only). Asks the server for a fresh one-time login
+// link right before every open and falls back to the plain portal URL
+// (core utils/portal.js). Used by auto-open, tray and the "Portal öffnen" button.
 function openPortalSafe() {
-  if (portalUrl && /^https:\/\//i.test(portalUrl)) {
-    require('electron').shell.openExternal(portalUrl).catch(() => {});
-  }
+  return createPortalOpener({ apiClient, getPortalUrl: () => portalUrl, log })
+    .open()
+    .catch(() => false);
 }
 
 // ── Tray Icon (Sun/Star design, drawn by core) ──────────────
@@ -955,6 +959,7 @@ function registerIpcHandlers() {
       }
     },
     installUpdate: async () => installUpdate(),
+    openPortal: () => openPortalSafe(),
     getTunnelState: () => tunnelState,
     wgConfigFile: WG_CONFIG_FILE,
     setLocale,

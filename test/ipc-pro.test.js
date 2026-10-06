@@ -147,6 +147,7 @@ describe('Pro IPC on core handlers', { skip }, () => {
       toggleKillSwitch: async () => {},
       toggleRdpAllow: async () => {},
       installUpdate: async () => {},
+      openPortal: async () => { calls.portalOpened = (calls.portalOpened || 0) + 1; return true; },
       getTunnelState: () => ({ connected: false }),
       wgConfigFile: 'C:\\gc\\gatecontrol0.conf',
       setLocale() {}, getLocale: () => 'de',
@@ -197,6 +198,12 @@ describe('Pro IPC on core handlers', { skip }, () => {
     assert.ok(invoked.includes('tunnel:connect') && invoked.includes('rdp:list') && invoked.includes('dns:check-system'));
     const { handlers } = setup();
     for (const ch of invoked) assert.equal(typeof handlers[ch], 'function', ch);
+  });
+
+  it('portal:open lets main open the portal (one-time login link from core)', async () => {
+    const { handlers, calls } = setup();
+    assert.equal(await handlers['portal:open']({}), true);
+    assert.equal(calls.portalOpened, 1);
   });
 
   it('app:device-id returns only the 8-character lowercase-hex short form', async () => {
