@@ -6,22 +6,23 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Auth for transitive @callmetechie/gatecontrol-config-hash via GitHub Packages (.npmrc).
+  NODE_AUTH_TOKEN: ${{ secrets.GC_PAT }}
 
 jobs:
   test:
     name: Test & Build Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
 
-      - name: Clone core dependency
-        run: |
-          git clone https://github.com/CallMeTechie/gatecontrol-client-core.git .core
-          node -e "const p=require('./package.json'); p.dependencies['@gatecontrol/client-core']='file:.core'; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+      - name: Checkout pinned core (core.ref)
+        shell: bash
+        run: bash scripts/fetch-core.sh --link
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
@@ -29,5 +30,8 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Check for security issues
+      - name: Audit production dependencies (blocking, high/critical)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit all dependencies (informational)
         run: npm audit --audit-level=high || true

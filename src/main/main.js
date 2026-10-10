@@ -30,11 +30,18 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
-let Store, log, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, RdpSigner, RdpWolClient;
+let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, mandatoryNotice;
+let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
+let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
+let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
+let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
   ({ app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen } = require('electron'));
+
+  // Before any core service is required; a packaged build never loads it.
+  e2e = require('./e2e-guard').loadE2eHooks({ app });
 
   writeCrashLog('IMPORT', 'Loading electron-store...');
   Store = require('electron-store');
@@ -44,17 +51,36 @@ try {
 
   writeCrashLog('IMPORT', 'Loading core services...');
   WireGuardService = require('@gatecontrol/client-core/src/services/wireguard-native');
+  ({ validateWgConfig } = require('@gatecontrol/client-core'));
   KillSwitch = require('@gatecontrol/client-core/src/services/killswitch');
   RdpAllowSvc = require('@gatecontrol/client-core/src/services/rdp-allow');
 
   writeCrashLog('IMPORT', 'Loading pro services...');
   ApiClientPro = require('../services/api-client-pro');
   Updater = require('@gatecontrol/client-core/src/services/updater');
+  // Shared helpers from core: update key loader, pure tunnel/portal logic,
+  // kill-switch startup recovery, tray icon (unit-tested in core).
+  ({ loadUpdatePublicKey } = require('@gatecontrol/client-core/src/utils/update-public-key'));
+  ({ reconnectDelay, shouldOpenPortal } = require('@gatecontrol/client-core/src/utils/tunnel-logic'));
+  ({ createPortalOpener } = require('@gatecontrol/client-core/src/utils/portal'));
+  ({ recoverKillSwitch } = require('@gatecontrol/client-core/src/lifecycle/killswitch-startup'));
+  ({ createTrayIcon } = require('@gatecontrol/client-core/src/utils/tray-icon'));
+  ({ updateMenuItems, mandatoryNotice } = require('@gatecontrol/client-core/src/utils/update-notice'));
   ConnectionMonitor = require('@gatecontrol/client-core/src/services/connection-monitor');
   DnsPolicy = require('@gatecontrol/client-core/src/services/dns-policy');
+  // Client policies from the server (kill switch / auto-connect / autostart /
+  // split modes / settings + server lock), cached for offline use.
+  ClientPolicyService = require('@gatecontrol/client-core/src/services/client-policy');
+  clientPolicyUtil = require('@gatecontrol/client-core/src/utils/client-policy');
+  ({ applyPolicyToStore } = require('@gatecontrol/client-core/src/ipc/base-handlers'));
   RdpManager = require('../services/rdp/rdp-manager');
-  RdpSigner = require('../services/rdp/rdp-signer');
+  ({ runRdpTrustMigration } = require('../services/rdp/rdp-trust-migration'));
   RdpWolClient = require('../services/rdp/rdp-wol');
+  ({ registerProIpc } = require('./ipc-pro'));
+  ({ createSupportBundleSender } = require('@gatecontrol/client-core/src/support/sender'));
+  ({ collectSupportBundle } = require('@gatecontrol/client-core/src/support/collector'));
+  ({ getMachineFingerprint } = require('@gatecontrol/client-core/src/utils/machine-id'));
+  ({ shortDeviceId, withDeviceId } = require('./device-id'));
 
   writeCrashLog('IMPORT', 'All imports successful');
 
@@ -167,9 +193,14 @@ let apiClient = null;
 let connectionMonitor = null;
 let updater = null;
 let dnsPolicy = null;
+let clientPolicy = null;
 let rdpManager = null;
 let rdpWolClient = null;
+let supportBundle = null; // "Support-Paket senden" (core src/support/sender.js)
 let pendingUpdate = null;
+// Version for which the "Update erforderlich" notification was already shown
+// in this session (shown again on every app start while still required).
+let mandatoryNotifiedVersion = null;
 
 // ── State ────────────────────────────────────────────────────
 let tunnelState = {
@@ -190,10 +221,18 @@ let lastStatsTime = 0;
 let isReconnecting = false;
 let rdpPanelOpen = false;
 
+// ── Portal state ─────────────────────────────────────────────
+let portalUrl = null;
+let autoOpenPortal = false;
+let portalOpenedSince = null;
+
 // ── Constants ────────────────────────────────────────────────
-const BASE_WIDTH = 590;
-const PANEL_WIDTH = 450;
-const EXPANDED_WIDTH = BASE_WIDTH + PANEL_WIDTH; // 1040
+// Sidebar layout (240px navigation + content). Remote Desktops is a regular
+// page now, so the window no longer grows for a slide-out panel.
+const DEFAULT_WIDTH = 1280;
+const DEFAULT_HEIGHT = 800;
+const MIN_WIDTH = 1000;
+const MIN_HEIGHT = 640;
 
 // ── Pfade ────────────────────────────────────────────────────
 const RESOURCES_PATH = app.isPackaged
@@ -204,87 +243,18 @@ const WG_CONFIG_DIR = path.join(app.getPath('userData'), 'wireguard');
 const WG_CONFIG_FILE = path.join(WG_CONFIG_DIR, 'gatecontrol0.conf');
 
 // ── Helpers ──────────────────────────────────────────────────
-function formatBytesShort(bytes) {
-  if (!bytes || bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+// Opens the portal (https only). Asks the server for a fresh one-time login
+// link right before every open and falls back to the plain portal URL
+// (core utils/portal.js). Used by auto-open, tray and the "Portal öffnen" button.
+function openPortalSafe() {
+  return createPortalOpener({ apiClient, getPortalUrl: () => portalUrl, log })
+    .open()
+    .catch(() => false);
 }
 
-// ── Tray Icon (Sun/Star design — circle + 8 rays) ───────────
+// ── Tray Icon (Sun/Star design, drawn by core) ──────────────
 function getIcon(state) {
-  const color = state === 'connected' ? [0x22, 0xC5, 0x5E]   // green
-    : state === 'connecting' ? [0xF5, 0x9E, 0x0B]             // amber
-    : [0xEF, 0x44, 0x44];                                      // red
-
-  const size = 32;
-  const buf = Buffer.alloc(size * size * 4, 0); // transparent RGBA
-  const cx = size / 2;
-  const cy = size / 2;
-
-  function setPixel(px, py) {
-    const x = Math.round(px);
-    const y = Math.round(py);
-    if (x < 0 || x >= size || y < 0 || y >= size) return;
-    const i = (y * size + x) * 4;
-    buf[i] = color[0]; buf[i + 1] = color[1]; buf[i + 2] = color[2]; buf[i + 3] = 255;
-  }
-
-  function setPixelAA(px, py, alpha) {
-    const x = Math.round(px);
-    const y = Math.round(py);
-    if (x < 0 || x >= size || y < 0 || y >= size) return;
-    const i = (y * size + x) * 4;
-    if (buf[i + 3] >= alpha) return; // don't overwrite stronger pixel
-    buf[i] = color[0]; buf[i + 1] = color[1]; buf[i + 2] = color[2]; buf[i + 3] = alpha;
-  }
-
-  // Draw ring (outer circle)
-  const ringR = 5.0;
-  const ringThick = 1.8;
-  for (let a = 0; a < 360; a += 1) {
-    const rad = a * Math.PI / 180;
-    for (let t = -ringThick / 2; t <= ringThick / 2; t += 0.4) {
-      setPixel(cx + (ringR + t) * Math.cos(rad), cy + (ringR + t) * Math.sin(rad));
-    }
-  }
-
-  // Center dot
-  for (let dx = -1.5; dx <= 1.5; dx += 0.5) {
-    for (let dy = -1.5; dy <= 1.5; dy += 0.5) {
-      if (dx * dx + dy * dy <= 2.0) setPixel(cx + dx, cy + dy);
-    }
-  }
-
-  // 8 rays
-  const rayInner = 8.5;
-  const rayOuter = 13.5;
-  const rayThick = 2.0;
-  for (let i = 0; i < 8; i++) {
-    const angle = i * 45 * Math.PI / 180;
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    const perpCos = Math.cos(angle + Math.PI / 2);
-    const perpSin = Math.sin(angle + Math.PI / 2);
-    for (let d = rayInner; d <= rayOuter; d += 0.3) {
-      for (let t = -rayThick / 2; t <= rayThick / 2; t += 0.4) {
-        setPixel(cx + d * cos + t * perpCos, cy + d * sin + t * perpSin);
-      }
-    }
-    // Rounded ray ends
-    for (let dx = -rayThick / 2; dx <= rayThick / 2; dx += 0.4) {
-      for (let dy = -rayThick / 2; dy <= rayThick / 2; dy += 0.4) {
-        if (dx * dx + dy * dy <= (rayThick / 2) * (rayThick / 2)) {
-          // Inner cap
-          setPixel(cx + rayInner * cos + dx * perpCos + dy * cos, cy + rayInner * sin + dx * perpSin + dy * sin);
-          // Outer cap
-          setPixel(cx + rayOuter * cos + dx * perpCos + dy * cos, cy + rayOuter * sin + dx * perpSin + dy * sin);
-        }
-      }
-    }
-  }
-
-  return nativeImage.createFromBuffer(buf, { width: size, height: size });
+  return createTrayIcon(nativeImage, state);
 }
 
 function updateTray(connState) {
@@ -317,18 +287,30 @@ function updateTray(connState) {
   // Build context menu with RDP status
   const rdpSessions = rdpManager ? rdpManager.getActiveSessions() : [];
 
+  // Ready update: a mandatory one goes to the top, an optional one stays below
+  const updateItems = updateMenuItems({
+    update: pendingUpdate,
+    mandatory: !!updater?.isMandatory(),
+    t,
+    install: () => installUpdate(),
+  });
+
   const contextMenu = Menu.buildFromTemplate([
     { label: `GateControl Pro - ${statusText}`, enabled: false, icon: getIcon(connState) },
     { type: 'separator' },
+    ...updateItems.top,
     {
       label: connState === 'connected' ? t('action.disconnect') : t('action.connect'),
+      // Always-on policy: no manual disconnect (hint in the label)
+      enabled: !(connState === 'connected' && policyLocks().disconnect),
       click: () => connState === 'connected' ? disconnectTunnel() : connectTunnel(),
     },
     { type: 'separator' },
     {
-      label: t('killswitch.label'),
+      label: policyLocks().killSwitch ? `${t('killswitch.label')} (${t('policy.lockedHint')})` : t('killswitch.label'),
       type: 'checkbox',
       checked: store.get('tunnel.killSwitch', false),
+      enabled: !policyLocks().killSwitch,
       click: (item) => toggleKillSwitch(item.checked),
     },
     ...(rdpSessions.length > 0 ? [
@@ -341,9 +323,10 @@ function updateTray(connState) {
     ] : []),
     { type: 'separator' },
     { label: t('tray.openWindow'), click: () => showWindow() },
-    ...(pendingUpdate ? [
+    ...updateItems.bottom,
+    ...(portalUrl ? [
       { type: 'separator' },
-      { label: t('tray.installUpdate', { version: pendingUpdate.version }), click: () => installUpdate() },
+      { label: t('portal.open'), click: () => openPortalSafe() },
     ] : []),
     { type: 'separator' },
     {
@@ -376,14 +359,17 @@ function createTray() {
 
 // ── Fenster ──────────────────────────────────────────────────
 function createWindow() {
+  const storedTheme = store.get('app.theme', 'dark');
+  const lightBg = storedTheme === 'light'
+    || (storedTheme === 'system' && !require('electron').nativeTheme.shouldUseDarkColors);
   mainWindow = new BrowserWindow({
-    width: BASE_WIDTH,
-    minWidth: BASE_WIDTH,
-    height: store.get('app.windowHeight', 800),
-    minHeight: 500,
+    width: Math.max(MIN_WIDTH, store.get('app.windowWidth', DEFAULT_WIDTH)),
+    minWidth: MIN_WIDTH,
+    height: Math.max(MIN_HEIGHT, store.get('app.windowHeight', DEFAULT_HEIGHT)),
+    minHeight: MIN_HEIGHT,
     resizable: true,
     frame: false,
-    backgroundColor: store.get('app.theme', 'dark') === 'light' ? '#F8F9FB' : '#0F1117',
+    backgroundColor: lightBg ? '#F3F5F8' : '#0D1015',
     titleBarStyle: 'hidden',
     show: false,
     icon: app.isPackaged
@@ -406,7 +392,8 @@ function createWindow() {
   });
 
   mainWindow.on('resize', () => {
-    const [, height] = mainWindow.getSize();
+    const [width, height] = mainWindow.getSize();
+    store.set('app.windowWidth', width);
     store.set('app.windowHeight', height);
   });
 
@@ -422,21 +409,6 @@ function createWindow() {
   });
 }
 
-/**
- * Resize window for RDP panel open/close.
- */
-function setWindowWidth(expanded) {
-  if (!mainWindow) return;
-  const [, height] = mainWindow.getSize();
-  const targetWidth = expanded ? EXPANDED_WIDTH : BASE_WIDTH;
-
-  mainWindow.setMinimumSize(targetWidth, 500);
-  mainWindow.setMaximumSize(targetWidth, 99999);
-  mainWindow.setSize(targetWidth, height, true);
-
-  rdpPanelOpen = expanded;
-}
-
 function showWindow() {
   if (mainWindow) {
     mainWindow.show();
@@ -447,6 +419,42 @@ function showWindow() {
 function quitApp() {
   app.isQuitting = true;
   app.quit();
+}
+
+// ── Client-Richtlinie ────────────────────────────────────────
+function policyLocks() {
+  return clientPolicyUtil.locks(clientPolicy ? clientPolicy.getPolicy() : null);
+}
+
+/**
+ * Apply the (cached or freshly fetched) client policy: force the store
+ * values and act on what changed. Runs at start-up with the cached policy
+ * (offline-safe) and on every policy change.
+ */
+async function applyClientPolicy({ startup = false } = {}) {
+  if (!clientPolicy) return;
+  const policy = clientPolicy.getPolicy();
+  const changed = applyPolicyToStore(store, policy, log);
+  if (Object.keys(changed).length) log.info(`Client policy applied: ${JSON.stringify(changed)}`);
+
+  if (changed['tunnel.killSwitch'] === true && tunnelState.connected && !killSwitchSvc.enabled) {
+    try { await killSwitchSvc.enable(WG_CONFIG_FILE); } catch (err) { log.error('Kill-switch (policy) failed:', err.message); }
+  }
+  if (Object.prototype.hasOwnProperty.call(changed, 'app.startWithWindows') && !e2e) {
+    setAutostartTask(changed['app.startWithWindows']).catch((err) => log.warn('Autostart (policy) failed:', err.message));
+  }
+  if (!startup) {
+    const hasServer = store.get('server.url', '') && store.get('server.apiKey', '');
+    if (Object.prototype.hasOwnProperty.call(changed, 'tunnel.splitTunnel') && tunnelState.connected && !isReconnecting) {
+      await disconnectTunnel();
+      await connectTunnel();
+    } else if (policy.autoConnect !== 'user' && hasServer && !tunnelState.connected && !isReconnecting) {
+      connectTunnel().catch(() => {});
+    }
+  }
+  broadcastState(tunnelState.connected ? 'connected' : 'disconnected');
+  updateTray(tunnelState.connected ? 'connected' : 'disconnected');
+  mainWindow?.webContents.send('policy:changed', clientPolicy.getState());
 }
 
 // ── Tunnel Functions (stubs -- delegate to core services) ─────
@@ -469,6 +477,8 @@ function broadcastState(status, error = null) {
 }
 
 async function connectTunnel() {
+  // Block external (user/tray) connect calls while the reconnect loop owns the
+  // tunnel; the reconnect loop drives wgService directly and never calls this.
   if (isReconnecting) {
     log.debug('Reconnect already in progress, skipping connectTunnel');
     return;
@@ -483,15 +493,25 @@ async function connectTunnel() {
     const apiKey = store.get('server.apiKey');
 
     if (serverUrl && apiKey) {
+      let config = null;
       try {
-        const config = await apiClient.fetchConfig();
-        if (config) {
-          await wgService.writeConfig(WG_CONFIG_FILE, config);
-          store.set('tunnel.configPath', WG_CONFIG_FILE);
-          log.info('Configuration updated from server');
-        }
+        config = await apiClient.fetchConfig();
       } catch (err) {
         log.warn('Config fetch failed, using local config:', err.message);
+      }
+      if (config) {
+        // Fail-closed: a bad server answer must not clobber a good local
+        // config (and must not become the tunnel config) — abort the connect.
+        const validation = validateWgConfig(config);
+        if (!validation.ok) {
+          throw new Error('Invalid WireGuard config: ' + validation.errors.join(', '));
+        }
+        if (validation.warnings && validation.warnings.length > 0) {
+          log.warn('Config warnings: ' + validation.warnings.join(', '));
+        }
+        await wgService.writeConfig(WG_CONFIG_FILE, config);
+        store.set('tunnel.configPath', WG_CONFIG_FILE);
+        log.info('Configuration updated from server');
       }
     }
 
@@ -524,6 +544,26 @@ async function connectTunnel() {
 
     updateTray('connected');
     broadcastState('connected');
+
+    // ── Portal auto-open ─────────────────────────────────────
+    async function refreshPortalUrl() {
+      await apiClient.getPermissions();
+      portalUrl = apiClient.portalUrl;
+      autoOpenPortal = apiClient.autoOpenPortal;
+      // ponytail: getPermissions() catches internally; on failure portalUrl retains prior value
+      if (!portalUrl) log.warn('portal url fetch returned empty');
+    }
+    await refreshPortalUrl();
+    if (!portalUrl) { await new Promise(r => setTimeout(r, 1500)); await refreshPortalUrl(); }
+    updateTray('connected'); // refresh so portal tray item appears
+    if (mainWindow) mainWindow.webContents.send('portal-url', portalUrl);
+    const since = tunnelState.connectedSince ? tunnelState.connectedSince.getTime() : Date.now();
+    // Auto-open only on a user-initiated connect. The reconnect loop uses a
+    // separate path that never runs this block, so a reconnect can't re-open.
+    if (shouldOpenPortal({ portalUrl, autoOpenPortal, connectedSince: since, lastOpenedSince: portalOpenedSince })) {
+      portalOpenedSince = since;
+      openPortalSafe();
+    }
 
     if (connectionMonitor) connectionMonitor.start();
 
@@ -587,7 +627,7 @@ async function disconnectTunnel() {
 
     await wgService.disconnect();
 
-    if (store.get('tunnel.killSwitch', false)) {
+    if (killSwitchSvc.enabled || store.get('tunnel.killSwitch', false)) {
       await killSwitchSvc.disable();
     }
 
@@ -595,6 +635,13 @@ async function disconnectTunnel() {
     tunnelState.connectedSince = null;
     tunnelState.rxBytes = 0;
     tunnelState.txBytes = 0;
+
+    // Reset portal only on real disconnect, not during a reconnect transient
+    if (!isReconnecting) {
+      portalOpenedSince = null;
+      portalUrl = null;
+      if (mainWindow) mainWindow.webContents.send('portal-url', null);
+    }
 
     updateTray('disconnected');
     broadcastState('disconnected');
@@ -627,12 +674,50 @@ async function toggleRdpAllow(enabled) {
   broadcastState(tunnelState.connected ? 'connected' : 'disconnected');
 }
 
-function installUpdate() {
-  if (pendingUpdate?.installerPath) {
-    const { shell } = require('electron');
-    shell.openPath(pendingUpdate.installerPath);
-    setTimeout(() => app.quit(), 1000);
+// "Update erforderlich" notification, once per version and app session.
+function notifyMandatoryUpdate(info) {
+  if (!info?.version || mandatoryNotifiedVersion === info.version) return;
+  mandatoryNotifiedVersion = info.version;
+  const notice = mandatoryNotice(info, t);
+  const n = new Notification({ title: `GateControl Pro - ${notice.title}`, body: notice.body });
+  n.on('click', () => showWindow());
+  n.show();
+}
+
+// Installs the update the updater has downloaded and verified. Relies on the
+// updater's state, not on pendingUpdate: a manual "check for updates" stores
+// the release info without an installer path, so "Neustart" in the toast and
+// the tray entry used to do nothing.
+async function installUpdate() {
+  if (!updater?.isUpdateReady()) {
+    log.warn('Update-Installation angefordert, aber kein geprüftes Update bereit');
+    return false;
   }
+
+  log.info('Update-Installation gestartet...');
+
+  // Tunnel down and firewall lifted so the installer can replace the files;
+  // the kill-switch preference stays and applies again on the next connect.
+  if (tunnelState.connected) {
+    try {
+      await disconnectTunnel();
+    } catch (err) {
+      log.error('Tunnel konnte vor dem Update nicht getrennt werden:', err.message);
+    }
+  }
+  if (killSwitchSvc?.enabled) {
+    try {
+      await killSwitchSvc.disable();
+    } catch (err) {
+      log.error('Kill-Switch konnte vor dem Update nicht deaktiviert werden:', err.message);
+    }
+  }
+
+  // Re-hashes the installer before starting it.
+  if (!updater.install()) return false;
+
+  setTimeout(() => quitApp(), 1500);
+  return true;
 }
 
 // ── Services initialisieren ──────────────────────────────────
@@ -643,18 +728,26 @@ function initializeServices() {
 
   apiClient = new ApiClientPro(serverUrl, apiKey, log, peerId, {
     clientVersion: require('../../package.json').version,
+    clientType: 'pro',
   });
 
-  wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
-  killSwitchSvc = new KillSwitch(log);
-  rdpAllowSvc = new RdpAllowSvc(log);
+  // Nur signierte Updates: ohne echten Public Key bleibt der Updater aus.
+  updater = new Updater({
+    serverUrl, apiKey, log, clientType: 'pro', product: 'pro',
+    publicKey: loadUpdatePublicKey({ appRoot: path.join(__dirname, '..', '..') }),
+  });
 
-  const rdpSigner = process.platform === 'win32'
-    ? new RdpSigner({
-        log,
-        certDir: path.join(app.getPath('userData'), 'rdp-signing'),
-      })
-    : null;
+  clientPolicy = new ClientPolicyService({
+    apiClient, store, log,
+    interval: store.get('app.configPollInterval', 300) * 1000,
+  });
+  // Heartbeat / permissions answers carry the server's policy version.
+  apiClient.onPolicyVersion = (v) => { clientPolicy.noteVersion(v); };
+  clientPolicy.onChange(() => { applyClientPolicy().catch((err) => log.warn('Client policy apply failed:', err.message)); });
+
+  wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
+  killSwitchSvc = new KillSwitch(log, { edition: 'pro' });
+  rdpAllowSvc = new RdpAllowSvc(log, { edition: 'pro' });
 
   rdpManager = new RdpManager({
     apiClient,
@@ -662,26 +755,6 @@ function initializeServices() {
     store,
     getTunnelState: () => tunnelState,
     getPeerInfo: () => apiClient.getPeerInfo(),
-    signer: rdpSigner,
-  });
-
-  // One-time UI notice when rdpsign.exe is missing on this machine and
-  // can't be auto-restored from WinSxS. Delivered via Notification (so
-  // the user sees it even with the window minimized) AND IPC (so the
-  // renderer can show an inline hint in the RDP view if it wants to).
-  rdpManager.on('signing-unavailable', (data) => {
-    log.warn(`RDP signing unavailable on this machine (${data?.reason || 'unknown'})`);
-    try {
-      new Notification({
-        title: 'GateControl Pro',
-        body: t('notify.rdpSigningUnavailable'),
-      }).show();
-    } catch (err) {
-      log.debug('Failed to show signing-unavailable notification:', err.message);
-    }
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('rdp:signing-unavailable', data);
-    }
   });
 
   rdpWolClient = new RdpWolClient({ apiClient, log });
@@ -692,14 +765,41 @@ function initializeServices() {
     onDisconnect: async () => {
       if (isReconnecting) return;
       isReconnecting = true;
-      log.info('Connection lost, attempting reconnect...');
-      try {
-        await disconnectTunnel();
-        await connectTunnel();
-      } catch (err) {
-        log.error('Reconnect failed:', err.message);
+      log.warn('Connection lost, attempting reconnect...');
+      tunnelState.connected = false;
+      updateTray('connecting');
+      broadcastState('reconnecting');
+
+      const maxRetries = 10;
+      const splitRoutes = store.get('tunnel.splitTunnel') ? store.get('tunnel.splitRoutes', '') : null;
+      for (let i = 0; i < maxRetries; i++) {
+        await new Promise(r => setTimeout(r, reconnectDelay(i)));
+        log.info(`Reconnect attempt ${i + 1}/${maxRetries}...`);
+        try {
+          await wgService.disconnect().catch(() => {});
+          await wgService.connect(WG_CONFIG_FILE, splitRoutes);
+          tunnelState.connected = true;
+          tunnelState.connectedSince = new Date();
+          isReconnecting = false;
+          updateTray('connected');
+          broadcastState('connected');
+          // Restore the portal button/tray after a reconnect, but do NOT
+          // auto-open (FORK B: only user-initiated connects open the browser).
+          if (mainWindow) mainWindow.webContents.send('portal-url', portalUrl);
+          connectionMonitor.start();
+          new Notification({ title: 'GateControl Pro', body: t('notify.reconnected') }).show();
+          log.info('Reconnect successful');
+          return;
+        } catch (err) {
+          log.warn(`Reconnect attempt ${i + 1} failed: ${err.message}`);
+        }
       }
+
       isReconnecting = false;
+      updateTray('disconnected');
+      broadcastState('error', t('notify.reconnectFailed'));
+      new Notification({ title: 'GateControl Pro', body: t('notify.reconnectFailed') }).show();
+      log.error('All reconnect attempts failed');
     },
     onPeerDisabled: async (peerInfo) => {
       log.warn(`Peer disabled on server (id: ${peerInfo?.id}, name: ${peerInfo?.name}) — disconnecting`);
@@ -726,8 +826,11 @@ function initializeServices() {
       tunnelState.rxBytes = rx;
       tunnelState.txBytes = tx;
       tunnelState.handshake = stats.handshake || null;
+      tunnelState.handshakeTimestamp = stats.handshakeTimestamp || null;
       broadcastState('connected');
     },
+    // Admin asked for a support bundle → ask the user (core sender).
+    onSupportBundleRequest: (request) => supportBundle?.onServerRequest(request),
     wgService,
     log,
   });
@@ -774,341 +877,168 @@ function initializeServices() {
 }
 
 // ── IPC Handlers ─────────────────────────────────────────────
+const AUTOSTART_TASK = 'GateControlProAutostart';
+
+// Autostart via Task Scheduler (requireAdministrator: login items would not
+// start the app elevated).
+async function setAutostartTask(enabled) {
+  if (enabled) {
+    const exePath = app.getPath('exe');
+    await execFileAsync('schtasks', [
+      '/Create', '/F',
+      '/TN', AUTOSTART_TASK,
+      '/TR', `"${exePath}"`,
+      '/SC', 'ONLOGON',
+      '/RL', 'HIGHEST',
+      '/DELAY', '0000:10',
+    ]);
+    log.info(`Autostart enabled: ${exePath}`);
+  } else {
+    await execFileAsync('schtasks', ['/Delete', '/F', '/TN', AUTOSTART_TASK]);
+    log.info('Autostart disabled');
+  }
+}
+
+// Which DNS server does the system use right now?
+async function checkSystemDns() {
+  try {
+    const connected = tunnelState.connected;
+    const ksActive = killSwitchSvc?.enabled || false;
+
+    let dnsServer = null;
+    let resolveOk = false;
+    try {
+      const { stdout } = await execFileAsync('nslookup', ['cloudflare.com'], { timeout: 5000 });
+      const match = stdout.match(/Address:\s*([\d.]+)/);
+      if (match) dnsServer = match[1];
+      resolveOk = stdout.includes('Name:') || stdout.includes('Addresses:');
+    } catch {
+      resolveOk = false;
+    }
+
+    return { connected, killSwitch: ksActive, dnsServer, resolveOk };
+  } catch (err) {
+    log.warn('DNS system check failed:', err.message);
+    return { connected: false, killSwitch: false, dnsServer: null, resolveOk: false };
+  }
+}
+
+// Common channels come from the hardened core handlers (config:set allowlist,
+// validated config imports, setup codes incl. setup QR, https-only server
+// setup, http(s)-only shell:open-external); Pro adds/overrides the rest.
 function registerIpcHandlers() {
-  // ── Locale ─────────────────────────────────────────────
-  ipcMain.handle('locale:set', (_, locale) => {
-    setLocale(locale);
-    store.set('app.locale', getLocale());
-    updateTray(tunnelState.connected ? 'connected' : 'disconnected');
-    mainWindow?.webContents.send('locale:changed', getLocale());
-  });
-
-  ipcMain.handle('locale:get', () => getLocale());
-
-  // ── App ─────────────────────────────────────────────────
-  ipcMain.handle('app:version', () => require('../../package.json').version);
-
-  // ── Config ──────────────────────────────────────────────
-  ipcMain.handle('config:get', (_, key) => store.get(key));
-  ipcMain.handle('config:set', (_, key, value) => {
-    try {
-      store.set(key, value);
-    } catch (err) {
-      log.error(`Config set failed (${key}):`, err.message);
-      throw err;
-    }
-  });
-  ipcMain.handle('config:getAll', () => store.store);
-
-  // ── Config Import ──────────────────────────────────────
-  ipcMain.handle('config:import-file', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: t('dialog.importTitle'),
-      filters: [
-        { name: t('dialog.filterConfig'), extensions: ['conf'] },
-        { name: t('dialog.filterAll'), extensions: ['*'] },
-      ],
-      properties: ['openFile'],
-    });
-    if (result.canceled) return { success: false };
-    try {
-      const content = fsSync.readFileSync(result.filePaths[0], 'utf-8');
-      fsSync.mkdirSync(path.dirname(WG_CONFIG_FILE), { recursive: true });
-      fsSync.writeFileSync(WG_CONFIG_FILE, content, { mode: 0o600 });
-      store.set('tunnel.configPath', WG_CONFIG_FILE);
-      log.info('Config imported:', result.filePaths[0]);
-      return { success: true, path: result.filePaths[0] };
-    } catch (err) {
-      log.error('Config import failed:', err.message);
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('config:import-qr', async (_, imageData) => {
-    try {
-      const jsQR = require('jsqr');
-      const { data, width, height } = imageData;
-      const code = jsQR(new Uint8ClampedArray(data), width, height);
-      if (!code) return { success: false, error: t('server.qrTimeout') };
-      fsSync.mkdirSync(path.dirname(WG_CONFIG_FILE), { recursive: true });
-      fsSync.writeFileSync(WG_CONFIG_FILE, code.data, { mode: 0o600 });
-      store.set('tunnel.configPath', WG_CONFIG_FILE);
-      log.info('Config imported via QR code');
-      return { success: true, config: code.data };
-    } catch (err) {
-      log.error('QR import failed:', err.message);
-      return { success: false, error: err.message };
-    }
-  });
-
-  // ── WireGuard ──────────────────────────────────────────
-  ipcMain.handle('wireguard:check', () => ({
-    installed: true,
-    version: 'wireguard-nt (embedded)',
-  }));
-
-  // ── Kill-Switch ────────────────────────────────────────
-  ipcMain.handle('killswitch:toggle', async (_, enabled) => {
-    try {
-      await toggleKillSwitch(enabled);
-    } catch (err) {
-      log.error('Kill-switch failed:', err.message);
-    }
-  });
-
-  // ── RDP Allow ─────────────────────────────────────────
-  ipcMain.handle('rdp-allow:toggle', async (_, enabled) => {
-    try {
-      await toggleRdpAllow(enabled);
-    } catch (err) {
-      log.error('RDP Allow failed:', err.message);
-    }
-  });
-
-  // ── Permissions / Traffic / DNS / Peer-Info ─────────────
-  ipcMain.handle('permissions:get', () => apiClient?.getPermissions());
-  ipcMain.handle('traffic:stats', () => apiClient?.getTraffic());
-  ipcMain.handle('dns:leak-test', () => apiClient?.dnsCheck());
-  ipcMain.handle('dns:check-system', async () => {
-    try {
-      const connected = tunnelState.connected;
-      const ksActive = killSwitchSvc?.enabled || false;
-
-      // Run nslookup to determine which DNS server the system uses
-      let dnsServer = null;
-      let resolveOk = false;
+  const ctx = {
+    app,
+    dialog,
+    getMainWindow: () => mainWindow,
+    store,
+    wgService,
+    apiClient,
+    ApiClientClass: ApiClientPro,
+    killSwitch: killSwitchSvc,
+    clientPolicy,
+    getUpdater: () => updater,
+    log,
+    connectTunnel,
+    disconnectTunnel,
+    toggleKillSwitch: async (enabled) => {
       try {
-        const { stdout } = await execFileAsync('nslookup', ['cloudflare.com'], { timeout: 5000 });
-        const match = stdout.match(/Address:\s*([\d.]+)/);
-        if (match) dnsServer = match[1];
-        resolveOk = stdout.includes('Name:') || stdout.includes('Addresses:');
-      } catch {
-        resolveOk = false;
+        await toggleKillSwitch(enabled === true);
+      } catch (err) {
+        log.error('Kill-switch failed:', err.message);
+        new Notification({ title: 'GateControl Pro', body: `Kill-Switch: ${err.message}` }).show();
       }
-
-      return { connected, killSwitch: ksActive, dnsServer, resolveOk };
-    } catch (err) {
-      log.warn('DNS system check failed:', err.message);
-      return { connected: false, killSwitch: false, dnsServer: null, resolveOk: false };
-    }
-  });
-  ipcMain.handle('peer:info', () => apiClient?.getPeerInfo());
-
-  // ── Window ──────────────────────────────────────────────
-  ipcMain.on('window:minimize', () => mainWindow?.minimize());
-  ipcMain.on('window:close', () => mainWindow?.hide());
-
-  // ── Panel Resize ────────────────────────────────────────
-  ipcMain.handle('panel:open', () => {
-    setWindowWidth(true);
-    if (rdpManager) rdpManager.startStatusPolling();
-    return true;
-  });
-
-  ipcMain.handle('panel:close', () => {
-    setWindowWidth(false);
-    if (rdpManager) rdpManager.stopStatusPolling();
-    return true;
-  });
-
-  // ── RDP Handlers ────────────────────────────────────────
-  ipcMain.handle('rdp:list', async () => {
-    return rdpManager.refreshServices();
-  });
-
-  ipcMain.handle('rdp:connect', async (_, routeId, opts) => {
-    return rdpManager.connect(routeId, opts);
-  });
-
-  ipcMain.handle('rdp:disconnect', async (_, routeId) => {
-    rdpManager.disconnect(routeId);
-    return true;
-  });
-
-  ipcMain.handle('rdp:detail', async (_, routeId) => {
-    try {
-      return await apiClient.getRdpConnect(routeId);
-    } catch (err) {
-      log.warn('RDP detail fetch failed:', err.message);
-      return null;
-    }
-  });
-
-  ipcMain.handle('rdp:wol', async (_, routeId) => {
-    return rdpWolClient.wake(routeId);
-  });
-
-  ipcMain.handle('rdp:status', async (_, routeId) => {
-    if (routeId) {
-      return apiClient.getRdpStatus(routeId);
-    }
-    return apiClient.getRdpBulkStatus();
-  });
-
-  ipcMain.handle('rdp:active-sessions', () => {
-    return rdpManager.getActiveSessions();
-  });
-
-  ipcMain.handle('rdp:pin-toggle', (_, pinned) => {
-    store.set('rdp.panelPinned', pinned);
-    return pinned;
-  });
-
-  // ── Tunnel ──────────────────────────────────────────────
-  ipcMain.handle('tunnel:connect', async () => {
-    await connectTunnel();
-  });
-
-  ipcMain.handle('tunnel:disconnect', async () => {
-    await disconnectTunnel();
-  });
-
-  ipcMain.handle('tunnel:status', () => tunnelState);
-
-  // ── Server ──────────────────────────────────────────────
-  ipcMain.handle('server:setup', async (_, opts) => {
-    try {
-      apiClient.configure(opts.url, opts.apiKey);
-      const result = await apiClient.register();
-      store.set('server.url', opts.url);
-      store.set('server.apiKey', opts.apiKey);
-      store.set('server.peerId', String(result.peerId || ''));
-      log.info(`Server registered: peerId=${result.peerId}`);
-      return { success: true, peerId: String(result.peerId || '') };
-    } catch (err) {
-      log.error('Server registration failed:', err.message);
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('server:test', async (_, opts) => {
-    try {
-      const testClient = new ApiClientPro(opts.url, opts.apiKey, log);
-      await testClient.ping();
-      return { success: true };
-    } catch (err) {
-      log.error('Server test failed:', err.message);
-      return { success: false, error: err.message };
-    }
-  });
-
-  // ── Shell ───────────────────────────────────────────────
-  ipcMain.handle('shell:open-external', (_, url) => {
-    const { shell } = require('electron');
-    return shell.openExternal(url);
-  });
-
-  // ── Services ────────────────────────────────────────────
-  ipcMain.handle('services:list', async () => {
-    return apiClient.getServices();
-  });
-
-  // ── Logs ────────────────────────────────────────────────
-  ipcMain.handle('logs:get', async (_, opts = {}) => {
-    try {
-      const logPath = log.transports.file.getFile().path;
-      const fs = require('fs');
-      const stat = fs.statSync(logPath);
-
-      // Read max 1 MB from end of file
-      const MAX_READ = 1024 * 1024;
-      let content;
-      if (stat.size > MAX_READ) {
-        const fd = fs.openSync(logPath, 'r');
-        const buf = Buffer.alloc(MAX_READ);
-        fs.readSync(fd, buf, 0, MAX_READ, stat.size - MAX_READ);
-        fs.closeSync(fd);
-        content = buf.toString('utf-8');
-        const firstNl = content.indexOf('\n');
-        if (firstNl > 0) content = content.slice(firstNl + 1);
-      } else {
-        content = fs.readFileSync(logPath, 'utf-8');
+      // UI auf den tatsächlichen Zustand zurücksetzen (auch nach Fehler)
+      broadcastState(tunnelState.connected ? 'connected' : 'disconnected');
+    },
+    toggleRdpAllow: async (enabled) => {
+      try {
+        await toggleRdpAllow(enabled === true);
+      } catch (err) {
+        log.error('RDP Allow failed:', err.message);
       }
-
-      let lines = content.split('\n').filter(l => l.trim());
-
-      // Time filter
-      if (opts && opts.period && opts.period !== 'all') {
-        const hours = opts.period === '24h' ? 24 : opts.period === '12h' ? 12 : opts.period === '1h' ? 1 : 0;
-        if (hours > 0) {
-          const cutoff = new Date(Date.now() - hours * 3600000);
-          lines = lines.filter(line => {
-            const m = line.match(/\[(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
-            if (!m) return true;
-            return new Date(m[1]) >= cutoff;
-          });
-        }
-      }
-
-      // Reverse: newest first
-      lines.reverse();
-      return lines.join('\n');
-    } catch {
-      return t('logs.empty');
-    }
+    },
+    installUpdate: async () => installUpdate(),
+    openPortal: () => openPortalSafe(),
+    getTunnelState: () => tunnelState,
+    wgConfigFile: WG_CONFIG_FILE,
+    setLocale,
+    getLocale,
+    onLocaleChanged: (locale) => {
+      updateTray(tunnelState.connected ? 'connected' : 'disconnected');
+      mainWindow?.webContents.send('locale:changed', locale);
+    },
+    checkSystemDns,
+    setAutostart: setAutostartTask,
+    rdpManager,
+    rdpWolClient,
+    setRdpPanelOpen: (open) => { rdpPanelOpen = open; },
+    getMachineFingerprint,
+    edition: 'pro',
+    // Result of a bundle the admin requested (the button shows its own toast).
+    onSupportResult: (res) => {
+      if (!res || res.cancelled) return;
+      new Notification({ title: 'GateControl Pro', body: res.success ? t('support.success') : res.error }).show();
+    },
+  };
+  // One sender for the Settings button and admin requests (connection monitor).
+  // The bundle carries the short device ID (client.deviceId) for the admin.
+  supportBundle = createSupportBundleSender(ctx, {
+    collect: withDeviceId(collectSupportBundle, () => shortDeviceId(getMachineFingerprint, log)),
   });
-
-  ipcMain.handle('logs:export', async () => {
-    try {
-      return log.transports.file.getFile().path;
-    } catch {
-      return null;
-    }
-  });
-
-  // ── Autostart (Task Scheduler wegen requireAdministrator) ──
-  ipcMain.handle('autostart:set', async (_, enabled) => {
-    const taskName = 'GateControlProAutostart';
-    try {
-      if (enabled) {
-        const exePath = app.getPath('exe');
-        await execFileAsync('schtasks', [
-          '/Create', '/F',
-          '/TN', taskName,
-          '/TR', `"${exePath}"`,
-          '/SC', 'ONLOGON',
-          '/RL', 'HIGHEST',
-          '/DELAY', '0000:10',
-        ]);
-        log.info(`Autostart enabled: ${exePath}`);
-      } else {
-        await execFileAsync('schtasks', ['/Delete', '/F', '/TN', taskName]);
-        log.info('Autostart disabled');
-      }
-    } catch (err) {
-      log.error('Autostart configuration failed:', err.message);
-    }
-    store.set('app.startWithWindows', enabled);
-    return enabled;
-  });
-
-  // ── Update ──────────────────────────────────────────────
-  ipcMain.handle('update:check', async () => {
-    if (!updater) return null;
-    return updater.check();
-  });
-
-  ipcMain.handle('update:install', async () => {
-    installUpdate();
-  });
+  registerProIpc(ipcMain, { ...ctx, supportBundle });
 }
 
 // ── App Lifecycle ────────────────────────────────────────────
 app.on('ready', () => {
   initializeServices();
+
+  // Ältere Versionen haben mstsc global die Zertifikatswarnung abgewöhnt
+  // (AuthenticationLevelOverride) und ein selbstsigniertes Code-Signing-
+  // Zertifikat in CurrentUser\Root installiert. Beides wird einmalig
+  // zurückgebaut (nur was GateControl selbst angelegt hat).
+  runRdpTrustMigration({
+    store,
+    log,
+    userDataDir: app.getPath('userData'),
+  }).catch(err => log.warn('RDP trust migration failed:', err.message));
+
+  // Reste eines Absturzes (Regeln + Block-Policy) entfernen, bevor
+  // irgendetwas verbindet; connectTunnel aktiviert den Kill-Switch neu.
+  const killSwitchRecovery = recoverKillSwitch({ killSwitch: killSwitchSvc, store, wgService, log });
+
+  // RDP-Freigabe mit der Einstellung abgleichen (verwaiste Regel nach
+  // Absturz entfernen bzw. Regel wiederherstellen). Die alte gemeinsame
+  // Regel GateControl_RDP_Allow_In_3389 entfernt der Core nur, wenn die
+  // Community-Edition weder installiert ist noch laeuft.
+  const rdpWanted = store.get('tunnel.rdpAllow', false);
+  rdpAllowSvc.reconcile({ wanted: rdpWanted, configPath: WG_CONFIG_FILE })
+    .then((active) => { if (rdpWanted && !active) store.set('tunnel.rdpAllow', false); })
+    .catch(err => log.warn('RDP allow reconcile failed:', err.message));
+  // Last known client policy first (works offline), then ask the server.
+  applyClientPolicy({ startup: true }).catch((err) => log.warn('Client policy apply failed:', err.message));
+  clientPolicy.start();
+
+  // Always-on policy: bring the tunnel back when it is down (e.g. after the
+  // reconnect loop gave up). Checked once a minute.
+  let alwaysOnAttempt = null;
+  setInterval(() => {
+    if (clientPolicy.getPolicy().autoConnect !== 'always_on') return;
+    if (tunnelState.connected || isReconnecting || alwaysOnAttempt) return;
+    if (!(store.get('server.url', '') && store.get('server.apiKey', ''))) return;
+    log.info('Always-on policy: tunnel is down, reconnecting');
+    alwaysOnAttempt = connectTunnel().catch(() => {}).finally(() => { alwaysOnAttempt = null; });
+  }, 60 * 1000).unref?.();
+
   registerIpcHandlers();
   createWindow();
   createTray();
 
-  // Autostart mit Windows synchronisieren (Task Scheduler)
-  if (store.get('app.startWithWindows', true)) {
-    const taskName = 'GateControlProAutostart';
-    const exePath = app.getPath('exe');
-    execFileAsync('schtasks', [
-      '/Create', '/F', '/TN', taskName,
-      '/TR', `"${exePath}"`,
-      '/SC', 'ONLOGON', '/RL', 'HIGHEST', '/DELAY', '0000:10',
-    ]).catch(err => log.warn('Autostart sync failed:', err.message));
+  // Autostart mit Windows synchronisieren (Task Scheduler; nicht im E2E-Test)
+  if (!e2e && store.get('app.startWithWindows', true)) {
+    setAutostartTask(true).catch(err => log.warn('Autostart sync failed:', err.message));
+  } else if (!e2e && clientPolicy.getPolicy().autostart === 'forbidden') {
+    setAutostartTask(false).catch(() => { /* task did not exist */ });
   }
 
   // Auto-Connect (Server-URL reicht, configPath nicht zwingend nötig)
@@ -1120,6 +1050,7 @@ app.on('ready', () => {
     const RETRY_DELAY = 5000;
     const attemptAutoConnect = async (attempt = 1) => {
       log.info(`Auto-Connect Versuch ${attempt}/${MAX_RETRIES}...`);
+      await killSwitchRecovery;
       try {
         await connectTunnel();
         if (!tunnelState.connected) {
@@ -1144,41 +1075,79 @@ app.on('ready', () => {
     log.info(`Auto-connect skipped: autoConnect=${store.get('tunnel.autoConnect', true)}, server=${!!hasServer}, configPath=${hasConfig}`);
   }
 
-  // Auto-Update
-  const serverUrl = store.get('server.url', '');
-  const apiKey = store.get('server.apiKey', '');
-  if (serverUrl && apiKey) {
-    updater = new Updater({ serverUrl, apiKey, log, clientType: 'pro' });
+  // Auto-Update (the updater exists from initializeServices on, so a setup
+  // done later — e.g. with a setup code — configures it; checks without a
+  // server are skipped by the updater itself)
+  // Mandatory updates (server: below the minimum version) are never
+  // installed automatically: the installer ends the app and the tunnel, so the
+  // user starts it (banner, sidebar card, tray). The notice cannot be
+  // dismissed and is shown again on every start while it is still required.
+  if (updater) {
     updater.start((release) => {
       pendingUpdate = release;
-      log.info(`Update ready: v${release.version}`);
+      log.info(`Update ready: v${release.version}${release.mandatory ? ' (mandatory)' : ''}`);
       updateTray(tunnelState.connected ? 'connected' : 'disconnected');
       if (mainWindow) {
         mainWindow.webContents.send('update:ready', release);
       }
-      new Notification({
-        title: 'GateControl Pro',
-        body: t('update.available', { version: release.version }),
-      }).show();
+      if (release.mandatory) {
+        notifyMandatoryUpdate(release);
+      } else {
+        new Notification({
+          title: 'GateControl Pro',
+          body: t('update.available', { version: release.version }),
+        }).show();
+      }
+    }, {
+      onPolicyChange: (policy) => {
+        if (mainWindow) mainWindow.webContents.send('update:policy', policy);
+        updateTray(tunnelState.connected ? 'connected' : 'disconnected');
+        if (policy.mandatory && pendingUpdate) {
+          notifyMandatoryUpdate({ version: policy.version, minVersion: policy.minVersion });
+        }
+      },
     });
   }
 });
 
 app.on('second-instance', () => showWindow());
 
-app.on('before-quit', () => {
+// Firewall-Regeln beim Beenden entfernen. Electron wartet nicht auf async
+// 'will-quit'-Handler — deshalb wird das Beenden einmal angehalten, bis
+// Kill-Switch/RDP-Allow aufgeräumt sind (mit Zeitlimit). Die
+// Kill-Switch-Einstellung bleibt erhalten; schlägt das Aufräumen fehl,
+// erledigt es der nächste Start (Zustandsdatei im userData).
+let quitCleanupDone = false;
+async function releaseFirewallOnQuit() {
+  if (killSwitchSvc?.enabled) {
+    try {
+      await killSwitchSvc.disable();
+    } catch (err) {
+      log.error('Kill-switch could not be disabled on quit:', err.message);
+    }
+  }
+  if (rdpAllowSvc?.enabled) {
+    try {
+      await rdpAllowSvc.disable();
+      store.set('tunnel.rdpAllow', false);
+    } catch (err) {
+      log.error('RDP allow could not be disabled on quit:', err.message);
+    }
+  }
+}
+
+app.on('before-quit', (e) => {
   app.isQuitting = true;
+  if (quitCleanupDone) return;
+  quitCleanupDone = true;
 
   // Critical: cleanup all RDP sessions
   if (rdpManager) {
     rdpManager.cleanupAll();
   }
-});
 
-app.on('will-quit', async () => {
-  if (killSwitchSvc) await killSwitchSvc.disable();
-  if (rdpAllowSvc?.enabled) {
-    await rdpAllowSvc.disable().catch(() => {});
-    store.set('tunnel.rdpAllow', false);
-  }
+  if (!killSwitchSvc?.enabled && !rdpAllowSvc?.enabled) return;
+  e.preventDefault();
+  const timeout = new Promise((resolve) => setTimeout(resolve, 15000));
+  Promise.race([releaseFirewallOnQuit(), timeout]).finally(() => app.quit());
 });

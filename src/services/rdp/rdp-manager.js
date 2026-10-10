@@ -27,11 +27,6 @@ const RdpMonitor = require('./rdp-monitor');
  *   'session-error'   - { routeId, error }
  *   'progress'        - { routeId, step, status }
  *   'services-update' - rdpServices[]
- *   'signing-unavailable' - { reason } — emitted at most once per process
- *                           when rdpsign.exe can neither be found nor
- *                           restored from WinSxS, so the UI can show a
- *                           one-time notice that mstsc will keep showing
- *                           the publisher warning.
  */
 class RdpManager extends EventEmitter {
   /**
@@ -41,11 +36,8 @@ class RdpManager extends EventEmitter {
    * @param {object} [opts.store] - electron-store instance for config
    * @param {function} opts.getTunnelState - Returns current tunnel state { connected }
    * @param {function} opts.getPeerInfo - Returns peer info { expiresAt }
-   * @param {object} [opts.signer] - optional RdpSigner; when present, .rdp
-   *   files are signed so mstsc shows "Trusted Publisher" instead of the
-   *   "Unbekannter Herausgeber" warning
    */
-  constructor({ apiClient, log, store, getTunnelState, getPeerInfo, signer = null }) {
+  constructor({ apiClient, log, store, getTunnelState, getPeerInfo }) {
     super();
     this.api = apiClient;
     this.log = log;
@@ -53,9 +45,8 @@ class RdpManager extends EventEmitter {
     this.getTunnelState = getTunnelState;
     this.getPeerInfo = getPeerInfo;
     this.requireE2ee = store?.get('security.requireE2ee', false) || false;
-    this.signer = signer;
 
-    this.configBuilder = new RdpConfigBuilder(log, signer);
+    this.configBuilder = new RdpConfigBuilder(log);
     this.credentialHandler = new RdpCredentialHandler(log);
     this.monitor = new RdpMonitor({ apiClient, log });
 
@@ -74,14 +65,6 @@ class RdpManager extends EventEmitter {
       this.log.warn(`RDP session timeout for route ${data.routeId}`);
       this._handleSessionTimeout(data);
     });
-
-    // Bubble up the one-time signing-unavailable signal so the renderer
-    // can tell the user why mstsc keeps showing the publisher warning.
-    if (this.signer && typeof this.signer.on === 'function') {
-      this.signer.on('unavailable', (data) => {
-        this.emit('signing-unavailable', data);
-      });
-    }
   }
 
   // ══════════════════════════════════════════════════════════
@@ -387,11 +370,10 @@ class RdpManager extends EventEmitter {
       // Clear password from memory
       password = null;
 
-      // ── Step 4b: Relax server-auth check (NLA fallback) ──
-      // Sets AuthenticationLevelOverride=0 so NLA mismatches don't block
-      // the connect. Does NOT affect the file-signature warning — that one
-      // is handled by signing the .rdp file (see RdpSigner / configBuilder).
-      await this._ensureRdpRegistryKeys();
+      // Server authentication is configured per connection in the .rdp
+      // file ("authentication level", see RdpConfigBuilder). Never touch the
+      // global AuthenticationLevelOverride — it affects every mstsc
+      // connection of the user, not just GateControl's.
 
       // ── Step 5: Start mstsc.exe ─────────────────────────
       this._emitProgress(routeId, 'mstsc', 'active');
@@ -707,40 +689,6 @@ class RdpManager extends EventEmitter {
    */
   _emitProgress(routeId, step, status) {
     this.emit('progress', { routeId, step, status });
-  }
-
-  /**
-   * Relax NLA server-authentication so a CredSSP/Kerberos hiccup does not
-   * block the connect (e.g. SPN cache lag right after the FQDN was first
-   * resolved). Sets HKCU\SOFTWARE\Microsoft\Terminal Server Client\
-   * AuthenticationLevelOverride = 0 — the same as ticking
-   * "Connect anyway" once.
-   *
-   * NOTE: This does NOT touch the "Unknown Publisher" warning shown for
-   * unsigned .rdp files. That warning is suppressed by signing the file
-   * (see RdpSigner / configBuilder). There is no registry-only bypass for
-   * the file-signature check.
-   */
-  async _ensureRdpRegistryKeys() {
-    try {
-      await new Promise((resolve, reject) => {
-        execFile('reg', [
-          'add',
-          'HKCU\\SOFTWARE\\Microsoft\\Terminal Server Client',
-          '/v', 'AuthenticationLevelOverride',
-          '/t', 'REG_DWORD',
-          '/d', '0',
-          '/f',
-        ], { timeout: 5000 }, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-      this.log.debug('RDP registry key set (AuthenticationLevelOverride=0)');
-    } catch (err) {
-      this.log.warn('Failed to set RDP registry key:', err.message);
-      // Non-fatal: mstsc will still work, just with the warning dialog
-    }
   }
 
   /**

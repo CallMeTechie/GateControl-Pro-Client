@@ -1,6 +1,7 @@
 /**
  * GateControl Pro Client -- Renderer
- * UI logic, state management, and RDP panel controller.
+ * UI logic and state for the sidebar layout: overview, remote desktops,
+ * services, log, settings and the setup assistant.
  *
  * Note: innerHTML is used ONLY for static SVG icon literals (no user data).
  * All user-facing text uses textContent for XSS safety.
@@ -8,8 +9,8 @@
 
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
-	services, traffic, dns, shell, peer, permissions, getVersion,
-	window: win, rdp, onNavigate, locale,
+	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
+	window: win, rdp, onNavigate, locale, policy: clientPolicy,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
 
@@ -17,62 +18,59 @@ const { t } = window.gatecontrol.i18n;
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-function showToast(message, type = 'error', duration = 5000) {
-	const toast = document.createElement('div');
-	toast.className = `toast toast-${type}`;
-	toast.textContent = message;
-	toast.style.cssText = 'position:fixed;top:16px;left:16px;z-index:200;padding:10px 16px;border-radius:var(--radius-sm);font-size:12px;max-width:320px;opacity:0;transition:opacity 0.3s ease;pointer-events:auto;cursor:pointer';
-	if (type === 'error') {
-		toast.style.background = 'rgba(239,68,68,0.95)';
-		toast.style.color = '#fff';
-	} else if (type === 'success') {
-		toast.style.background = 'rgba(34,197,94,0.95)';
-		toast.style.color = '#fff';
-	} else {
-		toast.style.background = 'var(--bg-3)';
-		toast.style.color = 'var(--text-1)';
-		toast.style.border = '1px solid var(--border-2)';
-	}
-	toast.addEventListener('click', () => {
-		toast.style.opacity = '0';
-		setTimeout(() => toast.remove(), 300);
-	});
-	document.body.appendChild(toast);
-	requestAnimationFrame(() => { toast.style.opacity = '1'; });
-	setTimeout(() => {
-		toast.style.opacity = '0';
-		setTimeout(() => toast.remove(), 300);
-	}, duration);
+/** Create an element with optional class list and text content. */
+function h(tag, cls, text) {
+	const node = document.createElement(tag);
+	if (cls) node.className = cls;
+	if (text !== undefined && text !== null) node.textContent = text;
+	return node;
 }
 
 function formatBytes(bytes) {
 	if (!bytes || bytes <= 0) return '0 B';
 	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	const i = Math.floor(Math.log(bytes) / Math.log(1024));
+	const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
 	const val = (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0);
 	return `${val} ${units[i]}`;
 }
 
 function formatSpeed(bytesPerSec) {
-	if (bytesPerSec < 1) return '';
+	if (!bytesPerSec || bytesPerSec < 1) return '0 B/s';
 	if (bytesPerSec < 1024) return `${Math.round(bytesPerSec)} B/s`;
 	if (bytesPerSec < 1048576) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
 	return `${(bytesPerSec / 1048576).toFixed(1)} MB/s`;
 }
 
+function formatDuration(totalSeconds) {
+	const n = Math.max(0, Math.floor(totalSeconds));
+	const hh = Math.floor(n / 3600);
+	const mm = Math.floor(n / 60) % 60;
+	const ss = n % 60;
+	return [hh, mm, ss].map((x) => String(x).padStart(2, '0')).join(':');
+}
+
+function hostOf(url) {
+	if (!url) return '';
+	try { return new URL(url).host || url; } catch { return String(url).replace(/^https?:\/\//i, '').replace(/\/.*$/, ''); }
+}
+
+function parseTags(tags) {
+	if (Array.isArray(tags)) return tags;
+	if (!tags) return [];
+	try { const p = JSON.parse(tags); return Array.isArray(p) ? p : []; } catch { return []; }
+}
+
 // Static SVG icon constants (safe string literals, no user data)
 const SVG_ICONS = {
-	connected: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
-	connecting: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>',
-	disconnected: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64A9 9 0 015.64 18.36M5.64 5.64A9 9 0 0118.36 18.36"/></svg>',
-	play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
-	playLarge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
-	wol: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
-	globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/></svg>',
-	stepPending: '<svg viewBox="0 0 24 24" fill="none" stroke="var(--text-4)" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>',
-	stepDone: '<svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
-	stepActive: '<svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
-	stepError: '<svg viewBox="0 0 24 24" fill="none" stroke="var(--error)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+	monitor: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+	play: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>',
+	wol: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+	external: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
+	trash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>',
+	close: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+	stepIcons: '<svg class="si-done" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+		+ '<svg class="si-active spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9"/></svg>'
+		+ '<svg class="si-error" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
 };
 
 /**
@@ -84,96 +82,161 @@ function setStaticIcon(element, iconKey) {
 	element.innerHTML = SVG_ICONS[iconKey]; // SAFE: static string literal from SVG_ICONS
 }
 
-function parseTags(tags) {
-	if (Array.isArray(tags)) return tags;
-	if (!tags) return [];
-	try { const p = JSON.parse(tags); return Array.isArray(p) ? p : []; } catch { return []; }
+/** Button with a static icon and a text label. */
+function iconButton(cls, iconKey, label, iconFirst = true) {
+	const btn = h('button', cls);
+	btn.type = 'button';
+	const icon = h('span');
+	icon.style.display = 'contents';
+	setStaticIcon(icon, iconKey); // SAFE: static SVG
+	const text = h('span', null, label);
+	if (iconFirst) { btn.appendChild(icon); btn.appendChild(text); } else { btn.appendChild(text); btn.appendChild(icon); }
+	return btn;
 }
 
-// ── i18n DOM update ─────────────────────────────────────────
+// ── Toasts ──────────────────────────────────────────────
+function showToast(message, type = 'error', duration = 5000) {
+	const host = $('#toasts');
+	const toast = h('div', `toast toast-${type}`);
+	toast.setAttribute('role', 'status');
+	toast.appendChild(h('span', 'dot'));
+	toast.appendChild(h('span', 'toast-text', message));
+	const closeBtn = h('button', 'btn btn-ghost');
+	closeBtn.type = 'button';
+	closeBtn.setAttribute('aria-label', t('ui.close'));
+	setStaticIcon(closeBtn, 'close'); // SAFE: static SVG
+	toast.appendChild(closeBtn);
+
+	const dismiss = () => {
+		toast.classList.remove('show');
+		setTimeout(() => toast.remove(), 300);
+	};
+	closeBtn.addEventListener('click', dismiss);
+	host.appendChild(toast);
+	requestAnimationFrame(() => toast.classList.add('show'));
+	setTimeout(dismiss, duration);
+}
+
+// ── Switches (button[role=switch]) ──────────────────────
+function setSwitch(sw, on) {
+	if (!sw) return;
+	sw.classList.toggle('on', !!on);
+	sw.setAttribute('aria-checked', on ? 'true' : 'false');
+}
+
+function isSwitchOn(sw) {
+	return !!sw && sw.classList.contains('on');
+}
+
+function bindSwitch(sw, onChange) {
+	if (!sw) return;
+	sw.addEventListener('click', () => {
+		const next = !isSwitchOn(sw);
+		setSwitch(sw, next);
+		onChange(next);
+	});
+}
+
+/** Segmented control: marks the clicked button as selected and reports its data-<attr> value. */
+const camel = (attr) => attr.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+
+function bindSeg(seg, attr, onPick) {
+	if (!seg) return;
+	seg.addEventListener('click', (e) => {
+		const btn = e.target.closest(`[data-${attr}]`);
+		if (!btn || !seg.contains(btn)) return;
+		const value = btn.dataset[camel(attr)];
+		selectSeg(seg, attr, value);
+		onPick(value);
+	});
+}
+
+function selectSeg(seg, attr, value) {
+	if (!seg) return;
+	seg.querySelectorAll(`[data-${attr}]`).forEach((b) => {
+		const on = b.dataset[camel(attr)] === value;
+		b.classList.toggle('on', on);
+		b.setAttribute(b.getAttribute('role') === 'tab' ? 'aria-selected' : 'aria-pressed', on ? 'true' : 'false');
+	});
+}
+
+// ── i18n DOM update ─────────────────────────────────────
 function updateDOM() {
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    el.textContent = t(el.dataset.i18n);
-  });
-  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-    el.placeholder = t(el.dataset.i18nPlaceholder);
-  });
-  document.querySelectorAll('[data-i18n-title]').forEach(el => {
-    el.title = t(el.dataset.i18nTitle);
-  });
-  document.documentElement.lang = window.gatecontrol.i18n.getLocale();
-
-  // Elements with mixed content (SVG + text) need special handling
-  updateMixedContentElements();
+	$$('[data-i18n]').forEach((node) => { node.textContent = t(node.dataset.i18n); });
+	$$('[data-i18n-placeholder]').forEach((node) => { node.placeholder = t(node.dataset.i18nPlaceholder); });
+	$$('[data-i18n-title]').forEach((node) => { node.title = t(node.dataset.i18nTitle); });
+	$$('[data-i18n-aria-label]').forEach((node) => { node.setAttribute('aria-label', t(node.dataset.i18nAriaLabel)); });
+	document.documentElement.lang = window.gatecontrol.i18n.getLocale();
 }
 
-function updateMixedContentElements() {
-  // DNS test button (SVG icon + text)
-  const dnsTestBtn = $('#dns-test-btn');
-  if (dnsTestBtn && !dnsTestBtn.disabled) {
-    const svg = dnsTestBtn.querySelector('svg');
-    if (svg) {
-      const svgClone = svg.cloneNode(true);
-      dnsTestBtn.textContent = '';
-      dnsTestBtn.appendChild(svgClone);
-      dnsTestBtn.appendChild(document.createTextNode('\n' + t('dns.testBtn')));
-    }
-  }
-
-  // Import file button (SVG + text)
-  const importFileBtn = $('#btn-import-file');
-  if (importFileBtn) {
-    const svg = importFileBtn.querySelector('svg');
-    if (svg) {
-      const svgClone = svg.cloneNode(true);
-      importFileBtn.textContent = '';
-      importFileBtn.appendChild(svgClone);
-      importFileBtn.appendChild(document.createTextNode('\n' + t('action.importFile')));
-    }
-  }
-
-  // Import QR button (SVG + text)
-  const importQrBtn = $('#btn-import-qr');
-  if (importQrBtn) {
-    const svg = importQrBtn.querySelector('svg');
-    if (svg) {
-      const svgClone = svg.cloneNode(true);
-      importQrBtn.textContent = '';
-      importQrBtn.appendChild(svgClone);
-      importQrBtn.appendChild(document.createTextNode('\n' + t('action.scanQr')));
-    }
-  }
-
-  // RDP filter select options
-  const filterSelect = $('#rdp-filter-select');
-  if (filterSelect && filterSelect.options.length >= 3) {
-    filterSelect.options[0].textContent = t('rdp.filterAll');
-    filterSelect.options[1].textContent = t('rdp.filterOnline');
-    filterSelect.options[2].textContent = t('rdp.filterOffline');
-  }
+/** Re-render everything that is built from translated strings at runtime. */
+function refreshTexts() {
+	updateDOM();
+	updateUI();
+	renderRdp();
+	renderServices();
+	renderTraffic();
+	renderSplit();
+	renderLogs();
+	renderSetupProgress();
+	renderUpdateCard();
+	renderExpiry();
+	renderAbout();
+	applyPolicyUi();
 }
 
-// ── State ────────────────────────────────────────────────
+// ── State ───────────────────────────────────────────────
 let state = { status: 'disconnected', connected: false };
 let activePermissions = { services: true, traffic: true, dns: true };
 let rdpServices = [];
-let panelOpen = false;
-let pinned = false;
+let rdpSessions = [];
+let rdpFilter = 'all';
+let selectedRdpId = null;
 let currentRdpRoute = null; // route being viewed/connected
+let currentPortalUrl = null; // pushed from main on connect/disconnect
+let currentPage = 'status';
+let appVersion = '';
+let serverUrl = '';
+let servicesList = [];
+let trafficData = null;
+let usagePeriod = 'last7d';
+let pendingUpdate = null;
+let updateCardHidden = false;
+// Server policy (channel / minimum version / mandatory) from the core updater.
+// Channel and minimum version are assigned by the server, read-only here.
+let updatePolicy = null;
+let expiryInfo = null;
+let expiryHidden = false;
+let logText = '';
+let logLevel = 'all';
+let logPeriod = 'all';
+let splitSaved = { enabled: false, routes: [] };
+let splitDraft = { enabled: false, routes: [] };
+let setupStep = 'choose';
+let setupDone = null;
+// Client policy from the server (core ClientPolicyService state):
+// { fetched, managed, policy, locks, splitModes }. Unmanaged until loaded.
+let policyState = { fetched: false, managed: false, policy: null, locks: {}, splitModes: ['off', 'include'] };
 
-// ── DOM Elements ─────────────────────────────────────────
+// ── DOM Elements ────────────────────────────────────────
 const el = {
-	ringFill:        $('#ring-fill'),
-	ringContainer:   $('#ring-container'),
-	statusIcon:      $('#status-icon'),
+	connSwitch:      $('#conn-switch'),
+	connLabel:       $('#conn-label'),
+	connSub:         $('#conn-sub'),
 	statusLabel:     $('#status-label'),
+	heroSub:         $('#hero-sub'),
+	heroErrorText:   $('#hero-error-text'),
 	connectBtn:      $('#connect-btn'),
+	disconnectBtn:   $('#disconnect-btn'),
+	portalBtn:       $('#portal-btn'),
 	statEndpoint:    $('#stat-endpoint'),
 	statHandshake:   $('#stat-handshake'),
+	statSince:       $('#stat-since'),
 	statRx:          $('#stat-rx'),
 	statTx:          $('#stat-tx'),
 	statRxSpeed:     $('#stat-rx-speed'),
 	statTxSpeed:     $('#stat-tx-speed'),
+	killswitchQuick: $('#killswitch-quick'),
 	killswitchToggle: $('#killswitch-toggle'),
 	rdpAllowToggle:  $('#rdp-allow-toggle'),
 	serverUrl:       $('#server-url'),
@@ -184,71 +247,91 @@ const el = {
 	optAutoconnect:  $('#opt-autoconnect'),
 	optCheckInterval: $('#opt-check-interval'),
 	optPollInterval: $('#opt-poll-interval'),
-	optSplitTunnel:  $('#opt-split-tunnel'),
-	optSplitRoutes:  $('#opt-split-routes'),
 	splitRoutesSection: $('#split-routes-section'),
-	logOutput:       $('#log-output'),
+	logRows:         $('#log-rows'),
+	logEmpty:        $('#log-empty'),
 };
 
-// ── Locale initialization ───────────────────────────────────
+// ── Locale initialization ───────────────────────────────
 let localeReady = false;
 
-locale.get().then(loc => {
-  if (loc) locale.set(loc);
-  const selectEl = $('#locale-select');
-  if (selectEl) selectEl.value = loc || 'de';
-  updateDOM();
-  updateUI();
-  localeReady = true;
+locale.get().then((loc) => {
+	if (loc) locale.set(loc);
+	const selectEl = $('#locale-select');
+	if (selectEl) selectEl.value = loc || 'de';
+	refreshTexts();
+	localeReady = true;
 }).catch(() => { localeReady = true; });
 
 locale.onChange((loc) => {
-  if (!localeReady) return; // skip initial set echo
-  const selectEl = $('#locale-select');
-  if (selectEl) selectEl.value = loc;
-  updateDOM();
-  updateUI();
-  if (rdpServices.length) renderRdpCards(rdpServices);
+	if (!localeReady) return; // skip initial set echo
+	const selectEl = $('#locale-select');
+	if (selectEl) selectEl.value = loc;
+	refreshTexts();
 });
 
-// Locale dropdown change handler
-const localeSelect = $('#locale-select');
-if (localeSelect) {
-  localeSelect.addEventListener('change', (e) => {
-    locale.set(e.target.value);
-  });
+$('#locale-select')?.addEventListener('change', (e) => {
+	locale.set(e.target.value);
+});
+
+// ── Version ─────────────────────────────────────────────
+getVersion().then((v) => {
+	appVersion = v || '';
+	$('#app-version').textContent = appVersion ? `v${appVersion}` : '';
+	renderAbout();
+});
+
+// ── Device ID ───────────────────────────────────────────
+// Short form only (first 8 hex of the machine fingerprint), as on the
+// server's Users page ("Gerätebindung"). null = unavailable.
+let deviceId;
+Promise.resolve()
+	.then(() => getDeviceId())
+	.then((id) => { deviceId = typeof id === 'string' && /^[0-9a-f]{8}$/.test(id) ? id : null; })
+	.catch(() => { deviceId = null; })
+	.then(() => renderAbout());
+
+function renderAbout() {
+	const aboutEl = $('#about-version');
+	if (aboutEl) aboutEl.textContent = appVersion ? t('ui.about.version', { version: appVersion }) : '';
+	const idEl = $('#about-device-id');
+	if (idEl && deviceId !== undefined) {
+		idEl.textContent = t('ui.about.deviceId', { id: deviceId ? `${deviceId}…` : t('ui.about.deviceIdUnavailable') });
+	}
 }
 
-// ── Version ──────────────────────────────────────────────
-getVersion().then(v => {
-	const verEl = $('#app-version');
-	if (verEl) verEl.textContent = `v${v}`;
-});
-
 // ══════════════════════════════════════════════════════════
-//  THEME
+//  THEME  (app.theme: 'dark' | 'light' | 'system')
 // ══════════════════════════════════════════════════════════
-config.get('app.theme').then(theme => applyTheme(theme || 'dark'));
+let themeMode = 'dark';
+const darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
-function applyTheme(theme) {
-	if (theme === 'light') {
+function resolvedTheme() {
+	if (themeMode === 'system') return darkQuery && !darkQuery.matches ? 'light' : 'dark';
+	return themeMode === 'light' ? 'light' : 'dark';
+}
+
+function applyTheme(mode) {
+	themeMode = ['light', 'dark', 'system'].includes(mode) ? mode : 'dark';
+	if (resolvedTheme() === 'light') {
 		document.documentElement.setAttribute('data-theme', 'light');
 	} else {
 		document.documentElement.removeAttribute('data-theme');
 	}
-	$$('.theme-btn').forEach(btn => {
-		btn.classList.toggle('active', btn.dataset.theme === theme);
-	});
+	selectSeg($('#theme-seg'), 'theme-mode', themeMode);
 }
 
-// Theme toggle in titlebar
-$$('#theme-toggle .theme-btn').forEach(btn => {
-	btn.addEventListener('click', () => {
-		const theme = btn.dataset.theme;
-		applyTheme(theme);
-		config.set('app.theme', theme);
-	});
-});
+function setTheme(mode) {
+	applyTheme(mode);
+	config.set('app.theme', themeMode);
+}
+
+darkQuery?.addEventListener?.('change', () => { if (themeMode === 'system') applyTheme('system'); });
+
+config.get('app.theme').then((theme) => applyTheme(theme || 'dark'));
+
+$('#theme-toggle').addEventListener('click', () => setTheme(resolvedTheme() === 'light' ? 'dark' : 'light'));
+bindSeg($('#theme-seg'), 'theme-mode', (mode) => setTheme(mode));
 
 // ══════════════════════════════════════════════════════════
 //  TITLEBAR
@@ -259,449 +342,736 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-function navigateTo(page) {
-	// Update page nav buttons (exclude RDP button)
-	$$('.nav-btn[data-page]').forEach(b => b.classList.remove('active'));
-	const targetBtn = $(`.nav-btn[data-page="${page}"]`);
-	if (targetBtn) targetBtn.classList.add('active');
+const PAGES = ['status', 'rdp', 'services', 'logs', 'settings', 'setup'];
 
-	// Show page
-	$$('.page').forEach(p => p.classList.remove('active'));
-	const pageEl = $(`#page-${page}`);
-	if (pageEl) pageEl.classList.add('active');
+function navigateTo(page, opts = {}) {
+	if (page === 'overview') page = 'status';
+	if (!PAGES.includes(page)) return;
+	// Server change / re-setup locked by the client policy
+	if (page === 'setup' && policyState.locks.server) {
+		showToast(t('policy.serverLocked'), 'error');
+		return;
+	}
+	const prev = currentPage;
+	currentPage = page;
 
-	// If not pinned, close RDP panel on page change
-	if (!pinned && panelOpen) {
-		closeRdpPanel();
+	$$('.nav[data-page]').forEach((b) => b.classList.toggle('on', b.dataset.page === page));
+	$$('.nav[data-page]').forEach((b) => {
+		if (b.dataset.page === page) b.setAttribute('aria-current', 'page');
+		else b.removeAttribute('aria-current');
+	});
+	$$('.page').forEach((p) => p.classList.toggle('active', p.id === `page-${page}`));
+	document.body.classList.toggle('setup-mode', page === 'setup');
+
+	// Remote Desktops: status polling runs only while the page is visible
+	if (page === 'rdp' && prev !== 'rdp') {
+		rdp.panelOpen();
+		loadRdpServices();
+	} else if (prev === 'rdp' && page !== 'rdp') {
+		rdp.panelClose();
 	}
 
-	// Load logs when switching to that tab
 	if (page === 'logs') refreshLogs();
+	if (page === 'settings' && opts.tab) showSettingsTab(opts.tab);
+	if (page === 'setup' && prev !== 'setup') resetSetup();
+	if (prev === 'setup' && page !== 'setup') stopQRScan();
 }
 
-// Page nav buttons
-$$('.nav-btn[data-page]').forEach(btn => {
+$$('.nav[data-page]').forEach((btn) => {
 	btn.addEventListener('click', () => navigateTo(btn.dataset.page));
 });
-
-// RDP button toggles panel
-$('#nav-rdp').addEventListener('click', () => toggleRdpPanel());
 
 // Navigation from main process
 onNavigate((page) => navigateTo(page));
 
+$('#services-all-btn').addEventListener('click', () => navigateTo('services'));
+$('#hero-log-btn').addEventListener('click', () => navigateTo('logs'));
+$('#routing-btn').addEventListener('click', () => navigateTo('settings', { tab: 'split' }));
+
 // ══════════════════════════════════════════════════════════
-//  RDP PANEL - SLIDE OUT
+//  TUNNEL STATE
 // ══════════════════════════════════════════════════════════
-function toggleRdpPanel() {
-	if (panelOpen && !pinned) {
-		closeRdpPanel();
-	} else if (!panelOpen) {
-		openRdpPanel();
+function connState() {
+	const { status, connected } = state;
+	if (connected || status === 'connected') return 'connected';
+	if (status === 'connecting' || status === 'reconnecting') return 'connecting';
+	if (status === 'error') return 'error';
+	return 'disconnected';
+}
+
+function connectedSeconds() {
+	if (!state.connectedSince) return 0;
+	const since = new Date(state.connectedSince).getTime();
+	return Number.isFinite(since) ? (Date.now() - since) / 1000 : 0;
+}
+
+tunnel.onState((newState) => {
+	state = { ...state, ...newState };
+	updateUI();
+});
+
+// Initial status
+tunnel.getStatus().then(async (s) => {
+	if (s) {
+		state = { ...state, ...s };
+		updateUI();
+		if (s.connected) {
+			await loadPermissions();
+			applyPermissions();
+		}
 	}
-}
+});
 
-function openRdpPanel() {
-	panelOpen = true;
-	document.body.classList.add('panel-open');
-	$('#rdp-panel').classList.add('open');
-	$('#nav-rdp').classList.add('rdp-active');
-	showRdpView('list');
-	rdp.panelOpen();
-	loadRdpServices();
-}
+function updateUI() {
+	const cs = connState();
+	const { status, endpoint, handshake, rxBytes, txBytes, rxSpeed, txSpeed } = state;
+	const connected = cs === 'connected';
+	const host = hostOf(endpoint || serverUrl);
+	document.body.dataset.conn = cs;
 
-function closeRdpPanel() {
-	panelOpen = false;
-	document.body.classList.remove('panel-open');
-	$('#rdp-panel').classList.remove('open');
-	$('#nav-rdp').classList.remove('rdp-active');
-	rdp.panelClose();
-}
+	// Labels
+	let label;
+	if (cs === 'connected') label = t('status.connected');
+	else if (cs === 'connecting') label = t(status === 'reconnecting' ? 'status.reconnecting' : 'status.connecting');
+	else if (cs === 'error') label = t('ui.status.error');
+	else label = t('status.disconnected');
+	el.connLabel.textContent = label;
+	$('#sb-conn-label').textContent = label;
 
-// Close button
-$('#rdp-close-btn').addEventListener('click', () => closeRdpPanel());
+	el.connSub.textContent = connected ? `${formatDuration(connectedSeconds())} · ${host}` : host;
+	setSwitch(el.connSwitch, cs === 'connected' || cs === 'connecting');
+	// Always-on policy: no manual disconnect
+	const disconnectLocked = !!policyState.locks.disconnect && cs === 'connected';
+	el.connSwitch.disabled = cs === 'connecting' || disconnectLocked;
+	el.connSwitch.title = disconnectLocked ? t('policy.disconnectLocked') : '';
+	el.disconnectBtn.disabled = disconnectLocked;
+	el.disconnectBtn.title = disconnectLocked ? t('policy.disconnectLocked') : '';
 
-// ── Pin behavior ─────────────────────────────────────────
-function togglePin() {
-	pinned = !pinned;
-	const btn = $('#rdp-pin-btn');
-	const navBtn = $('#nav-rdp');
-	if (pinned) {
-		btn.classList.add('pinned');
-		btn.title = t('rdp.unpinPanel');
-		navBtn.classList.add('rdp-pinned');
+	// Hero
+	const titles = {
+		connected: t('ui.hero.protected'),
+		connecting: label,
+		error: t('ui.hero.failed'),
+		disconnected: t('ui.hero.disconnected'),
+	};
+	el.statusLabel.textContent = titles[cs];
+	el.heroSub.textContent = cs === 'connected' ? t('ui.hero.subOn', { host: host || '—' })
+		: cs === 'connecting' ? t('ui.hero.subConnecting')
+		: cs === 'error' ? ''
+		: t('ui.hero.subOff');
+	el.heroErrorText.textContent = cs === 'error' ? (state.error || '') : '';
+	$('#overview-sub').textContent = host;
+
+	// Stats
+	el.statEndpoint.textContent = endpoint ? hostOf(endpoint) : '—';
+	el.statHandshake.textContent = handshake || '—';
+	el.statSince.textContent = connected && state.connectedSince ? formatDuration(connectedSeconds()) : '—';
+	el.statRx.textContent = formatBytes(rxBytes || 0);
+	el.statTx.textContent = formatBytes(txBytes || 0);
+
+	// Speed + Graph
+	const showTraffic = connected && activePermissions.traffic;
+	if (showTraffic) {
+		el.statRxSpeed.textContent = formatSpeed(rxSpeed || 0);
+		el.statTxSpeed.textContent = formatSpeed(txSpeed || 0);
+		updateBandwidthGraph(rxSpeed || 0, txSpeed || 0);
 	} else {
-		btn.classList.remove('pinned');
-		btn.title = t('rdp.pinPanel');
-		navBtn.classList.remove('rdp-pinned');
+		el.statRxSpeed.textContent = '—';
+		el.statTxSpeed.textContent = '—';
+		if (!connected) { bwHistory.rx = []; bwHistory.tx = []; }
 	}
-	rdp.pinToggle(pinned);
+	$('#bw-chart').hidden = !showTraffic;
+	$('#bw-empty').hidden = showTraffic;
+	$('#bandwidth-section').hidden = connected && !activePermissions.traffic;
+
+	// Kill-Switch / RDP allow
+	setSwitch(el.killswitchToggle, !!state.killSwitch);
+	setSwitch(el.killswitchQuick, !!state.killSwitch);
+	const ksChip = $('#ks-chip');
+	ksChip.classList.toggle('c-ok', !!state.killSwitch);
+	ksChip.classList.toggle('c-warn', !state.killSwitch);
+	setSwitch(el.rdpAllowToggle, !!state.rdpAllow);
+
+	// Status bar
+	$('#sb-endpoint').textContent = host;
+	$('#sb-ks').textContent = t(state.killSwitch ? 'ui.statusbar.ksOn' : 'ui.statusbar.ksOff');
+	$('#sb-rate').textContent = showTraffic ? `↓ ${formatSpeed(rxSpeed || 0)}  ↑ ${formatSpeed(txSpeed || 0)}` : '';
+
+	// Services depend on the tunnel
+	$$('.svc-open').forEach((b) => { b.disabled = !connected; });
+	$('#services-empty').hidden = !(connected && servicesList.length === 0);
+
+	togglePortalBtn();
 }
 
-$('#rdp-pin-btn').addEventListener('click', () => togglePin());
+// Tick the "connected since" counters once per second
+setInterval(() => {
+	if (connState() !== 'connected') return;
+	const secs = connectedSeconds();
+	el.statSince.textContent = state.connectedSince ? formatDuration(secs) : '—';
+	el.connSub.textContent = `${formatDuration(secs)} · ${hostOf(state.endpoint || serverUrl)}`;
+}, 1000);
 
-// ── Panel view switching ─────────────────────────────────
-function showRdpView(view) {
-	$$('.rdp-panel-view').forEach(v => v.classList.remove('active'));
-	const target = $(`#rdp-view-${view}`);
-	if (target) target.classList.add('active');
+// ── Connect / Disconnect ────────────────────────────────
+async function doConnect() {
+	if (connState() === 'connecting') return;
+	await tunnel.connect();
+}
+
+async function doDisconnect() {
+	await tunnel.disconnect();
+}
+
+el.connectBtn.addEventListener('click', doConnect);
+$('#retry-btn').addEventListener('click', doConnect);
+$('#services-connect-btn').addEventListener('click', doConnect);
+el.disconnectBtn.addEventListener('click', doDisconnect);
+el.connSwitch.addEventListener('click', () => {
+	const cs = connState();
+	if (cs === 'connecting') return;
+	if (cs === 'connected') doDisconnect(); else doConnect();
+});
+
+// ── Portal Button ───────────────────────────────────────
+function togglePortalBtn() {
+	const show = !!(currentPortalUrl && state.connected);
+	el.portalBtn?.toggleAttribute('hidden', !show);
+}
+
+onPortalUrl?.((url) => {
+	currentPortalUrl = url;
+	togglePortalBtn();
+});
+
+el.portalBtn?.addEventListener('click', () => {
+	// Main fetches a fresh one-time login link and falls back to the portal URL.
+	if (currentPortalUrl) portal.open();
+});
+
+// ── Kill-Switch / RDP allow ─────────────────────────────
+function setKillSwitch(enabled) {
+	state.killSwitch = enabled;
+	killSwitch.toggle(enabled);
+	updateUI();
+}
+bindSwitch(el.killswitchQuick, setKillSwitch);
+bindSwitch(el.killswitchToggle, setKillSwitch);
+
+bindSwitch(el.rdpAllowToggle, (enabled) => {
+	state.rdpAllow = enabled;
+	rdpAllow.toggle(enabled);
+});
+
+// ══════════════════════════════════════════════════════════
+//  BANDWIDTH GRAPH (SVG)
+// ══════════════════════════════════════════════════════════
+const BW_HISTORY_LEN = 60;
+const bwHistory = { rx: [], tx: [] };
+
+function updateBandwidthGraph(rxSpeed, txSpeed) {
+	bwHistory.rx.push(rxSpeed);
+	bwHistory.tx.push(txSpeed);
+	if (bwHistory.rx.length > BW_HISTORY_LEN) bwHistory.rx.shift();
+	if (bwHistory.tx.length > BW_HISTORY_LEN) bwHistory.tx.shift();
+
+	const W = 600;
+	const H = 150;
+	const maxVal = Math.max(...bwHistory.rx, ...bwHistory.tx, 1024) * 1.15;
+	const pts = (data) => data.map((v, i) => {
+		const x = ((BW_HISTORY_LEN - data.length + i) / (BW_HISTORY_LEN - 1)) * W;
+		const y = H - (v / maxVal) * (H - 10);
+		return `${x.toFixed(1)},${y.toFixed(1)}`;
+	}).join(' ');
+
+	const rxPts = pts(bwHistory.rx);
+	$('#bw-rx-line').setAttribute('points', rxPts);
+	$('#bw-tx-line').setAttribute('points', pts(bwHistory.tx));
+	if (bwHistory.rx.length > 1) {
+		const firstX = rxPts.split(' ')[0].split(',')[0];
+		$('#bw-rx-area').setAttribute('d', `M${firstX},${H} L${rxPts.split(' ').join(' L')} L${W},${H} Z`);
+	} else {
+		$('#bw-rx-area').setAttribute('d', '');
+	}
+	$('#bw-max').textContent = formatSpeed(maxVal);
 }
 
 // ══════════════════════════════════════════════════════════
-//  RDP SERVICES - LOADING & RENDERING
+//  PERMISSIONS, SERVICES, TRAFFIC, DNS
+// ══════════════════════════════════════════════════════════
+async function loadPermissions() {
+	try {
+		const perms = await permissions.get();
+		if (perms) activePermissions = { ...perms, _loaded: true };
+	} catch {}
+}
+
+function applyPermissions() {
+	if (activePermissions.services) {
+		loadServices();
+	} else {
+		servicesList = [];
+		renderServices();
+	}
+
+	if (activePermissions.traffic) {
+		loadTraffic();
+	} else {
+		trafficData = null;
+		renderTraffic();
+	}
+
+	const dnsSection = $('.dns-section');
+	if (dnsSection) dnsSection.style.display = activePermissions.dns === false ? 'none' : 'flex';
+	updateUI();
+}
+
+// Reload permissions + services on connect
+tunnel.onState(async (s) => {
+	if (s.connected || s.status === 'connected') {
+		if (!activePermissions._loaded) {
+			await loadPermissions();
+			applyPermissions();
+		}
+	} else {
+		activePermissions._loaded = false;
+	}
+});
+
+// ── Services ────────────────────────────────────────────
+async function loadServices() {
+	try {
+		servicesList = (await services.list()) || [];
+	} catch {
+		servicesList = [];
+	}
+	renderServices();
+}
+
+function openService(svc) {
+	if (svc?.url && state.connected) shell.openExternal(svc.url);
+}
+
+function renderServices() {
+	const connected = connState() === 'connected';
+	const quick = $('#services-list');
+	const grid = $('#services-grid');
+	quick.textContent = '';
+	grid.textContent = '';
+
+	$('#services-section').hidden = servicesList.length === 0;
+	$('#services-empty').hidden = !(connected && servicesList.length === 0);
+
+	servicesList.slice(0, 4).forEach((svc) => {
+		const tile = h('button', 'row card svc-tile svc-open');
+		tile.type = 'button';
+		tile.disabled = !connected;
+		tile.appendChild(h('span', 'svc-initial', (svc.name || '?').trim().charAt(0)));
+		const meta = h('span', 'svc-meta');
+		meta.appendChild(h('span', 'svc-name', svc.name));
+		meta.appendChild(h('span', 'svc-host', svc.domain || hostOf(svc.url)));
+		tile.appendChild(meta);
+		tile.addEventListener('click', () => openService(svc));
+		quick.appendChild(tile);
+	});
+
+	servicesList.forEach((svc) => {
+		const card = h('div', 'card svc-card');
+		const top = h('div', 'svc-card-top');
+		top.appendChild(h('span', 'svc-initial lg', (svc.name || '?').trim().charAt(0)));
+		const meta = h('div', 'svc-meta');
+		meta.appendChild(h('div', 'svc-name', svc.name));
+		meta.appendChild(h('div', 'svc-host', svc.domain || hostOf(svc.url)));
+		top.appendChild(meta);
+		card.appendChild(top);
+
+		const bottom = h('div', 'svc-card-bottom');
+		bottom.appendChild(h('span', 'chip', svc.protocol || 'HTTPS'));
+		if (svc.hasAuth) bottom.appendChild(h('span', 'chip c-info', t('ui.services.auth')));
+		bottom.appendChild(h('span', 'grow'));
+		const openBtn = iconButton('btn btn-sec btn-sm svc-open', 'external', t('ui.services.open'), false);
+		openBtn.disabled = !connected;
+		openBtn.addEventListener('click', () => openService(svc));
+		bottom.appendChild(openBtn);
+		card.appendChild(bottom);
+		grid.appendChild(card);
+	});
+}
+
+// ── Traffic Usage ───────────────────────────────────────
+async function loadTraffic() {
+	try {
+		trafficData = await traffic.stats();
+	} catch {
+		trafficData = null;
+	}
+	renderTraffic();
+}
+
+function renderTraffic() {
+	const section = $('#traffic-usage');
+	if (!trafficData) { section.hidden = true; return; }
+	section.hidden = false;
+	const p = trafficData[usagePeriod] || {};
+	const rx = p.rx || 0;
+	const tx = p.tx || 0;
+	const total = rx + tx;
+	$('#usage-total').textContent = formatBytes(total);
+	$('#usage-rx').textContent = formatBytes(rx);
+	$('#usage-tx').textContent = formatBytes(tx);
+	const rxPct = total > 0 ? Math.round((rx / total) * 100) : 0;
+	$('#usage-rx-bar').style.width = `${rxPct}%`;
+	$('#usage-tx-bar').style.width = total > 0 ? `${100 - rxPct}%` : '0';
+}
+
+bindSeg($('#usage-seg'), 'usage', (period) => {
+	usagePeriod = period;
+	renderTraffic();
+});
+
+// ── DNS Leak Test ───────────────────────────────────────
+const dnsBtn = $('#dns-test-btn');
+const dnsResult = $('#dns-result');
+const dnsResultText = $('#dns-result-text');
+
+function setDnsResult(kind, text) {
+	dnsResult.classList.remove('ok', 'warn', 'fail');
+	if (kind) dnsResult.classList.add(kind);
+	// Detach the idle i18n key once a real result is shown
+	delete dnsResultText.dataset.i18n;
+	dnsResultText.textContent = text;
+}
+
+dnsBtn.addEventListener('click', async () => {
+	dnsBtn.disabled = true;
+	dnsBtn.textContent = t('dns.testing');
+	setDnsResult(null, t('dns.testing'));
+
+	try {
+		const [serverInfo, sysCheck] = await Promise.all([
+			dns.leakTest(),
+			dns.checkSystem(),
+		]);
+
+		const { connected, killSwitch: ksActive, dnsServer, resolveOk } = sysCheck || {};
+		const vpnDns = serverInfo?.vpnDns || '';
+		const expectedDns = vpnDns.split(',').map((s) => s.trim()).filter(Boolean);
+
+		if (!connected) {
+			setDnsResult('fail', t('dns.leakNotConnected'));
+		} else if (!resolveOk) {
+			setDnsResult('fail', t('dns.resolveFailed'));
+		} else if (ksActive) {
+			const info = dnsServer ? ` DNS: ${dnsServer}` : '';
+			setDnsResult('ok', t('dns.noLeakKillSwitch') + info);
+		} else if (dnsServer && expectedDns.includes(dnsServer)) {
+			setDnsResult('ok', t('dns.noLeakDetail', { servers: dnsServer }));
+		} else {
+			const info = dnsServer ? ` ${t('dns.activeDns')}: ${dnsServer}` : '';
+			setDnsResult('warn', t('dns.leakNoKillSwitch') + info);
+		}
+	} catch {
+		setDnsResult('fail', t('dns.testFailed'));
+	}
+
+	dnsBtn.disabled = false;
+	dnsBtn.textContent = t('ui.dns.run');
+});
+
+// ══════════════════════════════════════════════════════════
+//  REMOTE DESKTOPS
 // ══════════════════════════════════════════════════════════
 async function loadRdpServices() {
 	try {
 		const list = await rdp.list();
 		rdpServices = list || [];
-		renderRdpCards(rdpServices);
-		updateRdpBadge();
-	} catch (err) {
+	} catch {
 		rdpServices = [];
-		renderRdpCards([]);
 	}
+	await loadRdpSessions();
+	renderRdp();
+}
+
+async function loadRdpSessions() {
+	try {
+		const list = await rdp.activeSessions();
+		const now = Date.now();
+		rdpSessions = (list || []).map((s) => ({ ...s, startedAt: now - (s.duration || 0) * 1000 }));
+	} catch {
+		rdpSessions = [];
+	}
+	renderSessions();
+}
+
+function sessionFor(svc) {
+	return rdpSessions.find((s) => String(s.routeId) === String(svc.id));
+}
+
+function rdpStatus(svc) {
+	if (svc.status?.online) return { key: 'online', label: t('rdp.statusOnline'), chip: 'c-ok', dot: 'dot-online' };
+	if (svc.maintenance_active) return { key: 'maint', label: t('rdp.statusMaintenance'), chip: 'c-warn', dot: 'dot-maint' };
+	return { key: 'offline', label: t('rdp.statusOffline'), chip: '', dot: 'dot-offline' };
+}
+
+function filteredRdp() {
+	const filterText = ($('#rdp-filter-input').value || '').toLowerCase();
+	return rdpServices.filter((svc) => {
+		if (filterText) {
+			const searchable = [svc.name, svc.host, ...parseTags(svc.tags)].join(' ').toLowerCase();
+			if (!searchable.includes(filterText)) return false;
+		}
+		if (rdpFilter === 'online' && !svc.status?.online) return false;
+		if (rdpFilter === 'offline' && svc.status?.online) return false;
+		return true;
+	});
 }
 
 function updateRdpBadge() {
 	const badge = $('#rdp-badge');
-	const onlineCount = rdpServices.filter(s => s.status?.online).length;
-	if (onlineCount > 0) {
-		badge.style.display = '';
-	} else {
-		badge.style.display = 'none';
-	}
+	const onlineCount = rdpServices.filter((s) => s.status?.online).length;
+	badge.textContent = String(onlineCount);
+	badge.setAttribute('aria-label', `${onlineCount} online`);
+	badge.hidden = onlineCount === 0;
 }
 
-function renderRdpCards(svcList) {
-	const container = $('#rdp-list');
-	const countEl = $('#rdp-count');
-	container.textContent = '';
+function renderRdp() {
+	updateRdpBadge();
+	const list = $('#rdp-list');
+	list.textContent = '';
+	const filtered = filteredRdp();
+	const onlineCount = rdpServices.filter((s) => s.status?.online).length;
+	$('#rdp-count').textContent = t('ui.rdp.summary', { total: rdpServices.length, online: onlineCount });
 
-	// Apply filters
-	const filterText = ($('#rdp-filter-input').value || '').toLowerCase();
-	const filterStatus = $('#rdp-filter-select').value;
+	// Empty states
+	const noHosts = rdpServices.length === 0;
+	$('#rdp-list-empty').hidden = filtered.length > 0;
+	$('#rdp-list-empty-title').textContent = t(noHosts ? 'ui.rdp.noHosts' : 'ui.rdp.empty');
+	$('#rdp-list-empty-hint').textContent = t(noHosts ? 'ui.rdp.noHostsHint' : 'ui.rdp.emptyHint');
+	$('#rdp-reset-filter').hidden = noHosts;
 
-	const filtered = svcList.filter(svc => {
-		// Text filter
-		if (filterText) {
-			const searchable = [
-				svc.name, svc.host, ...parseTags(svc.tags),
-			].join(' ').toLowerCase();
-			if (!searchable.includes(filterText)) return false;
-		}
-		// Status filter
-		if (filterStatus === 'online' && !svc.status?.online) return false;
-		if (filterStatus === 'offline' && svc.status?.online) return false;
-		return true;
-	});
+	if (selectedRdpId !== null && !rdpServices.some((s) => String(s.id) === String(selectedRdpId))) selectedRdpId = null;
+	if (selectedRdpId === null && filtered.length > 0) selectedRdpId = filtered[0].id;
 
-	countEl.textContent = `${filtered.length} Host${filtered.length !== 1 ? 's' : ''}`;
-
-	filtered.forEach(svc => {
-		const card = createRdpCard(svc);
-		container.appendChild(card);
-	});
+	filtered.forEach((svc) => list.appendChild(createRdpRow(svc)));
+	renderRdpDetail();
 }
 
-function createRdpCard(svc) {
-	const card = document.createElement('div');
-	card.className = 'rdp-card';
-	if (svc.maintenance_active) card.classList.add('maintenance');
-	card.addEventListener('click', () => showRdpDetail(svc));
-
-	// Top row: name + status tag
-	const top = document.createElement('div');
-	top.className = 'rdp-card-top';
-
-	const nameBlock = document.createElement('div');
-	const name = document.createElement('div');
-	name.className = 'rdp-card-name';
-	name.textContent = svc.name;
-	nameBlock.appendChild(name);
-
-	const host = document.createElement('div');
-	host.className = 'rdp-card-host';
-	host.textContent = `${svc.host}:${svc.port || 3389}`;
-	nameBlock.appendChild(host);
-
-	top.appendChild(nameBlock);
-
-	const statusTag = document.createElement('span');
-	statusTag.className = 'tag';
-	if (svc.status?.online) {
-		statusTag.classList.add('tag-online');
-		statusTag.textContent = t('rdp.statusOnline');
-	} else if (svc.maintenance_active) {
-		statusTag.classList.add('tag-warn');
-		statusTag.textContent = t('rdp.statusMaintenance');
-	} else {
-		statusTag.classList.add('tag-offline');
-		statusTag.textContent = t('rdp.statusOffline');
-	}
-	top.appendChild(statusTag);
-	card.appendChild(top);
-
-	// Tags
-	const cardTags = parseTags(svc.tags);
-	if (cardTags.length > 0) {
-		const tagsRow = document.createElement('div');
-		tagsRow.className = 'rdp-card-tags';
-		cardTags.forEach(tg => {
-			const tag = document.createElement('span');
-			tag.className = 'tag tag-neutral';
-			tag.textContent = tg;
-			tagsRow.appendChild(tag);
-		});
-		card.appendChild(tagsRow);
-	}
-
-	// Meta
-	const meta = document.createElement('div');
-	meta.className = 'rdp-card-meta';
-
-	// Access type
-	const accessRow = document.createElement('div');
-	accessRow.className = 'rdp-card-meta-row';
-	const accessLabel = document.createElement('span');
-	accessLabel.textContent = t('rdp.access');
-	accessRow.appendChild(accessLabel);
-	const accessTag = document.createElement('span');
-	accessTag.className = 'tag';
-	accessTag.style.fontSize = '9px';
-	if (svc.access_type === 'external') {
-		accessTag.classList.add('tag-purple');
-		accessTag.textContent = t('rdp.accessExternal');
-	} else {
-		accessTag.classList.add('tag-blue');
-		accessTag.textContent = t('rdp.accessInternal');
-	}
-	accessRow.appendChild(accessTag);
-	meta.appendChild(accessRow);
-
-	// Credentials
-	const credRow = document.createElement('div');
-	credRow.className = 'rdp-card-meta-row';
-	const credLabel = document.createElement('span');
-	credLabel.textContent = t('rdp.credentials');
-	credRow.appendChild(credLabel);
-	const credValue = document.createElement('span');
-	if (svc.credential_mode === 'full') {
-		credValue.style.color = 'var(--accent)';
-		credValue.textContent = t('rdp.credentialsFull');
-	} else if (svc.credential_mode === 'user_only') {
-		credValue.style.color = 'var(--warn)';
-		credValue.textContent = t('rdp.credentialsUserOnly');
-	} else {
-		credValue.style.color = 'var(--text-3)';
-		credValue.textContent = t('rdp.credentialsNone');
-	}
-	credRow.appendChild(credValue);
-	meta.appendChild(credRow);
-
-	// WoL for offline hosts
-	if (!svc.status?.online && svc.wol_mac) {
-		const wolRow = document.createElement('div');
-		wolRow.className = 'rdp-card-meta-row';
-		const wolLabel = document.createElement('span');
-		wolLabel.textContent = 'WoL';
-		wolRow.appendChild(wolLabel);
-		const wolMac = document.createElement('span');
-		wolMac.style.fontFamily = 'var(--font-mono)';
-		wolMac.style.fontSize = '10px';
-		wolMac.textContent = svc.wol_mac;
-		wolRow.appendChild(wolMac);
-		meta.appendChild(wolRow);
-	}
-
-	// Maintenance info
-	if (svc.maintenance_window) {
-		const maintRow = document.createElement('div');
-		maintRow.className = 'rdp-card-meta-row';
-		const maintLabel = document.createElement('span');
-		maintLabel.textContent = t('rdp.maintenance');
-		maintRow.appendChild(maintLabel);
-		const maintValue = document.createElement('span');
-		if (svc.maintenance_active) {
-			maintValue.style.color = 'var(--warn)';
-			maintValue.textContent = t('rdp.maintenanceActive');
-		} else {
-			maintValue.textContent = svc.maintenance_window;
-		}
-		maintRow.appendChild(maintValue);
-		meta.appendChild(maintRow);
-	}
-
-	card.appendChild(meta);
-
-	// Actions
-	const actions = document.createElement('div');
-	actions.className = 'rdp-card-actions';
-
-	// WoL button for offline hosts
-	if (!svc.status?.online && svc.wol_mac) {
-		const wolBtn = document.createElement('button');
-		wolBtn.className = 'btn btn-wol';
-		setStaticIcon(wolBtn, 'wol'); // SAFE: static SVG
-		wolBtn.appendChild(document.createTextNode('WoL'));
-		wolBtn.addEventListener('click', (e) => {
-			e.stopPropagation();
-			rdp.wol(svc.id);
-			wolBtn.textContent = t('rdp.wolSent');
-			wolBtn.disabled = true;
-			setTimeout(() => { wolBtn.disabled = false; wolBtn.textContent = 'WoL'; }, 5000);
-		});
-		actions.appendChild(wolBtn);
-	}
-
-	// Connect button
-	const connectBtn = document.createElement('button');
-	connectBtn.className = 'btn btn-connect';
-	if (!svc.status?.online && !svc.maintenance_active) {
-		connectBtn.disabled = true;
-	}
-	const playSpan = document.createElement('span');
-	setStaticIcon(playSpan, 'play'); // SAFE: static SVG
-	connectBtn.appendChild(playSpan);
-	connectBtn.appendChild(document.createTextNode(t('rdp.connect')));
-	connectBtn.addEventListener('click', (e) => {
-		e.stopPropagation();
-		startRdpConnect(svc);
+function createRdpRow(svc) {
+	const st = rdpStatus(svc);
+	const selected = String(svc.id) === String(selectedRdpId);
+	const row = h('button', `row${selected ? ' sel' : ''}`);
+	row.type = 'button';
+	if (selected) row.setAttribute('aria-current', 'true');
+	row.addEventListener('click', () => {
+		selectedRdpId = svc.id;
+		renderRdp();
 	});
-	actions.appendChild(connectBtn);
 
-	card.appendChild(actions);
+	const icon = h('span', 'host-icon');
+	setStaticIcon(icon, 'monitor'); // SAFE: static SVG
+	icon.appendChild(h('span', `dot ${st.dot}`));
+	row.appendChild(icon);
+
+	const text = h('span', 'host-text');
+	const nameLine = h('span', 'host-name-line');
+	nameLine.appendChild(h('span', 'host-name', svc.name));
+	if (sessionFor(svc)) nameLine.appendChild(h('span', 'chip c-ok chip-sm', t('ui.rdp.sessionActive')));
+	text.appendChild(nameLine);
+	text.appendChild(h('span', 'host-addr', `${svc.host}:${svc.port || 3389}`));
+	row.appendChild(text);
+
+	row.appendChild(h('span', `chip ${st.chip}`, st.label));
+	return row;
+}
+
+function infoCard(label, value, opts = {}) {
+	const card = h('div', 'card info-card');
+	card.appendChild(h('div', 'lbl', label));
+	const val = h('div', `info-val${opts.mono ? ' mono' : ''}`, value);
+	if (opts.color) val.style.color = opts.color;
+	card.appendChild(val);
 	return card;
 }
 
-// Filter event listeners
-$('#rdp-filter-input').addEventListener('input', () => renderRdpCards(rdpServices));
-$('#rdp-filter-select').addEventListener('change', () => renderRdpCards(rdpServices));
+let wolTimer = null;
+const wolSentIds = new Set();
 
-// ══════════════════════════════════════════════════════════
-//  RDP DETAIL VIEW
-// ══════════════════════════════════════════════════════════
-function showRdpDetail(svc) {
-	currentRdpRoute = svc;
-	$('#rdp-detail-title').textContent = svc.name;
+function renderRdpDetail() {
+	const detail = $('#rdp-detail');
+	detail.textContent = '';
+	const svc = rdpServices.find((s) => String(s.id) === String(selectedRdpId));
+	$('#rdp-detail-empty').hidden = !!svc || rdpServices.length === 0;
+	if (!svc) return;
 
-	// Status tag
-	const statusEl = $('#rdp-detail-status');
-	statusEl.className = 'tag';
-	if (svc.status?.online) {
-		statusEl.classList.add('tag-online');
-		statusEl.textContent = t('rdp.statusOnline');
-	} else if (svc.maintenance_active) {
-		statusEl.classList.add('tag-warn');
-		statusEl.textContent = t('rdp.statusMaintenance');
-	} else {
-		statusEl.classList.add('tag-offline');
-		statusEl.textContent = t('rdp.statusOffline');
+	const st = rdpStatus(svc);
+	const online = !!svc.status?.online;
+
+	// Header
+	const head = h('div', 'rdp-detail-head');
+	const titleBlock = h('div', 'grow');
+	titleBlock.style.minWidth = '0';
+	const titleLine = h('div', 'rdp-detail-title');
+	titleLine.appendChild(h('h2', 'disp rdp-detail-name', svc.name));
+	titleLine.appendChild(h('span', `chip ${st.chip}`, st.label));
+	titleBlock.appendChild(titleLine);
+	const addr = h('p', 'mono muted', `${svc.host}:${svc.port || 3389}`);
+	addr.style.marginTop = '4px';
+	titleBlock.appendChild(addr);
+	head.appendChild(titleBlock);
+
+	if (!online && svc.wol_mac) {
+		const sent = wolSentIds.has(svc.id);
+		const wolBtn = iconButton('btn btn-sec', 'wol', sent ? t('rdp.wolSent') : t('ui.rdp.wake'));
+		wolBtn.disabled = sent;
+		wolBtn.title = svc.wol_mac;
+		wolBtn.addEventListener('click', () => {
+			rdp.wol(svc.id);
+			wolSentIds.add(svc.id);
+			renderRdpDetail();
+			clearTimeout(wolTimer);
+			wolTimer = setTimeout(() => { wolSentIds.delete(svc.id); renderRdpDetail(); }, 5000);
+		});
+		head.appendChild(wolBtn);
 	}
 
-	// Build detail body
-	const body = $('#rdp-detail-body');
-	body.textContent = '';
+	const connectBtn = iconButton('btn btn-pri', 'play', t('rdp.connect'));
+	connectBtn.disabled = !online && !svc.maintenance_active;
+	connectBtn.addEventListener('click', () => startRdpConnect(svc));
+	head.appendChild(connectBtn);
+	detail.appendChild(head);
 
-	// Detail grid
-	const grid = document.createElement('div');
-	grid.className = 'rdp-detail-grid';
-
-	const fields = [
-		{ label: 'Host', value: `${svc.host}:${svc.port || 3389}`, mono: true },
-		{ label: t('rdp.access'), value: svc.access_type === 'external' ? t('rdp.accessExternal') : t('rdp.accessInternalOnly'), tag: svc.access_type === 'external' ? 'tag-purple' : 'tag-blue' },
-		{ label: t('rdp.credentials'), value: svc.credential_mode === 'full' ? t('rdp.credentialsFull') : svc.credential_mode === 'user_only' ? t('rdp.credentialsUserOnly') : t('rdp.credentialsNone'), color: svc.credential_mode === 'full' ? 'var(--accent)' : svc.credential_mode === 'user_only' ? 'var(--warn)' : null },
-		{ label: 'Domain', value: svc.domain || '-', mono: true },
-		{ label: t('rdp.resolution'), value: svc.resolution || t('rdp.resolutionFullscreen') },
-		{ label: 'NLA', value: svc.nla ? t('rdp.nlaEnforced') : t('rdp.nlaOptional'), color: svc.nla ? 'var(--accent)' : null },
-	];
-
-	if (svc.redirects) {
-		fields.push({ label: 'Redirects', value: svc.redirects });
+	// Hints
+	if (!online && !svc.maintenance_active && !svc.wol_mac) {
+		detail.appendChild(h('div', 'note note-neutral', t('ui.rdp.offlineHint')));
 	}
-	if (svc.timeout_minutes) {
-		fields.push({ label: 'Timeout', value: t('rdp.timeoutMin', { minutes: svc.timeout_minutes }) });
-	}
-	if (svc.maintenance_window) {
-		fields.push({ label: t('rdp.maintenance'), value: svc.maintenance_window, full: true });
-	}
-	if (svc.notes) {
-		fields.push({ label: t('rdp.notes'), value: svc.notes, full: true, dim: true });
+	if (svc.maintenance_active) {
+		const note = h('div', 'note note-warn');
+		note.appendChild(h('strong', null, `${t('rdp.maintenance')}: ${t('rdp.maintenanceActive')}`));
+		if (svc.maintenance_window) note.appendChild(document.createTextNode(` · ${svc.maintenance_window}`));
+		detail.appendChild(note);
 	}
 
-	fields.forEach(f => {
-		const item = document.createElement('div');
-		item.className = 'rdp-detail-item';
-		if (f.full) item.classList.add('rdp-detail-full');
-
-		const label = document.createElement('div');
-		label.className = 'rdp-detail-label';
-		label.textContent = f.label;
-		item.appendChild(label);
-
-		const val = document.createElement('div');
-		val.className = 'rdp-detail-value';
-		if (f.mono) val.classList.add('mono');
-		if (f.dim) {
-			val.style.color = 'var(--text-2)';
-			val.style.fontWeight = '400';
-			val.style.fontSize = '10px';
-		}
-
-		if (f.tag) {
-			const tagSpan = document.createElement('span');
-			tagSpan.className = `tag ${f.tag}`;
-			tagSpan.style.fontSize = '9px';
-			tagSpan.textContent = f.value;
-			val.appendChild(tagSpan);
-		} else {
-			if (f.color) val.style.color = f.color;
-			val.textContent = f.value;
-		}
-
-		item.appendChild(val);
-		grid.appendChild(item);
-	});
-
-	body.appendChild(grid);
+	// Info grid
+	const grid = h('div', 'info-grid');
+	grid.appendChild(infoCard(t('rdp.access'), svc.access_type === 'external' ? t('rdp.accessExternal') : t('rdp.accessInternalOnly')));
+	const credText = svc.credential_mode === 'full' ? t('rdp.credentialsFull')
+		: svc.credential_mode === 'user_only' ? t('rdp.credentialsUserOnly') : t('rdp.credentialsNone');
+	grid.appendChild(infoCard(t('rdp.credentials'), credText));
+	grid.appendChild(infoCard(t('rdp.resolution'), svc.resolution || t('rdp.resolutionFullscreen')));
+	grid.appendChild(infoCard('NLA', svc.nla ? t('rdp.nlaEnforced') : t('rdp.nlaOptional')));
+	grid.appendChild(infoCard('Domain', svc.domain || '—', { mono: true }));
+	if (svc.redirects) grid.appendChild(infoCard(t('rdp.redirects'), String(svc.redirects)));
+	if (svc.timeout_minutes) grid.appendChild(infoCard(t('rdp.timeout'), t('rdp.timeoutMin', { minutes: svc.timeout_minutes })));
+	if (svc.maintenance_window && !svc.maintenance_active) grid.appendChild(infoCard(t('rdp.maintenance'), svc.maintenance_window));
+	if (!online && svc.wol_mac) grid.appendChild(infoCard('Wake-on-LAN', svc.wol_mac, { mono: true }));
+	detail.appendChild(grid);
 
 	// Tags
-	const detailTags = parseTags(svc.tags);
-	if (detailTags.length > 0) {
-		const tagsRow = document.createElement('div');
-		tagsRow.className = 'rdp-card-tags';
-		detailTags.forEach(tg => {
-			const tag = document.createElement('span');
-			tag.className = 'tag tag-neutral';
-			tag.textContent = tg;
-			tagsRow.appendChild(tag);
-		});
-		body.appendChild(tagsRow);
+	const tags = parseTags(svc.tags);
+	if (tags.length > 0) {
+		const row = h('div', 'tags');
+		tags.forEach((tg) => row.appendChild(h('span', 'chip', tg)));
+		detail.appendChild(row);
 	}
 
-	// Connect button
-	const connectBtn = document.createElement('button');
-	connectBtn.className = 'btn btn-connect';
-	connectBtn.style.cssText = 'width:100%;padding:11px;font-size:13px';
-	if (!svc.status?.online && !svc.maintenance_active) {
-		connectBtn.disabled = true;
+	// Notes
+	if (svc.notes) {
+		const card = h('div', 'card');
+		card.style.cssText = 'padding:16px;display:flex;flex-direction:column;gap:6px';
+		card.appendChild(h('div', 'lbl', t('rdp.notes')));
+		const p = h('p', 'muted', svc.notes);
+		p.style.whiteSpace = 'pre-wrap';
+		card.appendChild(p);
+		detail.appendChild(card);
 	}
-	const playIcon = document.createElement('span');
-	setStaticIcon(playIcon, 'playLarge'); // SAFE: static SVG
-	connectBtn.appendChild(playIcon);
-	connectBtn.appendChild(document.createTextNode(t('rdp.connectFull')));
-	connectBtn.addEventListener('click', () => startRdpConnect(svc));
-	body.appendChild(connectBtn);
-
-	showRdpView('detail');
 }
 
-// Detail back button
-$('#rdp-detail-back').addEventListener('click', () => showRdpView('list'));
+function sessionName(s) {
+	const svc = rdpServices.find((x) => String(x.id) === String(s.routeId));
+	return svc ? svc.name : (s.host || String(s.routeId));
+}
 
-// ══════════════════════════════════════════════════════════
-//  RDP CONNECT FLOW
-// ══════════════════════════════════════════════════════════
+function sessionMinutes(s) {
+	return Math.max(0, Math.floor((Date.now() - s.startedAt) / 60000));
+}
+
+function renderSessions() {
+	// Sidebar
+	const side = $('#side-sessions');
+	const sideList = $('#side-sessions-list');
+	sideList.textContent = '';
+	side.hidden = rdpSessions.length === 0;
+	rdpSessions.forEach((s) => {
+		const btn = h('button', 'nav side-session');
+		btn.type = 'button';
+		btn.appendChild(h('span', 'dot'));
+		const text = h('span', 'side-session-text');
+		text.appendChild(h('span', 'side-session-name', sessionName(s)));
+		text.appendChild(h('span', 'side-session-sub', t('ui.rdp.runningFor', { minutes: sessionMinutes(s) })));
+		btn.appendChild(text);
+		btn.addEventListener('click', () => {
+			selectedRdpId = s.routeId;
+			navigateTo('rdp');
+			renderRdp();
+		});
+		sideList.appendChild(btn);
+	});
+
+	// RDP page card
+	const card = $('#rdp-sessions-card');
+	const list = $('#rdp-sessions-list');
+	list.textContent = '';
+	card.hidden = rdpSessions.length === 0;
+	rdpSessions.forEach((s) => {
+		const row = h('div', 'sess-row');
+		row.appendChild(h('span', 'dot'));
+		row.appendChild(h('span', null, sessionName(s))).style.fontWeight = '600';
+		row.appendChild(h('span', 'muted grow', t('ui.rdp.runningFor', { minutes: sessionMinutes(s) })));
+		const endBtn = h('button', 'btn btn-ghost btn-xs', t('ui.rdp.endSession'));
+		endBtn.type = 'button';
+		endBtn.addEventListener('click', async () => {
+			await rdp.disconnect(s.routeId);
+			loadRdpSessions().then(renderRdp);
+		});
+		row.appendChild(endBtn);
+		list.appendChild(row);
+	});
+}
+
+// Keep "running for" labels fresh
+setInterval(() => { if (rdpSessions.length) renderSessions(); }, 30000);
+
+// Filters
+$('#rdp-filter-input').addEventListener('input', () => renderRdp());
+bindSeg($('#rdp-filter-seg'), 'filter', (f) => {
+	rdpFilter = f;
+	renderRdp();
+});
+$('#rdp-reset-filter').addEventListener('click', () => {
+	rdpFilter = 'all';
+	$('#rdp-filter-input').value = '';
+	selectSeg($('#rdp-filter-seg'), 'filter', 'all');
+	renderRdp();
+});
+
+// ── RDP dialog ──────────────────────────────────────────
+function showRdpView(view) {
+	const dialog = $('#rdp-dialog');
+	$$('.dlg-view').forEach((v) => v.classList.remove('active'));
+	if (!view) {
+		dialog.hidden = true;
+		return;
+	}
+	const target = $(`#rdp-view-${view}`);
+	if (target) target.classList.add('active');
+	dialog.hidden = false;
+}
+
+function closeRdpDialog() { showRdpView(null); }
+
+document.addEventListener('keydown', (e) => {
+	if (e.key === 'Escape' && !$('#rdp-dialog').hidden) closeRdpDialog();
+});
+
 async function startRdpConnect(svc, opts = {}) {
 	currentRdpRoute = svc;
 
@@ -726,82 +1096,84 @@ async function startRdpConnect(svc, opts = {}) {
 			$('#rdp-connecting-status').textContent = t('rdp.connectionActive');
 		}
 	} catch (err) {
+		setConnectingChip('error');
 		$('#rdp-connecting-status').textContent = err.message || t('rdp.connectionError');
 	}
 }
 
-// ── Password Prompt ──────────────────────────────────────
+// ── Password Prompt ─────────────────────────────────────
 function showPasswordPrompt(svc) {
 	$('#rdp-password-title').textContent = svc.name;
-	const userEl = $('#rdp-password-user');
 	const username = svc.username || '';
 	const domain = svc.domain || 'WORKGROUP';
-	userEl.textContent = t('rdp.user', { user: `${domain}\\${username}` });
+	$('#rdp-password-user').textContent = t('rdp.user', { user: `${domain}\\${username}` });
 	$('#rdp-password-input').value = '';
 	showRdpView('password');
 	$('#rdp-password-input').focus();
 }
 
-$('#rdp-password-back').addEventListener('click', () => showRdpView('list'));
-$('#rdp-password-cancel').addEventListener('click', () => showRdpView('list'));
+$('#rdp-password-cancel').addEventListener('click', closeRdpDialog);
 
-$('#rdp-password-submit').addEventListener('click', async () => {
+$('#rdp-password-submit').addEventListener('click', () => {
 	const password = $('#rdp-password-input').value;
 	if (!password || !currentRdpRoute) return;
 	startRdpConnect(currentRdpRoute, { password });
 });
 
-// Submit on Enter
 $('#rdp-password-input').addEventListener('keydown', (e) => {
 	if (e.key === 'Enter') $('#rdp-password-submit').click();
 });
 
-// ── Maintenance Warning ──────────────────────────────────
+// ── Maintenance Warning ─────────────────────────────────
 function showMaintenanceWarning(svc, windowText) {
 	$('#rdp-maintenance-title').textContent = svc.name;
-	$('#rdp-maintenance-window').textContent =
-		windowText ? t('rdp.scheduledMaintenance', { window: windowText })
-		           : t('rdp.outsideMaintenanceConnect');
+	$('#rdp-maintenance-window').textContent = windowText
+		? t('rdp.scheduledMaintenance', { window: windowText })
+		: t('rdp.outsideMaintenanceConnect');
 	showRdpView('maintenance');
 }
 
-$('#rdp-maintenance-back').addEventListener('click', () => showRdpView('list'));
-$('#rdp-maintenance-cancel').addEventListener('click', () => showRdpView('list'));
+$('#rdp-maintenance-cancel').addEventListener('click', closeRdpDialog);
 
 $('#rdp-maintenance-force').addEventListener('click', () => {
 	if (!currentRdpRoute) return;
 	startRdpConnect(currentRdpRoute, { forceMaintenanceBypass: true });
 });
 
-// ── Connecting Progress ──────────────────────────────────
+// ── Connecting Progress ─────────────────────────────────
 function getProgressSteps() {
-  return [
-    { id: 'vpn-check',   label: t('rdpProgress.vpnCheck') },
-    { id: 'tcp-check',   label: t('rdpProgress.tcpCheck') },
-    { id: 'credentials', label: t('rdpProgress.credentials') },
-    { id: 'rdp-file',    label: t('rdpProgress.rdpFile') },
-    { id: 'mstsc',       label: t('rdpProgress.mstsc') },
-  ];
+	return [
+		{ id: 'vpn-check',   label: t('rdpProgress.vpnCheck') },
+		{ id: 'tcp-check',   label: t('rdpProgress.tcpCheck') },
+		{ id: 'credentials', label: t('rdpProgress.credentials') },
+		{ id: 'rdp-file',    label: t('rdpProgress.rdpFile') },
+		{ id: 'mstsc',       label: t('rdpProgress.mstsc') },
+	];
+}
+
+function setConnectingChip(kind) {
+	const chip = $('#rdp-connecting-chip');
+	chip.classList.remove('c-warn', 'c-ok', 'c-err');
+	if (kind === 'done') { chip.classList.add('c-ok'); chip.textContent = t('status.connected'); }
+	else if (kind === 'error') { chip.classList.add('c-err'); chip.textContent = t('rdp.connectionError'); }
+	else { chip.classList.add('c-warn'); chip.textContent = t('rdp.connecting'); }
 }
 
 function showConnectingProgress(svc) {
 	$('#rdp-connecting-title').textContent = svc.name;
 	$('#rdp-connecting-status').textContent = t('rdp.connectionEstablishing');
+	setConnectingChip('running');
 
 	const stepsContainer = $('#rdp-progress-steps');
 	stepsContainer.textContent = '';
 
-	getProgressSteps().forEach(step => {
-		const stepEl = document.createElement('div');
-		stepEl.className = 'rdp-step';
+	getProgressSteps().forEach((step) => {
+		const stepEl = h('li', 'step');
 		stepEl.id = `rdp-step-${step.id}`;
-
-		const icon = document.createElement('div');
-		icon.className = 'rdp-step-icon';
-		setStaticIcon(icon, 'stepPending'); // SAFE: static SVG
+		const icon = h('span', 'step-icon');
+		setStaticIcon(icon, 'stepIcons'); // SAFE: static SVG
 		stepEl.appendChild(icon);
-
-		stepEl.appendChild(document.createTextNode(step.label));
+		stepEl.appendChild(h('span', null, step.label));
 		stepsContainer.appendChild(stepEl);
 	});
 
@@ -811,23 +1183,16 @@ function showConnectingProgress(svc) {
 function updateProgressStep(stepId, status) {
 	const stepEl = $(`#rdp-step-${stepId}`);
 	if (!stepEl) return;
-
-	const icon = stepEl.querySelector('.rdp-step-icon');
-	stepEl.classList.remove('rdp-step-done', 'rdp-step-active', 'rdp-step-error');
-
-	if (status === 'done') {
-		stepEl.classList.add('rdp-step-done');
-		setStaticIcon(icon, 'stepDone'); // SAFE: static SVG
-	} else if (status === 'active') {
-		stepEl.classList.add('rdp-step-active');
-		setStaticIcon(icon, 'stepActive'); // SAFE: static SVG
-	} else if (status === 'error') {
-		stepEl.classList.add('rdp-step-error');
-		setStaticIcon(icon, 'stepError'); // SAFE: static SVG
+	stepEl.classList.remove('done', 'active', 'error');
+	if (status === 'done') stepEl.classList.add('done');
+	else if (status === 'active') stepEl.classList.add('active');
+	else if (status === 'error') {
+		stepEl.classList.add('error');
+		setConnectingChip('error');
 	}
 }
 
-$('#rdp-connecting-back').addEventListener('click', () => showRdpView('list'));
+$('#rdp-connecting-back').addEventListener('click', closeRdpDialog);
 
 // ══════════════════════════════════════════════════════════
 //  IPC EVENT BINDINGS (RDP)
@@ -838,7 +1203,6 @@ rdp.onProgress((data) => {
 		const normalizedStatus = ['skip', 'fallback'].includes(data.status) ? 'done' : data.status;
 		updateProgressStep(data.step, normalizedStatus);
 
-		// Update status text based on current step
 		const statusMessages = {
 			'vpn-check': t('rdpProgress.vpnCheckActive'),
 			'tcp-check': t('rdpProgress.tcpCheckActive'),
@@ -852,6 +1216,8 @@ rdp.onProgress((data) => {
 		}
 		if (data.status === 'done' && data.step === 'mstsc') {
 			$('#rdp-connecting-status').textContent = t('rdp.connectionActive');
+			setConnectingChip('done');
+			$('#rdp-connecting-back').textContent = t('ui.rdp.done');
 		}
 	}
 	if (data.message) {
@@ -859,429 +1225,68 @@ rdp.onProgress((data) => {
 	}
 });
 
-rdp.onSessionStart((data) => {
-	// Refresh the card list to show active session
-	loadRdpServices();
+rdp.onSessionStart(() => {
+	loadRdpSessions().then(renderRdp);
 });
 
-rdp.onSessionEnd((data) => {
-	loadRdpServices();
-	// If we're on connecting view, go back to list
-	if ($('#rdp-view-connecting').classList.contains('active')) {
-		showRdpView('list');
-	}
+rdp.onSessionEnd(() => {
+	loadRdpSessions().then(renderRdp);
+	// If the progress dialog is still open, close it
+	if ($('#rdp-view-connecting').classList.contains('active')) closeRdpDialog();
 });
 
 rdp.onSessionError((data) => {
-	if (data.step) {
-		updateProgressStep(data.step, 'error');
-	}
-	if (data.message) {
-		$('#rdp-connecting-status').textContent = data.message;
-	}
+	if (data.step) updateProgressStep(data.step, 'error');
+	setConnectingChip('error');
+	const msg = data.message || data.error;
+	if (msg) $('#rdp-connecting-status').textContent = msg;
 });
 
 rdp.onServicesUpdate((data) => {
 	rdpServices = data || [];
-	if (panelOpen && $('#rdp-view-list').classList.contains('active')) {
-		renderRdpCards(rdpServices);
-	}
-	updateRdpBadge();
+	renderRdp();
 });
 
-// Long-dwell info toast: rdpsign.exe is missing on this system and we
-// couldn't restore it from WinSxS, so mstsc will keep showing the
-// publisher warning. The main process also raises a desktop Notification.
-rdp.onSigningUnavailable(() => {
-	showToast(t('notify.rdpSigningUnavailable'), 'info', 15000);
-});
-
-// ══════════════════════════════════════════════════════════
-//  TUNNEL STATE UPDATES
-// ══════════════════════════════════════════════════════════
-tunnel.onState((newState) => {
-	state = { ...state, ...newState };
-	updateUI();
-});
-
-// Initial status
-tunnel.getStatus().then(async (s) => {
-	if (s) {
-		state = { ...state, ...s };
-		updateUI();
-		if (s.connected) {
-			await loadPermissions();
-			applyPermissions();
-		}
-	}
-});
-
-function updateUI() {
-	const { status, connected, endpoint, handshake, rxBytes, txBytes, rxSpeed, txSpeed, killSwitch: ks } = state;
-
-	// Ring
-	el.ringFill.classList.remove('connected', 'connecting');
-	el.statusIcon.classList.remove('connected', 'connecting');
-
-	if (connected || status === 'connected') {
-		el.ringFill.classList.add('connected');
-		el.statusIcon.classList.add('connected');
-		setStaticIcon(el.statusIcon, 'connected'); // SAFE: static SVG
-		el.statusLabel.textContent = t('status.connected');
-		el.statusLabel.style.color = 'var(--accent)';
-
-		el.connectBtn.classList.add('connected');
-		el.connectBtn.classList.remove('connecting');
-		el.connectBtn.querySelector('.connect-btn-text').textContent = t('action.disconnect');
-
-	} else if (status === 'connecting' || status === 'reconnecting') {
-		el.ringFill.classList.add('connecting');
-		el.statusIcon.classList.add('connecting');
-		setStaticIcon(el.statusIcon, 'connecting'); // SAFE: static SVG
-		el.statusLabel.textContent = t(status === 'reconnecting' ? 'status.reconnecting' : 'status.connecting');
-		el.statusLabel.style.color = 'var(--warn)';
-
-		el.connectBtn.classList.remove('connected');
-		el.connectBtn.classList.add('connecting');
-
-	} else {
-		setStaticIcon(el.statusIcon, 'disconnected'); // SAFE: static SVG
-		el.statusLabel.textContent = t('status.disconnected');
-		el.statusLabel.style.color = 'var(--text-3)';
-
-		el.connectBtn.classList.remove('connected', 'connecting');
-		el.connectBtn.querySelector('.connect-btn-text').textContent = t('action.connect');
-	}
-
-	// Stats
-	el.statEndpoint.textContent = endpoint || '\u2014';
-	el.statHandshake.textContent = handshake || '\u2014';
-	el.statRx.textContent = formatBytes(rxBytes || 0);
-	el.statTx.textContent = formatBytes(txBytes || 0);
-
-	// Speed + Graph
-	if (connected && activePermissions.traffic) {
-		el.statRxSpeed.textContent = formatSpeed(rxSpeed || 0);
-		el.statTxSpeed.textContent = formatSpeed(txSpeed || 0);
-		updateBandwidthGraph(rxSpeed || 0, txSpeed || 0);
-	} else {
-		el.statRxSpeed.textContent = '';
-		el.statTxSpeed.textContent = '';
-	}
-
-	// Bandwidth graph visibility
-	const bwSection = $('#bandwidth-section');
-	if (bwSection) bwSection.style.display = (connected && activePermissions.traffic) ? '' : 'none';
-
-	// Kill-Switch
-	el.killswitchToggle.checked = ks || false;
-
-	// RDP Allow
-	el.rdpAllowToggle.checked = state.rdpAllow || false;
-}
-
-// ── Connect Button ───────────────────────────────────────
-el.connectBtn.addEventListener('click', async () => {
-	if (state.status === 'connecting') return;
-	if (state.connected) {
-		await tunnel.disconnect();
-	} else {
-		await tunnel.connect();
-	}
-});
-
-// ── Kill-Switch Toggle ───────────────────────────────────
-el.killswitchToggle.addEventListener('change', (e) => {
-	killSwitch.toggle(e.target.checked);
-});
-
-// ── RDP Allow Toggle ─────────────────────────────────────
-el.rdpAllowToggle.addEventListener('change', (e) => {
-	rdpAllow.toggle(e.target.checked);
-});
-
-// ══════════════════════════════════════════════════════════
-//  BANDWIDTH GRAPH (Canvas)
-// ══════════════════════════════════════════════════════════
-const BW_HISTORY_LEN = 60;
-const bwHistory = { rx: [], tx: [] };
-
-function updateBandwidthGraph(rxSpeed, txSpeed) {
-	bwHistory.rx.push(rxSpeed);
-	bwHistory.tx.push(txSpeed);
-	if (bwHistory.rx.length > BW_HISTORY_LEN) bwHistory.rx.shift();
-	if (bwHistory.tx.length > BW_HISTORY_LEN) bwHistory.tx.shift();
-
-	const canvas = document.getElementById('bandwidth-canvas');
-	if (!canvas) return;
-
-	const ctx = canvas.getContext('2d');
-	const dpr = window.devicePixelRatio || 1;
-	const w = canvas.clientWidth;
-	const h = canvas.clientHeight;
-
-	const newW = w * dpr;
-	const newH = h * dpr;
-	if (canvas.width !== newW || canvas.height !== newH) {
-		canvas.width = newW;
-		canvas.height = newH;
-	}
-	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-	ctx.clearRect(0, 0, w, h);
-
-	const allValues = [...bwHistory.rx, ...bwHistory.tx];
-	const maxVal = Math.max(...allValues, 1024);
-
-	// Grid lines
-	const style = getComputedStyle(document.documentElement);
-	const gridColor = style.getPropertyValue('--canvas-grid').trim();
-	ctx.strokeStyle = gridColor;
-	ctx.lineWidth = 1;
-	for (let i = 1; i < 4; i++) {
-		const y = (h / 4) * i;
-		ctx.beginPath();
-		ctx.moveTo(0, y);
-		ctx.lineTo(w, y);
-		ctx.stroke();
-	}
-
-	// Scale label
-	const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-	ctx.fillStyle = isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.2)';
-	ctx.font = '9px monospace';
-	ctx.fillText(formatSpeed(maxVal), 2, 10);
-
-	function drawLine(data, lineColor, fillColor) {
-		if (data.length < 2) return;
-		const step = w / (BW_HISTORY_LEN - 1);
-
-		ctx.beginPath();
-		ctx.moveTo(0, h);
-		for (let i = 0; i < data.length; i++) {
-			const x = (BW_HISTORY_LEN - data.length + i) * step;
-			const y = h - (data[i] / maxVal) * (h - 12);
-			ctx.lineTo(x, y);
-		}
-		ctx.lineTo((BW_HISTORY_LEN - 1) * step, h);
-		ctx.closePath();
-		ctx.fillStyle = fillColor;
-		ctx.fill();
-
-		ctx.beginPath();
-		for (let i = 0; i < data.length; i++) {
-			const x = (BW_HISTORY_LEN - data.length + i) * step;
-			const y = h - (data[i] / maxVal) * (h - 12);
-			i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-		}
-		ctx.strokeStyle = lineColor;
-		ctx.lineWidth = 1.5;
-		ctx.stroke();
-	}
-
-	const lineRx = style.getPropertyValue('--canvas-line').trim();
-	const fillRx = style.getPropertyValue('--canvas-fill').trim();
-	const lineTx = style.getPropertyValue('--canvas-line2').trim();
-	const fillTx = style.getPropertyValue('--canvas-fill2').trim();
-
-	drawLine(bwHistory.tx, lineTx, fillTx);
-	drawLine(bwHistory.rx, lineRx, fillRx);
-}
-
-// ══════════════════════════════════════════════════════════
-//  PERMISSIONS, SERVICES, TRAFFIC, DNS
-// ══════════════════════════════════════════════════════════
-async function loadPermissions() {
-	try {
-		const perms = await permissions.get();
-		if (perms) activePermissions = { ...perms, _loaded: true };
-	} catch {}
-}
-
-function applyPermissions() {
-	const servicesSection = $('#services-section');
-	const trafficSection = $('#traffic-usage');
-	const bandwidthSection = $('#bandwidth-section');
-	const dnsSection = $('.dns-section');
-
-	if (activePermissions.services) {
-		loadServices();
-	} else if (servicesSection) {
-		servicesSection.style.display = 'none';
-	}
-
-	if (activePermissions.traffic) {
-		loadTraffic();
-	} else {
-		if (trafficSection) trafficSection.style.display = 'none';
-		if (bandwidthSection) bandwidthSection.style.display = 'none';
-	}
-
-	if (!activePermissions.dns && dnsSection) {
-		dnsSection.style.display = 'none';
-	} else if (dnsSection) {
-		dnsSection.style.display = '';
-	}
-}
-
-async function loadServices() {
-	const list = await services.list();
-	const section = $('#services-section');
-	const container = $('#services-list');
-	if (!list || list.length === 0) {
-		if (section) section.style.display = 'none';
-		return;
-	}
-
-	section.style.display = '';
-	container.textContent = '';
-
-	list.forEach((svc) => {
-		const item = document.createElement('div');
-		item.className = 'service-item';
-		item.addEventListener('click', () => shell.openExternal(svc.url));
-
-		const icon = document.createElement('div');
-		icon.className = 'service-icon';
-		setStaticIcon(icon, 'globe'); // SAFE: static SVG
-		item.appendChild(icon);
-
-		const info = document.createElement('div');
-		info.className = 'service-info';
-		const nameEl = document.createElement('div');
-		nameEl.className = 'service-name';
-		nameEl.textContent = svc.name;
-		info.appendChild(nameEl);
-		const domain = document.createElement('div');
-		domain.className = 'service-domain';
-		domain.textContent = svc.domain;
-		info.appendChild(domain);
-		item.appendChild(info);
-
-		if (svc.hasAuth || svc.protocol) {
-			const badge = document.createElement('span');
-			badge.className = 'tag tag-online';
-			badge.style.fontSize = '9px';
-			badge.textContent = svc.protocol || 'HTTPS';
-			item.appendChild(badge);
-		}
-
-		container.appendChild(item);
-	});
-}
-
-// Reload permissions + services on connect
-tunnel.onState(async (s) => {
-	if (s.connected || s.status === 'connected') {
-		if (!activePermissions._loaded) {
-			await loadPermissions();
-			applyPermissions();
-		}
-	} else {
-		activePermissions._loaded = false;
-	}
-});
-
-// ── Traffic Usage ────────────────────────────────────────
-async function loadTraffic() {
-	const data = await traffic.stats();
-	const section = $('#traffic-usage');
-	const grid = $('#traffic-grid');
-	if (!data || !section || !grid) return;
-
-	section.style.display = '';
-	grid.textContent = '';
-
-	const periods = [
-		{ label: t('stats.period24h'), data: data.last24h },
-		{ label: t('stats.period7d'), data: data.last7d },
-		{ label: t('stats.period30d'), data: data.last30d },
-		{ label: t('stats.periodTotal'), data: data.total },
-	];
-
-	for (const p of periods) {
-		const card = document.createElement('div');
-		card.className = 'traffic-card';
-
-		const period = document.createElement('div');
-		period.className = 'traffic-period';
-		period.textContent = p.label;
-		card.appendChild(period);
-
-		const value = document.createElement('div');
-		value.className = 'traffic-value';
-		const rx = p.data?.rx || 0;
-		const tx = p.data?.tx || 0;
-		value.textContent = formatBytes(rx + tx);
-		card.appendChild(value);
-
-		const sub = document.createElement('div');
-		sub.className = 'traffic-sub';
-		sub.textContent = `\u2193 ${formatBytes(rx)} / \u2191 ${formatBytes(tx)}`;
-		card.appendChild(sub);
-
-		grid.appendChild(card);
-	}
-}
-
-// ── DNS Leak Test ────────────────────────────────────────
-const dnsBtn = $('#dns-test-btn');
-const dnsResult = $('#dns-result');
-
-if (dnsBtn) {
-	dnsBtn.addEventListener('click', async () => {
-		dnsBtn.disabled = true;
-		dnsBtn.textContent = t('dns.testing');
-		dnsResult.style.display = 'none';
-
-		try {
-			const [serverInfo, sysCheck] = await Promise.all([
-				dns.leakTest(),
-				dns.checkSystem(),
-			]);
-
-			const { connected, killSwitch, dnsServer, resolveOk } = sysCheck || {};
-			const vpnDns = serverInfo?.vpnDns || '';
-			const expectedDns = vpnDns.split(',').map(s => s.trim()).filter(Boolean);
-
-			if (!connected) {
-				showToast(t('dns.leakNotConnected'), 'error', 8000);
-			} else if (!resolveOk) {
-				showToast(t('dns.resolveFailed'), 'error', 8000);
-			} else if (killSwitch) {
-				const info = dnsServer ? ` DNS: ${dnsServer}` : '';
-				showToast(t('dns.noLeakKillSwitch') + info, 'success', 6000);
-			} else if (dnsServer && expectedDns.includes(dnsServer)) {
-				showToast(t('dns.noLeakDetail', { servers: dnsServer }), 'success', 6000);
-			} else {
-				const info = dnsServer ? ` ${t('dns.activeDns')}: ${dnsServer}` : '';
-				showToast(t('dns.leakNoKillSwitch') + info, 'warning', 8000);
-			}
-		} catch {
-			showToast(t('dns.testFailed'), 'error', 5000);
-		}
-
-		dnsBtn.disabled = false;
-		dnsBtn.textContent = t('dns.testBtn');
-	});
-}
+// Badge on start-up (without starting the status polling)
+rdp.list().then((list) => { rdpServices = list || []; renderRdp(); }).catch(() => {});
+loadRdpSessions();
 
 // ══════════════════════════════════════════════════════════
 //  SETTINGS
 // ══════════════════════════════════════════════════════════
+function showSettingsTab(tab) {
+	$$('#settings-tabs [data-tab]').forEach((b) => {
+		const on = b.dataset.tab === tab;
+		b.classList.toggle('on', on);
+		if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+	});
+	$$('.set-tab').forEach((p) => p.classList.toggle('active', p.id === `set-${tab}`));
+}
+
+$$('#settings-tabs [data-tab]').forEach((b) => b.addEventListener('click', () => showSettingsTab(b.dataset.tab)));
+
 // Load settings
-config.getAll().then(cfg => {
+config.getAll().then((cfg) => {
 	if (!cfg) return;
-	el.serverUrl.value = cfg.server?.url || '';
+	serverUrl = cfg.server?.url || '';
+	el.serverUrl.value = serverUrl;
 	el.apiKey.value = cfg.server?.apiKey || '';
-	el.optAutostart.checked = cfg.app?.startWithWindows ?? true;
-	el.optMinimized.checked = cfg.app?.startMinimized ?? true;
+	setSwitch(el.optAutostart, cfg.app?.startWithWindows ?? true);
+	setSwitch(el.optMinimized, cfg.app?.startMinimized ?? true);
 	applyTheme(cfg.app?.theme || 'dark');
-	el.optAutoconnect.checked = cfg.tunnel?.autoConnect ?? true;
+	setSwitch(el.optAutoconnect, cfg.tunnel?.autoConnect ?? true);
 	el.optCheckInterval.value = cfg.app?.checkInterval ?? 30;
 	el.optPollInterval.value = cfg.app?.configPollInterval ?? 300;
-	el.optSplitTunnel.checked = cfg.tunnel?.splitTunnel ?? false;
-	el.optSplitRoutes.value = cfg.tunnel?.splitRoutes || '';
-	el.splitRoutesSection.style.display = el.optSplitTunnel.checked ? '' : 'none';
+	splitSaved = {
+		enabled: cfg.tunnel?.splitTunnel ?? false,
+		routes: parseRoutes(cfg.tunnel?.splitRoutes || ''),
+	};
+	splitDraft = { enabled: splitSaved.enabled, routes: [...splitSaved.routes] };
+	renderSplit();
+	updateUI();
+
+	// First start: nothing configured yet → open the setup assistant
+	if (!cfg.server?.url && !cfg.tunnel?.configPath) navigateTo('setup');
 });
 
 // API-Key toggle
@@ -1289,6 +1294,19 @@ $('#toggle-api-key').addEventListener('click', () => {
 	const input = el.apiKey;
 	input.type = input.type === 'password' ? 'text' : 'password';
 });
+
+function showStatus(target, message, type) {
+	target.hidden = false;
+	target.textContent = message;
+	target.className = `field-status ${type}`;
+	if (type === 'success') {
+		setTimeout(() => { target.hidden = true; }, 5000);
+	}
+}
+
+function showServerStatus(message, type) {
+	showStatus(el.serverStatus, message, type);
+}
 
 // Server test
 $('#btn-test-server').addEventListener('click', async () => {
@@ -1318,61 +1336,297 @@ $('#btn-save-server').addEventListener('click', async () => {
 	showServerStatus(t('server.registering'), 'info');
 	const result = await server.setup({ url, apiKey: key });
 	if (result.success) {
-		showServerStatus(t('server.registered', { peerId: result.peerId }), 'success');
+		serverUrl = url;
+		showServerStatus(t(result.enrolled ? 'server.enrolled' : 'server.registered', { peerId: result.peerId }), 'success');
+		reloadServerFields();
 	} else {
 		showServerStatus(t('server.testError', { error: result.error }), 'error');
 	}
 });
 
-function showServerStatus(message, type) {
-	el.serverStatus.hidden = false;
-	el.serverStatus.textContent = message;
-	el.serverStatus.className = `field-status ${type}`;
-	if (type === 'success') {
-		setTimeout(() => { el.serverStatus.hidden = true; }, 5000);
-	}
+/** A setup code is swapped for an API key by the core; show what was stored. */
+function reloadServerFields() {
+	config.getAll().then((cfg) => {
+		if (!cfg) return;
+		serverUrl = cfg.server?.url || serverUrl;
+		el.serverUrl.value = serverUrl;
+		el.apiKey.value = cfg.server?.apiKey || '';
+		updateUI();
+	}).catch(() => {});
 }
 
-// Config import
+$('#btn-open-setup').addEventListener('click', () => navigateTo('setup'));
+
+// App settings
+bindSwitch(el.optAutostart, (on) => {
+	autostart.set(on);
+	config.set('app.startWithWindows', on);
+});
+
+bindSwitch(el.optMinimized, (on) => {
+	config.set('app.startMinimized', on);
+});
+
+bindSwitch(el.optAutoconnect, (on) => {
+	config.set('tunnel.autoConnect', on);
+});
+
+el.optCheckInterval.addEventListener('change', (e) => {
+	const val = Math.max(5, Math.min(300, parseInt(e.target.value, 10) || 30));
+	e.target.value = val;
+	config.set('app.checkInterval', val);
+});
+
+el.optPollInterval.addEventListener('change', (e) => {
+	const val = Math.max(30, Math.min(3600, parseInt(e.target.value, 10) || 300));
+	e.target.value = val;
+	config.set('app.configPollInterval', val);
+});
+
+// ── Split-Tunneling ─────────────────────────────────────
+function parseRoutes(text) {
+	return String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+}
+
+function routeKind(value) {
+	if (/^[\d.]+\/\d+$/.test(value) || /^[0-9a-f:]+\/\d+$/i.test(value)) return t('ui.split.kindSubnet');
+	if (/^[\d.]+$/.test(value) || /^[0-9a-f:]+$/i.test(value)) return t('ui.split.kindIp');
+	return t('ui.split.kindDomain');
+}
+
+function splitIsDirty() {
+	return splitDraft.enabled !== splitSaved.enabled
+		|| splitDraft.routes.join('\n') !== splitSaved.routes.join('\n');
+}
+
+function renderSplit() {
+	const all = $('#split-mode-all');
+	const only = $('#split-mode-split');
+	all.classList.toggle('sel', !splitDraft.enabled);
+	only.classList.toggle('sel', splitDraft.enabled);
+	all.setAttribute('aria-pressed', String(!splitDraft.enabled));
+	only.setAttribute('aria-pressed', String(splitDraft.enabled));
+	el.splitRoutesSection.hidden = !splitDraft.enabled;
+
+	const list = $('#split-route-list');
+	list.textContent = '';
+	splitDraft.routes.forEach((value, i) => {
+		const item = h('div', 'route-item');
+		item.appendChild(h('span', 'chip', routeKind(value)));
+		item.appendChild(h('span', 'mono', value));
+		const rm = h('button', 'btn btn-ghost');
+		rm.type = 'button';
+		rm.setAttribute('aria-label', t('ui.split.remove', { value }));
+		rm.title = t('ui.split.remove', { value });
+		setStaticIcon(rm, 'trash'); // SAFE: static SVG
+		rm.addEventListener('click', () => {
+			splitDraft.routes.splice(i, 1);
+			renderSplit();
+		});
+		item.appendChild(rm);
+		list.appendChild(item);
+	});
+	$('#split-route-count').textContent = t('ui.split.count', { count: splitDraft.routes.length });
+
+	const dirty = splitIsDirty();
+	$('#btn-save-split').disabled = !dirty;
+	$('#split-dirty').hidden = !dirty;
+	$('#split-add-btn').disabled = !$('#split-new-route').value.trim();
+
+	applySplitPolicy();
+
+	// Overview routing label reflects the saved (active) setting
+	$('#routing-btn').textContent = splitSaved.enabled
+		? t('ui.protection.splitCount', { count: splitSaved.routes.length })
+		: t('ui.protection.fullTunnel');
+}
+
+$('#split-mode-all').addEventListener('click', () => { splitDraft.enabled = false; renderSplit(); });
+$('#split-mode-split').addEventListener('click', () => { splitDraft.enabled = true; renderSplit(); });
+
+function addRoute() {
+	const input = $('#split-new-route');
+	const values = parseRoutes(input.value.replace(/[,;\s]+/g, '\n'));
+	values.forEach((v) => { if (!splitDraft.routes.includes(v)) splitDraft.routes.push(v); });
+	input.value = '';
+	renderSplit();
+	input.focus();
+}
+
+$('#split-add-btn').addEventListener('click', addRoute);
+$('#split-new-route').addEventListener('input', () => {
+	$('#split-add-btn').disabled = !$('#split-new-route').value.trim();
+});
+$('#split-new-route').addEventListener('keydown', (e) => {
+	if (e.key === 'Enter' && e.target.value.trim()) addRoute();
+});
+
+$('#btn-save-split').addEventListener('click', async () => {
+	const modeChanged = splitDraft.enabled !== splitSaved.enabled;
+	const routes = splitDraft.routes.join('\n');
+	config.set('tunnel.splitTunnel', splitDraft.enabled);
+	config.set('tunnel.splitRoutes', routes);
+	splitSaved = { enabled: splitDraft.enabled, routes: [...splitDraft.routes] };
+	renderSplit();
+
+	if (splitDraft.enabled && !routes) {
+		showSplitStatus(t('split.noRoutes'), 'warn');
+		return;
+	}
+	const count = splitDraft.routes.length;
+	if (state.connected) {
+		if (!splitDraft.enabled) showSplitStatus(t('split.fullTunnelOnReconnect'), 'info');
+		else showSplitStatus(modeChanged ? t('split.activateOnReconnect') : t('split.routesSaved', { count }), 'info');
+		await tunnel.reconnect();
+	} else if (splitDraft.enabled) {
+		showSplitStatus(t('split.routesSavedPending', { count }), 'info');
+	}
+});
+
+let splitStatusTimer = null;
+function showSplitStatus(msg, type) {
+	const statusEl = $('#split-status');
+	if (!statusEl) return;
+	statusEl.hidden = false;
+	statusEl.textContent = msg;
+	statusEl.className = `field-status ${type === 'warn' ? 'warn' : 'success'}`;
+	clearTimeout(splitStatusTimer);
+	splitStatusTimer = setTimeout(() => { statusEl.hidden = true; }, 5000);
+}
+
+// ══════════════════════════════════════════════════════════
+//  SETUP ASSISTANT
+// ══════════════════════════════════════════════════════════
+const SETUP_ORDER = { choose: 1, code: 2, qr: 2, done: 3 };
+
+function showSetupStep(step) {
+	setupStep = step;
+	$$('.setup-step').forEach((s) => s.classList.toggle('active', s.id === `setup-${step}`));
+	renderSetupProgress();
+}
+
+function renderSetupProgress() {
+	const n = SETUP_ORDER[setupStep] || 1;
+	$$('#setup-dots span').forEach((dot, i) => dot.classList.toggle('on', i < n));
+	$('#setup-step-label').textContent = t('ui.setup.step', { n, total: 3 });
+	if (setupDone) $('#setup-done-desc').textContent = t(setupDone.key, setupDone.params);
+}
+
+function resetSetup() {
+	setupDone = null;
+	$('#setup-choose-status').hidden = true;
+	$('#setup-status').hidden = true;
+	showSetupStep('choose');
+}
+
+function finishSetup(key, params) {
+	setupDone = { key, params };
+	reloadServerFields();
+	showSetupStep('done');
+}
+
+$('#setup-cancel').addEventListener('click', () => navigateTo('status'));
+$$('.setup-back').forEach((b) => b.addEventListener('click', () => showSetupStep('choose')));
+$('#setup-later').addEventListener('click', () => navigateTo('status'));
+$('#setup-connect').addEventListener('click', () => {
+	navigateTo('status');
+	doConnect();
+});
+
+$('#setup-opt-code').addEventListener('click', () => {
+	const urlInput = $('#setup-url');
+	if (!urlInput.value) urlInput.value = el.serverUrl.value || '';
+	updateSetupSubmit();
+	showSetupStep('code');
+	(urlInput.value ? $('#setup-key') : urlInput).focus();
+});
+
+function updateSetupSubmit() {
+	$('#setup-submit').disabled = !$('#setup-url').value.trim() || $('#setup-key').value.trim().length < 4;
+}
+$('#setup-url').addEventListener('input', updateSetupSubmit);
+$('#setup-key').addEventListener('input', updateSetupSubmit);
+$('#setup-key').addEventListener('keydown', (e) => {
+	if (e.key === 'Enter' && !$('#setup-submit').disabled) $('#setup-submit').click();
+});
+
+$('#setup-submit').addEventListener('click', async () => {
+	const statusEl = $('#setup-status');
+	const submit = $('#setup-submit');
+	let url = $('#setup-url').value.trim();
+	const key = $('#setup-key').value.trim();
+	if (!url || !key) {
+		showStatus(statusEl, t('server.urlAndKeyRequired'), 'error');
+		return;
+	}
+	if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+	submit.disabled = true;
+	showStatus(statusEl, t('server.registering'), 'info');
+	try {
+		const result = await server.setup({ url, apiKey: key });
+		if (result.success) {
+			serverUrl = url;
+			statusEl.hidden = true;
+			$('#setup-key').value = '';
+			finishSetup(result.enrolled ? 'server.enrolled' : 'server.registered', { peerId: result.peerId });
+		} else if (!result.cancelled) {
+			showStatus(statusEl, t('server.testError', { error: result.error }), 'error');
+		} else {
+			statusEl.hidden = true;
+		}
+	} catch (err) {
+		showStatus(statusEl, t('server.testError', { error: err.message }), 'error');
+	}
+	updateSetupSubmit();
+});
+
+// Config import (.conf)
 $('#btn-import-file').addEventListener('click', async () => {
 	const result = await config.importFile();
 	if (result.success) {
-		showServerStatus(t('server.configImported', { path: result.path }), 'success');
+		finishSetup('server.configImported', { path: result.path });
 	} else if (result.error) {
-		showServerStatus(t('server.importError', { error: result.error }), 'error');
+		showStatus($('#setup-choose-status'), t('server.importError', { error: result.error }), 'error');
 	}
 });
 
 // QR-Code scanner
 let qrStream = null;
+let qrTimeout = null;
 
 $('#btn-import-qr').addEventListener('click', async () => {
-	const preview = $('#qr-preview');
 	const video = $('#qr-video');
 	try {
 		qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
 		video.srcObject = qrStream;
-		preview.hidden = false;
+		showSetupStep('qr');
 		scanQR();
-		setTimeout(() => {
+		clearTimeout(qrTimeout);
+		qrTimeout = setTimeout(() => {
 			if (qrStream) {
 				stopQRScan();
-				showServerStatus(t('server.qrTimeout'), 'error');
+				showSetupStep('choose');
+				showStatus($('#setup-choose-status'), t('server.qrTimeout'), 'error');
 			}
 		}, 60000);
 	} catch (err) {
-		showServerStatus(t('server.cameraError', { error: err.message }), 'error');
+		showStatus($('#setup-choose-status'), t('server.cameraError', { error: err.message }), 'error');
 	}
 });
 
-$('#btn-qr-cancel').addEventListener('click', stopQRScan);
+$('#btn-qr-cancel').addEventListener('click', () => {
+	stopQRScan();
+	showSetupStep('choose');
+});
 
 function stopQRScan() {
+	clearTimeout(qrTimeout);
 	if (qrStream) {
-		qrStream.getTracks().forEach(tr => tr.stop());
+		qrStream.getTracks().forEach((tr) => tr.stop());
 		qrStream = null;
 	}
-	$('#qr-preview').hidden = true;
+	const video = $('#qr-video');
+	if (video) video.srcObject = null;
 }
 
 async function scanQR() {
@@ -1392,9 +1646,21 @@ async function scanQR() {
 				width: canvas.width,
 				height: canvas.height,
 			});
+			// Setup QR ("App einrichten"): core asked the user and redeemed it —
+			// stop scanning either way, or the next frame would ask again.
+			if (result.enrollment) {
+				stopQRScan();
+				if (result.success) {
+					finishSetup('server.enrolled', { peerId: result.peerId });
+				} else {
+					showSetupStep('choose');
+					if (!result.cancelled) showStatus($('#setup-choose-status'), result.error, 'error');
+				}
+				return;
+			}
 			if (result.success) {
 				stopQRScan();
-				showServerStatus(t('server.qrSuccess'), 'success');
+				finishSetup('server.qrSuccess');
 				return;
 			}
 		}
@@ -1403,188 +1669,317 @@ async function scanQR() {
 	scan();
 }
 
-// App settings
-el.optAutostart.addEventListener('change', (e) => {
-	autostart.set(e.target.checked);
-	config.set('app.startWithWindows', e.target.checked);
-});
-
-el.optMinimized.addEventListener('change', (e) => {
-	config.set('app.startMinimized', e.target.checked);
-});
-
-el.optAutoconnect.addEventListener('change', (e) => {
-	config.set('tunnel.autoConnect', e.target.checked);
-});
-
-el.optCheckInterval.addEventListener('change', (e) => {
-	const val = Math.max(5, Math.min(300, parseInt(e.target.value, 10) || 30));
-	e.target.value = val;
-	config.set('app.checkInterval', val);
-});
-
-el.optPollInterval.addEventListener('change', (e) => {
-	const val = Math.max(30, Math.min(3600, parseInt(e.target.value, 10) || 300));
-	e.target.value = val;
-	config.set('app.configPollInterval', val);
-});
-
-// Split-Tunneling
-el.optSplitTunnel.addEventListener('change', async (e) => {
-	config.set('tunnel.splitTunnel', e.target.checked);
-	el.splitRoutesSection.style.display = e.target.checked ? '' : 'none';
-	if (state.connected) {
-		showSplitStatus(e.target.checked
-			? t('split.activateOnReconnect')
-			: t('split.fullTunnelOnReconnect'), 'info');
-		await tunnel.disconnect();
-		await tunnel.connect();
-	}
-});
-
-$('#btn-save-split').addEventListener('click', async () => {
-	const routes = el.optSplitRoutes.value.trim();
-	config.set('tunnel.splitRoutes', routes);
-	if (!routes) {
-		showSplitStatus(t('split.noRoutes'), 'warn');
-		return;
-	}
-	const count = routes.split('\n').filter(l => l.trim()).length;
-	showSplitStatus(t('split.routesSaved', { count }), 'info');
-	if (state.connected) {
-		await tunnel.disconnect();
-		await tunnel.connect();
-	} else {
-		showSplitStatus(t('split.routesSavedPending', { count }), 'info');
-	}
-});
-
-function showSplitStatus(msg, type) {
-	const statusEl = $('#split-status');
-	if (!statusEl) return;
-	statusEl.style.display = '';
-	statusEl.textContent = msg;
-	statusEl.style.color = type === 'warn' ? 'var(--warn)' : 'var(--accent)';
-	statusEl.style.background = type === 'warn' ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)';
-	setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
-}
-
 // ══════════════════════════════════════════════════════════
 //  LOGS
 // ══════════════════════════════════════════════════════════
-let logPeriod = 'all';
+const LOG_LINE = /^\[(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.\d+)?\]\s*(?:\[([^\]]+)\]\s*)?(?:\[(\w+)\]\s*)?(.*)$/;
+const LOG_LEVELS = {
+	error: { key: 'ui.logs.error', cls: 'c-err', group: 'error' },
+	warn: { key: 'ui.logs.warn', cls: 'c-warn', group: 'warn' },
+	warning: { key: 'ui.logs.warn', cls: 'c-warn', group: 'warn' },
+	info: { key: 'ui.logs.info', cls: 'c-info', group: 'info' },
+	debug: { key: 'ui.logs.debug', cls: '', group: 'info' },
+	verbose: { key: 'ui.logs.debug', cls: '', group: 'info' },
+	silly: { key: 'ui.logs.debug', cls: '', group: 'info' },
+};
+const MAX_LOG_ROWS = 1500;
+
+function parseLogLine(line) {
+	const m = line.match(LOG_LINE);
+	if (!m) return { time: '', level: null, msg: line };
+	// electron-log: "[date time] [level] msg" – the optional scope comes first in some formats
+	let level = (m[4] || m[3] || '').toLowerCase();
+	let msg = m[5];
+	if (!LOG_LEVELS[level]) {
+		if (m[3] && !m[4]) msg = `[${m[3]}] ${msg}`;
+		level = null;
+	}
+	return { time: `${m[1]} ${m[2]}`, level, msg };
+}
 
 async function refreshLogs() {
-	el.logOutput.textContent = t('logs.loading');
-	const logText = await logs.get({ period: logPeriod });
-	el.logOutput.textContent = logText || t('logs.empty');
-	el.logOutput.scrollTop = 0; // newest on top
+	el.logRows.textContent = '';
+	el.logEmpty.hidden = false;
+	el.logEmpty.textContent = t('logs.loading');
+	logText = (await logs.get({ period: logPeriod })) || '';
+	renderLogs();
+	$('#log-output').scrollTop = 0; // newest on top
+}
+
+function renderLogs() {
+	if (!el.logRows) return;
+	const query = ($('#log-search').value || '').toLowerCase();
+	const entries = logText.split('\n').filter((l) => l.trim()).map(parseLogLine);
+	const filtered = entries.filter((e) => {
+		if (logLevel !== 'all') {
+			if (!e.level || LOG_LEVELS[e.level].group !== logLevel) return false;
+		}
+		if (query && !`${e.msg} ${e.time}`.toLowerCase().includes(query)) return false;
+		return true;
+	});
+
+	el.logRows.textContent = '';
+	const frag = document.createDocumentFragment();
+	filtered.slice(0, MAX_LOG_ROWS).forEach((e) => {
+		const row = h('div', 'log-row');
+		row.setAttribute('role', 'row');
+		const time = h('span', 'log-time', e.time);
+		time.setAttribute('role', 'cell');
+		row.appendChild(time);
+		const lvl = h('span', 'log-level');
+		lvl.setAttribute('role', 'cell');
+		if (e.level) lvl.appendChild(h('span', `chip chip-sm ${LOG_LEVELS[e.level].cls}`, t(LOG_LEVELS[e.level].key)));
+		row.appendChild(lvl);
+		const msg = h('span', 'log-msg', e.msg);
+		msg.setAttribute('role', 'cell');
+		row.appendChild(msg);
+		frag.appendChild(row);
+	});
+	el.logRows.appendChild(frag);
+
+	$('#log-count').textContent = t('ui.logs.count', { count: filtered.length });
+	el.logEmpty.hidden = filtered.length > 0;
+	el.logEmpty.textContent = entries.length === 0 ? t('logs.empty') : t('ui.logs.noMatch');
 }
 
 $('#btn-refresh-logs').addEventListener('click', refreshLogs);
-
-// Log period filter
-const logPeriodFilter = $('#log-period-filter');
-if (logPeriodFilter) {
-	logPeriodFilter.addEventListener('click', (e) => {
-		const btn = e.target.closest('[data-period]');
-		if (!btn) return;
-		logPeriod = btn.dataset.period;
-		logPeriodFilter.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
-		btn.classList.add('active');
-		refreshLogs();
-	});
-}
+$('#log-search').addEventListener('input', renderLogs);
+bindSeg($('#log-level-filter'), 'level', (lvl) => { logLevel = lvl; renderLogs(); });
+bindSeg($('#log-period-filter'), 'period', (period) => { logPeriod = period; refreshLogs(); });
 
 // Log export
-const exportLogsBtn = $('#btn-export-logs');
-if (exportLogsBtn) {
-	exportLogsBtn.addEventListener('click', async () => {
-		const logPath = await logs.export();
-		if (logPath) shell.openExternal('file://' + logPath.replace(/\\/g, '/'));
-	});
+// Shows the log file in Explorer (shell:open-external only takes http(s)).
+async function exportLogs() {
+	await logs.show();
 }
+$('#btn-export-logs').addEventListener('click', exportLogs);
+$('#btn-export-logs-adv').addEventListener('click', exportLogs);
 
 // ══════════════════════════════════════════════════════════
 //  AUTO-UPDATE UI
 // ══════════════════════════════════════════════════════════
 function showUpdateBanner(info) {
-	const existing = $('#update-banner');
-	if (existing) existing.remove();
-
-	const banner = document.createElement('div');
-	banner.id = 'update-banner';
-	banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;padding:12px 16px;background:var(--bg-3);border-top:1px solid var(--accent);display:flex;align-items:center;gap:12px;z-index:100';
-
-	const text = document.createElement('div');
-	text.style.cssText = 'flex:1;font-size:12px;color:var(--text-1)';
-	const strong = document.createElement('strong');
-	strong.textContent = t('update.available', { version: info.version });
-	text.appendChild(strong);
-	text.appendChild(document.createTextNode(' ' + t('update.readyToInstall')));
-	banner.appendChild(text);
-
-	const laterBtn = document.createElement('button');
-	laterBtn.textContent = t('update.later');
-	laterBtn.style.cssText = 'padding:6px 12px;font-size:11px;background:transparent;color:var(--text-3);border:1px solid var(--border-2);border-radius:var(--radius-sm);cursor:pointer';
-	laterBtn.addEventListener('click', () => banner.remove());
-	banner.appendChild(laterBtn);
-
-	const installBtn = document.createElement('button');
-	installBtn.textContent = t('update.install');
-	installBtn.style.cssText = 'padding:6px 12px;font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;font-weight:600';
-	installBtn.addEventListener('click', () => update.install());
-	banner.appendChild(installBtn);
-
-	document.body.appendChild(banner);
+	pendingUpdate = info;
+	updateCardHidden = false;
+	renderUpdateCard();
 }
 
-update.onReady((info) => showUpdateBanner(info));
-update.check().then((info) => { if (info) showUpdateBanner(info); });
+function renderUpdateCard() {
+	const state = window.GCUpdateState.updateCardState(pendingUpdate, updatePolicy, updateCardHidden);
+	const card = $('#update-card');
+	card.hidden = !state.visible;
+	card.classList.toggle('mandatory', state.mandatory);
+	$('#update-later').hidden = !state.dismissable;
 
-// ── Manual Update Check Button ──────────────────────────
+	// Persistent banner on the overview (no dismiss button)
+	const banner = $('#update-required-banner');
+	banner.hidden = !state.mandatory;
+
+	if (pendingUpdate) {
+		const requiredDesc = state.minVersion
+			? t('update.requiredDesc', { minVersion: state.minVersion, version: state.version })
+			: t('update.requiredDescNoMin', { version: state.version });
+		$('#update-title').textContent = state.mandatory ? t('update.required') : t('ui.update.ready', { version: state.version });
+		$('#update-desc').textContent = state.mandatory
+			? `${requiredDesc} ${t('update.requiredTunnelHint')}`
+			: t('ui.update.readyDesc');
+		$('#update-status-title').textContent = state.mandatory ? t('update.required') : t('update.available', { version: state.version });
+		$('#update-status-desc').textContent = state.mandatory ? requiredDesc : t('update.readyToInstall');
+		$('#update-required-text').textContent = `${requiredDesc} ${t('update.requiredTunnelHint')}`;
+	}
+
+	const channel = $('#update-channel');
+	if (channel) {
+		const ch = updatePolicy && updatePolicy.channel;
+		channel.textContent = t(window.GCUpdateState.channelLabelKey(ch));
+		channel.classList.toggle('c-warn', ch === 'beta');
+	}
+}
+
+function applyUpdatePolicy(policy) {
+	updatePolicy = policy || null;
+	renderUpdateCard();
+}
+
+$('#update-install').addEventListener('click', () => update.install());
+$('#update-required-install').addEventListener('click', () => update.install());
+$('#update-later').addEventListener('click', () => { updateCardHidden = true; renderUpdateCard(); });
+
+update.onReady((info) => showUpdateBanner(info));
+update.onPolicy((policy) => applyUpdatePolicy(policy));
+update.check().then((info) => { if (info) showUpdateBanner(info); }).catch(() => {});
+update.policy().then((policy) => applyUpdatePolicy(policy)).catch(() => {});
+
+// ── Manual Update Check Button (Settings → About) ───────
 $('#nav-update')?.addEventListener('click', async () => {
 	const btn = $('#nav-update');
-	btn.classList.add('checking');
-	btn.style.pointerEvents = 'none';
+	btn.disabled = true;
+	btn.textContent = t('ui.about.checking');
 	try {
 		const info = await update.check();
+		update.policy().then((policy) => applyUpdatePolicy(policy)).catch(() => {});
 		if (info) {
 			showUpdateBanner(info);
 		} else {
+			$('#update-status-title').textContent = t('ui.about.upToDate');
+			$('#update-status-desc').textContent = t('update.noUpdate');
 			showToast(t('update.noUpdate'), 'success');
 		}
 	} catch {
+		$('#update-status-desc').textContent = t('update.checkFailed');
 		showToast(t('update.checkFailed'), 'error');
 	} finally {
-		btn.classList.remove('checking');
-		btn.style.pointerEvents = '';
+		btn.disabled = false;
+		btn.textContent = t('update.checkBtn');
 	}
 });
 
-// ── Peer Expiry Warning ──────────────────────────────────
+// ── Support bundle (Settings → About) ───────────────────
+// Main asks for confirmation (native dialog), collects the redacted bundle
+// and uploads it; cancelled → no toast.
+$('#support-send')?.addEventListener('click', async () => {
+	const btn = $('#support-send');
+	btn.disabled = true;
+	btn.textContent = t('support.sending');
+	try {
+		const res = await window.gatecontrol.support.send();
+		if (res?.success) showToast(t('support.success'), 'success');
+		else if (!res?.cancelled) showToast(res?.error || t('support.failed', { error: '' }), 'error');
+	} catch (err) {
+		showToast(t('support.failed', { error: err?.message || '' }), 'error');
+	} finally {
+		btn.disabled = false;
+		btn.textContent = t('support.button');
+	}
+});
+
+// ── Peer Expiry Warning ─────────────────────────────────
 peer.onExpiry((info) => {
-	const existing = $('#expiry-banner');
-	if (existing) existing.remove();
-
-	const banner = document.createElement('div');
-	banner.id = 'expiry-banner';
-
-	let msg, color;
-	if (info.daysLeft <= 0) {
-		msg = t('peer.expired');
-		color = 'var(--error)';
-	} else if (info.daysLeft <= 1) {
-		msg = t('peer.expiresToday');
-		color = 'var(--error)';
-	} else {
-		msg = t('peer.expiresInDays', { days: info.daysLeft });
-		color = info.daysLeft <= 3 ? 'var(--warn)' : 'var(--text-2)';
-	}
-
-	banner.style.cssText = `padding:8px 12px;margin-top:8px;border-radius:var(--radius-sm);font-size:11px;text-align:center;border:1px solid ${color};color:${color};background:rgba(0,0,0,0.2)`;
-	banner.textContent = msg;
-
-	const statsGrid = $('#stats-grid');
-	if (statsGrid) statsGrid.parentNode.insertBefore(banner, statsGrid.nextSibling);
+	expiryInfo = info;
+	expiryHidden = false;
+	renderExpiry();
 });
+
+function renderExpiry() {
+	const banner = $('#expiry-banner');
+	if (!expiryInfo || expiryHidden) { banner.hidden = true; return; }
+	let msg;
+	let critical = false;
+	if (expiryInfo.daysLeft <= 0) { msg = t('peer.expired'); critical = true; }
+	else if (expiryInfo.daysLeft <= 1) { msg = t('peer.expiresToday'); critical = true; }
+	else msg = t('peer.expiresInDays', { days: expiryInfo.daysLeft });
+	banner.classList.toggle('banner-err', critical);
+	banner.classList.toggle('banner-warn', !critical);
+	$('#expiry-text').textContent = msg;
+	banner.hidden = false;
+}
+
+$('#expiry-dismiss').addEventListener('click', () => { expiryHidden = true; renderExpiry(); });
+
+// ══════════════════════════════════════════════════════════
+//  CLIENT POLICY (vom Server, "Vom Administrator festgelegt")
+// ══════════════════════════════════════════════════════════
+/** Disable a control and show/remove the "set by your administrator" hint in its row. */
+function setPolicyLock(control, locked, hintHost, hintKey = 'policy.lockedHint') {
+	if (control) {
+		control.disabled = !!locked;
+		control.classList.toggle('policy-locked', !!locked);
+	}
+	if (!hintHost) return;
+	let hint = hintHost.querySelector(':scope > .policy-hint');
+	if (locked) {
+		if (!hint) {
+			hint = h('div', 'policy-hint');
+			hintHost.appendChild(hint);
+		}
+		hint.textContent = t(hintKey);
+	} else if (hint) {
+		hint.remove();
+	}
+}
+
+const rowOf = (node) => node?.closest('.set-row, .prot-row, .field')?.querySelector('.grow') || node?.closest('.field');
+
+function applySplitPolicy() {
+	const p = policyState.policy || {};
+	const modes = policyState.splitModes || ['off', 'include'];
+	const frozen = !!(p.lockSettings || p.splitTunnelLocked);
+	const all = $('#split-mode-all');
+	const only = $('#split-mode-split');
+	if (!all || !only) return;
+	setPolicyLock(all, frozen || !modes.includes('off'), null);
+	setPolicyLock(only, frozen || !modes.includes('include'), null);
+	const locked = frozen || modes.length < 2;
+	const section = all.closest('.set-card');
+	setPolicyLock(null, locked, section, p.splitTunnelLocked ? 'policy.splitModeLocked' : 'policy.lockedHint');
+	const routesLocked = !!policyState.locks.splitRoutes;
+	$('#split-new-route').disabled = routesLocked;
+	if (routesLocked) $('#split-add-btn').disabled = true;
+	$$('#split-route-list button').forEach((b) => { b.disabled = routesLocked; });
+	if (frozen) $('#btn-save-split').disabled = true;
+}
+
+function applyPolicyUi() {
+	const l = policyState.locks || {};
+	const p = policyState.policy || {};
+	setPolicyLock(el.killswitchToggle, l.killSwitch, rowOf(el.killswitchToggle), p.killSwitch === 'required' ? 'policy.killSwitchRequired' : 'policy.lockedHint');
+	setPolicyLock(el.killswitchQuick, l.killSwitch, null);
+	if (el.killswitchQuick) el.killswitchQuick.title = l.killSwitch ? t('policy.lockedHint') : '';
+	setPolicyLock(el.rdpAllowToggle, l.settings, rowOf(el.rdpAllowToggle));
+	setPolicyLock(el.optAutostart, l.autostart, rowOf(el.optAutostart), p.autostart === 'forbidden' ? 'policy.autostartForbidden' : 'policy.lockedHint');
+	setPolicyLock(el.optAutoconnect, l.autoConnect, rowOf(el.optAutoconnect));
+	setPolicyLock(el.optMinimized, l.settings, rowOf(el.optMinimized));
+	setPolicyLock(el.optCheckInterval, l.settings, rowOf(el.optCheckInterval));
+	setPolicyLock(el.optPollInterval, l.settings, rowOf(el.optPollInterval));
+
+	// Server change / re-setup
+	const serverCard = el.serverUrl?.closest('section');
+	const setupCard = $('#btn-open-setup')?.closest('section');
+	if (serverCard) serverCard.hidden = !!l.server;
+	if (setupCard) setupCard.hidden = !!l.server;
+	const serverHint = $('#policy-server-hint');
+	if (serverHint) {
+		serverHint.hidden = !l.server;
+		serverHint.textContent = t('policy.serverLocked');
+	}
+	// The "done" step of a setup that just finished stays readable.
+	if (l.server && currentPage === 'setup' && setupStep !== 'done') navigateTo('status');
+
+	const banner = $('#policy-banner');
+	if (banner) {
+		banner.hidden = !policyState.managed;
+		banner.textContent = t('policy.managedBanner');
+	}
+	applySplitPolicy();
+}
+
+/** Policy changed in main: re-read the (possibly forced) settings and lock the UI. */
+async function onPolicyState(st) {
+	if (!st) return;
+	policyState = st;
+	try {
+		const cfg = await config.getAll();
+		if (cfg) {
+			setSwitch(el.optAutostart, cfg.app?.startWithWindows ?? true);
+			setSwitch(el.optAutoconnect, cfg.tunnel?.autoConnect ?? true);
+			state.killSwitch = cfg.tunnel?.killSwitch ?? state.killSwitch;
+			const enabled = cfg.tunnel?.splitTunnel ?? false;
+			if (enabled !== splitSaved.enabled) {
+				splitSaved = { ...splitSaved, enabled };
+				splitDraft = { ...splitDraft, enabled };
+			}
+		}
+	} catch { /* keep the current view */ }
+	updateUI();
+	renderSplit();
+	applyPolicyUi();
+}
+
+clientPolicy.onChange((st) => { onPolicyState(st); });
+clientPolicy.get().then((st) => onPolicyState(st)).catch(() => {});
+
+// Initial paint (before the locale round-trip finishes)
+updateDOM();
+updateUI();
+renderSplit();
+renderSetupProgress();

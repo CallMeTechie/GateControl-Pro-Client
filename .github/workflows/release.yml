@@ -4,28 +4,63 @@ on:
   push:
     branches: [master]
 
+concurrency:
+  # One release run at a time: parallel runs race on the version bump push.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Auth for transitive @callmetechie/gatecontrol-config-hash via GitHub Packages (.npmrc).
+  NODE_AUTH_TOKEN: ${{ secrets.GC_PAT }}
 
 jobs:
+  decide:
+    name: Release needed?
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - name: Check commit type
+        id: check
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          # Squash merges put the PR title on the first line. ci/docs/test/style
+          # and chore commits (incl. our own "chore: bump version") land on the
+          # default branch without a release and ship with the next fix/feat.
+          # chore(deps) stays releasable: dependency updates can carry fixes.
+          FIRST_LINE=$(printf '%s\n' "$COMMIT_MSG" | head -n1)
+          if printf '%s' "$FIRST_LINE" | grep -qE '^chore\(deps(-dev)?\)!?:'; then
+            RELEASE=true
+          elif printf '%s' "$FIRST_LINE" | grep -qE '^(ci|docs|test|style|chore)(\([^)]*\))?!?:'; then
+            RELEASE=false
+          else
+            RELEASE=true
+          fi
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "First line: $FIRST_LINE -> release=$RELEASE"
+
   security-gate:
     name: Security Gate
     runs-on: ubuntu-latest
-    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
+    needs: decide
+    if: needs.decide.outputs.release == 'true'
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
-      - name: Clone core dependency
-        run: |
-          git clone https://github.com/CallMeTechie/gatecontrol-client-core.git .core
-          node -e "const p=require('./package.json'); p.dependencies['@gatecontrol/client-core']='file:.core'; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          node-version: 24
+      - name: Checkout pinned core (core.ref)
+        shell: bash
+        run: bash scripts/fetch-core.sh --link
       - run: npm install --no-audit --no-fund
-      - name: npm audit (high/critical)
+      - name: npm audit production dependencies (high/critical)
+        run: npm audit --omit=dev --audit-level=high
+      - name: npm audit (critical, all dependencies)
         run: |
           CRITICAL=$(npm audit --json 2>/dev/null | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log((d.metadata?.vulnerabilities?.critical||0))}catch{console.log(0)}")
           if [ "$CRITICAL" -gt 0 ]; then echo "::error::Critical vulnerabilities found"; exit 1; fi
@@ -33,32 +68,45 @@ jobs:
   test-gate:
     name: Test Gate
     runs-on: ubuntu-latest
-    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
+    needs: decide
+    if: needs.decide.outputs.release == 'true'
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
+      - name: Checkout pinned core (core.ref)
+        shell: bash
+        run: bash scripts/fetch-core.sh --link
       - run: npm install --ignore-scripts --no-audit --no-fund
       - run: npm test
 
   release:
-    needs: [security-gate, test-gate]
+    needs: [decide, security-gate, test-gate]
     runs-on: windows-latest
-    # Skip version-bump commits to prevent infinite loop
-    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
+    # decide skips ci/docs/test/style/chore commits, incl. our own version bump (no loop)
+    if: needs.decide.outputs.release == 'true'
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           fetch-tags: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
+
+      # Signierte Updates: ohne echten Public Key (build/update-signing.pub)
+      # und passendes Secret UPDATE_SIGNING_KEY bricht das Release ab, bevor
+      # Version/Tag gepusht werden.
+      - name: Check update signing key
+        shell: bash
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node scripts/sign-update.js --product pro --check
 
       - name: Determine version bump
         id: bump
@@ -159,17 +207,16 @@ jobs:
           git add package.json package-lock.json CHANGELOG.md 2>/dev/null || true
           git add package.json
           git commit -m "chore: bump version to $NEW_VERSION"
-          git tag "$TAG"
-          git push origin master --tags
+          # Commit und Tag werden erst nach erfolgreichem Build gepusht
+          # (Schritt "Push version bump"), damit ein Build-Abbruch keinen
+          # Tag ohne Release hinterlässt.
 
-      - name: Clone gatecontrol-client-core (shared dependency)
+      - name: Checkout pinned gatecontrol-client-core (core.ref)
         if: steps.check_tag.outputs.exists == 'false'
         shell: bash
-        run: |
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/CallMeTechie/gatecontrol-client-core.git" .core
-          node -e "const p=require('./package.json'); p.dependencies['@gatecontrol/client-core']='file:.core'; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+        run: bash scripts/fetch-core.sh --link
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CORE_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
         if: steps.check_tag.outputs.exists == 'false'
@@ -195,13 +242,44 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Sign update manifest
+        id: sign
+        if: steps.check_tag.outputs.exists == 'false'
+        shell: bash
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node scripts/sign-update.js --product pro --dist dist
+
+      - name: Push version bump
+        if: steps.check_tag.outputs.exists == 'false'
+        shell: bash
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          # Commit und Tag atomar pushen. Hat sich master inzwischen bewegt,
+          # neu aufsetzen (das Arbeitsverzeichnis ist durch den Core-Link
+          # verändert, daher --autostash) und erneut taggen.
+          for attempt in 1 2 3; do
+            git tag -f "$TAG"
+            if git push --atomic origin HEAD:master "refs/tags/$TAG"; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt), rebasing onto origin/master"
+            git pull --rebase --autostash origin master
+          done
+          echo "::error::Could not push version bump after 3 attempts"
+          exit 1
+
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.bump.outputs.tag }}
           name: GateControl Pro Client ${{ steps.bump.outputs.tag }}
           generate_release_notes: true
           files: |
-            dist/*.exe
+            dist/${{ steps.sign.outputs.fileName }}
             dist/*.zip
+            dist/update-manifest.json
+            dist/update-manifest.json.sig
+          fail_on_unmatched_files: true
