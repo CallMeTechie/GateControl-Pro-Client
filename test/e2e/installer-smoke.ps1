@@ -23,6 +23,8 @@ $cfg = @{
     # Created by build/installer.nsh customInstall, removed by customUnInstall.
     InstallRules  = @('GateControl Pro WireGuard', 'GateControl Pro RDP')
     DataDir       = 'gatecontrol-client-pro'
+    # URL protocol of the toast buttons (app: setAsDefaultProtocolClient, HKCU)
+    Protocol      = 'gatecontrol-pro'
   }
   community = @{
     Product       = 'GateControl Community Client'
@@ -30,6 +32,8 @@ $cfg = @{
     RulePrefix    = 'GateControl_Community'
     InstallRules  = @()
     DataDir       = 'gatecontrol-client'
+    # URL protocol of the toast buttons (app: setAsDefaultProtocolClient, HKCU)
+    Protocol      = 'gatecontrol-community'
   }
 }[$Edition]
 
@@ -134,6 +138,12 @@ $ok = LaunchProbe 'plain'
 Check $ok "packaged app keeps running for 15 s"
 Check (Test-Path $userData) "packaged app uses its normal userData ($userData)"
 
+# Toast buttons use protocol activation: the app registers its URL protocol
+# for the current user on start; the uninstaller removes it.
+$protoKey = "HKCU:\Software\Classes\$($cfg.Protocol)"
+$protoCmd = (Get-ItemProperty -Path "$protoKey\shell\open\command" -ErrorAction SilentlyContinue).'(default)'
+Check ([bool]$protoCmd -and $protoCmd -like "*$product.exe*") "URL protocol $($cfg.Protocol):// registered for the installed exe ($protoCmd)"
+
 Write-Host "`n== Launch packaged app with GC_E2E set (must be ignored)"
 $e2eDir = Join-Path $env:RUNNER_TEMP "gc-packaged-e2e-probe"
 New-Item -ItemType Directory -Force -Path $e2eDir | Out-Null
@@ -181,6 +191,7 @@ Check ($uninstKeys.Count -eq 0) "uninstall registry entry removed"
 $left = @(GcRules | Where-Object { $n = $_.Name; -not ($rulesBefore | Where-Object { $_.Name -eq $n }) })
 Check ($left.Count -eq 0) "all GateControl firewall rules removed: $(($left | ForEach-Object DisplayName) -join ', ')"
 Check ((OutboundPolicy) -eq $policyBefore) "outbound firewall policy unchanged after uninstall"
+Check (-not (Test-Path $protoKey)) "URL protocol $($cfg.Protocol):// removed by uninstall"
 
 if ($Edition -eq 'pro') {
   schtasks /Query /TN GateControlProAutostart *> $null

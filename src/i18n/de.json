@@ -272,6 +272,72 @@
       "back": "Zurück",
       "submit": "Gerät einrichten",
       "doneTitle": "Gerät eingerichtet"
+    },
+    "inbox": {
+      "title": "Mitteilungen",
+      "readAll": "Alle gelesen",
+      "filters": "Mitteilungen filtern",
+      "filterAll": "Alle",
+      "filterUnread": "Ungelesen",
+      "yesterday": "gestern",
+      "received": "Empfangen",
+      "unreadCount": "{{ count }} ungelesen",
+      "badge": "{{ count }} neue Mitteilungen",
+      "select": "Wähle links eine Mitteilung aus.",
+      "syncHint": "Der Gelesen-Status wird mit deinen anderen Geräten abgeglichen. Was du hier liest, verschwindet auch auf dem Handy.",
+      "actionFailed": "Aktion fehlgeschlagen: {{ error }}",
+      "readFailed": "Gelesen-Status wird nachgereicht, sobald der Server erreichbar ist.",
+      "empty": {
+        "title": "Keine Mitteilungen",
+        "hint": "Meldungen deines GateControl-Servers erscheinen hier, sobald sie eintreffen."
+      },
+      "filtered": {
+        "title": "Nichts in diesem Filter",
+        "hint": "Wähle „Alle“, um alle Mitteilungen zu sehen."
+      },
+      "off": {
+        "title": "Benachrichtigungen sind ausgeschaltet",
+        "hint": "Unter Einstellungen → Benachrichtigungen kannst du sie wieder einschalten.",
+        "action": "Einstellungen öffnen"
+      },
+      "unsupported": {
+        "title": "Noch keine Mitteilungen vom Server"
+      },
+      "notConfigured": {
+        "title": "Noch kein Server eingerichtet",
+        "hint": "Richte dieses Gerät ein, um Mitteilungen zu erhalten."
+      },
+      "error": {
+        "title": "Mitteilungen konnten nicht geladen werden",
+        "hint": "Bitte versuche es gleich noch einmal.",
+        "action": "Erneut laden"
+      }
+    },
+    "notify": {
+      "tab": "Benachrichtigungen",
+      "delivery": "Zustellung",
+      "enabled": "Benachrichtigungen empfangen",
+      "enabledDesc": "Meldungen deines GateControl-Servers auf diesem PC",
+      "direct": "Auch ohne VPN-Verbindung",
+      "directDesc": "direkt über HTTPS zum eigenen Server, solange die App im Tray läuft",
+      "toasts": "Windows-Benachrichtigung anzeigen",
+      "toastsDesc": "sonst nur Zähler im Tray und in der App",
+      "critical": "Kritisches auch bei „Nicht stören“",
+      "criticalDesc": "als Windows-Alarm mit Ton",
+      "topics": "Themen auf diesem PC",
+      "topicsEmpty": "Die Themen kommen vom Server, sobald die Verbindung steht.",
+      "status": "Status",
+      "server": "Server",
+      "path": "Weg",
+      "since": "Verbunden seit",
+      "sinceValue": "{{ time }} Uhr",
+      "test": "Testnachricht anfordern",
+      "quietTitle": "Ruhezeiten",
+      "quietDesc": "Ruhezeiten stellst du in deinem Portal-Profil ein. Sie gelten für alle deine Geräte.",
+      "quietOpen": "Im Portal ändern",
+      "quietNoPortal": "Das Portal ist erreichbar, sobald das VPN verbunden ist.",
+      "killSwitchNote": "Hinweis zum Kill-Switch",
+      "saveFailed": "Einstellung konnte nicht gespeichert werden: {{ error }}"
     }
   }
 }

@@ -89,6 +89,26 @@ function preloadInvokedChannels() {
   return [...invoked];
 }
 
+// Stand-in for core NotificationCenter (the IPC layer only forwards to it).
+function fakeNotificationCenter(calls) {
+  calls.notifyReset = 0;
+  return {
+    pushClient: { requestTest: async () => ({ ok: true, seq: 130 }) },
+    on() {},
+    list: () => ({ items: [], unread: 0, topics: [] }),
+    refresh: async () => ({ ok: true }),
+    markRead: async () => ({ ok: true, updated: 0, unread: 0 }),
+    performAction: async () => ({ ok: true }),
+    getPrefs: () => ({ enabled: true }),
+    setPrefs: () => ({ ok: true, prefs: {} }),
+    status: () => ({ state: 'disabled', reason: 'not_configured' }),
+    unreadCount: () => 0,
+    dndState: () => ({ active: false, until: null }),
+    setDnd: () => ({ ok: true, active: false, until: null }),
+    resetForNewServer: () => { calls.notifyReset++; },
+  };
+}
+
 const CODE = 'AB12-CD34-EF56-7890';
 const FINGERPRINT = 'a41f09c2' + '7e3b5d19c0aa48f2b6e1d3c5f7092a4b6c8d0e1f2a3b4c5d6e7f8091';
 const VALID_CONFIG = '[Interface]\nPrivateKey = x\nAddress = 10.8.0.2/32\n[Peer]\nPublicKey = y\nEndpoint = gate.example.com:51820';
@@ -156,6 +176,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       rdpManager: { refreshServices: async () => [], getActiveSessions: () => [], startStatusPolling() {}, stopStatusPolling() {} },
       rdpWolClient: { wake: async () => true },
       getMachineFingerprint: extra.getMachineFingerprint || (() => FINGERPRINT),
+      // main.js always passes the notification center (notify:* channels)
+      notificationCenter: fakeNotificationCenter(calls),
     };
     const registered = registerProIpc(ipcMain, ctx);
     return { handlers, stored, written, calls, registered, apiClient };
@@ -188,6 +210,9 @@ describe('Pro IPC on core handlers', { skip }, () => {
       'autostart:set', 'dns:leak-test', 'dns:check-system', 'peer:info', 'update:check',
       'panel:open', 'panel:close', 'rdp:list', 'rdp:connect', 'rdp:disconnect', 'rdp:detail',
       'rdp:wol', 'rdp:status', 'rdp:active-sessions', 'rdp:pin-toggle', 'locale:set', 'locale:get', 'app:device-id',
+      // notification center (core, opt-in via ctx.notificationCenter)
+      'notify:list', 'notify:read', 'notify:action', 'notify:prefs:get', 'notify:prefs:set',
+      'notify:test', 'notify:status', 'notify:dnd',
     ]) {
       assert.equal(typeof handlers[ch], 'function', ch);
     }
@@ -291,6 +316,13 @@ describe('Pro IPC on core handlers', { skip }, () => {
     assert.equal(res.success, true);
     assert.equal(res.enrolled, true);
     assert.equal(stored['server.apiKey'], 'gc_minted_token');
+  });
+
+  it('a new server setup resets the notification center (inbox, resume position)', async () => {
+    const { handlers, calls } = setup();
+    const res = await handlers['server:setup']({}, { url: 'https://gate.example.com/', apiKey: CODE });
+    assert.equal(res.success, true);
+    assert.equal(calls.notifyReset, 1);
   });
 
   it('a server config failing validation is not written', async () => {

@@ -272,6 +272,72 @@
       "back": "Back",
       "submit": "Set up device",
       "doneTitle": "Device set up"
+    },
+    "inbox": {
+      "title": "Notifications",
+      "readAll": "Mark all read",
+      "filters": "Filter notifications",
+      "filterAll": "All",
+      "filterUnread": "Unread",
+      "yesterday": "yesterday",
+      "received": "Received",
+      "unreadCount": "{{ count }} unread",
+      "badge": "{{ count }} new notifications",
+      "select": "Select a notification on the left.",
+      "syncHint": "Read status is synced with your other devices. What you read here also disappears on your phone.",
+      "actionFailed": "Action failed: {{ error }}",
+      "readFailed": "The read status will be sent once the server is reachable.",
+      "empty": {
+        "title": "No notifications",
+        "hint": "Messages from your GateControl server appear here as soon as they arrive."
+      },
+      "filtered": {
+        "title": "Nothing in this filter",
+        "hint": "Choose “All” to see every notification."
+      },
+      "off": {
+        "title": "Notifications are switched off",
+        "hint": "You can switch them on again under Settings → Notifications.",
+        "action": "Open settings"
+      },
+      "unsupported": {
+        "title": "No notifications from the server yet"
+      },
+      "notConfigured": {
+        "title": "No server set up yet",
+        "hint": "Set up this device to receive notifications."
+      },
+      "error": {
+        "title": "Notifications could not be loaded",
+        "hint": "Please try again in a moment.",
+        "action": "Reload"
+      }
+    },
+    "notify": {
+      "tab": "Notifications",
+      "delivery": "Delivery",
+      "enabled": "Receive notifications",
+      "enabledDesc": "Messages from your GateControl server on this PC",
+      "direct": "Also without a VPN connection",
+      "directDesc": "directly over HTTPS to your own server while the app runs in the tray",
+      "toasts": "Show Windows notification",
+      "toastsDesc": "otherwise only the counter in the tray and in the app",
+      "critical": "Critical ones even during “Do not disturb”",
+      "criticalDesc": "as a Windows alarm with sound",
+      "topics": "Topics on this PC",
+      "topicsEmpty": "The topics arrive from the server once the connection is up.",
+      "status": "Status",
+      "server": "Server",
+      "path": "Path",
+      "since": "Connected since",
+      "sinceValue": "{{ time }}",
+      "test": "Request test message",
+      "quietTitle": "Quiet hours",
+      "quietDesc": "Quiet hours are set in your portal profile. They apply to all your devices.",
+      "quietOpen": "Change in the portal",
+      "quietNoPortal": "The portal is available once the VPN is connected.",
+      "killSwitchNote": "Kill switch note",
+      "saveFailed": "Setting could not be saved: {{ error }}"
     }
   }
 }

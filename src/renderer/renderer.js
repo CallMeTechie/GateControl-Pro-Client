@@ -10,7 +10,7 @@
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
-	window: win, rdp, onNavigate, locale, policy: clientPolicy,
+	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
 
@@ -183,6 +183,8 @@ function refreshTexts() {
 	renderExpiry();
 	renderAbout();
 	applyPolicyUi();
+	renderInbox();
+	renderNotifySettings();
 }
 
 // ── State ───────────────────────────────────────────────
@@ -342,7 +344,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'inbox', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -372,6 +374,7 @@ function navigateTo(page, opts = {}) {
 	}
 
 	if (page === 'logs') refreshLogs();
+	if (page === 'inbox') renderInbox();
 	if (page === 'settings' && opts.tab) showSettingsTab(opts.tab);
 	if (page === 'setup' && prev !== 'setup') resetSetup();
 	if (prev === 'setup' && page !== 'setup') stopQRScan();
@@ -541,6 +544,7 @@ function togglePortalBtn() {
 onPortalUrl?.((url) => {
 	currentPortalUrl = url;
 	togglePortalBtn();
+	renderNotifyQuiet();
 });
 
 el.portalBtn?.addEventListener('click', () => {
@@ -1977,6 +1981,397 @@ async function onPolicyState(st) {
 
 clientPolicy.onChange((st) => { onPolicyState(st); });
 clientPolicy.get().then((st) => onPolicyState(st)).catch(() => {});
+
+// ══════════════════════════════════════════════════════════
+//  NOTIFICATIONS ("Mitteilungen" + Settings → Benachrichtigungen)
+//  Data: window.gatecontrol.notify (core NotificationCenter in main).
+//  View logic without DOM access: notify-state.js (window.GCNotifyState).
+// ══════════════════════════════════════════════════════════
+const NS = window.GCNotifyState;
+const inbox = {
+	items: [],
+	topics: [],
+	unread: 0,
+	filter: 'all',
+	selectedId: null,
+	error: false,
+	loaded: false,
+	status: null,
+	prefs: null,
+};
+
+function notifyAvailable() {
+	return !!(notifyApi && NS);
+}
+
+/** Nav badge + count line (unread from list() or status()). */
+function renderInboxBadge() {
+	const badge = $('#inbox-badge');
+	if (!badge) return;
+	const text = NS ? NS.badgeText(inbox.unread) : '';
+	badge.textContent = text;
+	badge.hidden = !text;
+	if (text) badge.setAttribute('aria-label', t('ui.inbox.badge', { count: inbox.unread }));
+	const countEl = $('#inbox-count');
+	if (countEl) countEl.textContent = inbox.unread > 0 ? t('ui.inbox.unreadCount', { count: inbox.unread }) : '';
+}
+
+async function loadInbox({ refresh = false } = {}) {
+	if (!notifyAvailable()) return;
+	try {
+		const res = await notifyApi.list({ filter: 'all', limit: 100, refresh });
+		inbox.items = Array.isArray(res?.items) ? res.items : [];
+		inbox.topics = Array.isArray(res?.topics) ? res.topics : inbox.topics;
+		inbox.unread = Number(res?.unread) || 0;
+		inbox.error = false;
+	} catch {
+		inbox.error = true;
+	}
+	inbox.loaded = true;
+	renderInbox();
+}
+
+async function loadNotifyStatus() {
+	if (!notifyAvailable()) return;
+	try {
+		const [status, prefs] = await Promise.all([notifyApi.status(), notifyApi.getPrefs()]);
+		inbox.status = status || null;
+		inbox.prefs = prefs || null;
+		if (Array.isArray(prefs?.topics) && prefs.topics.length) inbox.topics = prefs.topics;
+		if (status && Number.isFinite(status.unread)) inbox.unread = status.unread;
+	} catch { /* keep the last known state */ }
+	renderInboxBadge();
+	renderNotifySettings();
+	if (currentPage === 'inbox') renderInbox();
+}
+
+function renderInboxFilters() {
+	const host = $('#inbox-filters');
+	if (!host) return;
+	host.textContent = '';
+	for (const opt of NS.filterOptions(inbox.items, inbox.topics, inbox.filter, t)) {
+		const on = opt.id === inbox.filter;
+		const btn = h('button', `fchip${on ? ' on' : ''}`, opt.label);
+		btn.type = 'button';
+		btn.setAttribute('role', 'tab');
+		btn.setAttribute('aria-selected', on ? 'true' : 'false');
+		btn.dataset.filter = opt.id;
+		btn.addEventListener('click', () => {
+			inbox.filter = opt.id;
+			renderInbox();
+		});
+		host.appendChild(btn);
+	}
+}
+
+function createInboxRow(entry) {
+	const selected = entry.id === inbox.selectedId;
+	const unread = entry.state === 'delivered';
+	const row = h('button', `row inbox-row${selected ? ' sel' : ''}${unread ? ' unread' : ''}`);
+	row.type = 'button';
+	row.setAttribute('role', 'listitem');
+	row.dataset.id = String(entry.id);
+	if (selected) row.setAttribute('aria-current', 'true');
+	row.addEventListener('click', () => selectInboxEntry(entry.id));
+
+	row.appendChild(h('span', 'unread-dot'));
+	const text = h('span', 'inbox-row-text');
+	text.appendChild(h('span', 'inbox-row-title', entry.title || '—'));
+	const meta = NS.rowMeta(entry, inbox.topics, t, { locale: window.gatecontrol.i18n.getLocale() });
+	const metaEl = h('span', 'inbox-row-meta');
+	if (meta.priority) {
+		metaEl.appendChild(h('span', `prio-${entry.priority}`, meta.priority.label));
+		if (meta.text) metaEl.appendChild(document.createTextNode(' · '));
+	}
+	metaEl.appendChild(document.createTextNode(meta.text));
+	text.appendChild(metaEl);
+	row.appendChild(text);
+	return row;
+}
+
+function renderInbox() {
+	if (!notifyAvailable()) return;
+	renderInboxBadge();
+	renderInboxFilters();
+
+	const shown = NS.filterItems(inbox.items, inbox.filter);
+	if (inbox.selectedId !== null && !inbox.items.some((e) => e.id === inbox.selectedId)) inbox.selectedId = null;
+
+	const list = $('#inbox-list');
+	list.textContent = '';
+	shown.forEach((entry) => list.appendChild(createInboxRow(entry)));
+
+	const empty = inbox.loaded ? NS.emptyState({
+		status: inbox.status, prefs: inbox.prefs, total: inbox.items.length, shown: shown.length,
+		filter: inbox.filter, error: inbox.error,
+	}) : null;
+	$('#inbox-empty').hidden = !empty;
+	list.hidden = !!empty;
+	if (empty) {
+		$('#inbox-empty-title').textContent = t(`ui.inbox.${empty}.title`);
+		const hint = empty === 'unsupported' ? t(`push.reason.${inbox.status?.reason || 'unsupported'}`) : t(`ui.inbox.${empty}.hint`);
+		$('#inbox-empty-hint').textContent = hint;
+		const action = $('#inbox-empty-action');
+		action.hidden = !(empty === 'off' || empty === 'error' || empty === 'filtered');
+		action.textContent = empty === 'filtered' ? t('ui.inbox.filterAll') : t(`ui.inbox.${empty}.action`);
+		action.dataset.kind = empty;
+	}
+
+	const hintKey = inbox.items.length ? NS.listHint(inbox.status) : null;
+	const hintEl = $('#inbox-hint');
+	hintEl.hidden = !hintKey;
+	if (hintKey) hintEl.textContent = t(hintKey);
+
+	$('#inbox-read-all').disabled = inbox.unread === 0;
+	renderInboxDetail();
+}
+
+function renderInboxDetail() {
+	const detail = $('#inbox-detail');
+	detail.textContent = '';
+	const entry = inbox.items.find((e) => e.id === inbox.selectedId);
+	$('#inbox-detail-empty').hidden = !!entry || inbox.items.length === 0;
+	if (!entry) return;
+
+	const pill = NS.detailPill(entry, inbox.topics, t);
+	detail.appendChild(h('span', `chip ${pill.cls}`, pill.label));
+	detail.appendChild(h('h2', 'disp inbox-detail-title', entry.title || '—'));
+	if (entry.body) detail.appendChild(h('p', 'inbox-body', entry.body));
+
+	const facts = NS.entryFacts(entry, t, { locale: window.gatecontrol.i18n.getLocale() });
+	if (facts.length) {
+		const grid = h('div', 'info-grid');
+		facts.forEach((f) => grid.appendChild(infoCard(f.label, f.value)));
+		detail.appendChild(grid);
+	}
+
+	const actions = Array.isArray(entry.actions) ? entry.actions : [];
+	if (actions.length) {
+		const row = h('div', 'inbox-actions');
+		actions.forEach((a, i) => {
+			const btn = h('button', `btn ${i === 0 ? 'btn-pri' : 'btn-sec'}`, a.label);
+			btn.type = 'button';
+			btn.dataset.action = a.id;
+			btn.addEventListener('click', async () => {
+				btn.disabled = true;
+				const res = await notifyApi.action(entry.id, a.id).catch((err) => ({ ok: false, error: err?.message }));
+				btn.disabled = false;
+				// The local action happened; a failed confirmation is retried by main.
+				if (!res?.ok && res?.error && !['not_found', 'unknown_action'].includes(res.error)) {
+					showToast(t('ui.inbox.readFailed'), 'info');
+				} else if (!res?.ok) {
+					showToast(t('ui.inbox.actionFailed', { error: res?.error || '?' }), 'error');
+				}
+				loadInbox();
+			});
+			row.appendChild(btn);
+		});
+		detail.appendChild(row);
+	}
+}
+
+/** Show one entry and mark it read (here and on the user's other devices). */
+function selectInboxEntry(id) {
+	inbox.selectedId = id;
+	const entry = inbox.items.find((e) => e.id === id);
+	renderInbox();
+	if (entry && entry.state === 'delivered') {
+		entry.state = 'read';
+		inbox.unread = Math.max(0, inbox.unread - 1);
+		renderInbox();
+		notifyApi.read([id]).then((res) => {
+			if (res && Number.isFinite(res.unread)) inbox.unread = res.unread;
+			renderInboxBadge();
+		}).catch(() => {});
+	}
+}
+
+function openInbox(id = null) {
+	if (Number.isSafeInteger(id)) {
+		inbox.selectedId = id;
+		inbox.filter = 'all';
+	}
+	navigateTo('inbox');
+}
+
+if (notifyAvailable()) {
+	$('#inbox-read-all').addEventListener('click', async () => {
+		inbox.items.forEach((e) => { if (e.state === 'delivered') e.state = 'read'; });
+		inbox.unread = 0;
+		renderInbox();
+		const res = await notifyApi.read('all').catch(() => null);
+		if (res && res.ok === false) showToast(t('ui.inbox.readFailed'), 'info');
+		loadInbox();
+	});
+
+	$('#inbox-empty-action').addEventListener('click', (e) => {
+		const kind = e.currentTarget.dataset.kind;
+		if (kind === 'off') navigateTo('settings', { tab: 'notify' });
+		else if (kind === 'filtered') { inbox.filter = 'all'; renderInbox(); }
+		else loadInbox({ refresh: true });
+	});
+
+	notifyApi.onNew((entry) => {
+		// A toast click selects the entry through onNavigate; a new message
+		// only refreshes the list.
+		if (entry && entry.state === 'delivered' && !entry.updated) inbox.unread += 1;
+		loadInbox();
+	});
+	notifyApi.onUpdate((upd) => {
+		if (upd && Number.isFinite(upd.unread)) inbox.unread = upd.unread;
+		loadInbox();
+	});
+	notifyApi.onStatus((status) => {
+		inbox.status = status || null;
+		if (status && Number.isFinite(status.unread)) inbox.unread = status.unread;
+		renderInboxBadge();
+		renderNotifySettings();
+		if (currentPage === 'inbox') renderInbox();
+	});
+	notifyApi.onNavigate((evt) => {
+		const target = NS.navigateTarget(evt, PAGES);
+		if (target.page === 'inbox') {
+			openInbox(target.id);
+			loadInbox();
+		} else {
+			navigateTo(target.page);
+		}
+	});
+
+	loadInbox();
+	loadNotifyStatus();
+} else {
+	$('#nav-inbox')?.setAttribute('hidden', '');
+	$('#settings-tabs [data-tab="notify"]')?.setAttribute('hidden', '');
+}
+
+// ── Settings → Benachrichtigungen ───────────────────────
+const notifyEl = {
+	enabled: $('#notify-enabled'),
+	direct: $('#notify-direct'),
+	toasts: $('#notify-toasts'),
+	critical: $('#notify-critical'),
+};
+
+function renderNotifySettings() {
+	if (!notifyAvailable()) return;
+	const prefs = inbox.prefs || {};
+	const on = prefs.enabled !== false;
+	setSwitch(notifyEl.enabled, on);
+	setSwitch(notifyEl.direct, prefs.direct !== false);
+	setSwitch(notifyEl.toasts, prefs.toasts !== false);
+	setSwitch(notifyEl.critical, prefs.criticalBypass !== false);
+	[notifyEl.direct, notifyEl.toasts, notifyEl.critical].forEach((sw) => { if (sw) sw.disabled = !on; });
+
+	// Topics on this PC
+	const host = $('#notify-topics');
+	host.textContent = '';
+	const rows = NS.topicRows(inbox.topics, prefs.mutedTopics);
+	rows.forEach((row) => {
+		const line = h('div', 'set-row compact');
+		const label = h('div', 'grow set-row-title', row.label);
+		line.appendChild(label);
+		const sw = h('button', 'sw');
+		sw.type = 'button';
+		sw.setAttribute('role', 'switch');
+		sw.setAttribute('aria-label', row.label);
+		sw.dataset.topic = row.id;
+		sw.appendChild(h('span'));
+		setSwitch(sw, row.on);
+		sw.disabled = !on;
+		sw.addEventListener('click', () => {
+			const next = !isSwitchOn(sw);
+			setSwitch(sw, next);
+			saveNotifyPrefs({ mutedTopics: NS.toggleTopic((inbox.prefs || {}).mutedTopics, row.id, next) });
+		});
+		line.appendChild(sw);
+		host.appendChild(line);
+	});
+	$('#notify-topics-empty').hidden = rows.length > 0;
+
+	// Status card
+	const view = NS.statusView(inbox.status);
+	const stateEl = $('#notify-state');
+	stateEl.className = `notify-state ${view.tone}`;
+	$('#notify-state-label').textContent = t(view.stateKey);
+	const reason = $('#notify-reason');
+	reason.hidden = !view.reasonKey;
+	if (view.reasonKey) reason.textContent = t(view.reasonKey);
+	$('#notify-server').textContent = view.server || hostOf(serverUrl) || '—';
+	$('#notify-via').textContent = view.viaKey ? t(view.viaKey) : '—';
+	$('#notify-since').textContent = view.since ? t('ui.notify.sinceValue', { time: view.since }) : '—';
+	$('#notify-test').disabled = !on || inbox.status?.state !== 'connected';
+
+	const dndBtn = $('#notify-dnd-btn');
+	$('#notify-dnd-text').textContent = view.dnd ? t('push.dndUntil', { time: view.dnd }) : '';
+	dndBtn.textContent = view.dnd ? t('push.tray.dndOff') : t('push.tray.dnd1h');
+	dndBtn.dataset.active = view.dnd ? '1' : '';
+	$('#notify-dnd').hidden = !on;
+
+	// Kill-switch note
+	const note = NS.killSwitchNote(inbox.status);
+	const noteEl = $('#notify-ks-note');
+	noteEl.hidden = !note;
+	if (note) {
+		noteEl.className = `note ${note.tone === 'warn' ? 'note-warn' : 'note-ok'}`;
+		noteEl.textContent = t(note.key);
+	}
+
+	renderNotifyQuiet();
+}
+
+function renderNotifyQuiet() {
+	const btn = $('#notify-quiet-portal');
+	if (!btn) return;
+	const available = !!currentPortalUrl;
+	btn.disabled = !available;
+	$('#notify-quiet-hint').hidden = available;
+}
+
+async function saveNotifyPrefs(patch) {
+	const status = $('#notify-save-status');
+	const res = await notifyApi.setPrefs(patch).catch((err) => ({ ok: false, error: err?.message }));
+	if (res && res.ok) {
+		inbox.prefs = res.prefs || { ...inbox.prefs, ...patch };
+		status.hidden = true;
+	} else {
+		status.hidden = false;
+		status.textContent = t('ui.notify.saveFailed', { error: res?.error || '?' });
+	}
+	renderNotifySettings();
+	loadNotifyStatus();
+}
+
+if (notifyAvailable()) {
+	bindSwitch(notifyEl.enabled, (v) => saveNotifyPrefs({ enabled: v }));
+	bindSwitch(notifyEl.direct, (v) => saveNotifyPrefs({ direct: v }));
+	bindSwitch(notifyEl.toasts, (v) => saveNotifyPrefs({ toasts: v }));
+	bindSwitch(notifyEl.critical, (v) => saveNotifyPrefs({ criticalBypass: v }));
+
+	$('#notify-test').addEventListener('click', async () => {
+		const status = $('#notify-test-status');
+		const btn = $('#notify-test');
+		btn.disabled = true;
+		const res = await notifyApi.test().catch((err) => ({ ok: false, error: err?.message }));
+		btn.disabled = false;
+		status.hidden = false;
+		status.className = `field-status ${res?.ok ? 'success' : 'error'}`;
+		status.textContent = res?.ok ? t('push.test.sent') : t('push.test.failed', { error: res?.error || '?' });
+		setTimeout(() => { status.hidden = true; }, 6000);
+	});
+
+	$('#notify-dnd-btn').addEventListener('click', async (e) => {
+		const active = e.currentTarget.dataset.active === '1';
+		await notifyApi.dnd(active ? null : { minutes: 60 }).catch(() => null);
+		loadNotifyStatus();
+	});
+
+	$('#notify-quiet-portal').addEventListener('click', () => {
+		if (currentPortalUrl) portal.open();
+	});
+
+	$('#settings-tabs [data-tab="notify"]')?.addEventListener('click', () => loadNotifyStatus());
+}
 
 // Initial paint (before the locale round-trip finishes)
 updateDOM();
