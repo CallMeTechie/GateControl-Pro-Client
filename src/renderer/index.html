@@ -54,6 +54,11 @@
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg>
 					<span data-i18n="ui.nav.services">Dienste</span>
 				</button>
+				<button class="nav" id="nav-inbox" type="button" data-page="inbox">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+					<span data-i18n="ui.inbox.title">Mitteilungen</span>
+					<span class="count count-alert" id="inbox-badge" hidden></span>
+				</button>
 				<button class="nav" id="nav-logs" type="button" data-page="logs">
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
 					<span data-i18n="ui.nav.logs">Protokoll</span>
@@ -313,6 +318,37 @@
 				</div>
 			</section>
 
+			<!-- ═════════ NOTIFICATIONS (Mitteilungen) ═════════ -->
+			<section class="page" id="page-inbox">
+				<div class="rdp-list-col">
+					<div class="rdp-list-head">
+						<div class="inbox-head">
+							<div class="grow" style="min-width:0">
+								<h1 class="h-page" style="font-size:26px" data-i18n="ui.inbox.title">Mitteilungen</h1>
+								<span class="desc" id="inbox-count"></span>
+							</div>
+							<button class="btn btn-sec btn-sm" id="inbox-read-all" type="button" data-i18n="ui.inbox.readAll">Alle gelesen</button>
+						</div>
+						<div class="fchips" id="inbox-filters" role="tablist" data-i18n-aria-label="ui.inbox.filters" aria-label="Mitteilungen filtern"></div>
+						<div class="note note-neutral" id="inbox-hint" role="status" hidden></div>
+					</div>
+					<div class="rdp-list scroll" id="inbox-list" role="list"></div>
+					<div class="empty" id="inbox-empty" hidden>
+						<strong id="inbox-empty-title"></strong>
+						<span id="inbox-empty-hint"></span>
+						<button class="btn btn-sec btn-sm" id="inbox-empty-action" type="button" style="margin-top:6px" hidden></button>
+					</div>
+				</div>
+				<div class="rdp-detail-col scroll">
+					<div class="inbox-detail" id="inbox-detail" aria-live="polite"></div>
+					<div class="empty" id="inbox-detail-empty">
+						<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+						<span data-i18n="ui.inbox.select">Wähle links eine Mitteilung aus.</span>
+					</div>
+					<p class="hint inbox-sync-hint" data-i18n="ui.inbox.syncHint">Der Gelesen-Status wird mit deinen anderen Geräten abgeglichen.</p>
+				</div>
+			</section>
+
 			<!-- ═════════ LOGS ═════════ -->
 			<section class="page" id="page-logs">
 				<div class="page-pad logs-page">
@@ -371,6 +407,7 @@
 					<button class="nav nav-sm" type="button" data-tab="sec" data-i18n="settings.security">Sicherheit</button>
 					<button class="nav nav-sm" type="button" data-tab="split" data-i18n="ui.settings.tabSplit">Split-Tunneling</button>
 					<button class="nav nav-sm" type="button" data-tab="app" data-i18n="settings.app">Anwendung</button>
+					<button class="nav nav-sm" type="button" data-tab="notify" data-i18n="ui.notify.tab">Benachrichtigungen</button>
 					<button class="nav nav-sm" type="button" data-tab="adv" data-i18n="ui.settings.tabAdv">Erweitert</button>
 					<button class="nav nav-sm" type="button" data-tab="about" data-i18n="ui.settings.tabAbout">Über</button>
 				</div>
@@ -491,6 +528,69 @@
 								<button class="sw" id="opt-minimized" type="button" role="switch" aria-checked="false" data-i18n-aria-label="settings.minimized" aria-label="Minimiert starten"><span></span></button>
 							</div>
 						</section>
+					</div>
+
+					<!-- Notifications (Benachrichtigungen) -->
+					<div class="set-tab set-tab-wide" id="set-notify">
+						<h2 class="h-sub" data-i18n="ui.notify.tab">Benachrichtigungen</h2>
+						<div class="notify-grid">
+							<div class="notify-col">
+								<section class="card set-list" aria-labelledby="notify-delivery-title">
+									<h3 class="h-sec set-list-head" id="notify-delivery-title" data-i18n="ui.notify.delivery">Zustellung</h3>
+									<div class="set-row">
+										<div class="grow"><div class="set-row-title" data-i18n="ui.notify.enabled">Benachrichtigungen empfangen</div><div class="set-row-desc" data-i18n="ui.notify.enabledDesc">Meldungen deines GateControl-Servers auf diesem PC</div></div>
+										<button class="sw" id="notify-enabled" type="button" role="switch" aria-checked="false" data-i18n-aria-label="ui.notify.enabled" aria-label="Benachrichtigungen empfangen"><span></span></button>
+									</div>
+									<div class="set-row">
+										<div class="grow"><div class="set-row-title" data-i18n="ui.notify.direct">Auch ohne VPN-Verbindung</div><div class="set-row-desc" data-i18n="ui.notify.directDesc">direkt über HTTPS zum eigenen Server, solange die App im Tray läuft</div></div>
+										<button class="sw" id="notify-direct" type="button" role="switch" aria-checked="false" data-i18n-aria-label="ui.notify.direct" aria-label="Auch ohne VPN-Verbindung"><span></span></button>
+									</div>
+									<div class="set-row">
+										<div class="grow"><div class="set-row-title" data-i18n="ui.notify.toasts">Windows-Benachrichtigung anzeigen</div><div class="set-row-desc" data-i18n="ui.notify.toastsDesc">sonst nur Zähler im Tray und in der App</div></div>
+										<button class="sw" id="notify-toasts" type="button" role="switch" aria-checked="false" data-i18n-aria-label="ui.notify.toasts" aria-label="Windows-Benachrichtigung anzeigen"><span></span></button>
+									</div>
+									<div class="set-row">
+										<div class="grow"><div class="set-row-title" data-i18n="ui.notify.critical">Kritisches auch bei „Nicht stören“</div><div class="set-row-desc" data-i18n="ui.notify.criticalDesc">als Windows-Alarm mit Ton</div></div>
+										<button class="sw" id="notify-critical" type="button" role="switch" aria-checked="false" data-i18n-aria-label="ui.notify.critical" aria-label="Kritisches auch bei Nicht stören"><span></span></button>
+									</div>
+								</section>
+								<section class="card set-list" aria-labelledby="notify-topics-title">
+									<h3 class="h-sec set-list-head" id="notify-topics-title" data-i18n="ui.notify.topics">Themen auf diesem PC</h3>
+									<div id="notify-topics"></div>
+									<p class="set-row-desc notify-topics-empty" id="notify-topics-empty" data-i18n="ui.notify.topicsEmpty">Die Themen kommen vom Server, sobald die Verbindung steht.</p>
+								</section>
+								<span class="field-status error" id="notify-save-status" role="status" hidden></span>
+							</div>
+							<div class="notify-col">
+								<section class="card set-card" aria-labelledby="notify-status-title">
+									<h3 class="h-sec" id="notify-status-title" data-i18n="ui.notify.status">Status</h3>
+									<div class="notify-state" id="notify-state"><span class="dot"></span><strong id="notify-state-label"></strong></div>
+									<p class="set-row-desc" id="notify-reason" hidden></p>
+									<dl class="notify-dl">
+										<dt class="lbl" data-i18n="ui.notify.server">Server</dt><dd class="mono" id="notify-server">—</dd>
+										<dt class="lbl" data-i18n="ui.notify.path">Weg</dt><dd id="notify-via">—</dd>
+										<dt class="lbl" data-i18n="ui.notify.since">Verbunden seit</dt><dd id="notify-since">—</dd>
+									</dl>
+									<div class="notify-dnd" id="notify-dnd">
+										<span class="grow set-row-desc" id="notify-dnd-text"></span>
+										<button class="btn btn-ghost btn-xs" id="notify-dnd-btn" type="button"></button>
+									</div>
+									<div class="set-actions">
+										<button class="btn btn-sec" id="notify-test" type="button" data-i18n="ui.notify.test">Testnachricht anfordern</button>
+										<span class="field-status" id="notify-test-status" role="status" hidden></span>
+									</div>
+								</section>
+								<section class="card set-card tight" aria-labelledby="notify-quiet-title">
+									<h3 class="h-sec" id="notify-quiet-title" data-i18n="ui.notify.quietTitle">Ruhezeiten</h3>
+									<p class="set-row-desc" data-i18n="ui.notify.quietDesc">Ruhezeiten stellst du in deinem Portal-Profil ein. Sie gelten für alle deine Geräte.</p>
+									<div class="set-actions">
+										<button class="btn btn-sec btn-sm" id="notify-quiet-portal" type="button" data-i18n="ui.notify.quietOpen">Im Portal ändern</button>
+										<span class="hint" id="notify-quiet-hint" data-i18n="ui.notify.quietNoPortal" hidden>Das Portal ist erreichbar, sobald das VPN verbunden ist.</span>
+									</div>
+								</section>
+								<div class="note" id="notify-ks-note" role="note" data-i18n-aria-label="ui.notify.killSwitchNote" aria-label="Hinweis zum Kill-Switch" hidden></div>
+							</div>
+						</div>
 					</div>
 
 					<!-- Advanced -->
@@ -644,6 +744,7 @@
 	<div class="toasts" id="toasts" aria-live="polite"></div>
 
 	<script src="update-state.js"></script>
+	<script src="notify-state.js"></script>
 	<script src="renderer.js"></script>
 </body>
 </html>

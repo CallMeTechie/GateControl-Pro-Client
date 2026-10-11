@@ -9,6 +9,12 @@
  * upload, and /api/v1/client/update/check
  * with an Ed25519-signed update manifest plus the installer download.
  *
+ * Push (notification center): without `server.setPush(...)` the push routes
+ * answer 404 like a server from before the feature. With it, GET
+ * /api/v1/client/push is an SSE stream (hello + queued notifications), plus
+ * inbox, ack, prefs and test (contract: gatecontrol
+ * docs/feature-notification-center.md).
+ *
  * The update offer is configurable per test (`server.setUpdate(...)`), all
  * requests are recorded (`server.requests`).
  */
@@ -71,6 +77,27 @@ async function startMockServer() {
   const requests = [];
   let update = null; // { version, fileName, manifest, signature, served }
   let policy = null; // client policy (GET /api/v1/client/policy), null = old server (404)
+  let push = null; // { topics, items: [notification + state] }, null = old server (404)
+  const streams = new Set();
+  const acks = [];
+  const prefs = [];
+
+  const sse = (res, event, data, id) => {
+    res.write(`${id ? `id: ${id}\n` : ''}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  const unread = () => (push ? push.items.filter((n) => n.state === 'delivered').length : 0);
+  function addNotification(n) {
+    const seq = push.items.reduce((m, x) => Math.max(m, x.seq), 100) + 1;
+    const entry = {
+      seq, id: n.id || seq, event_id: 'e2e', topic: 'system', priority: 'normal', title: 'E2E', body: '',
+      created_at: new Date().toISOString(), expires_at: null, collapse_key: null, silent: false, data: null,
+      ...n, state: 'delivered',
+    };
+    push.items.unshift(entry);
+    const { state, ...payload } = entry;
+    for (const res of streams) sse(res, 'notification', payload, entry.seq);
+    return entry;
+  }
 
   const server = https.createServer({ cert, key }, (req, res) => {
     const url = new URL(req.url, 'https://127.0.0.1');
@@ -99,6 +126,50 @@ async function startMockServer() {
 
       if (!url.pathname.startsWith('/api/v1/client/')) return json(404, { ok: false });
       const route = url.pathname.slice('/api/v1/client/'.length);
+
+      if (route === 'push' || route.startsWith('push/')) {
+        if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
+        if (!push) return json(404, { ok: false, error: 'not_found' });
+        if (route === 'push' && req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+          streams.add(res);
+          res.on('close', () => streams.delete(res));
+          sse(res, 'hello', {
+            server_time: new Date().toISOString(), keepalive_s: 25, retention_h: 72, via: 'direct',
+            unread: unread(), topics: push.topics,
+          });
+          const since = Number(req.headers['last-event-id'] || url.searchParams.get('since') || 0);
+          for (const n of [...push.items].reverse()) {
+            if (n.seq > since && n.state === 'delivered') {
+              const { state, ...payload } = n;
+              sse(res, 'notification', payload, n.seq);
+            }
+          }
+          return undefined;
+        }
+        if (route === 'push/inbox') {
+          return json(200, { ok: true, items: push.items.slice(0, Number(url.searchParams.get('limit')) || 100), unread: unread() });
+        }
+        if (route === 'push/ack') {
+          const body = JSON.parse(raw.toString('utf8') || '{}');
+          acks.push(body);
+          if (body.state === 'read' || body.state === 'dismissed') {
+            const ids = [];
+            for (const n of push.items) if (body.seqs.includes(n.seq)) { n.state = body.state; ids.push(n.id); }
+            for (const r of streams) sse(r, 'read', { ids });
+          }
+          return json(200, { ok: true });
+        }
+        if (route === 'push/prefs') {
+          prefs.push(JSON.parse(raw.toString('utf8') || '{}'));
+          return json(200, { ok: true });
+        }
+        if (route === 'push/test') {
+          const n = addNotification({ topic: 'system', priority: 'info', title: 'Testnachricht', body: 'Benachrichtigungen kommen auf diesem Gerät an.' });
+          return json(200, { ok: true, seq: n.seq });
+        }
+        return json(404, { ok: false, error: 'not_found' });
+      }
 
       if (route === 'enroll') {
         return json(200, { ok: true, token: API_TOKEN, peerId: PEER_ID, config: null });
@@ -152,8 +223,23 @@ async function startMockServer() {
     requests,
     setUpdate(offer) { update = offer; },
     setPolicy(p) { policy = p; },
+    /** Enables push: { topics: [{ id, label }], items: [notification payloads] } (newest first). */
+    setPush(p) {
+      push = { topics: p.topics || [], items: [] };
+      for (const n of [...(p.items || [])].reverse()) addNotification(n);
+    },
+    /** Sends a notification to the open streams (and the inbox). */
+    pushNotification: (n) => addNotification(n),
+    pushStreams: () => streams.size,
+    acks: () => acks.slice(),
+    pushPrefs: () => prefs.slice(),
     count(pathname) { return requests.filter((r) => r.path === pathname).length; },
-    close: () => new Promise((resolve) => server.close(() => resolve())),
+    close: () => new Promise((resolve) => {
+      for (const res of streams) res.end();
+      streams.clear();
+      server.closeAllConnections?.();
+      server.close(() => resolve());
+    }),
   };
 }
 

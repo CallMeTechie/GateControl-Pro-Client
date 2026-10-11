@@ -346,6 +346,11 @@
     ; starten" anlegt (schtasks, weil die App Adminrechte braucht). Bei einem
     ; Update bleibt sie erhalten: Der Pfad zur Exe aendert sich nicht.
     nsExec::ExecToLog 'schtasks /Delete /F /TN "GateControlProAutostart"'
+
+    ; URL-Protokoll der Knoepfe in Windows-Benachrichtigungen. Die App
+    ; registriert es selbst (setAsDefaultProtocolClient, HKCU); bei einem
+    ; Update bleibt es erhalten, der Pfad zur Exe aendert sich nicht.
+    DeleteRegKey HKCU "Software\Classes\gatecontrol-pro"
   ${EndIf}
 
   ; Remove firewall rules
