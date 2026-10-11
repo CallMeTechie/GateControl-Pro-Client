@@ -195,7 +195,7 @@ describe('renderer wiring', () => {
     assert.match(html, /data-tab="notify"/);
     assert.match(html, /id="set-notify"/);
     for (const id of ['notify-enabled', 'notify-direct', 'notify-toasts', 'notify-critical', 'notify-topics', 'notify-test', 'notify-ks-note', 'notify-quiet-portal']) {
-      assert.match(html, new RegExp(`id="${id}"`), id);
+      assert.ok(html.includes(`id="${id}"`), id);
     }
   });
 

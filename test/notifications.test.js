@@ -342,7 +342,8 @@ describe('main.js notification wiring', () => {
 
   it('sets the AppUserModelID of the installed shortcut (build.appId)', () => {
     const pkg = require('../package.json');
-    assert.match(MAIN_JS, new RegExp(`app\\.setAppUserModelId\\('${pkg.build.appId.replace(/\./g, '\\.')}'\\)`));
+    // plain substring check: the appId is data, not a pattern
+    assert.ok(MAIN_JS.includes(`app.setAppUserModelId('${pkg.build.appId}')`), `setAppUserModelId('${pkg.build.appId}') missing`);
   });
 
   it('the uninstaller removes the URL protocol, but not on updates', () => {
