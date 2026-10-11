@@ -183,6 +183,15 @@ describe('renderer wiring', () => {
   const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
   const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'renderer.js'), 'utf8');
 
+  it('shows the quiet hours and opens the portal tab for changing them', () => {
+    assert.ok(html.includes('id="notify-quiet-value"'));
+    assert.ok(html.includes('id="notify-quiet-detail"'));
+    assert.match(renderer, /NS\.quietView\(inbox\.status\)/);
+    assert.match(renderer, /notifyApi\.quiet\(\{ refresh: true \}\)/);
+    assert.match(renderer, /notifyApi\.openQuietHours\(\)/);
+    assert.match(renderer, /portal\.open\(\{ next: '\/portal#benachrichtigungen' \}\)/);
+  });
+
   it('loads notify-state.js before renderer.js', () => {
     assert.ok(html.indexOf('<script src="notify-state.js"></script>') > -1);
     assert.ok(html.indexOf('notify-state.js') < html.indexOf('renderer.js'));
@@ -209,5 +218,30 @@ describe('renderer wiring', () => {
     const block = renderer.slice(renderer.indexOf('//  NOTIFICATIONS'), renderer.indexOf('// Initial paint'));
     assert.ok(block.length > 1000);
     assert.doesNotMatch(block, /innerHTML|insertAdjacentHTML|outerHTML/);
+  });
+});
+
+describe('quietView', () => {
+  it('unknown (older server, not connected yet) → nothing shown', () => {
+    assert.equal(NS.quietView(null), null);
+    assert.equal(NS.quietView({ state: 'connected', quiet: null, quietKnown: false }), null);
+    assert.equal(NS.quietView({ known: false, quiet: null }), null);
+  });
+
+  it('known without quiet hours', () => {
+    assert.deepEqual(NS.quietView({ quietKnown: true, quiet: null }), { key: 'ui.notify.quietNone', params: null, detailKey: null });
+  });
+
+  it('range with time zone and the critical rule', () => {
+    const v = NS.quietView({ quietKnown: true, quiet: { from: '22:00', to: '07:00', tz: 'Europe/Berlin', criticalBypass: true } });
+    assert.equal(t(v.key, v.params), 'ui.notify.quietRangeTz(22:00,07:00,Europe/Berlin)');
+    assert.equal(v.detailKey, 'ui.notify.quietCriticalBypass');
+    const w = NS.quietView({ known: true, quiet: { from: '23:30', to: '06:00', tz: null, criticalBypass: false } });
+    assert.equal(t(w.key, w.params), 'ui.notify.quietRange(23:30,06:00)');
+    assert.equal(w.detailKey, 'ui.notify.quietCriticalSilent');
+  });
+
+  it('malformed times are not shown as a range', () => {
+    assert.equal(NS.quietView({ quietKnown: true, quiet: { from: '<b>', to: '07:00' } }).key, 'ui.notify.quietNone');
   });
 });

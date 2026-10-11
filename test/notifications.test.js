@@ -197,6 +197,34 @@ describe('setupNotifications (fakes)', () => {
     assert.equal(n.tunnelChanged(true), false, 'no reconnect after stop');
   });
 
+  it('attachControl() creates one PushControl with the app services, started and stopped with the center', () => {
+    const { n, calls } = setup();
+    const made = [];
+    class FakeControl extends EventEmitter {
+      constructor(opts) { super(); this.opts = opts; this.started = 0; this.stopped = 0; made.push(this); }
+      start() { this.started++; }
+      stop() { this.stopped++; }
+    }
+    const clientPolicy = { id: 'policy' };
+    const connectionMonitor = { id: 'monitor' };
+    const onConfigChanged = async () => {};
+    const modes = [];
+    const pc = n.attachControl({ PushControl: FakeControl, clientPolicy, connectionMonitor, onConfigChanged, onModeChange: (m) => modes.push(m) });
+    assert.equal(pc, made[0]);
+    assert.equal(n.pushControl, pc);
+    assert.equal(pc.opts.pushClient, calls.push[0]);
+    assert.equal(pc.opts.clientPolicy, clientPolicy);
+    assert.equal(pc.opts.connectionMonitor, connectionMonitor);
+    assert.equal(pc.opts.onConfigChanged, onConfigChanged);
+    assert.equal(pc.started, 1);
+    pc.emit('mode', { relaxed: true });
+    assert.deepEqual(modes, [{ relaxed: true }]);
+    assert.equal(n.attachControl({ PushControl: FakeControl }), pc, 'only one instance');
+    n.stop();
+    assert.equal(pc.stopped, 1);
+    assert.equal(setup().n.attachControl({}), null, 'older core without PushControl');
+  });
+
   it('notify() passes the app notification through the center', () => {
     const { n, calls } = setup();
     n.notify({ title: 'GateControl Pro', body: 'VPN verbunden', collapseKey: 'tunnel' });
@@ -275,6 +303,72 @@ describe('setupNotifications with the real core classes', { skip: coreSkip }, ()
     assert.equal(n.menuItems(t)[1].label, 'Nicht stören beenden');
   });
 
+  it('push control: hello.state stretches the polls, control events reach policy, support and config', async () => {
+    const http = require('node:http');
+    const PushControl = require(path.join(coreDir, 'src', 'services', 'push-control.js'));
+    const ClientPolicyService = require(path.join(coreDir, 'src', 'services', 'client-policy.js'));
+    const ConnectionMonitor = require(path.join(coreDir, 'src', 'services', 'connection-monitor.js'));
+    const ev = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    const streams = new Set();
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      streams.add(res);
+      res.write(ev('hello', { keepalive_s: 25, via: 'direct', unread: 0, topics: [],
+        quiet: { from: '22:00', to: '07:00', tz: 'Europe/Berlin', critical_bypass: true },
+        state: { policy_version: '3f9a0c1d22b4e7a8', peer_enabled: true, support_bundle_requested: false, support_bundle_requested_at: null, config_hash: null } }));
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${server.address().port}`;
+    const policyCalls = [];
+    const support = [];
+    let configChecks = 0;
+    const apiClient = {
+      serverUrl: url, apiKey: 'gc_x', buildHeaders: () => ({ 'X-API-Token': 'gc_x' }),
+      pushAck: async () => ({ ok: true }), pushPrefs: async () => ({ ok: true }), pushInbox: async () => ({ ok: true, items: [], unread: 0 }),
+      getClientPolicy: async (v) => { policyCalls.push(v); return { notModified: false, data: { ok: true, version: policyCalls.length > 1 ? '0b7e5d2c91a4f360' : '3f9a0c1d22b4e7a8', policy: {} } }; },
+    };
+    const store = memoryStore({ notifications: { enabled: true, direct: true, mutedTopics: [] } });
+    const core = {
+      PushClient: class extends require(path.join(coreDir, 'src', 'services', 'push-client.js')) {
+        constructor(o) { super({ ...o, allowHttp: true }); }
+      },
+      NotificationCenter: require(path.join(coreDir, 'src', 'services', 'notification-center.js')),
+    };
+    n = setupNotifications({
+      app: { isPackaged: true, setAsDefaultProtocolClient: () => true }, store, log: quietLog, apiClient,
+      PushClient: core.PushClient, NotificationCenter: core.NotificationCenter, notifyMenuItems: () => [],
+      protocol: PROTOCOL, showWindow: () => {}, openPortal: async () => true,
+      isTunnelUp: () => false, isKillSwitchActive: () => false, getWgConfigPath: () => null, registerProtocol: false,
+    });
+    const clientPolicy = new ClientPolicyService({ apiClient, store, log: quietLog, interval: 300000 });
+    const connectionMonitor = new ConnectionMonitor({ apiClient, log: quietLog, wgService: {}, onSupportBundleRequest: (r) => support.push(r) });
+    const pc = n.attachControl({ PushControl, clientPolicy, connectionMonitor, onConfigChanged: async () => { configChecks++; } });
+    try {
+      n.start();
+      const until = async (fn, what) => { for (let i = 0; i < 300 && !fn(); i++) await new Promise((r) => setTimeout(r, 10)); assert.ok(fn(), what); };
+      await until(() => pc.relaxed, 'relaxed after hello.state');
+      assert.equal(clientPolicy.pollInterval(), 30 * 60 * 1000);
+      assert.equal(connectionMonitor.peerCheckMode().ms, 15 * 60 * 1000);
+      assert.deepEqual(n.notificationCenter.status().quiet, { from: '22:00', to: '07:00', tz: 'Europe/Berlin', criticalBypass: true });
+      await until(() => policyCalls.length === 1, 'policy refresh on the first hello');
+      for (const res of streams) {
+        res.write(ev('control', { type: 'policy_changed', policy_version: '0b7e5d2c91a4f360' }));
+        res.write(ev('control', { type: 'support_bundle_requested', requested_at: '2026-10-11 10:00:00' }));
+        res.write(ev('control', { type: 'config_changed' }));
+      }
+      await until(() => policyCalls.length === 2 && configChecks === 1 && support.includes('2026-10-11 10:00:00'), 'control reactions');
+      for (const res of streams) res.destroy();
+      await until(() => !pc.relaxed, 'back to normal polling when the stream drops');
+      assert.equal(clientPolicy.pollInterval(), 300000);
+    } finally {
+      n.stop();
+      clientPolicy.stop();
+      for (const res of streams) res.destroy();
+      server.closeAllConnections?.();
+      await new Promise((r) => server.close(r));
+    }
+  });
+
   it('switched off: no tray entries', () => {
     const { t } = realSetup({ notifications: { enabled: false } });
     assert.deepEqual(n.menuItems(t), []);
@@ -320,6 +414,26 @@ describe('main.js notification wiring', () => {
 
   it('second-instance: toast button first, otherwise bring the window up', () => {
     assert.match(MAIN_JS, /app\.on\('second-instance', \(_event, argv\) => \{\s*if \(notifications\?\.handleArgv\(argv\)\) return;\s*showWindow\(\);\s*\}\);/);
+  });
+
+  it('attaches the push control after the connection monitor, with the config check', () => {
+    assert.match(MAIN_JS, /\{ PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema \} = require\('@gatecontrol\/client-core'\)/);
+    assert.ok(index('connectionMonitor = new ConnectionMonitor({') < index('notifications.attachControl({'));
+    const block = MAIN_JS.slice(index('notifications.attachControl({'), index('notifications.attachControl({') + 300);
+    assert.match(block, /PushControl,\s*clientPolicy,\s*connectionMonitor,\s*onConfigChanged: \(\) => applyServerConfigChange\(\)/);
+    const fn = MAIN_JS.slice(index('async function applyServerConfigChange()'), index('async function applyServerConfigChange()') + 700);
+    assert.match(fn, /if \(!tunnelState\.connected \|\| isReconnecting\) return;/);
+    assert.match(fn, /apiClient\.checkConfigUpdate\(\)/);
+    assert.match(fn, /validateWgConfig\(config\)/);
+    assert.match(fn, /await disconnectTunnel\(\);\s*await connectTunnel\(\);/);
+  });
+
+  it('portal:open passes { next } and push actions their target to the portal opener', () => {
+    assert.match(MAIN_JS, /openPortal: \(opts\) => openPortalSafe\(opts\)/);
+    assert.match(MAIN_JS, /openPortal: \(portalPath\) => openPortalSafe\(portalPath\)/);
+    const fn = MAIN_JS.slice(index('function openPortalSafe(target)'), index('function openPortalSafe(target)') + 400);
+    assert.match(fn, /typeof target === 'string'\) opts = \{ path: target \}/);
+    assert.match(fn, /opts = \{ next: target\.next \}/);
   });
 
   it('stops the center on quit', () => {

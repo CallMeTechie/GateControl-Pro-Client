@@ -162,4 +162,50 @@ test.describe('notification center', () => {
     expect(await clickTrayItem('^(Mitteilungen|Notifications)')).toBe(true);
     await expect(page.locator('#page-inbox')).toHaveClass(/active/);
   });
+
+  test('server with control events: quiet hours, pushed policy change and support request', async ({ launchApp, mock }) => {
+    mock.setPolicy({ killSwitch: 'user', autoConnect: 'user', autostart: 'user', lockSettings: false, lockServer: false });
+    mock.setPush({
+      topics: TOPICS, items: [],
+      quiet: { from: '22:00', to: '07:00', tz: 'Europe/Berlin', critical_bypass: true },
+      state: { policy_version: 'e2e0000000000001', peer_enabled: true, support_bundle_requested: false, support_bundle_requested_at: null, config_hash: null },
+    });
+    const { page, answerDialogs, dialogs } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await expect.poll(() => mock.pushStreams()).toBe(1);
+
+    // Settings → Benachrichtigungen shows the quiet hours of the server (read-only)
+    await openSettingsTab(page, 'notify');
+    await expect(page.locator('#notify-quiet-value')).toHaveText(/22:00 – 07:00.*Europe\/Berlin/);
+    await expect(page.locator('#notify-quiet-detail')).toHaveText(/Kritische Meldungen kommen trotzdem|Critical messages still sound/);
+
+    // policy_changed: fetched right away (the poll would wait 30 min now)
+    await expect.poll(() => mock.count('/api/v1/client/policy')).toBeGreaterThanOrEqual(1);
+    const before = mock.count('/api/v1/client/policy');
+    mock.setPolicy({ killSwitch: 'required', autoConnect: 'user', autostart: 'user', lockSettings: false, lockServer: false }, 'e2e0000000000002');
+    mock.pushControl({ type: 'policy_changed', policy_version: 'e2e0000000000002' });
+    await expect.poll(() => mock.count('/api/v1/client/policy')).toBeGreaterThan(before);
+    await openSettingsTab(page, 'sec');
+    await expect(page.locator('#killswitch-toggle')).toBeDisabled();
+
+    // support_bundle_requested: the same confirmation as for an admin request, once per request
+    await answerDialogs([0]);
+    mock.pushControl({ type: 'support_bundle_requested', requested_at: '2026-10-11 10:00:00' });
+    await expect.poll(() => mock.count('/api/v1/client/support-bundle')).toBe(1);
+    mock.pushControl({ type: 'support_bundle_requested', requested_at: '2026-10-11 10:00:00' });
+    await page.waitForTimeout(1000);
+    expect((await dialogs()).length).toBe(1);
+    expect(mock.count('/api/v1/client/support-bundle')).toBe(1);
+  });
+
+  test('server with quiet hours but without control events: quiet hours shown, nothing else changes', async ({ launchApp, mock }) => {
+    mock.setPush({ topics: TOPICS, items: [], quiet: null });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await expect.poll(() => mock.pushStreams()).toBe(1);
+    await openSettingsTab(page, 'notify');
+    await expect(page.locator('#notify-quiet-value')).toHaveText(/Keine Ruhezeiten eingestellt|No quiet hours set/);
+    await expect(page.locator('#notify-quiet-detail')).toBeHidden();
+    await expect(page.locator('#notify-quiet-portal')).toBeDisabled(); // no portal URL without the VPN
+  });
 });

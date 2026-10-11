@@ -9,6 +9,10 @@
  * app-side glue: protocol activation of toast buttons, the tunnel-change
  * signal, the tray entries/badge and a stop that is safe to call twice.
  *
+ * attachControl() adds the core PushControl (phase 5): control events and
+ * hello.state of the server replace most of the policy / peer-info polling
+ * (the polls stay as the fallback; core docs/notification-center.md §8).
+ *
  * Kept free of module-level Electron access (app and the core classes are
  * passed in), so test/notifications.test.js can drive it with fakes and with
  * the real core classes.
@@ -99,11 +103,36 @@ function setupNotifications({
   let started = false;
   let stopped = false;
   let tunnelUp = null;
+  let pushControl = null;
 
   return {
     pushClient,
     notificationCenter,
     protocolRegistered,
+
+    /** The PushControl from attachControl(), or null. */
+    get pushControl() { return pushControl; },
+
+    /**
+     * Wire the core PushControl once ClientPolicyService and ConnectionMonitor
+     * exist: policy_changed → policy refresh, support_bundle_requested → the
+     * monitor's support-bundle handler, peer_state disabled → the monitor's
+     * onPeerDisabled, config_changed → onConfigChanged; polling is stretched
+     * while the stream delivers these. Returns the instance (null when the
+     * core has no PushControl). Call once; later calls return the first one.
+     */
+    attachControl({ PushControl, clientPolicy, connectionMonitor, onConfigChanged, onModeChange } = {}) {
+      if (pushControl) return pushControl;
+      if (typeof PushControl !== 'function') return null;
+      pushControl = new PushControl({ pushClient, clientPolicy, connectionMonitor, apiClient, log, onConfigChanged });
+      if (typeof onModeChange === 'function') {
+        pushControl.on('mode', (m) => {
+          try { onModeChange(m); } catch (err) { log.warn(`Push control mode handler failed: ${err.message}`); }
+        });
+      }
+      if (!stopped) pushControl.start();
+      return pushControl;
+    },
 
     /** Opens the stream (no-op while notifications are switched off). */
     start() {
@@ -174,6 +203,7 @@ function setupNotifications({
     stop() {
       if (stopped) return;
       stopped = true;
+      if (pushControl) { try { pushControl.stop(); } catch (err) { log.warn(`Push control stop failed: ${err.message}`); } }
       try { notificationCenter.stop(); } catch (err) { log.warn(`Notification center stop failed: ${err.message}`); }
     },
   };
