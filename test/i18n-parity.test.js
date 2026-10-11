@@ -73,6 +73,8 @@ describe('i18n parity (de / en)', () => {
     for (const s of ['empty', 'filtered', 'off', 'notConfigured', 'error']) keys.add(`ui.inbox.${s}.hint`);
     for (const s of ['off', 'error']) keys.add(`ui.inbox.${s}.action`);
     for (const s of ['connected', 'connecting', 'disabled', 'error', 'stopped']) keys.add(`push.state.${s}`);
+    // quiet hours card (notify-state.js quietView)
+    for (const s of ['quietRange', 'quietRangeTz', 'quietNone', 'quietCriticalBypass', 'quietCriticalSilent']) keys.add(`ui.notify.${s}`);
     for (const s of ['info', 'normal', 'high', 'critical']) keys.add(`push.priority.${s}`);
     for (const s of ['direct', 'tunnel']) keys.add(`push.via.${s}`);
     for (const s of ['tunnelOnly', 'killSwitchOk', 'tray.inbox', 'tray.inboxUnread', 'tray.dnd1h', 'tray.dndOff']) keys.add(`push.${s}`);

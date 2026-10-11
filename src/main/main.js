@@ -34,7 +34,7 @@ let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPo
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
-let PushClient, NotificationCenter, notifyMenuItems, notificationsSchema, setupNotifications;
+let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema, setupNotifications;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
 
 try {
@@ -76,7 +76,7 @@ try {
   ({ applyPolicyToStore } = require('@gatecontrol/client-core/src/ipc/base-handlers'));
   // Notification center: push stream from the own server, toasts, inbox,
   // tray entries (core docs/notification-center.md).
-  ({ PushClient, NotificationCenter, notifyMenuItems, notificationsSchema } = require('@gatecontrol/client-core'));
+  ({ PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema } = require('@gatecontrol/client-core'));
   ({ setupNotifications } = require('./notifications'));
   RdpManager = require('../services/rdp/rdp-manager');
   ({ runRdpTrustMigration } = require('../services/rdp/rdp-trust-migration'));
@@ -256,11 +256,34 @@ const WG_CONFIG_FILE = path.join(WG_CONFIG_DIR, 'gatecontrol0.conf');
 // ── Helpers ──────────────────────────────────────────────────
 // Opens the portal (https only). Asks the server for a fresh one-time login
 // link right before every open and falls back to the plain portal URL
-// (core utils/portal.js). Used by auto-open, tray and the "Portal öffnen" button.
-function openPortalSafe(portalPath) {
+// (core utils/portal.js). Used by auto-open, tray and the "Portal öffnen" button,
+// push actions (open_portal: target) and "Ruhezeiten im Portal ändern": a
+// portal tab ('/portal#benachrichtigungen') goes to the server as `next`.
+function openPortalSafe(target) {
+  let opts;
+  if (typeof target === 'string') opts = { path: target };
+  else if (target && typeof target.next === 'string') opts = { next: target.next };
   return createPortalOpener({ apiClient, getPortalUrl: () => portalUrl, log })
-    .open(typeof portalPath === 'string' ? { path: portalPath } : undefined)
+    .open(opts)
     .catch(() => false);
+}
+
+// Push `config_changed` / a different config_hash in hello.state (core
+// PushControl): while the tunnel is up, ask config/check and reconnect with
+// the new configuration (connectTunnel fetches, validates and writes it).
+// Without tunnel nothing to do — the next connect fetches the config anyway.
+async function applyServerConfigChange() {
+  if (!tunnelState.connected || isReconnecting) return;
+  const config = await apiClient.checkConfigUpdate();
+  if (!config) return;
+  const validation = validateWgConfig(config);
+  if (!validation.ok) {
+    log.warn('Config update rejected: ' + validation.errors.join(', '));
+    return;
+  }
+  log.info('New configuration on the server — reconnecting');
+  await disconnectTunnel();
+  await connectTunnel();
 }
 
 // The app's own notifications go through the notification center: same toast
@@ -888,6 +911,16 @@ function initializeServices() {
     log,
   });
 
+  // Control events of the push stream (core PushControl): policy changes,
+  // support-bundle requests, peer disabled and config changes arrive by push;
+  // the policy (30 min) and peer-info (15 min) polls stay as the fallback.
+  notifications.attachControl({
+    PushControl,
+    clientPolicy,
+    connectionMonitor,
+    onConfigChanged: () => applyServerConfigChange(),
+  });
+
   // Forward RDP events to renderer
   rdpManager.on('session-start', (data) => {
     mainWindow?.webContents.send('rdp:session-start', data);
@@ -1011,7 +1044,8 @@ function registerIpcHandlers() {
       }
     },
     installUpdate: async () => installUpdate(),
-    openPortal: () => openPortalSafe(),
+    // portal:open, optionally { next: '/portal#<tab>' } (validated by core)
+    openPortal: (opts) => openPortalSafe(opts),
     getTunnelState: () => tunnelState,
     wgConfigFile: WG_CONFIG_FILE,
     setLocale,

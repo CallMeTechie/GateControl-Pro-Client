@@ -11,7 +11,9 @@
  *
  * Push (notification center): without `server.setPush(...)` the push routes
  * answer 404 like a server from before the feature. With it, GET
- * /api/v1/client/push is an SSE stream (hello + queued notifications), plus
+ * /api/v1/client/push is an SSE stream (hello + queued notifications; with
+ * `quiet` / `state` in setPush() also hello.quiet and hello.state like a
+ * server with control events, pushControl() sends `event: control`), plus
  * inbox, ack, prefs and test (contract: gatecontrol
  * docs/feature-notification-center.md).
  *
@@ -77,7 +79,8 @@ async function startMockServer() {
   const requests = [];
   let update = null; // { version, fileName, manifest, signature, served }
   let policy = null; // client policy (GET /api/v1/client/policy), null = old server (404)
-  let push = null; // { topics, items: [notification + state] }, null = old server (404)
+  let policyVersion = 'e2e0000000000001'; // opaque 16-hex version (ETag)
+  let push = null; // { topics, items: [notification + state], quiet?, state? }, null = old server (404)
   const streams = new Set();
   const acks = [];
   const prefs = [];
@@ -137,6 +140,9 @@ async function startMockServer() {
           sse(res, 'hello', {
             server_time: new Date().toISOString(), keepalive_s: 25, retention_h: 72, via: 'direct',
             unread: unread(), topics: push.topics,
+            // newer servers: quiet hours (1.156) and control-event state
+            ...(push.quiet !== undefined ? { quiet: push.quiet } : {}),
+            ...(push.state ? { state: push.state } : {}),
           });
           const since = Number(req.headers['last-event-id'] || url.searchParams.get('since') || 0);
           for (const n of [...push.items].reverse()) {
@@ -159,6 +165,12 @@ async function startMockServer() {
             for (const r of streams) sse(r, 'read', { ids });
           }
           return json(200, { ok: true });
+        }
+        if (route === 'push/prefs' && req.method === 'GET') {
+          return json(200, {
+            ok: true, enabled: true, mode: null, muted_topics: [], restricted: false,
+            ...(push.quiet !== undefined ? { quiet: push.quiet } : {}),
+          });
         }
         if (route === 'push/prefs') {
           prefs.push(JSON.parse(raw.toString('utf8') || '{}'));
@@ -187,7 +199,7 @@ async function startMockServer() {
         case 'services': return json(200, { ok: true, services: [] });
         case 'policy':
           if (!policy) return json(404, { ok: false });
-          return json(200, { ok: true, version: 'e2e0000000000001', managed: true, policy, sources: {} });
+          return json(200, { ok: true, version: policyVersion, managed: true, policy, sources: {} });
         case 'peer-info': return json(200, { ok: true, peer: { id: PEER_ID, name: 'e2e', enabled: true } });
         case 'traffic': return json(200, { ok: true, traffic: {} });
         case 'dns-check': return json(200, { ok: true });
@@ -222,15 +234,17 @@ async function startMockServer() {
     peerId: PEER_ID,
     requests,
     setUpdate(offer) { update = offer; },
-    setPolicy(p) { policy = p; },
+    setPolicy(p, version = 'e2e0000000000001') { policy = p; policyVersion = version; },
     /** Enables push: { topics: [{ id, label }], items: [notification payloads] } (newest first). */
     setPush(p) {
-      push = { topics: p.topics || [], items: [] };
+      push = { topics: p.topics || [], items: [], quiet: p.quiet, state: p.state || null };
       for (const n of [...(p.items || [])].reverse()) addNotification(n);
     },
     /** Sends a notification to the open streams (and the inbox). */
     pushNotification: (n) => addNotification(n),
     pushStreams: () => streams.size,
+    /** Sends `event: control` (no id) to the open streams, e.g. { type: 'policy_changed', policy_version: 2 }. */
+    pushControl(c) { for (const res of streams) sse(res, 'control', c); },
     acks: () => acks.slice(),
     pushPrefs: () => prefs.slice(),
     count(pathname) { return requests.filter((r) => r.path === pathname).length; },

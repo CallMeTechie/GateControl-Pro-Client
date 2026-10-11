@@ -548,6 +548,7 @@ body:not([data-conn="connected"]) .show-connected { display: none !important; }
 .notify-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; align-items: baseline; }
 .notify-dl dd { overflow-wrap: anywhere; }
 .notify-dnd { display: flex; align-items: center; gap: 10px; }
+.notify-quiet-value { font-size: 15px; font-weight: 600; margin-top: 8px; font-variant-numeric: tabular-nums; }
 #notify-dnd-text:empty { display: none; }
 @media (max-width: 1200px) {
 	.notify-grid { grid-template-columns: minmax(0, 1fr); }

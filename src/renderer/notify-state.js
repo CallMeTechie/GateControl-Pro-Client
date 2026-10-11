@@ -242,7 +242,29 @@
 		return { page: 'inbox', id };
 	}
 
+	/**
+	 * Quiet hours card (read-only; set in the portal). Input: notify status()
+	 * (quiet, quietKnown) or notify.quiet() ({ known, quiet }).
+	 * → null while unknown (server without quiet hours / not connected yet),
+	 *   otherwise { key, params, detailKey } for t().
+	 */
+	function quietView(status) {
+		if (!status || typeof status !== 'object') return null;
+		const known = status.quietKnown === true || status.known === true;
+		if (!known) return null;
+		const q = status.quiet;
+		const hhmm = /^\d{2}:\d{2}$/;
+		if (!q || !hhmm.test(str(q.from)) || !hhmm.test(str(q.to))) return { key: 'ui.notify.quietNone', params: null, detailKey: null };
+		const tz = q.tz ? str(q.tz) : '';
+		return {
+			key: tz ? 'ui.notify.quietRangeTz' : 'ui.notify.quietRange',
+			params: tz ? { from: q.from, to: q.to, tz } : { from: q.from, to: q.to },
+			detailKey: q.criticalBypass ? 'ui.notify.quietCriticalBypass' : 'ui.notify.quietCriticalSilent',
+		};
+	}
+
 	return {
+		quietView,
 		PRIORITY_CHIP,
 		topicLabel,
 		filterItems,

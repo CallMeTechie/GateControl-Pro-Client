@@ -2326,6 +2326,23 @@ function renderNotifyQuiet() {
 	const available = !!currentPortalUrl;
 	btn.disabled = !available;
 	$('#notify-quiet-hint').hidden = available;
+
+	// The person's quiet hours as the server reports them (read-only).
+	const view = NS.quietView(inbox.status);
+	const valueEl = $('#notify-quiet-value');
+	const detailEl = $('#notify-quiet-detail');
+	valueEl.hidden = !view;
+	valueEl.textContent = view ? t(view.key, view.params || undefined) : '';
+	detailEl.hidden = !view || !view.detailKey;
+	detailEl.textContent = view && view.detailKey ? t(view.detailKey) : '';
+}
+
+// Settings tab opened: ask the server for the current quiet hours (they may
+// have changed in the portal since the stream connected), then repaint.
+async function refreshNotifyQuiet() {
+	if (typeof notifyApi.quiet !== 'function') return;
+	await notifyApi.quiet({ refresh: true }).catch(() => null);
+	loadNotifyStatus();
 }
 
 async function saveNotifyPrefs(patch) {
@@ -2366,11 +2383,15 @@ if (notifyAvailable()) {
 		loadNotifyStatus();
 	});
 
+	// "Im Portal ändern": portal tab "Meine Benachrichtigungen", signed in
+	// (one-time login link with next=/portal#benachrichtigungen).
 	$('#notify-quiet-portal').addEventListener('click', () => {
-		if (currentPortalUrl) portal.open();
+		if (!currentPortalUrl) return;
+		if (typeof notifyApi.openQuietHours === 'function') notifyApi.openQuietHours();
+		else portal.open({ next: '/portal#benachrichtigungen' });
 	});
 
-	$('#settings-tabs [data-tab="notify"]')?.addEventListener('click', () => loadNotifyStatus());
+	$('#settings-tabs [data-tab="notify"]')?.addEventListener('click', () => { loadNotifyStatus(); refreshNotifyQuiet(); });
 }
 
 // Initial paint (before the locale round-trip finishes)
