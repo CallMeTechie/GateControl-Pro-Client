@@ -19,6 +19,9 @@
 .cv-ib-pri:hover { filter: brightness(1.08); border-color: var(--acc); }
 .cv-ib-sm { width: 28px; height: 28px; border-radius: 8px; }
 .cv-ib:focus-visible, .cv-row:focus-visible, .cv-link:focus-visible, .cv-react:focus-visible, .cv-menu button:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.cv .cv-danger { background: var(--err-bg); color: var(--err); border-color: transparent; }
+.cv .cv-danger:hover { filter: brightness(1.1); }
+.cv .cv-msgs, .cv .cv-rows, .cv .cv-info { overflow-x: hidden; overflow-y: auto; }
 .cv-link { border: 0; background: none; padding: 0; color: var(--info); cursor: pointer; font-size: inherit; }
 .cv-link:hover { text-decoration: underline; }
 

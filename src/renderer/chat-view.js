@@ -1252,7 +1252,7 @@
 				refs.info.appendChild(ms);
 			}
 			const foot = el('div', { class: 'cv-info-sec' }, [el('p', { class: 'cv-note cv-note-lock' }, [icon('lock', 14), el('span', { text: t('chat.info.encrypted') })])]);
-			if (c.can && c.can.leave) foot.appendChild(el('button', { type: 'button', class: 'btn btn-danger btn-sm', text: t('chat.info.leave'), on: { click: () => leave(c) } }));
+			if (c.can && c.can.leave) foot.appendChild(el('button', { type: 'button', class: 'btn btn-danger cv-danger btn-sm', text: t('chat.info.leave'), on: { click: () => leave(c) } }));
 			refs.info.appendChild(foot);
 		}
 
@@ -1289,7 +1289,7 @@
 				const done = (v) => { if (!ov || !ov.parentNode) return; ov.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
 				const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(null); } };
 				const foot = buttons.length ? el('div', { class: 'cv-dlg-foot' }, buttons.map((b) => el('button', {
-					type: 'button', class: `btn ${b.primary ? 'btn-pri' : b.danger ? 'btn-danger' : 'btn-sec'}`, text: b.label,
+					type: 'button', class: `btn ${b.primary ? 'btn-pri' : b.danger ? 'btn-danger cv-danger' : 'btn-sec'}`, text: b.label,
 					on: { click: async () => { if (b.onClick) { const r = await b.onClick(); if (r === false) return; done(b.value !== undefined ? b.value : r); } else done(b.value); } },
 				}))) : null;
 				ov = el('div', { class: 'cv-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': titleText }, [
@@ -1395,7 +1395,7 @@
 			let closeFn = null;
 			const body = el('div', { class: 'cv-stack' }, [
 				el('button', { type: 'button', class: 'btn btn-sec', text: admin ? t('chat.info.unmakeAdmin') : t('chat.info.makeAdmin'), on: { click: () => { if (closeFn) closeFn(null); patchConv(c, { role: { userId: mb.userId, role: admin ? 'member' : 'admin' } }); } } }),
-				el('button', { type: 'button', class: 'btn btn-danger', text: t('chat.info.removeMember'), on: { click: () => { if (closeFn) closeFn(null); patchConv(c, { remove: [mb.userId] }); } } }),
+				el('button', { type: 'button', class: 'btn btn-danger cv-danger', text: t('chat.info.removeMember'), on: { click: () => { if (closeFn) closeFn(null); patchConv(c, { remove: [mb.userId] }); } } }),
 			]);
 			dialog(mb.name || t('chat.gone'), body, [], { onOpen: (done) => { closeFn = done; } });
 		}
