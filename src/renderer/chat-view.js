@@ -116,7 +116,18 @@
 	function mount(o) {
 		const api = o.api;
 		const t = o.t;
-		const toast = typeof o.toast === 'function' ? o.toast : () => {};
+		let toastTimer = null;
+		/** In-page notice when the app has no toast helper of its own. */
+		const ownToast = (msg, type = 'info') => {
+			let n = rootEl.querySelector('.cv-toast');
+			if (!n) { n = el('div', { class: 'cv-toast', role: 'status' }); rootEl.appendChild(n); }
+			n.textContent = String(msg || '');
+			n.setAttribute('data-type', type);
+			n.hidden = false;
+			clearTimeout(toastTimer);
+			toastTimer = setTimeout(() => { n.hidden = true; }, 5000);
+		};
+		const toast = typeof o.toast === 'function' ? o.toast : (msg, type) => ownToast(msg, type);
 		const S = {
 			status: null,
 			convs: [],
@@ -606,7 +617,8 @@
 		function imageEl(m) {
 			const size = CS.bubbleSize(m.meta);
 			const box = el('button', { type: 'button', class: 'cv-img', style: `width:${size.w}px;aspect-ratio:${size.w} / ${size.h}`, 'aria-label': t('chat.msg.openImage') });
-			const local = m.pending ? S.local.get(m.clientId) : null;
+			// The picture just sent from here: no need to download it again.
+			const local = m.clientId ? S.local.get(m.clientId) || null : null;
 			const show = (u) => { if (!u) { box.classList.add('is-missing'); box.appendChild(icon('image', 28, '1.6')); return; } box.appendChild(el('img', { src: u, alt: '', draggable: 'false' })); };
 			if (local) show(local);
 			else if (m.media) (m.media.thumbId ? mediaUrl(m.media.thumbId).then((u) => u || mediaUrl(m.media.id)) : mediaUrl(m.media.id)).then(show);
@@ -650,7 +662,7 @@
 			const setIcon = (playing) => { clear(btn).appendChild(icon(playing ? 'pause' : 'play', 14)); btn.setAttribute('aria-label', playing ? t('chat.msg.pause') : t('chat.msg.play')); };
 			const ensure = async () => {
 				if (audio) return audio;
-				const u = m.pending ? S.local.get(m.clientId) : (m.media ? await mediaUrl(m.media.id) : null);
+				const u = (m.clientId && S.local.get(m.clientId)) || (m.media ? await mediaUrl(m.media.id) : null);
 				if (!u) { toast(t('chat.msg.mediaUnavailable'), 'error'); return null; }
 				audio = new Audio(u);
 				audio.addEventListener('timeupdate', paint);

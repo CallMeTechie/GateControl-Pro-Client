@@ -238,12 +238,21 @@
 .cv-lightbox-bar { align-self: stretch; display: flex; justify-content: flex-end; gap: 8px; }
 .cv-lightbox-bar .btn { display: inline-flex; align-items: center; gap: 6px; }
 
+/* In-page notice (apps without their own toast helper) */
+.cv-toast { position: absolute; right: 20px; bottom: 20px; z-index: 60; max-width: 420px; padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line2); box-shadow: var(--shadow); font-size: 13px; overflow-wrap: anywhere; border-left: 4px solid var(--info); }
+.cv-toast[data-type="error"] { border-left-color: var(--err); }
+.cv-toast[data-type="warning"] { border-left-color: var(--warn); }
+.cv-toast[data-type="success"] { border-left-color: var(--acc); }
+
 /* ── Light theme: bubbles and chips need an edge on the light background ── */
 [data-theme="light"] .cv-in, [data-theme="light"] .cv-day span, [data-theme="light"] .cv-sys span { background: var(--panel); box-shadow: 0 0 0 1px var(--line); }
 [data-theme="light"] .cv-msg.is-hl .cv-bub { box-shadow: 0 0 0 2px var(--info); }
 [data-theme="light"] .cv-out { background: color-mix(in srgb, var(--acc) 18%, var(--panel)); }
 
 /* ── Narrow windows ──────────────────────────────────── */
+@media (max-width: 1100px) {
+	.cv-list { width: 290px; }
+}
 @media (max-width: 1180px) {
 	.cv-info { position: absolute; right: 0; top: 0; bottom: 0; z-index: 6; box-shadow: var(--shadow); }
 }
