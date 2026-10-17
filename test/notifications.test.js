@@ -442,7 +442,7 @@ describe('main.js notification wiring', () => {
   });
 
   it('tray: unread dot and the notification menu entries', () => {
-    assert.match(MAIN_JS, /createTrayIcon\(nativeImage, connState, \{ badge: !!notifications\?\.badge\(\) \}\)/);
+    assert.match(MAIN_JS, /createTrayIcon\(nativeImage, connState, \{ badge: !!notifications\?\.badge\(\) \|\| !!chats\?\.badge\(\) \}\)/);
     assert.match(MAIN_JS, /notifications\.menuItems\(t\)/);
     assert.match(MAIN_JS, /onChange: \(\) => updateTray\(trayState\)/);
   });

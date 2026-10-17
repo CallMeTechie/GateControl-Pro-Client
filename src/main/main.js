@@ -35,6 +35,7 @@ let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
 let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema, setupNotifications;
+let MessengerService, ChatNotifier, setupMessenger;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
 
 try {
@@ -78,6 +79,10 @@ try {
   // tray entries (core docs/notification-center.md).
   ({ PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema } = require('@gatecontrol/client-core'));
   ({ setupNotifications } = require('./notifications'));
+  // Chats (GateControl Messenger): data, live events, outbox, chat toasts
+  // (core docs/messenger.md).
+  ({ MessengerService, ChatNotifier } = require('@gatecontrol/client-core'));
+  ({ setupMessenger } = require('./messenger'));
   RdpManager = require('../services/rdp/rdp-manager');
   ({ runRdpTrustMigration } = require('../services/rdp/rdp-trust-migration'));
   RdpWolClient = require('../services/rdp/rdp-wol');
@@ -207,6 +212,7 @@ let rdpManager = null;
 let rdpWolClient = null;
 let supportBundle = null; // "Support-Paket senden" (core src/support/sender.js)
 let notifications = null; // notification center (./notifications.js), one per app lifetime
+let chats = null; // messenger (./messenger.js), one per app lifetime
 let trayState = 'disconnected'; // last state drawn in the tray (refresh on unread / DND changes)
 let pendingUpdate = null;
 // Version for which the "Update erforderlich" notification was already shown
@@ -309,7 +315,7 @@ function updateTray(connState) {
   if (!tray) return;
 
   // Unread push notifications: dot on the tray icon.
-  tray.setImage(createTrayIcon(nativeImage, connState, { badge: !!notifications?.badge() }));
+  tray.setImage(createTrayIcon(nativeImage, connState, { badge: !!notifications?.badge() || !!chats?.badge() }));
 
   const statusText = connState === 'connected' ? t('status.connected')
     : connState === 'connecting' ? t('status.connecting')
@@ -333,11 +339,16 @@ function updateTray(connState) {
 
   const unreadLine = notifications?.tooltip(t);
   if (unreadLine) tooltip += `\n${unreadLine}`;
+  const chatLine = chats?.tooltip(t);
+  if (chatLine) tooltip += `\n${chatLine}`;
 
   tray.setToolTip(tooltip);
 
   // "Mitteilungen · n neu" and "Nicht stören für 1 Stunde" (core notifyMenuItems)
-  const notifyItems = notifications ? notifications.menuItems(t) : [];
+  const notifyItems = [
+    ...(chats ? chats.menuItems(t, () => { showWindow(); mainWindow?.webContents.send('navigate', 'chats'); }) : []),
+    ...(notifications ? notifications.menuItems(t) : []),
+  ];
 
   // Build context menu with RDP status
   const rdpSessions = rdpManager ? rdpManager.getActiveSessions() : [];
@@ -824,6 +835,19 @@ function initializeServices() {
     onChange: () => updateTray(trayState),
   });
 
+  // Chats: messenger on the same push stream, chat toasts with reply field.
+  chats = setupMessenger({
+    store, log, apiClient, notifications,
+    MessengerService, ChatNotifier,
+    protocol: 'gatecontrol-pro',
+    toastImagePath: path.join(RESOURCES_PATH, 'icons', 'app-icon.png'),
+    dataDir: app.getPath('userData'),
+    tmpDir: app.getPath('temp'),
+    showWindow: () => showWindow(),
+    getMainWindow: () => mainWindow,
+    onChange: () => updateTray(trayState),
+  });
+
   wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
   killSwitchSvc = new KillSwitch(log, { edition: 'pro' });
   rdpAllowSvc = new RdpAllowSvc(log, { edition: 'pro' });
@@ -1063,6 +1087,9 @@ function registerIpcHandlers() {
     edition: 'pro',
     // notify:* channels + events, reset on server:setup (core, opt-in)
     notificationCenter: notifications?.notificationCenter,
+    // chat:* channels + events, reset on server:setup (core, opt-in)
+    messenger: chats?.messenger,
+    chatNotifier: chats?.chatNotifier,
     // Result of a bundle the admin requested (the button shows its own toast).
     onSupportResult: (res) => {
       if (!res || res.cancelled) return;
@@ -1130,6 +1157,8 @@ app.on('ready', () => {
   // Started by a toast button while the app was not running: the URL is in
   // argv; its one-time token is unknown to this process, so the inbox opens.
   if (notifications.handleArgv(process.argv)) log.info('Started from a notification');
+  // Chats: availability check, live events, chat toasts.
+  chats.start();
 
   // Autostart mit Windows synchronisieren (Task Scheduler; nicht im E2E-Test)
   if (!e2e && store.get('app.startWithWindows', true)) {
@@ -1242,6 +1271,8 @@ app.on('before-quit', (e) => {
 
   // Close the push stream (flushes pending delivery confirmations).
   notifications?.stop();
+  // Chats: save the cache, leave the open chat.
+  chats?.stop();
 
   // Critical: cleanup all RDP sessions
   if (rdpManager) {

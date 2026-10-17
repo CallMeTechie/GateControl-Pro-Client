@@ -10,7 +10,7 @@
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
-	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi,
+	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
 
@@ -185,6 +185,7 @@ function refreshTexts() {
 	applyPolicyUi();
 	renderInbox();
 	renderNotifySettings();
+	chatView?.relabel();
 }
 
 // ── State ───────────────────────────────────────────────
@@ -197,6 +198,7 @@ let selectedRdpId = null;
 let currentRdpRoute = null; // route being viewed/connected
 let currentPortalUrl = null; // pushed from main on connect/disconnect
 let currentPage = 'status';
+let chatView = null; // chat-view.js instance (CHATS section below)
 let appVersion = '';
 let serverUrl = '';
 let servicesList = [];
@@ -344,7 +346,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'inbox', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'chats', 'inbox', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -375,6 +377,9 @@ function navigateTo(page, opts = {}) {
 
 	if (page === 'logs') refreshLogs();
 	if (page === 'inbox') renderInbox();
+	// Chats: "active" / read marks only while the page is shown
+	if (page === 'chats' && prev !== 'chats') chatView?.show();
+	else if (prev === 'chats' && page !== 'chats') chatView?.hide();
 	if (page === 'settings' && opts.tab) showSettingsTab(opts.tab);
 	if (page === 'setup' && prev !== 'setup') resetSetup();
 	if (prev === 'setup' && page !== 'setup') stopQRScan();
@@ -2229,7 +2234,7 @@ if (notifyAvailable()) {
 		if (currentPage === 'inbox') renderInbox();
 	});
 	notifyApi.onNavigate((evt) => {
-		const target = NS.navigateTarget(evt, PAGES);
+		const target = NS.navigateTarget(evt, chatView && !$('#nav-chats').hidden ? PAGES : PAGES.filter((p) => p !== 'chats'));
 		if (target.page === 'inbox') {
 			openInbox(target.id);
 			loadInbox();
@@ -2393,6 +2398,40 @@ if (notifyAvailable()) {
 
 	$('#settings-tabs [data-tab="notify"]')?.addEventListener('click', () => { loadNotifyStatus(); refreshNotifyQuiet(); });
 }
+
+// ══════════════════════════════════════════════════════════
+//  CHATS (GateControl Messenger)
+//  Data: window.gatecontrol.chat (core MessengerService in main); the page
+//  is built by chat-view.js (window.GCChatView) with chat-state.js. The nav
+//  entry is shown only while the server offers the messenger.
+// ══════════════════════════════════════════════════════════
+function renderChatBadge(count) {
+	const badge = $('#chats-badge');
+	if (!badge) return;
+	const n = Number(count) || 0;
+	badge.hidden = n <= 0;
+	badge.textContent = n > 99 ? '99+' : String(n);
+	if (n > 0) badge.setAttribute('aria-label', t('chat.unreadBadge', { count: n }));
+}
+
+chatView = chatApi && window.GCChatView && $('#page-chats')
+	? window.GCChatView.mount({
+		root: $('#page-chats'),
+		api: chatApi,
+		notify: notifyAvailable() ? notifyApi : null,
+		t,
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		openInbox: (id) => openInbox(id),
+		onStatus: (st) => {
+			const show = !!st && st.state === 'available';
+			$('#nav-chats').hidden = !show;
+			if (!show) renderChatBadge(0);
+			if (!show && currentPage === 'chats' && st && st.state === 'unavailable') navigateTo('status');
+		},
+		onUnread: (n) => renderChatBadge(n),
+	})
+	: null;
 
 // Initial paint (before the locale round-trip finishes)
 updateDOM();
