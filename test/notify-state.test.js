@@ -140,6 +140,9 @@ describe('inbox empty states and hints', () => {
     // routes without a page here (gateways, plugin pages) open the entry
     assert.deepEqual(NS.navigateTarget({ route: 'gateways', id: 45 }, pages), { page: 'inbox', id: 45 });
     assert.deepEqual(NS.navigateTarget({ route: 'plg-skoda', id: 7 }, pages), { page: 'inbox', id: 7 });
+    // the messenger's route opens the chats page when the app has it
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 7 }, [...pages, 'chats']), { page: 'chats', id: null });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 7 }, pages.filter((p) => p !== 'chats')), { page: 'inbox', id: 7 });
   });
 });
 

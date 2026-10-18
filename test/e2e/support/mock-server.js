@@ -17,6 +17,12 @@
  * inbox, ack, prefs and test (contract: gatecontrol
  * docs/feature-notification-center.md).
  *
+ * Chats: without `server.setMessenger()` GET /api/v1/client/plugins lists no
+ * plugin (no "Chats" in the app). With it, the Messenger plugin answers
+ * (support/messenger-mock.js) and its realtime events go to the open push
+ * streams as `event: plugin`; `pushChat(payload)` sends a chat notification
+ * (`kind: "message"`, never part of the inbox).
+ *
  * The update offer is configurable per test (`server.setUpdate(...)`), all
  * requests are recorded (`server.requests`).
  */
@@ -24,6 +30,7 @@
 const https = require('https');
 const crypto = require('crypto');
 const selfsigned = require('selfsigned');
+const { createMessenger } = require('./messenger-mock');
 
 const API_TOKEN = 'gc_e2e_test_token';
 const PEER_ID = 4242;
@@ -82,6 +89,7 @@ async function startMockServer() {
   let policyVersion = 'e2e0000000000001'; // opaque 16-hex version (ETag)
   let push = null; // { topics, items: [notification + state], quiet?, state? }, null = old server (404)
   const streams = new Set();
+  let messenger = null; // support/messenger-mock.js, null = no Messenger plugin
   const acks = [];
   const prefs = [];
 
@@ -188,6 +196,15 @@ async function startMockServer() {
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
 
+      if (messenger) {
+        const sendRaw = (status, type, data) => {
+          res.writeHead(status, { 'Content-Type': type, 'Content-Length': data.length });
+          res.end(data);
+        };
+        const ctx = { method: req.method, route, query: Object.fromEntries(url.searchParams), raw, headers: req.headers };
+        if (messenger.handle(ctx, json, sendRaw)) return undefined;
+      }
+
       switch (route) {
         case 'ping': return json(200, { ok: true });
         case 'register': return json(200, { ok: true, peerId: PEER_ID, hash: null, config: null });
@@ -243,6 +260,21 @@ async function startMockServer() {
     /** Sends a notification to the open streams (and the inbox). */
     pushNotification: (n) => addNotification(n),
     pushStreams: () => streams.size,
+    /** Enables the Messenger plugin; returns its in-memory state (support/messenger-mock.js). */
+    setMessenger() {
+      messenger = createMessenger({ emit: (type, data) => { for (const r of streams) sse(r, 'plugin', { plugin: 'gatecontrol-messenger', type, data }); } });
+      return messenger;
+    },
+    /** A chat notification (kind "message") to the open streams — not stored in the inbox. */
+    pushChat(n) {
+      const seq = push.items.reduce((m, x) => Math.max(m, x.seq), 100) + 1 + (push.chatSeq = (push.chatSeq || 0) + 1) * 1000;
+      const payload = {
+        seq, id: seq, event_id: 'plugin:gatecontrol-messenger:message', topic: 'plugin:gatecontrol-messenger:message', priority: 'normal',
+        kind: 'message', created_at: new Date().toISOString(), expires_at: null, silent: false, ...n,
+      };
+      for (const r of streams) sse(r, 'notification', payload, seq);
+      return payload;
+    },
     /** Sends `event: control` (no id) to the open streams, e.g. { type: 'policy_changed', policy_version: 2 }. */
     pushControl(c) { for (const res of streams) sse(res, 'control', c); },
     acks: () => acks.slice(),

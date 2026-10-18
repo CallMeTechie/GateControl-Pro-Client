@@ -236,7 +236,7 @@
 	function navigateTarget(evt, pages) {
 		const route = evt && evt.route;
 		const id = evt && Number.isSafeInteger(evt.id) ? evt.id : null;
-		const map = { vpn: 'status', services: 'services', inbox: 'inbox' };
+		const map = { vpn: 'status', services: 'services', inbox: 'inbox', 'plg-gatecontrol-messenger': 'chats' };
 		const page = map[route];
 		if (page && (!pages || pages.includes(page))) return { page, id: page === 'inbox' ? id : null };
 		return { page: 'inbox', id };

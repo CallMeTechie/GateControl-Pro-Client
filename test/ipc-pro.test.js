@@ -178,6 +178,9 @@ describe('Pro IPC on core handlers', { skip }, () => {
       getMachineFingerprint: extra.getMachineFingerprint || (() => FINGERPRINT),
       // main.js always passes the notification center (notify:* channels)
       notificationCenter: fakeNotificationCenter(calls),
+      // … and the messenger (chat:* channels)
+      messenger: { on() {}, status: () => ({ state: 'unavailable' }) },
+      chatNotifier: { on() {} },
     };
     const registered = registerProIpc(ipcMain, ctx);
     return { handlers, stored, written, calls, registered, apiClient };
@@ -213,6 +216,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       // notification center (core, opt-in via ctx.notificationCenter)
       'notify:list', 'notify:read', 'notify:action', 'notify:prefs:get', 'notify:prefs:set',
       'notify:test', 'notify:status', 'notify:dnd',
+      // chats (core, opt-in via ctx.messenger)
+      'chat:status', 'chat:conversations', 'chat:messages', 'chat:send', 'chat:open', 'chat:media', 'chat:media:save', 'chat:media:open',
     ]) {
       assert.equal(typeof handlers[ch], 'function', ch);
     }
