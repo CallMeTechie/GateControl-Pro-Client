@@ -1523,13 +1523,14 @@
 		}
 
 		/**
-		 * A video file → { video: { durationMs, width, height }, blob } (frame at
-		 * ~1 s as preview, null when it cannot be drawn) or null when the engine
-		 * cannot read the file (no codec): sent as a plain file then.
+		 * A video (Blob of the bytes read from the picked file — never the
+		 * file object or its name) → { video: { durationMs, width, height },
+		 * blob } (frame at ~1 s as preview, null when it cannot be drawn) or null
+		 * when the engine cannot read it (no codec): sent as a plain file then.
 		 */
-		function videoPreview(file, maxBytes, maxSide) {
+		function videoPreview(bytes, maxBytes, maxSide) {
 			return new Promise((resolve) => {
-				const url = URL.createObjectURL(file);
+				const url = URL.createObjectURL(bytes);
 				const v = document.createElement('video');
 				let done = false;
 				let timer = null;
@@ -1599,8 +1600,10 @@
 					const wantMeta = CS.hasFeature(me, 'video_meta');
 					const wantThumb = CS.hasFeature(me, 'file_thumbs');
 					let thumbBlob = null;
-					if (k.kind === 'video' && (wantMeta || wantThumb)) {
-						const pv = await videoPreview(file, lim.thumbMaxBytes || 65536, lim.thumbMaxSide || 640);
+					// The video as a Blob of its bytes (preview and local playback).
+					const videoBlob = k.kind === 'video' ? new Blob([req.file.data]) : null;
+					if (videoBlob && (wantMeta || wantThumb)) {
+						const pv = await videoPreview(videoBlob, lim.thumbMaxBytes || 65536, lim.thumbMaxSide || 640);
 						if (pv && wantMeta && Object.keys(pv.video).length) req.video = pv.video;
 						if (pv && wantThumb && pv.blob) { thumbBlob = pv.blob; req.thumb = { mime: pv.blob.type, data: await blobBytes(pv.blob) }; }
 					}
@@ -1608,7 +1611,7 @@
 					if (r && r.ok === false) { toast(CS.errorText(r, t), 'error'); return; }
 					const cid = r && r.message && r.message.clientId;
 					if (cid && thumbBlob) S.local.set(cid, URL.createObjectURL(thumbBlob));
-					if (cid && k.kind === 'video') S.localVideo.set(cid, URL.createObjectURL(file));
+					if (cid && videoBlob) S.localVideo.set(cid, URL.createObjectURL(videoBlob));
 				}
 			} catch (err) {
 				toast(CS.errorText(null, t), 'error');
