@@ -127,8 +127,8 @@ describe('chat-state: times, ticks, timeline', () => {
     const c = direct();
     const fresh = msg(5, { mine: true, senderId: 7, createdAt: new Date(NOW - 60000).toISOString() });
     const old = msg(6, { mine: true, senderId: 7, createdAt: new Date(NOW - 3600000).toISOString() });
-    assert.deepEqual(CS.messageActions(fresh, c, ctx, NOW), { reply: true, react: true, copy: true, edit: true, deleteMe: true, deleteAll: true });
-    assert.deepEqual(CS.messageActions(old, c, ctx, NOW), { reply: true, react: true, copy: true, edit: false, deleteMe: true, deleteAll: false });
+    assert.deepEqual(CS.messageActions(fresh, c, ctx, NOW), { reply: true, react: true, copy: true, edit: true, deleteMe: true, deleteAll: true, pin: false, pinned: false, remind: false, suggest: false });
+    assert.deepEqual(CS.messageActions(old, c, ctx, NOW), { reply: true, react: true, copy: true, edit: false, deleteMe: true, deleteAll: false, pin: false, pinned: false, remind: false, suggest: false });
     assert.equal(CS.messageActions(msg(7, { kind: 'voice', mine: true, createdAt: new Date(NOW).toISOString() }), c, ctx, NOW).edit, false);
     assert.equal(CS.messageActions(msg(8, { deleted: true }), c, ctx, NOW).reply, false);
     assert.equal(CS.messageActions(msg(9), group({ readonly: true, can: { send: false } }), ctx, NOW).reply, false);
@@ -282,12 +282,18 @@ describe('chat-state: pinned inbox', () => {
 describe('Chats page', () => {
   const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
   const view = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'chat-view.js'), 'utf8');
+  // Messenger 1.4.0 modules of the view
+  const modules = ['chat-rich.js', 'chat-status.js', 'chat-settings.js'].map((f) => fs.readFileSync(path.join(ROOT, 'src', 'renderer', f), 'utf8'));
 
-  it('loads chat-state.js and chat-view.js before renderer.js, and the stylesheet', () => {
+  it('loads chat-state.js, the 1.4.0 modules and chat-view.js before renderer.js, and the stylesheet', () => {
     const a = html.indexOf('<script src="chat-state.js">');
     const b = html.indexOf('<script src="chat-view.js">');
     const c = html.indexOf('<script src="renderer.js">');
     assert.ok(a > 0 && a < b && b < c);
+    for (const f of ['chat-rich.js', 'chat-status.js', 'chat-settings.js']) {
+      const i = html.indexOf(`<script src="${f}">`);
+      assert.ok(i > a && i < b, f);
+    }
     assert.ok(html.includes('href="styles/chat.css"'));
     assert.ok(html.includes('id="page-chats"'));
     assert.match(html, /id="nav-chats"[^>]*hidden/);
@@ -302,7 +308,7 @@ describe('Chats page', () => {
   });
 
   it('never writes user data as HTML', () => {
-    assert.doesNotMatch(view, /\.innerHTML\s*=|\.outerHTML\s*=|insertAdjacentHTML|document\.write\(/);
+    for (const src of [view, ...modules]) assert.doesNotMatch(src, /\.innerHTML\s*=|\.outerHTML\s*=|insertAdjacentHTML|document\.write\(/);
   });
 
   it('every chat.* key of the view exists in the core locales (de + en)', (tctx) => {
@@ -318,7 +324,7 @@ describe('Chats page', () => {
     const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'renderer.js'), 'utf8');
     const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'messenger.js'), 'utf8');
     const keys = new Set();
-    for (const src of [view, state, renderer, main, html]) for (const m of src.matchAll(/['"`](chat\.[A-Za-z0-9_.]+[A-Za-z0-9_])['"`]/g)) keys.add(m[1]);
+    for (const src of [view, ...modules, state, renderer, main, html]) for (const m of src.matchAll(/['"`](chat\.[A-Za-z0-9_.]+[A-Za-z0-9_])['"`]/g)) keys.add(m[1]);
     // built at runtime
     for (const k of ['text', 'image', 'voice', 'file', 'location', 'system']) keys.add(`chat.kind.${k}`);
     for (const k of ['pending', 'failed', 'sent', 'delivered', 'read']) keys.add(`chat.status.${k}`);
@@ -326,6 +332,19 @@ describe('Chats page', () => {
     for (const k of ['not_installed', 'unsupported', 'hidden', 'forbidden']) keys.add(`chat.unavailable.${k}`);
     for (const k of ['off', '86400', '604800', '2592000']) keys.add(`chat.dis.${k}`);
     for (const k of ['denied', 'unavailable', 'timeout']) keys.add(`chat.loc.${k}`);
+    // Messenger 1.4.0
+    for (const k of ['poll', 'event', 'arrival', 'action']) keys.add(`chat.kind.${k}`);
+    for (const k of ['run', 'request', 'grant']) { keys.add(`chat.action.mode.${k}`); keys.add(`chat.action.hint.${k}`); }
+    for (const k of ['done', 'denied', 'expired']) keys.add(`chat.action.state.${k}`);
+    for (const k of ['live', 'arrived', 'stopped']) keys.add(`chat.arrival.state.${k}`);
+    for (const k of ['all', 'family', 'nobody', 'custom']) keys.add(`chat.audience.${k}`);
+    for (const k of ['yes', 'maybe', 'no']) keys.add(`chat.event.${k}`);
+    for (const o of CS.remindOptions(NOW)) keys.add(`chat.remind.${o.key}`);
+    for (const n of [0, 15, 60, 120, 1440]) keys.add(`chat.reminderMin.${n}`);
+    for (const p of CS.PRESETS) { keys.add(`chat.st.preset.${p}`); keys.add(`chat.st.presetHint.${p}`); }
+    for (const o of CS.untilOptions(NOW)) keys.add(`chat.st.untilOpt.${o.key}`);
+    for (const k of ['text', 'image']) keys.add(`chat.story.kind.${k}`);
+    for (const k of ['blocked', 'not_allowed', 'feature_off', 'closed', 'no_approver', 'unavailable', 'rate_limited', 'unsupported']) keys.add(`chat.error.${k}`);
     keys.delete('chat.dis.');
     assert.ok(keys.size > 100, `only ${keys.size} keys found`);
     for (const key of keys) {
@@ -387,5 +406,142 @@ describe('chat-state: update hint', () => {
     assert.equal(CS.updateHint({ state: 'unavailable', updateHint: h }), null);
     assert.equal(CS.updateHint({ state: 'available', updateHint: { features: [] } }), null);
     assert.equal(CS.updateHint(null), null);
+  });
+});
+
+describe('chat-state: Messenger 1.4.0', () => {
+  const F14 = { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, msg_tools: true, privacy2: true };
+  const me14 = { ...ME, features: { ...ME.features, ...F14 }, integrations: { familie: { lists: true, calendar: false, places: true } } };
+  const cx14 = { ...ctx, me: me14 };
+
+  it('features, Familie integrations and kinds this version draws', () => {
+    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true });
+    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false });
+    assert.deepEqual(CS.familie(me14), { lists: true, calendar: false, places: true });
+    assert.deepEqual(CS.familie(ME), { lists: false, calendar: false, places: false });
+    for (const k of ['poll', 'event', 'arrival', 'action', 'card', 'text']) assert.equal(CS.isShownKind({ kind: k }), true, k);
+    assert.equal(CS.isShownKind({ kind: 'hologram' }), false);
+    assert.equal(CS.summary({ kind: 'hologram', text: 'x' }, direct(), ctx), 'chat.msg.unsupported');
+    assert.equal(CS.summary({ kind: 'poll', poll: { question: 'Pizza?' } }, direct(), ctx), '📊 chat.kind.poll: Pizza?');
+    assert.equal(CS.summary({ kind: 'card', card: { title: 'Haustür', text: 'Es klingelt' } }, direct(), ctx), 'Haustür: Es klingelt');
+  });
+
+  it('status lines, rings, ages and "Löschen nach"', () => {
+    const tl = { ...ctx, t: (k, p) => (k === 'chat.st.preset.homeoffice' ? 'Im Homeoffice' : t(k, p)) };
+    assert.equal(CS.statusLine({ preset: 'homeoffice', text: null, until: at(19, 0) }, tl, NOW), 'Im Homeoffice · chat.st.untilShort(19:00)');
+    assert.equal(CS.presetLabel('homeoffice', tl.t), 'Im Homeoffice');
+    assert.equal(CS.presetLabel('unknown', t), '');
+    assert.equal(CS.statusLine({ preset: 'none', text: 'Im Garten' }, ctx, NOW), 'Im Garten');
+    assert.equal(CS.statusLine({ preset: 'away', text: null, destLabel: 'Zuhause', eta: at(18, 40) }, ctx, NOW), 'chat.st.awayTo(Zuhause) · chat.st.eta(18:40)');
+    assert.equal(CS.statusLine(null, ctx), '');
+    assert.equal(CS.statusRing({ stories: [{ seen: true }, { seen: false }] }), 'unseen');
+    assert.equal(CS.statusRing({ stories: [{ seen: true }] }), 'seen');
+    assert.equal(CS.statusRing({ stories: [] }), 'none');
+    assert.equal(CS.firstUnseen([{ seen: true }, { seen: false }]), 1);
+    assert.equal(CS.firstUnseen([{ seen: true }]), 0);
+    assert.equal(CS.relAge(new Date(NOW - 12 * 60000).toISOString(), ctx, NOW), 'chat.rel.minAgo(12)');
+    assert.equal(CS.remaining(new Date(NOW + 23.5 * 3600000).toISOString(), ctx, NOW), 'chat.rel.hLeft(23)');
+    const until = CS.untilOptions(NOW);
+    assert.deepEqual(until.map((o) => o.key), ['30m', '1h', '4h', 'today', 'never']);
+    assert.equal(Date.parse(until[1].at) - NOW, 3600000);
+    assert.equal(until[4].at, null);
+    const rem = CS.remindOptions(NOW);
+    assert.equal(new Date(rem[1].at).getDate(), 18, '18:00 already passed → tomorrow evening');
+    assert.equal(new Date(rem[2].at).getHours(), 9);
+  });
+
+  it('polls: shares, own votes, single / multi choice, head', () => {
+    const poll = { question: 'Essen?', options: [{ id: 'o1', text: 'Grillen', count: 2, voters: [8, 9] }, { id: 'o2', text: 'Pasta', count: 1, voters: [7] }], multi: false, anonymous: false, allowAdd: true, closed: false, voterCount: 3, memberCount: 4, creatorId: 7, myVotes: ['o2'], closesAt: at(18, 30) };
+    const v = CS.pollView(poll, cx14);
+    assert.deepEqual(v.options.map((o) => [o.pct, o.mine, o.lead]), [[67, false, true], [33, true, false]]);
+    assert.equal(v.mineCreator, true);
+    assert.equal(v.allowAdd, true);
+    assert.deepEqual(CS.nextVotes(poll, 'o1'), ['o1']);
+    assert.deepEqual(CS.nextVotes(poll, 'o2'), [], 'again → withdrawn');
+    assert.deepEqual(CS.nextVotes({ ...poll, multi: true }, 'o1'), ['o2', 'o1']);
+    assert.deepEqual(CS.nextVotes({ ...poll, multi: true }, 'o2'), []);
+    assert.equal(CS.pollHead(poll, ctx, NOW), 'chat.poll.head · chat.poll.ends(18:30)');
+    assert.equal(CS.pollHead({ ...poll, closed: true }, ctx, NOW), 'chat.poll.head · chat.poll.closed');
+    assert.equal(CS.pollView({ ...poll, closed: true }, cx14).allowAdd, false);
+  });
+
+  it('events: answers with guests, date badge, edit rights', () => {
+    assert.deepEqual(CS.rsvpCounts({ yes: [{ userId: 8, guests: 2 }, { userId: 7, guests: 0 }], maybe: [{ userId: 9 }], no: [], mine: 'yes', myGuests: 0 }), { yes: 4, maybe: 1, no: 0, mine: 'yes', myGuests: 0 });
+    const v = CS.eventView({ startsAt: at(12, 30, 9), endsAt: at(16, 0, 9) }, ctx, NOW);
+    assert.equal(v.day, '26');
+    assert.equal(v.time, '12:30 – 16:00');
+    assert.equal(v.rel, 'chat.event.inDays(9)');
+    assert.equal(v.past, false);
+    assert.equal(CS.eventView({ startsAt: at(10, 0, -1) }, ctx, NOW).past, true);
+    assert.equal(CS.eventView({ startsAt: at(0, 0, 1), allDay: true }, ctx, NOW).time, 'chat.event.allDay');
+    assert.equal(CS.canEditEvent({ creatorId: 7 }, direct(), cx14), true);
+    assert.equal(CS.canEditEvent({ creatorId: 8 }, group({ me: { role: 'admin' } }), cx14), true);
+    assert.equal(CS.canEditEvent({ creatorId: 8 }, group({ me: { role: 'member' } }), cx14), false);
+    assert.equal(CS.canEditEvent({ creatorId: 7, cancelled: true }, direct(), cx14), false);
+  });
+
+  it('live arrival: ETA, distance, progress', () => {
+    const v = CS.arrivalView({ dest: { label: 'Zuhause', lat: 50, lon: 7 }, state: 'live', etaAt: new Date(NOW + 9 * 60000).toISOString(), distanceM: 3100, progress: 0.4, position: { lat: 50.1, lon: 7 } }, ctx, NOW);
+    assert.deepEqual([v.live, v.minutes, v.distance, v.progress, v.label], [true, 9, '3,1 km', 0.4, 'Zuhause']);
+    assert.equal(CS.arrivalView({ state: 'arrived', progress: 0.9 }, ctx, NOW).progress, 1);
+    assert.equal(CS.distanceText(445, 'de'), '450 m');
+    assert.equal(CS.distanceText(-1, 'de'), '');
+  });
+
+  it('home actions: buttons from `can`, done only after an approved request, grants, cards', () => {
+    const c = group();
+    const req = { senderId: 9, action: { mode: 'request', label: 'Garage öffnen', state: 'open', can: { run: false, approve: true, deny: true } } };
+    const v = CS.actionView(req, c, cx14);
+    assert.deepEqual([v.run, v.approve, v.deny, v.stateText], [false, true, true, 'chat.action.waiting']);
+    assert.equal(v.head, 'chat.action.headRequest(Lena)');
+    const done = CS.actionView({ ...req, action: { ...req.action, state: 'done', can: { approve: true } } }, c, cx14);
+    assert.deepEqual([done.approve, done.stateText], [false, 'chat.action.state.done']);
+    const run = CS.actionView({ senderId: 7, action: { mode: 'run', label: 'Licht', state: 'open', can: { run: true } } }, c, cx14);
+    assert.equal(run.run, true);
+    assert.equal(run.stateText, '');
+    const grant = CS.actionView({ senderId: 7, action: { mode: 'grant', label: 'Licht', state: 'open', grant: { toUserId: 9, until: at(22, 0) }, can: { run: false } } }, c, cx14);
+    assert.equal(grant.sub, 'chat.action.grantTo(Lena,22:00)');
+    assert.equal(CS.cardHead({ createdAt: at(17, 52), card: { kind: 'doorbell', title: 'Haustür' } }, ctx), 'chat.card.doorbell · Haustür · 17:52');
+    assert.equal(CS.cardRoute({ route: 'plg-gatecontrol-door', kind: 'live_view' }), 'plg-gatecontrol-door');
+    assert.equal(CS.cardRoute({ route: 'javascript:alert(1)' }), null);
+    assert.equal(CS.iconPath('M3 21V9l9-6 9 6v12H3z'), 'M3 21V9l9-6 9 6v12H3z');
+    assert.equal(CS.iconPath('<script>'), null);
+  });
+
+  it('message menu: pin (can.pin), remind, suggestions only with Familie and text', () => {
+    const c = direct({ can: { send: true, pin: true }, pinned: [5] });
+    const a = CS.messageActions(msg(5), c, cx14, NOW);
+    assert.deepEqual([a.pin, a.pinned, a.remind, a.suggest], [true, true, true, true]);
+    const none = CS.messageActions(msg(5), direct({ can: { send: true } }), { ...cx14, me: { ...me14, integrations: {} } }, NOW);
+    assert.deepEqual([none.pin, none.suggest], [false, false]);
+    assert.equal(CS.messageActions(msg(5), c, ctx, NOW).remind, false, 'without msg_tools');
+  });
+
+  it('chat list: chips, own lists, archive; last seen; blocked peers', () => {
+    const list = [direct({ id: 1, unread: 2 }), group({ id: 2, unread: 0 }), direct({ id: 3, archived: true, unread: 4 })];
+    assert.deepEqual(CS.listFilter(list, {}).map((c) => c.id), [1, 2]);
+    assert.deepEqual(CS.listFilter(list, { filter: 'unread' }).map((c) => c.id), [1]);
+    assert.deepEqual(CS.listFilter(list, { filter: 'groups' }).map((c) => c.id), [2]);
+    assert.deepEqual(CS.listFilter(list, { filter: 'list:w', lists: [{ id: 'w', conversationIds: [2, 3] }] }).map((c) => c.id), [2]);
+    assert.deepEqual(CS.listFilter(list, { archived: true }).map((c) => c.id), [3]);
+    assert.deepEqual(CS.archivedInfo(list), { count: 1, unread: 4 });
+    assert.equal(CS.lastSeenText({ online: true }, ctx, NOW), 'chat.seen.online');
+    assert.equal(CS.lastSeenText({ online: false, lastSeenAt: at(17, 44) }, ctx, NOW), 'chat.seen.today(17:44)');
+    assert.equal(CS.lastSeenText({ online: false, lastSeenAt: null }, ctx, NOW), null);
+    assert.equal(CS.headSub(direct({ peer: member(8, 'Anna', { online: true }) }), ctx).text, 'chat.seen.online');
+    assert.equal(CS.composerBlock(direct({ peer: member(8, 'Anna', { blocked: true }) })), 'blocked');
+    assert.equal(CS.listId('Arbeit & Verein', [{ id: 'arbeit-verein' }]), 'arbeit-verein-2');
+    assert.deepEqual(CS.shownActions([{ id: 'a' }, { id: 'b' }], ['b']).map((a) => a.id), ['a']);
+    assert.equal(CS.fontScale('large') > 1, true);
+    assert.equal(CS.fromLocalInput(CS.localInput(at(15, 30))), at(15, 30));
+    assert.equal(CS.fromLocalInput('nope'), null);
+  });
+
+  it('system messages of 1.4.0', () => {
+    const c = group();
+    assert.equal(CS.systemText({ kind: 'system', system: { event: 'poll_closed', by: null, question: 'Essen?', winner: 'Pizza' } }, c, ctx), 'chat.sys.pollClosedAuto(Essen?,chat.sys.pollWinner(Pizza))');
+    assert.equal(CS.systemText({ kind: 'system', system: { event: 'arrived', userId: 8, label: 'Zuhause' } }, c, ctx), 'chat.sys.arrived(Anna,Zuhause)');
+    assert.equal(CS.systemText({ kind: 'system', system: { event: 'action_run', userId: 9, asUserId: 8, label: 'Licht' } }, c, ctx), 'chat.sys.actionRunAs(Lena,Licht,Anna)');
+    assert.equal(CS.systemText({ kind: 'system', system: { event: 'something_new' } }, c, ctx), 'chat.sys.unknown');
   });
 });

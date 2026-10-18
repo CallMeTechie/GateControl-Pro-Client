@@ -15,6 +15,12 @@
  * played in an overlay) and file previews (Messenger 1.3.0); jumps to search
  * hits and quotes that are not loaded (`around`, Messenger 1.1.0) with a
  * window of its own until it meets the newest messages.
+ * Messenger 1.4.0 (each part only when `GET me` features has its key): the
+ * status strip and stories (chat-status.js), polls, events, live arrivals,
+ * home actions and plugin cards (chat-rich.js), the settings page
+ * (chat-settings.js), archive, pinned messages, chat lists as filters,
+ * blocking, export, "Erinnere mich", suggestions to Familie, the bar of the
+ * next event, last seen in direct chats.
  *
  * Map tiles and addresses come from the main process (chat.mapTile /
  * mapSearch / mapReverse → core MapService, OpenStreetMap) as bytes / data;
@@ -70,6 +76,21 @@
 		minus: 'M5 12h14',
 		target: 'M12 5a7 7 0 1 0 0 14a7 7 0 1 0 0-14|M12 10a2 2 0 1 0 0 4a2 2 0 1 0 0-4|M12 2v3M12 19v3M2 12h3M19 12h3',
 		video: 'M3 6h12v12H3z|M15 10l6-3v10l-6-3z',
+		// Messenger 1.4.0
+		bolt: 'M13 2L4 14h7l-1 8 9-12h-7z',
+		chart: 'M5 20V10M12 20V4M19 20v-7',
+		calendar: 'M4 6h16v15H4z|M4 10h16M8 3v4M16 3v4',
+		home: 'M3 11l9-8 9 8|M5 10v10h14V10',
+		archive: 'M3 5h18v4H3z|M5 9v11h14V9|M10 13h4',
+		list: 'M9 6h11M9 12h11M9 18h11|M4 6h.01M4 12h.01M4 18h.01',
+		user: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M4 21a8 8 0 0 1 16 0',
+		chat: 'M4 5h16v11H8l-4 4z',
+		disk: 'M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3|M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+		eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z|M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
+		chevron: 'M9 6l6 6-6 6',
+		thumbtack: 'M9 4h6l-1 6 3 3H7l3-3z|M12 13v8',
+		block: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M5.6 5.6l12.8 12.8',
+		cart: 'M3 4h2l2.4 11h11L21 7H7|M9 20h.01M18 20h.01',
 	};
 	const FILLED = new Set(['play', 'pause']);
 
@@ -127,6 +148,8 @@
 	 * @param {(st: object) => void} [o.onStatus] - availability (nav entry)
 	 * @param {(n: number) => void} [o.onUnread] - nav badge
 	 * @param {() => void} [o.checkUpdate] - the app's update check (button of the "newer version" banner)
+	 * @param {(route: string) => Promise<boolean>} [o.openRoute] - open another plugin's app route (card link "Live-Bild": plg-…) as its portal tab; false: no portal now
+	 * @param {() => Promise<boolean>} [o.openPortal] - open the portal (profile is managed there); false: no portal now
 	 */
 	function mount(o) {
 		const api = o.api;
@@ -166,8 +189,16 @@
 			menu: null,
 			search: null,
 			inboxFrom: null,        // first unread inbox entry when the inbox chat was opened
+			// Messenger 1.4.0
+			filter: 'all',          // chat list chip: 'all' | 'unread' | 'groups' | 'list:<id>'
+			archived: false,        // the list shows the archived chats
+			lists: [],              // own chat filters (GET lists)
+			pinIdx: new Map(),      // conversation id → index of the pinned message shown in the bar
+			newest: new Map(),      // conversation id → newest message id seen (sound for new ones)
 		};
 		const ctx = () => ({ t, locale: o.getLocale(), me: S.status && S.status.me, people: S.people });
+		const me = () => (S.status && S.status.me) || null;
+		const f14 = () => CS.features14(me());
 		const conv = (id) => S.convs.find((c) => c.id === id) || null;
 		const curConv = () => (typeof S.cur === 'number' ? conv(S.cur) : null);
 
@@ -183,12 +214,16 @@
 		refs.rows = el('div', { class: 'cv-rows scroll', role: 'list' });
 		refs.listEmpty = el('div', { class: 'cv-empty', hidden: true });
 		refs.h = el('h1', { class: 'cv-h', text: t('chat.title') });
-		refs.prefsBtn = iconBtn('gear', t('chat.prefsOpen'), () => prefsDialog(), 'cv-ib-flat');
+		refs.prefsBtn = iconBtn('gear', t('chat.prefsOpen'), () => openSettings(), 'cv-ib-flat');
+		// Messenger 1.4.0: the own avatar sets the status; chips filter the list
+		refs.meBtn = el('button', { type: 'button', class: 'cv-me', hidden: true, 'aria-label': t('chat.st.yours'), title: t('chat.st.yours'), on: { click: () => { if (status) status.statusDialog(); } } });
+		refs.chips = el('div', { class: 'cv-chips cv-filter', role: 'group', 'aria-label': t('chat.filter.label'), hidden: true });
 		refs.newBtn = el('button', { type: 'button', class: 'cv-ib cv-ib-pri', 'aria-label': t('chat.newChat'), title: t('chat.newChat'), on: { click: () => newChatDialog() } }, [icon('pen', 16, '2.4')]);
 		refs.list.append(
 			el('div', { class: 'cv-list-head' }, [
-				el('div', { class: 'cv-list-title' }, [refs.h, refs.count, el('span', { class: 'cv-grow' }), refs.prefsBtn, refs.newBtn]),
+				el('div', { class: 'cv-list-title' }, [refs.meBtn, refs.h, refs.count, el('span', { class: 'cv-grow' }), refs.prefsBtn, refs.newBtn]),
 				el('label', { class: 'cv-search' }, [icon('search', 15), refs.q]),
+				refs.chips,
 				refs.banner,
 			]),
 			refs.rows,
@@ -200,6 +235,7 @@
 		refs.pickText = el('span', { text: t('chat.pickText') });
 		refs.pick = el('div', { class: 'cv-pick' }, [icon('pen', 34, '1.6'), refs.pickTitle, refs.pickText]);
 		refs.head = el('header', { class: 'cv-head', hidden: true });
+		refs.bars = el('div', { class: 'cv-bars', hidden: true });   // 1.4.0: next event, pinned messages
 		refs.searchBar = el('div', { class: 'cv-searchbar', hidden: true });
 		refs.msgs = el('div', { class: 'cv-msgs scroll', role: 'log', 'aria-live': 'polite', tabindex: '-1' });
 		refs.toLatest = el('button', { type: 'button', class: 'cv-tolatest', hidden: true, 'aria-label': t('chat.toLatest'), title: t('chat.toLatest'), on: { click: () => scrollBottom(true) } }, [icon('down', 18)]);
@@ -207,7 +243,7 @@
 		refs.drop = el('div', { class: 'cv-drop', hidden: true }, [icon('attach', 28, '1.8'), el('span', { text: t('chat.dropNow') })]);
 		refs.file = el('input', { type: 'file', multiple: true, hidden: true, tabindex: '-1' });
 		refs.avatarFile = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', hidden: true, tabindex: '-1' });
-		refs.chat.append(refs.pick, refs.head, refs.searchBar, refs.msgs, refs.toLatest, refs.composer, refs.drop, refs.file, refs.avatarFile);
+		refs.chat.append(refs.pick, refs.head, refs.bars, refs.searchBar, refs.msgs, refs.toLatest, refs.composer, refs.drop, refs.file, refs.avatarFile);
 
 		refs.info = el('aside', { class: 'cv-info scroll', hidden: true, 'aria-label': t('chat.info.title') });
 		refs.state = el('div', { class: 'cv-state', hidden: true });
@@ -247,6 +283,189 @@
 			return box;
 		}
 
+		// ── Messenger 1.4.0: modules and their kit ───────────
+
+		/** Picture of a plugin card (base64 from the server → bytes in main → blob: URL). */
+		function cardImageUrl(messageId) {
+			const key = `card:${messageId}`;
+			if (!S.media.has(key)) S.media.set(key, (typeof api.cardImage === 'function' ? api.cardImage(messageId) : Promise.resolve(null)).then(blobUrl).catch(() => null));
+			return S.media.get(key);
+		}
+
+		function clearMediaUrls() {
+			for (const p of S.media.values()) p.then((u) => { if (u) setTimeout(() => URL.revokeObjectURL(u), 5000); });
+			S.media.clear();
+		}
+
+		/**
+		 * A small menu at `anchor`: items [icon, label, fn, { danger, disabled }]
+		 * or { section: 'Titel' } or an element; → the menu (to add items later).
+		 */
+		function popMenu(anchor, items, { align = 'left' } = {}) {
+			closeMenu();
+			const menu = el('div', { class: 'cv-menu', role: 'menu' });
+			const add = (it) => {
+				if (!it) return;
+				if (it instanceof Node) { menu.appendChild(it); return; }
+				if (it.section) { menu.appendChild(el('div', { class: 'cv-menu-sec', text: it.section })); return; }
+				const [ic, label, fn, opts = {}] = it;
+				menu.appendChild(el('button', { type: 'button', role: 'menuitem', class: `cv-menu-item${opts.danger ? ' is-danger' : ''}`, disabled: opts.disabled ? true : null, 'data-item': opts.id || null, on: { click: () => { closeMenu(); fn(); } } }, [typeof ic === 'string' ? icon(ic, 15) : ic, el('span', { text: label })]));
+			};
+			items.forEach(add);
+			const layer = el('div', { class: 'cv-menu-layer', on: { click: (e) => { if (e.target === layer) closeMenu(); }, contextmenu: (e) => { e.preventDefault(); closeMenu(); } } }, [menu]);
+			rootEl.appendChild(layer);
+			S.menu = layer;
+			const place = () => {
+				const r = anchor.getBoundingClientRect();
+				const mr = menu.getBoundingClientRect();
+				const left = Math.max(8, Math.min(window.innerWidth - mr.width - 8, align === 'right' ? r.right - mr.width : r.left));
+				const top = r.bottom + mr.height + 8 < window.innerHeight ? r.bottom + 4 : Math.max(8, r.top - mr.height - 4);
+				menu.style.left = `${left}px`;
+				menu.style.top = `${top}px`;
+			};
+			place();
+			const first = menu.querySelector('button');
+			if (first) first.focus();
+			return { menu, add: (it) => { add(it); place(); } };
+		}
+
+		/** A picked story file → { file: { mime, data }, thumb?, video? } (pictures scaled like chat pictures). */
+		async function storyFile(file, kind) {
+			const lim = limits();
+			if (kind === 'image') {
+				const img = await createImageBitmap(file);
+				const main = await canvasBlob(img, lim.imageMaxSide || 2048, 'image/webp', 0.82);
+				const thumb = await canvasBlob(img, 320, 'image/webp', 0.6);
+				if (img.close) img.close();
+				const out = { file: { mime: main.blob.type, data: await blobBytes(main.blob) } };
+				if (thumb.blob && thumb.blob.size <= (lim.thumbMaxBytes || 65536)) out.thumb = { mime: thumb.blob.type, data: await blobBytes(thumb.blob) };
+				return out;
+			}
+			const data = await blobBytes(file);
+			const out = { file: { mime: file.type, data } };
+			const pv = await videoPreview(new Blob([data]), lim.thumbMaxBytes || 65536, lim.thumbMaxSide || 640);
+			if (pv && Object.keys(pv.video).length) out.video = pv.video;
+			if (pv && pv.blob) out.thumb = { mime: pv.blob.type, data: await blobBytes(pv.blob) };
+			return out;
+		}
+
+		/** The direct chat with a person (created when missing) → its id, or null. */
+		async function directWith(userId) {
+			const r = await api.create({ kind: 'direct', userIds: [userId] }).catch((e) => ({ ok: false, error: e && e.message }));
+			if (!r || r.ok === false || !r.conversation) { toast(CS.errorText(r, t), 'error'); return null; }
+			await refreshList();
+			return r.conversation.id;
+		}
+
+		/** A reply to a story: a direct message to its owner with replyStory. */
+		async function replyToStory(userId, storyId, text) {
+			const cid = await directWith(userId);
+			if (!cid) return false;
+			const r = await api.send({ conversationId: cid, kind: 'text', text, replyStory: { storyId } }).catch((e) => ({ ok: false, error: e && e.message }));
+			if (!r || r.ok === false) { toast(CS.errorText(r, t), 'error'); return false; }
+			playSound('out');
+			return true;
+		}
+
+		async function exportChat(c) {
+			toast(t('chat.export.running'), 'info');
+			const r = await api.exportChat(c.id).catch((e) => ({ ok: false, error: e && e.message }));
+			if (r && r.ok) toast(t(r.truncated ? 'chat.export.savedPart' : 'chat.export.saved', { path: r.path, n: r.count }), 'success');
+			else if (!(r && r.cancelled)) toast(CS.errorText(r, t), 'error');
+		}
+
+		// Sound of this PC (Einstellungen › Benachrichtigungen): a short tone for messages in the open chat.
+		let audio = null;
+		function playSound(kind) {
+			if (!root.GCChatSettings || root.GCChatSettings.local.get('gc.chat.sound', true) === false) return;
+			try {
+				audio = audio || new (root.AudioContext || root.webkitAudioContext)();
+				const osc = audio.createOscillator();
+				const gain = audio.createGain();
+				osc.type = 'sine';
+				osc.frequency.value = kind === 'out' ? 660 : 880;
+				gain.gain.setValueAtTime(0.0001, audio.currentTime);
+				gain.gain.exponentialRampToValueAtTime(0.08, audio.currentTime + 0.01);
+				gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.18);
+				osc.connect(gain).connect(audio.destination);
+				osc.start();
+				osc.stop(audio.currentTime + 0.2);
+			} catch (_) { /* no audio */ }
+		}
+
+		/** Local settings of this PC: font size of the chat. */
+		function applyLocal() {
+			const size = root.GCChatSettings ? root.GCChatSettings.local.get('gc.chat.fontSize', 'medium') : 'medium';
+			rootEl.style.setProperty('--cv-fs', String(CS.fontScale(size)));
+		}
+		const enterSends = () => !root.GCChatSettings || root.GCChatSettings.local.get('gc.chat.enterSends', true) !== false;
+
+		const kit = {
+			api, t, el, icon, iconBtn, clear, toast, CS, rootEl,
+			dialog: (...a) => dialog(...a),
+			confirmDialog: (...a) => confirmDialog(...a),
+			avatar: (a, size) => avatar(a, size),
+			mediaUrl: (id) => mediaUrl(id),
+			cardImageUrl,
+			clearMediaUrls,
+			lightboxUrl: (u) => lightboxUrl(u),
+			mapView: (mo) => mapView(mo),
+			ctx: () => ctx(),
+			me: () => me(),
+			limits: () => limits(),
+			popMenu,
+			loadPeople: (fresh) => { if (fresh) S.people = null; return loadPeople(); },
+			personRow: (p, opts) => personRow(p, opts),
+			conversations: () => S.convs.slice(),
+			storyFile,
+			replyToStory,
+			openDirect: async (userId) => { const cid = await directWith(userId); if (cid) openChat(cid); },
+			openMessage: async (cid, mid) => { await openChat(cid); if (mid) jumpTo(mid); },
+			// another plugin's page (card link) / the portal: false → not reachable now (no VPN)
+			openRoute: typeof o.openRoute === 'function' ? (route) => Promise.resolve(o.openRoute(route)).then((ok) => { if (ok === false) toast(t('chat.card.noPortal'), 'warning'); }) : null,
+			openPortal: typeof o.openPortal === 'function' ? () => Promise.resolve(o.openPortal()).then((ok) => { if (ok === false) toast(t('chat.card.noPortal'), 'warning'); }) : null,
+			afterSend: () => { playSound('out'); scrollBottom(true); },
+			exportChat,
+			playSound,
+			applyLocal,
+			reloadStatus: () => loadStatus(),
+			statusDialog: () => (status ? status.statusDialog() : null),
+			ownStatus: () => (status ? status.mine() : null),
+			listsChanged: (lists) => { S.lists = Array.isArray(lists) ? lists : []; renderList(); },
+			onSettingsClosed: () => { renderList(); if (typeof S.cur === 'number') { renderComposer(false); renderMessages('keep'); } },
+			mount: (node) => rootEl.appendChild(node),
+		};
+		const rich = root.GCChatRich ? root.GCChatRich.create(kit) : null;
+		const status = root.GCChatStatus ? root.GCChatStatus.create(kit) : null;
+		const settings = root.GCChatSettings ? root.GCChatSettings.create(kit) : null;
+		if (status) status.onChange(() => { renderList(); renderMe(); });
+
+		function openSettings(section) {
+			closeMenu();
+			if (settings) settings.open(section);
+			else prefsDialog();
+		}
+
+		/** The own avatar in the list head (Messenger 1.4.0 status). */
+		function renderMe() {
+			const on = !!status && f14().status;
+			refs.meBtn.hidden = !on;
+			if (!on) return;
+			const u = (me() && me().user) || {};
+			const own = status.mine();
+			clear(refs.meBtn).appendChild(avatar(CS.personAvatar({ name: u.name, initials: u.initials, colorHex: u.colorHex, avatarUrl: u.avatarUrl }), 34));
+			const line = CS.statusLine(own && own.status, ctx());
+			refs.meBtn.title = line ? `${t('chat.st.yours')}: ${line}` : t('chat.st.yours');
+			refs.meBtn.classList.toggle('has-status', !!line);
+		}
+
+		async function loadLists() {
+			if (!f14().tools || typeof api.lists !== 'function') { S.lists = []; return; }
+			const r = await api.lists().catch(() => null);
+			S.lists = r && r.ok !== false && Array.isArray(r.lists) ? r.lists : [];
+			renderList();
+		}
+
 		// ── State / availability ─────────────────────────────
 
 		async function loadStatus() {
@@ -265,7 +484,16 @@
 			if (!available) renderState(st);
 			renderBanner();
 			renderHint();
+			renderMe();
+			applyLocal();
 			if (typeof o.onUnread === 'function') o.onUnread(available ? (st.unread || 0) : 0);
+			// Messenger 1.4.0: status feed and chat lists once the server is known
+			const key = available ? `${Object.keys((st.me && st.me.features) || {}).sort().join(',')}` : '';
+			if (key !== S.featKey) {
+				S.featKey = key;
+				if (available && status && f14().status) status.load();
+				if (available) loadLists();
+			}
 		}
 
 		/**
@@ -340,15 +568,55 @@
 
 		function renderList() {
 			const c = ctx();
-			const list = CS.filterConversations(S.convs, S.q, c);
+			const f = f14();
+			// Messenger 1.4.0: archived chats apart, chips (unread, groups, own lists)
+			const arch = CS.archivedInfo(S.convs);
+			if (S.archived && !arch.count) S.archived = false;
+			const base = S.q ? S.convs : CS.listFilter(S.convs, { filter: S.filter, archived: S.archived, lists: S.lists });
+			const list = CS.filterConversations(base, S.q, c);
+			renderChips();
 			clear(refs.rows);
-			if (o.notify && !S.q) refs.rows.appendChild(inboxRowEl());
+			const strip = !S.q && !S.archived && status ? status.strip() : null;
+			if (S.archived) {
+				refs.rows.appendChild(el('button', { type: 'button', class: 'cv-archived-head', on: { click: () => { S.archived = false; renderList(); } } }, [icon('back', 16), el('b', { text: t('chat.archive.title') }), el('span', { class: 'cv-dim', text: String(arch.count) })]));
+			} else {
+				if (strip || (f.status && o.notify && !S.q)) refs.rows.appendChild(el('div', { class: 'cv-list-sec', text: t('chat.list.pinned') }));
+				if (strip) refs.rows.appendChild(strip);
+				if (o.notify && !S.q) refs.rows.appendChild(inboxRowEl());
+				if (arch.count && !S.q && S.filter === 'all') {
+					refs.rows.appendChild(el('button', { type: 'button', class: 'cv-archived', on: { click: () => { S.archived = true; renderList(); } } }, [
+						el('span', { class: 'cv-archived-ic' }, [icon('archive', 18)]),
+						el('b', { text: t('chat.archive.title') }),
+						el('span', { class: 'cv-grow' }),
+						arch.unread ? el('span', { class: 'cv-badge is-muted', text: String(arch.unread) }) : el('span', { class: 'cv-dim', text: String(arch.count) }),
+					]));
+				}
+				if (strip) refs.rows.appendChild(el('div', { class: 'cv-list-sec', text: t('chat.list.chats') }));
+			}
 			for (const cv of list) refs.rows.appendChild(rowEl(cv, c));
-			const unread = S.convs.reduce((n, x) => n + (x.muted ? 0 : (x.unread || 0)), 0);
+			const unread = S.convs.reduce((n, x) => n + (x.muted || x.archived ? 0 : (x.unread || 0)), 0);
 			refs.count.textContent = unread > 0 ? String(unread) : '';
 			refs.count.hidden = unread <= 0;
 			refs.listEmpty.hidden = list.length > 0;
-			refs.listEmpty.textContent = S.q ? t('chat.noMatch') : t('chat.noChats');
+			refs.listEmpty.textContent = S.q ? t('chat.noMatch') : (S.filter !== 'all' ? t('chat.filter.empty') : t('chat.noChats'));
+		}
+
+		/** Filter chips of the list (Messenger 1.4.0 msg_tools): Alle, Ungelesen, Gruppen, own lists. */
+		function renderChips() {
+			const on = f14().tools && !S.archived;
+			refs.chips.hidden = !on;
+			if (!on) { S.filter = 'all'; return; }
+			if (S.filter.startsWith('list:') && !S.lists.some((l) => `list:${l.id}` === S.filter)) S.filter = 'all';
+			const chips = [['all', t('chat.filter.all')], ['unread', t('chat.filter.unread')], ['groups', t('chat.filter.groups')], ...S.lists.map((l) => [`list:${l.id}`, l.name])];
+			clear(refs.chips);
+			const unread = S.convs.filter((x) => !x.archived && (x.unread || 0) > 0).length;
+			for (const [k, label] of chips) {
+				refs.chips.appendChild(el('button', { type: 'button', class: 'cv-chip-btn', 'data-filter': k, 'aria-pressed': S.filter === k ? 'true' : 'false', on: { click: () => { S.filter = k; renderList(); } } }, [
+					el('span', { text: label }),
+					k === 'unread' && unread ? el('small', { text: String(unread) }) : null,
+				]));
+			}
+			refs.chips.appendChild(iconBtn('plus', t('chat.lists.add'), () => openSettings('lists'), 'cv-ib-flat cv-ib-sm cv-chip-add'));
 		}
 
 		function inboxRowEl() {
@@ -369,7 +637,7 @@
 			const time = CS.listTime(c.lastMessage ? c.lastMessage.createdAt : (c.updatedAt || c.createdAt), cx);
 			const name = CS.title(c, t);
 			const b = el('button', { type: 'button', class: `cv-row${on ? ' is-on' : ''}${c.unread ? ' is-unread' : ''}`, role: 'listitem', 'aria-current': on ? 'true' : 'false', 'data-id': String(c.id), on: { click: () => openChat(c.id) } }, [
-				avatar(CS.avatarOf(c), 42),
+				rowAvatar(c),
 				el('span', { class: 'cv-row-tx' }, [
 					el('span', { class: 'cv-row-top' }, [
 						el('b', { class: 'cv-row-name', text: name }),
@@ -385,6 +653,15 @@
 			]);
 			b.setAttribute('aria-label', `${name}${c.unread ? `, ${c.unread}` : ''}: ${pv.text}`);
 			return b;
+		}
+
+		/** List avatar; a direct chat shows "online" as a dot (Messenger 1.4.0 privacy2). */
+		function rowAvatar(c) {
+			const a = avatar(CS.avatarOf(c), 42);
+			if (c.kind === 'direct' && c.peer && c.peer.online === true) {
+				return el('span', { class: 'cv-av-wrap' }, [a, el('span', { class: 'cv-online', title: t('chat.seen.online') })]);
+			}
+			return a;
 		}
 
 		// ── Open / close ─────────────────────────────────────
@@ -446,6 +723,7 @@
 			rootEl.setAttribute('data-pane', 'list');
 			refs.pick.hidden = false;
 			refs.head.hidden = true;
+			refs.bars.hidden = true;
 			refs.composer.hidden = true;
 			refs.toLatest.hidden = true;
 			closeSearch();
@@ -488,6 +766,7 @@
 			rootEl.setAttribute('data-pane', 'chat');
 			refs.pick.hidden = true;
 			refs.head.hidden = false;
+			refs.bars.hidden = true;
 			refs.composer.hidden = true;
 			renderInfo();
 			renderList();
@@ -614,6 +893,53 @@
 				iconBtn('search', t('chat.search.inChat'), () => toggleSearch(), 'cv-ib-flat'),
 				iconBtn('info', t('chat.info.open'), () => toggleInfo(), `cv-ib-flat${S.infoOpen ? ' is-on' : ''}`),
 			);
+			const subEl = refs.head.querySelector('.cv-head-sub');
+			if (subEl && sub.online) subEl.classList.add('is-online');
+			renderBars();
+		}
+
+		/**
+		 * Bars under the header (Messenger 1.4.0): the next event of the chat
+		 * (`nextEvent`) and the pinned messages (`pinned`, one at a time; a click
+		 * jumps to it and shows the next one).
+		 */
+		function renderBars() {
+			const c = curConv();
+			clear(refs.bars);
+			if (!c || typeof S.cur !== 'number') { refs.bars.hidden = true; return; }
+			const cx = ctx();
+			const f = f14();
+			const ne = f.events && c.nextEvent && c.nextEvent.messageId ? c.nextEvent : null;
+			if (ne) {
+				const when = CS.shortWhen(ne.startsAt, cx);
+				refs.bars.appendChild(el('button', { type: 'button', class: 'cv-bar cv-bar-event', on: { click: () => jumpTo(ne.messageId) } }, [
+					icon('calendar', 16),
+					el('span', { class: 'cv-bar-tx' }, [el('b', { text: ne.title || '' }), el('span', { text: [when, t('chat.event.yesN', { n: Number(ne.yesCount) || 0 })].filter(Boolean).join(' · ') })]),
+					el('span', { class: 'cv-bar-go', text: t('chat.event.view') }),
+				]));
+			}
+			const pins = f.tools && Array.isArray(c.pinned) ? c.pinned.filter((x) => Number.isSafeInteger(x)) : [];
+			if (pins.length) {
+				let i = S.pinIdx.get(c.id) || 0;
+				if (i >= pins.length) i = 0;
+				const id = pins[pins.length - 1 - i];
+				const m = S.view ? S.view.messages.find((x) => x.id === id) : null;
+				const text = m ? CS.summary(m, c, cx) : t('chat.pin.message');
+				refs.bars.appendChild(el('div', { class: 'cv-bar cv-bar-pin' }, [
+					el('button', { type: 'button', class: 'cv-bar-main', 'aria-label': t('chat.pin.jump'), on: { click: () => { S.pinIdx.set(c.id, (i + 1) % pins.length); jumpTo(id); renderBars(); } } }, [
+						icon('thumbtack', 16),
+						el('span', { class: 'cv-bar-tx' }, [el('b', { text: pins.length > 1 ? t('chat.pin.titleN', { i: i + 1, n: pins.length }) : t('chat.pin.title') }), el('span', { text })]),
+					]),
+					c.can && c.can.pin ? iconBtn('close', t('chat.pin.unpin'), () => pinMsg(c, id, false), 'cv-ib-flat cv-ib-sm') : null,
+				]));
+			}
+			refs.bars.hidden = !refs.bars.childNodes.length;
+		}
+
+		async function pinMsg(c, messageId, pinned) {
+			const r = await api.pin(c.id, messageId, pinned).catch((e) => ({ ok: false, error: e && e.message }));
+			if (!r || r.ok === false) { toast(CS.errorText(r, t), 'error'); return; }
+			await refreshList();
 		}
 
 		// ── Messages ─────────────────────────────────────────
@@ -668,6 +994,12 @@
 			}
 			if (v.offline) refs.msgs.appendChild(el('div', { class: 'cv-note', text: t('chat.offline') }));
 			if (v.detached) refs.toLatest.hidden = false;
+			// a new message of someone else in the open chat: the sound of this PC
+			const last = v.detached ? null : v.messages[v.messages.length - 1];
+			const seen = S.newest.get(c.id);
+			if (last && seen !== undefined && last.id > seen && !last.mine && last.kind !== 'system' && S.shown && document.visibilityState === 'visible') playSound('in');
+			if (last) S.newest.set(c.id, Math.max(seen || 0, last.id));
+			if (refs.bars.querySelector('.cv-bar-pin') || (c.pinned && c.pinned.length)) renderBars();
 			if (mode === 'bottom' || (mode === 'keep' && wasBottom)) scrollEnd(false);
 			else if (mode === 'prepend') refs.msgs.scrollTop = refs.msgs.scrollHeight - prevHeight + prevTop;
 			else refs.msgs.scrollTop = prevTop;
@@ -704,7 +1036,8 @@
 			} else if (!mine && c.kind === 'group') {
 				wrap.appendChild(el('span', { class: 'cv-msg-av' }));
 			}
-			const b = el('div', { class: `cv-bub${mine ? ' cv-out' : ' cv-in'}${m.deleted ? ' is-deleted' : ''}${m.pending ? ' is-pending' : ''}${m.failed ? ' is-failed' : ''}` });
+			const richKind = !m.deleted && (!CS.isShownKind(m) || ['poll', 'event', 'arrival', 'action', 'card'].includes(m.kind));
+			const b = el('div', { class: `cv-bub${mine ? ' cv-out' : ' cv-in'}${m.deleted ? ' is-deleted' : ''}${m.pending ? ' is-pending' : ''}${m.failed ? ' is-failed' : ''}${richKind ? ` cv-bub-rich is-${CS.isShownKind(m) ? m.kind : 'unknown'}` : ''}` });
 			if (!mine && c.kind === 'group' && !it.cont) {
 				const p = CS.member(c, m.senderId);
 				const name = el('b', { class: 'cv-sender', text: CS.nameOf(c, m.senderId, cx) });
@@ -715,12 +1048,15 @@
 				b.appendChild(el('div', { class: 'cv-text cv-dim', text: mine ? t('chat.msg.deletedMine') : t('chat.msg.deleted') }));
 			} else {
 				if (m.replyTo) b.appendChild(quoteEl(m.replyTo, c, cx));
+				if (m.replyStory) b.appendChild(storyQuoteEl(m.replyStory, c, cx));
 				if (m.kind === 'image') b.appendChild(imageEl(m));
 				else if (m.kind === 'voice') b.appendChild(voiceEl(m));
 				else if (m.kind === 'file') b.appendChild(CS.videoInfo(m) ? videoEl(m, cx) : fileEl(m, cx));
 				else if (m.kind === 'location') b.appendChild(locationEl(m));
+				const rb = richKind ? richBody(m, c, cx) : null;
+				if (rb) b.appendChild(rb);
 				if (m.undecryptable) b.appendChild(el('div', { class: 'cv-text cv-dim', text: t('chat.msg.undecryptable') }));
-				else if (m.text && m.kind !== 'location') b.appendChild(el('div', { class: 'cv-text', text: m.text }));
+				else if (m.text && m.kind !== 'location' && !(rb && (m.kind === 'card' || !CS.isShownKind(m)))) b.appendChild(el('div', { class: 'cv-text', text: m.text }));
 			}
 			const meta = el('div', { class: 'cv-meta' }, [
 				m.expiresAt ? el('span', { class: 'cv-exp', title: t('chat.msg.expires', { time: CS.when(m.expiresAt, cx.locale) }) }, [icon('timer', 11)]) : null,
@@ -752,6 +1088,24 @@
 			}
 			wrap.appendChild(body);
 			return wrap;
+		}
+
+		/** Messenger 1.4.0 kinds (chat-rich.js); without the module: the "newer version" bubble. */
+		function richBody(m, c, cx) {
+			if (rich) return rich.body(m, c, cx);
+			return el('div', { class: 'cv-text cv-dim cv-unsupported' }, [icon('info', 14), el('span', { text: t('chat.msg.unsupported') })]);
+		}
+
+		/** The story a message answers (Messenger 1.4.0 `replyStory`). */
+		function storyQuoteEl(rs, c, cx) {
+			const pv = rs.preview || {};
+			const owner = rs.ownerId != null ? CS.nameOf(c, rs.ownerId, cx) : '';
+			const box = el('div', { class: 'cv-quote cv-quote-story' }, [
+				el('b', { text: t('chat.story.quote', { name: owner }) }),
+				el('span', { text: pv.text || t(pv.kind === 'video' ? 'chat.kind.video' : pv.kind === 'image' ? 'chat.kind.image' : 'chat.story.title') }),
+			]);
+			if (pv.thumbMediaId) mediaUrl(pv.thumbMediaId).then((u) => { if (u) box.appendChild(el('img', { class: 'cv-quote-img', src: u, alt: '' })); });
+			return box;
 		}
 
 		function imageEl(m) {
@@ -1336,6 +1690,11 @@
 			if (acts.edit) item('pen', t('chat.msg.edit'), () => startEdit(m));
 			if (m.kind === 'file' && m.media) item('down', t('chat.msg.saveAs'), () => saveMedia(m));
 			if (m.kind === 'image' && m.media) item('down', t('chat.msg.saveAs'), () => saveMedia(m));
+			// Messenger 1.4.0 (msg_tools): pin, "Erinnere mich", suggestions to Familie
+			if (acts.pin) item('thumbtack', acts.pinned ? t('chat.pin.unpin') : t('chat.pin.pin'), () => pinMsg(c, m.id, !acts.pinned));
+			if (acts.remind && rich) item('clock', t('chat.remind.menu'), () => rich.remindDialog(m));
+			const sugg = acts.suggest && rich ? el('div', { class: 'cv-menu-sugg', 'aria-live': 'polite' }) : null;
+			if (sugg) items.push(sugg);
 			if (acts.deleteMe) item('trash', t('chat.msg.deleteMe'), () => removeMsg(m, 'me'), true);
 			if (acts.deleteAll) item('trash', t('chat.msg.deleteAll'), () => removeMsg(m, 'all'), true);
 			const menu = el('div', { class: 'cv-menu', role: 'menu' }, items);
@@ -1350,6 +1709,21 @@
 			menu.style.top = `${top}px`;
 			const first = menu.querySelector('button');
 			if (first) first.focus();
+			if (sugg) fillSuggestions(m, sugg, menu, r);
+		}
+
+		/** "Auf Einkaufsliste" / "Termin anlegen" when the server finds items or dates in the text (Familie offers them). */
+		async function fillSuggestions(m, box, menu, anchorRect) {
+			const fam = CS.familie(me());
+			const r = await api.suggest(m.id).catch(() => null);
+			if (!box.isConnected || !r || r.ok === false) return;
+			const add = (ic, label, badge, fn) => box.appendChild(el('button', { type: 'button', role: 'menuitem', class: 'cv-menu-item is-suggest', on: { click: () => { closeMenu(); fn(); } } }, [icon(ic, 15), el('span', { text: label }), badge ? el('small', { class: 'cv-menu-badge', text: badge }) : null]));
+			if (fam.lists && r.items.length) add('cart', t('chat.suggest.toList'), t('chat.suggest.points', { n: r.items.length }), () => rich.toListDialog(m, r.items));
+			if (fam.calendar && r.dates.length) add('calendar', t('chat.suggest.toCalendar'), r.dates[0].label || '', () => rich.toCalendarDialog(m, r.dates));
+			if (!box.childNodes.length) return;
+			box.appendChild(el('div', { class: 'cv-menu-note', text: t('chat.suggest.menuHint') }));
+			const mr = menu.getBoundingClientRect();
+			if (mr.bottom > window.innerHeight - 8) menu.style.top = `${Math.max(8, Math.min(anchorRect.top - mr.height - 4, window.innerHeight - mr.height - 8))}px`;
 		}
 
 		function copyText(text) {
@@ -1412,6 +1786,11 @@
 			const block = CS.composerBlock(c);
 			if (block) {
 				refs.input = null;
+				if (block === 'blocked') {
+					// Messenger 1.4.0: the peer is blocked by me
+					refs.composer.appendChild(el('div', { class: 'cv-blocked' }, [icon('block', 15), el('span', { class: 'cv-grow', text: t('chat.block.composer') }), el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('chat.block.unblock'), on: { click: () => setBlocked(c, false) } })]));
+					return;
+				}
 				refs.composer.appendChild(el('div', { class: 'cv-blocked' }, [icon(block === 'readonly' ? 'shield' : 'lock', 15), el('span', { text: t(block === 'readonly' ? 'chat.readonly' : 'chat.peerGone') })]));
 				return;
 			}
@@ -1441,7 +1820,8 @@
 			refs.input.value = text;
 			refs.input.addEventListener('input', () => { grow(); if (refs.input.value.trim() && !S.edit) api.typing(c.id).catch(() => {}); });
 			refs.input.addEventListener('keydown', (e) => {
-				if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
+				// "Enter sendet" (Einstellungen › Chats, this PC); otherwise Strg+Enter sends
+				if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && (enterSends() || e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
 				else if (e.key === 'Escape' && (S.reply || S.edit)) { e.preventDefault(); const wasEdit = !!S.edit; S.reply = null; S.edit = null; renderComposer(false); if (wasEdit && refs.input) refs.input.value = ''; }
 				else if (e.key === 'ArrowUp' && !refs.input.value && S.view) {
 					const last = S.view.messages.slice().reverse().find((x) => x.mine && CS.messageActions(x, c, ctx()).edit);
@@ -1454,14 +1834,65 @@
 			});
 			const features = (cx.me && cx.me.features) || {};
 			refs.composer.appendChild(el('div', { class: 'cv-row-compose' }, [
-				features.files !== false ? iconBtn('attach', t('chat.attach'), () => { refs.file.value = ''; refs.file.click(); }) : null,
-				features.location !== false && typeof api.mapTile === 'function' ? iconBtn('pin', t('chat.loc.button'), () => locationDialog(), 'cv-loc-btn') : null,
+				attachButton(c, features),
+				// with the attach menu (Messenger 1.4.0) "Standort senden" is in there
+				features.location !== false && typeof api.mapTile === 'function' && !attachMenuOn() ? iconBtn('pin', t('chat.loc.button'), () => locationDialog(), 'cv-loc-btn') : null,
 				refs.input,
 				features.voice !== false && recordingSupported() ? iconBtn('mic', t('chat.recStart'), () => startRec()) : null,
 				el('button', { type: 'button', class: 'cv-ib cv-ib-pri', 'aria-label': t('chat.send'), title: t('chat.send'), on: { click: () => submit() } }, [icon('send', 16, '2.2')]),
 			]));
-			refs.composer.appendChild(el('div', { class: 'cv-compose-hint', text: `${t('chat.enterHint')} · ${t('chat.dropHint')}` }));
+			refs.composer.appendChild(el('div', { class: 'cv-compose-hint', text: `${enterSends() ? t('chat.enterHint') : t('chat.enterHintCtrl')} · ${t('chat.dropHint')}` }));
 			grow();
+		}
+
+		/**
+		 * The paper clip: the file picker as before, or (Messenger 1.4.0 polls /
+		 * events / actions) a menu: Foto oder Datei, Standort, Abstimmung,
+		 * Ereignis and "Aus deinem Zuhause" (GET actions without the ones
+		 * switched off in Einstellungen › Haus-Aktionen).
+		 */
+		const attachMenuOn = () => { const f = f14(); return !!rich && (f.polls || f.events || f.actions); };
+
+		function attachButton(c, features) {
+			const pick = () => { refs.file.value = ''; refs.file.click(); };
+			if (!attachMenuOn()) return features.files !== false ? iconBtn('attach', t('chat.attach'), pick) : null;
+			return iconBtn('attach', t('chat.attach'), (e) => attachMenu(c, features, e.currentTarget), 'cv-attach-btn');
+		}
+
+		function attachMenu(c, features, anchor) {
+			const f = f14();
+			const items = [
+				features.files !== false ? ['image', t('chat.attachMenu.file'), () => { refs.file.value = ''; refs.file.click(); }, { id: 'file' }] : null,
+				features.location !== false && typeof api.mapTile === 'function' ? ['pin', t('chat.loc.button'), () => locationDialog(), { id: 'location' }] : null,
+				f.polls ? ['chart', t('chat.attachMenu.poll'), () => rich.pollDialog(c), { id: 'poll' }] : null,
+				f.events ? ['calendar', t('chat.attachMenu.event'), () => rich.eventDialog(c), { id: 'event' }] : null,
+			].filter(Boolean);
+			if (f.actions) items.push({ section: t('chat.attachMenu.home') });
+			const pm = popMenu(anchor, items);
+			if (!f.actions) return;
+			const wait = el('div', { class: 'cv-menu-note', text: t('chat.loading') });
+			pm.add(wait);
+			api.actions().then((r) => {
+				wait.remove();
+				const hidden = root.GCChatSettings ? root.GCChatSettings.local.get('gc.chat.hiddenActions', []) : [];
+				const list = r && r.ok !== false ? CS.shownActions(r.actions, hidden) : [];
+				if (!r || r.ok === false) pm.add(el('div', { class: 'cv-menu-note', text: CS.errorText(r, t) }));
+				else if (!list.length) pm.add(el('div', { class: 'cv-menu-note', text: t('chat.attachMenu.noActions') }));
+				for (const a of list) pm.add([rich.serverIcon(a.icon, 15), a.label || a.id, () => rich.actionDialog(c, a), { id: `action:${a.id}` }]);
+				pm.add(['gear', t('chat.attachMenu.manage'), () => openSettings('actions'), { id: 'manage' }]);
+			}).catch(() => { wait.textContent = t('chat.error.failed'); });
+		}
+
+		async function setBlocked(c, blocked) {
+			const uid = c && c.peer ? c.peer.userId : null;
+			if (!uid) return;
+			if (blocked && !(await confirmDialog(t('chat.block.q', { name: c.peer.name || '' }), t('chat.block.block'), true))) return;
+			const r = await api.block(uid, blocked).catch((e) => ({ ok: false, error: e && e.message }));
+			if (!r || r.ok === false) { toast(CS.errorText(r, t), 'error'); return; }
+			toast(t(blocked ? 'chat.block.done' : 'chat.block.undone', { name: c.peer.name || '' }), 'success');
+			S.people = null;
+			await refreshList({ server: true });
+			if (status) status.load(true);
 		}
 
 		async function submit() {
@@ -1487,6 +1918,7 @@
 			api.typing(c.id, true).catch(() => {});
 			const r = await api.send(req).catch((e) => ({ ok: false, error: e && e.message }));
 			if (r && r.ok === false) { toast(CS.errorText(r, t), 'error'); if (refs.input && !refs.input.value) refs.input.value = text; return; }
+			playSound('out');
 			scrollBottom(true);
 		}
 
@@ -1792,7 +2224,7 @@
 			refs.info.appendChild(el('div', { class: 'cv-info-head' }, [el('b', { text: t('chat.info.title') }), iconBtn('close', t('chat.common.close'), () => toggleInfo(), 'cv-ib-flat')]));
 			const sub = c.kind === 'group'
 				? (c.managedBy ? t('chat.info.managed', { plugin: pluginName(c.managedBy) }) : t('chat.membersN', { n: (c.members || []).length }))
-				: (c.peer && c.peer.gone ? t('chat.peerGone') : t('chat.directSub'));
+				: (c.peer && c.peer.gone ? t('chat.peerGone') : (CS.lastSeenText(c.peer, cx) || t('chat.directSub')));
 			const top = el('div', { class: 'cv-info-top' }, [avatar(CS.avatarOf(c), 76), el('b', { text: CS.title(c, t) }), el('span', { class: 'cv-dim', text: sub })]);
 			if (c.can && c.can.editInfo) {
 				top.appendChild(el('div', { class: 'cv-info-btns' }, [
@@ -1833,6 +2265,21 @@
 			const mediaSec = el('div', { class: 'cv-info-sec cv-media-sec', hidden: true }, [el('div', { class: 'cv-sec', text: t('chat.info.recentMedia') })]);
 			refs.info.appendChild(mediaSec);
 			mediaPane(c, cx, mediaSec, mediaCount);
+
+			// Messenger 1.4.0 (msg_tools): archive, lists, export, block
+			if (f14().tools) {
+				const tools = el('div', { class: 'cv-info-sec cv-info-tools' }, [el('div', { class: 'cv-sec', text: t('chat.info.tools') })]);
+				const btn = (ic, label, fn, cls = 'btn-sec', id = null) => el('button', { type: 'button', class: `btn ${cls} btn-sm cv-tool`, 'data-tool': id, on: { click: fn } }, [icon(ic, 14), el('span', { text: label })]);
+				tools.appendChild(btn('archive', c.archived ? t('chat.archive.unarchive') : t('chat.archive.archive'), () => archiveConv(c, !c.archived), 'btn-sec', 'archive'));
+				tools.appendChild(btn('list', t('chat.lists.inLists'), () => listsForChat(c), 'btn-sec', 'lists'));
+				tools.appendChild(btn('down', t('chat.export.button'), () => exportChat(c), 'btn-sec', 'export'));
+				if (c.kind === 'direct' && c.peer && !c.peer.gone) {
+					tools.appendChild(c.peer.blocked
+						? btn('block', t('chat.block.unblock'), () => setBlocked(c, false), 'btn-sec', 'unblock')
+						: btn('block', t('chat.block.block'), () => setBlocked(c, true), 'btn-danger cv-danger', 'block'));
+				}
+				refs.info.appendChild(tools);
+			}
 
 			if (c.kind === 'group' && !c.readonly) {
 				const ms = el('div', { class: 'cv-info-sec' }, [el('div', { class: 'cv-sec', text: `${t('chat.info.members')} · ${(c.members || []).length}` })]);
@@ -1918,6 +2365,35 @@
 		}
 
 		const pluginName = (id) => (id === 'gatecontrol-familie' ? t('chat.info.pluginFamilie') : id);
+
+		async function archiveConv(c, archived) {
+			const r = await api.archive(c.id, archived).catch((e) => ({ ok: false, error: e && e.message }));
+			if (!r || r.ok === false) { toast(CS.errorText(r, t), 'error'); return; }
+			toast(t(archived ? 'chat.archive.done' : 'chat.archive.undone'), 'success');
+			await refreshList();
+		}
+
+		/** Which of the own lists a chat is in (checkboxes; PUT lists). */
+		function listsForChat(c) {
+			if (!S.lists.length) { openSettings('lists'); return; }
+			const box = el('div', { class: 'cv-stack' }, S.lists.map((l) => el('label', { class: 'cv-check' }, [el('input', { type: 'checkbox', value: l.id, checked: (l.conversationIds || []).includes(c.id) }), el('span', { text: l.name })])));
+			dialog(t('chat.lists.inLists'), el('div', { class: 'cv-stack' }, [box, el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => openSettings('lists') } }, [icon('gear', 13), t('chat.lists.manage')])]), [
+				{ label: t('chat.common.cancel'), value: null },
+				{ label: t('chat.common.save'), primary: true, onClick: async () => {
+					const on = new Set(Array.from(box.querySelectorAll('input:checked')).map((x) => x.value));
+					const next = S.lists.map((l) => {
+						const ids = new Set(l.conversationIds || []);
+						if (on.has(l.id)) ids.add(c.id); else ids.delete(c.id);
+						return { ...l, conversationIds: [...ids] };
+					});
+					const r = await api.saveLists(next).catch((e) => ({ ok: false, error: e && e.message }));
+					if (!r || r.ok === false) { toast(CS.errorText(r, t), 'error'); return false; }
+					S.lists = r.lists;
+					renderList();
+					return true;
+				} },
+			]);
+		}
 
 		function pickAvatar(c) {
 			refs.avatarFile.value = '';
@@ -2118,6 +2594,10 @@
 		api.onState((st) => { S.status = st; applyStatus(); if (st && st.state === 'available') refreshListSoon(); });
 		api.onUnread((n) => { if (S.status) S.status.unread = n; if (typeof o.onUnread === 'function' && S.status && S.status.state === 'available') o.onUnread(n); });
 		api.onNavigate((e) => { if (e && Number.isSafeInteger(e.conversationId)) openChat(e.conversationId); });
+		// Messenger 1.4.0
+		if (typeof api.onFeed === 'function') api.onFeed((feed) => { if (status && feed) status.set(feed); });
+		if (typeof api.onLists === 'function') api.onLists((lists) => { S.lists = Array.isArray(lists) ? lists : []; renderList(); if (settings && settings.isOpen()) settings.render(); });
+		if (typeof api.onReminders === 'function') api.onReminders(() => { if (settings && settings.isOpen()) settings.render(); });
 		if (o.notify) {
 			o.notify.onNew(() => loadInbox());
 			o.notify.onUpdate(() => loadInbox());
@@ -2151,6 +2631,7 @@
 				loadInbox();
 				reportOpen();
 				if (typeof S.cur === 'number') refreshMessages();
+				if (status && f14().status) status.load();
 			},
 			/** The page was left. */
 			hide() {
@@ -2161,6 +2642,8 @@
 			},
 			isShown: () => S.shown,
 			open: (id) => openChat(id),
+			/** Messenger 1.4.0: the settings page (optional section id). */
+			openSettings: (section) => openSettings(section),
 			openInbox: () => openInboxChat(),
 			status: () => S.status,
 			/** Locale changed: rebuild the texts. */
@@ -2176,6 +2659,7 @@
 				renderList();
 				if (typeof S.cur === 'number') { renderHead(); renderComposer(false); renderMessages('keep'); renderInfo(); } else if (S.cur === 'inbox') renderInbox();
 				applyStatus();
+				if (settings && settings.isOpen()) settings.render();
 			},
 		};
 	}
