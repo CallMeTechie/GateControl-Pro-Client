@@ -388,7 +388,7 @@ test.describe('chats', () => {
 
   test('a server with chat functions this version does not know: a dismissible update hint, never blocking', async ({ launchApp, mock }) => {
     mock.setPush({ topics: [], items: [] });
-    const ms = mock.setMessenger({ features: { direct: true, groups: true, voice: true, files: true, location: true, reactions: true, edit: true, search: true, disappearing: true, bridges: false, e2e: false, video_meta: true, file_thumbs: true, polls: true } });
+    const ms = mock.setMessenger({ features: { direct: true, groups: true, voice: true, files: true, location: true, reactions: true, edit: true, search: true, disappearing: true, bridges: false, e2e: false, video_meta: true, file_thumbs: true, calls: true } });
     const anna = ms.addConv();
     ms.addMsg(anna, { text: 'Hallo' });
     const { page } = await launchApp();

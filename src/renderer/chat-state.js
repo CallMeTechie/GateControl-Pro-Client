@@ -5,7 +5,9 @@
  * list previews, system message texts, "schreibt …", ticks, the timeline
  * with day separators and the unread line, edit/delete windows, mute and
  * disappearing options, error texts, voice-recording helpers, video files
- * (frame time, preview sizes, media filters). Loaded as a
+ * (frame time, preview sizes, media filters), Messenger 1.4.0 (status and
+ * stories, polls, events, live arrivals, home actions and plugin cards,
+ * chat filters and archive, last seen). Loaded as a
  * plain script before chat-view.js (window.GCChatState) and required by the
  * node tests (test/chat-state.test.js).
  *
@@ -105,7 +107,19 @@
 			case 'disappearing': return s.seconds ? t('chat.sys.disOn', { name: who, time: disLabel(s.seconds, t) }) : t('chat.sys.disOff', { name: who });
 			// Messenger 1.1.0: the plugin handed its managed group over.
 			case 'released': return t('chat.sys.released');
-			default: return str(m && m.text);
+			// Messenger 1.4.0
+			case 'poll_closed': {
+				const q = str(s.question);
+				const result = s.winner ? t('chat.sys.pollWinner', { winner: s.winner }) : t('chat.sys.pollTie');
+				return by === null ? t('chat.sys.pollClosedAuto', { question: q, result }) : t('chat.sys.pollClosed', { name: who, question: q, result });
+			}
+			case 'event_cancelled': return t('chat.sys.eventCancelled', { name: who, title: str(s.title) });
+			case 'arrived': return t('chat.sys.arrived', { name: nameOf(c, s.userId, ctx), label: str(s.label) });
+			case 'action_run': return s.asUserId && s.asUserId !== s.userId
+				? t('chat.sys.actionRunAs', { name: nameOf(c, s.userId, ctx), label: str(s.label), as: nameOf(c, s.asUserId, ctx) })
+				: t('chat.sys.actionRun', { name: nameOf(c, s.userId, ctx), label: str(s.label) });
+			case 'action_denied': return t('chat.sys.actionDenied', { name: who, label: str(s.label) });
+			default: return str(m && m.text) || t('chat.sys.unknown');
 		}
 	}
 
@@ -191,7 +205,14 @@
 			}
 			case 'location': return t('chat.kind.location') + (m.location && m.location.label ? `: ${m.location.label}` : '');
 			case 'system': return systemText(m, c, ctx);
-			default: return str(m.text);
+			// Messenger 1.4.0
+			case 'poll': return `📊 ${t('chat.kind.poll')}: ${str(m.poll && m.poll.question)}`;
+			case 'event': return `📅 ${t('chat.kind.event')}: ${str(m.event && m.event.title)}`;
+			case 'arrival': return `📍 ${t('chat.kind.arrival')}: ${str(m.arrival && m.arrival.dest && m.arrival.dest.label)}`;
+			case 'action': return `${t('chat.kind.action')}: ${str(m.action && m.action.label)}`;
+			case 'card': return m.card ? [m.card.title, m.card.text || m.text].filter(Boolean).join(': ') : str(m.text);
+			case 'text': return str(m.text);
+			default: return SHOWN_KINDS.includes(m.kind) ? str(m.text) : t('chat.msg.unsupported');
 		}
 	}
 
@@ -287,7 +308,7 @@
 	function messageActions(m, c, ctx, now = Date.now()) {
 		const limits = (ctx.me && ctx.me.limits) || {};
 		const features = (ctx.me && ctx.me.features) || {};
-		if (!m || m.pending) return { reply: false, react: false, edit: false, deleteMe: false, deleteAll: false, copy: false };
+		if (!m || m.pending) return { reply: false, react: false, edit: false, deleteMe: false, deleteAll: false, copy: false, pin: false, pinned: false, remind: false, suggest: false };
 		const live = !m.deleted && m.kind !== 'system';
 		const canSend = !!(c && c.can && c.can.send);
 		return {
@@ -297,6 +318,11 @@
 			edit: live && m.mine && ['text', 'image', 'file'].includes(m.kind) && features.edit !== false && withinWindow(m, limits, now),
 			deleteMe: true,
 			deleteAll: live && m.mine && withinWindow(m, limits, now),
+			// Messenger 1.4.0 (msg_tools): pin (can.pin), "Erinnere mich", suggestions to Familie
+			pin: live && hasFeature(ctx.me, 'msg_tools') && !!(c && c.can && c.can.pin),
+			pinned: !!(c && Array.isArray(c.pinned) && c.pinned.includes(m.id)),
+			remind: live && hasFeature(ctx.me, 'msg_tools'),
+			suggest: live && hasFeature(ctx.me, 'msg_tools') && !!m.text && (familie(ctx.me).lists || familie(ctx.me).calendar),
 		};
 	}
 
@@ -374,6 +400,9 @@
 			return { text: names.join(', '), typing: false };
 		}
 		if (c.peer && c.peer.gone) return { text: ctx.t('chat.peerGone'), typing: false };
+		// Messenger 1.4.0 (privacy2): online / last seen as the person allows it
+		const seen = lastSeenText(c.peer, ctx);
+		if (seen) return { text: seen, typing: false, online: !!(c.peer && c.peer.online) };
 		return { text: ctx.t('chat.directSub'), typing: false };
 	}
 
@@ -382,6 +411,7 @@
 		if (!c) return 'readonly';
 		if (c.readonly) return 'readonly';
 		if (c.kind === 'direct' && c.peer && c.peer.gone) return 'peerGone';
+		if (c.kind === 'direct' && c.peer && c.peer.blocked) return 'blocked';
 		if (c.can && c.can.send === false) return 'readonly';
 		return null;
 	}
@@ -613,7 +643,395 @@
 		};
 	}
 
+	// ── Messenger 1.4.0 ──
+
+	/** Message kinds this version draws; others → "needs a newer app version". */
+	const SHOWN_KINDS = ['text', 'image', 'voice', 'file', 'location', 'system', 'poll', 'event', 'arrival', 'action', 'card'];
+	const isShownKind = (m) => !!m && SHOWN_KINDS.includes(m.kind);
+	const STORY_EMOJIS = ['👏', '😂', '💪', '❤️', '😮', '🙏'];
+	const STORY_COLORS = ['#0F766E', '#1D4ED8', '#7C3AED', '#BE185D', '#B45309', '#334155'];
+	const PRESETS = ['homeoffice', 'away', 'dnd', 'auto_place'];
+
+	/** Which 1.4.0 parts the server offers (`GET me` features: true keys only). */
+	function features14(me) {
+		const f = (k) => hasFeature(me, k);
+		return { status: f('status'), stories: f('stories'), polls: f('polls'), events: f('events'), arrival: f('arrival'), actions: f('actions'), tools: f('msg_tools'), privacy: f('privacy2') };
+	}
+
+	/** integrations.familie of `GET me` → { lists, calendar, places }. */
+	function familie(me) {
+		const x = me && me.integrations && me.integrations.familie ? me.integrations.familie : {};
+		return { lists: x.lists === true, calendar: x.calendar === true, places: x.places === true };
+	}
+
+	function presetLabel(preset, t) {
+		const key = `chat.st.preset.${preset}`;
+		const v = t(key);
+		return v !== key ? v : '';
+	}
+
+	/** One line of a status: "Im Homeoffice · bis 17:00", "Unterwegs nach Zuhause · ca. 17:40". */
+	function statusLine(st, ctx, now = Date.now()) {
+		if (!st || typeof st !== 'object') return '';
+		const t = ctx.t;
+		let text = str(st.text) || presetLabel(st.preset, t);
+		if (st.preset === 'away' && st.destLabel && !st.text) text = t('chat.st.awayTo', { place: st.destLabel });
+		const parts = [text];
+		if (st.preset === 'away' && st.eta) parts.push(t('chat.st.eta', { time: hm(st.eta, ctx.locale) }));
+		else if (st.until && new Date(st.until).getTime() > now) parts.push(t('chat.st.untilShort', { time: shortWhen(st.until, ctx, now) }));
+		return parts.filter(Boolean).join(' · ');
+	}
+
+	/** "17:00" today, "Sa. 17:00" within a week, else "24.10. 17:00". */
+	function shortWhen(iso, ctx, now = Date.now()) {
+		const d = new Date(iso);
+		if (Number.isNaN(d.getTime())) return '';
+		const diff = Math.round((dayStart(d) - dayStart(new Date(now))) / DAY);
+		if (diff === 0) return hm(iso, ctx.locale);
+		if (diff > 0 && diff < 7) return `${d.toLocaleDateString(localeTag(ctx.locale), { weekday: 'short' })} ${hm(iso, ctx.locale)}`;
+		return `${d.toLocaleDateString(localeTag(ctx.locale), { day: '2-digit', month: '2-digit' })} ${hm(iso, ctx.locale)}`;
+	}
+
+	/** Ring of a person in the status strip: 'unseen' (glow), 'seen', 'none' (status only). */
+	function statusRing(item) {
+		const stories = item && Array.isArray(item.stories) ? item.stories : [];
+		if (!stories.length) return 'none';
+		return stories.some((s) => s && !s.seen) ? 'unseen' : 'seen';
+	}
+
+	/** Index of the first unseen story of a person (0 when all are seen). */
+	function firstUnseen(stories) {
+		const list = Array.isArray(stories) ? stories : [];
+		const i = list.findIndex((s) => s && !s.seen);
+		return i < 0 ? 0 : i;
+	}
+
+	/** "gerade eben", "vor 12 Min.", "vor 3 Std." */
+	function relAge(iso, ctx, now = Date.now()) {
+		const ms = now - new Date(iso).getTime();
+		if (!Number.isFinite(ms)) return '';
+		const min = Math.floor(ms / 60000);
+		if (min < 1) return ctx.t('chat.rel.now');
+		if (min < 60) return ctx.t('chat.rel.minAgo', { n: min });
+		return ctx.t('chat.rel.hAgo', { n: Math.floor(min / 60) });
+	}
+
+	/** "noch 23 Std." / "noch 12 Min." until a story expires. */
+	function remaining(iso, ctx, now = Date.now()) {
+		const ms = new Date(iso).getTime() - now;
+		if (!Number.isFinite(ms) || ms <= 0) return '';
+		const min = Math.ceil(ms / 60000);
+		return min < 60 ? ctx.t('chat.rel.minLeft', { n: min }) : ctx.t('chat.rel.hLeft', { n: Math.floor(min / 60) });
+	}
+
+	/** "Löschen nach" of the status dialog → [{ key, at (ISO|null) }]. */
+	function untilOptions(now = Date.now()) {
+		const end = new Date(now);
+		end.setHours(23, 59, 0, 0);
+		return [
+			{ key: '30m', at: new Date(now + 30 * 60000).toISOString() },
+			{ key: '1h', at: new Date(now + 3600000).toISOString() },
+			{ key: '4h', at: new Date(now + 4 * 3600000).toISOString() },
+			{ key: 'today', at: end.toISOString() },
+			{ key: 'never', at: null },
+		];
+	}
+
+	/** "Erinnere mich" choices → [{ key, at }]: in 1 h, this evening 18:00 (else tomorrow), tomorrow 09:00, next week. */
+	function remindOptions(now = Date.now()) {
+		const d = new Date(now);
+		const evening = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 18, 0, 0, 0);
+		if (evening.getTime() <= now + 15 * 60000) evening.setDate(evening.getDate() + 1);
+		const tomorrow = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 9, 0, 0, 0);
+		const week = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7, 9, 0, 0, 0);
+		return [
+			{ key: '1h', at: new Date(now + 3600000).toISOString() },
+			{ key: 'evening', at: evening.toISOString() },
+			{ key: 'tomorrow', at: tomorrow.toISOString() },
+			{ key: 'week', at: week.toISOString() },
+		];
+	}
+
+	/**
+	 * A poll for the bubble: options with share of the votes (0…100), own
+	 * choice, voters (when not anonymous), the leading options once votes exist.
+	 */
+	function pollView(poll, ctx) {
+		const p = poll && typeof poll === 'object' ? poll : {};
+		const opts = Array.isArray(p.options) ? p.options : [];
+		const mine = new Set(Array.isArray(p.myVotes) ? p.myVotes : []);
+		const max = opts.reduce((n, o) => Math.max(n, Number(o.count) || 0), 0);
+		const sum = opts.reduce((n, o) => n + (Number(o.count) || 0), 0);
+		const meId = ctx && ctx.me && ctx.me.user ? ctx.me.user.id : null;
+		return {
+			question: str(p.question),
+			closed: !!p.closed,
+			multi: !!p.multi,
+			anonymous: !!p.anonymous,
+			allowAdd: !!p.allowAdd && !p.closed,
+			voterCount: Number(p.voterCount) || 0,
+			memberCount: Number(p.memberCount) || 0,
+			mineCreator: meId !== null && p.creatorId === meId,
+			voted: mine.size > 0,
+			options: opts.map((o) => {
+				const count = Number(o.count) || 0;
+				return {
+					id: o.id, text: str(o.text), count, mine: mine.has(o.id),
+					pct: sum > 0 ? Math.round((count / sum) * 100) : 0,
+					lead: max > 0 && count === max,
+					voters: Array.isArray(o.voters) ? o.voters : null,
+				};
+			}),
+		};
+	}
+
+	/** Option ids after a click: single choice → [id] (again → []), multi → toggled. */
+	function nextVotes(poll, optionId) {
+		const mine = Array.isArray(poll && poll.myVotes) ? poll.myVotes.slice() : [];
+		if (!(poll && poll.multi)) return mine.length === 1 && mine[0] === optionId ? [] : [optionId];
+		return mine.includes(optionId) ? mine.filter((x) => x !== optionId) : mine.concat(optionId);
+	}
+
+	/** Bubble head of a poll: "ABSTIMMUNG · endet Sa. 18:00" / "· beendet". */
+	function pollHead(poll, ctx, now = Date.now()) {
+		const t = ctx.t;
+		if (poll && poll.closed) return `${t('chat.poll.head')} · ${t('chat.poll.closed')}`;
+		if (poll && poll.closesAt) return `${t('chat.poll.head')} · ${t('chat.poll.ends', { time: shortWhen(poll.closesAt, ctx, now) })}`;
+		return t('chat.poll.head');
+	}
+
+	/** Answers of an event: { yes (people + guests), maybe, no, mine, myGuests }. */
+	function rsvpCounts(rsvp) {
+		const r = rsvp && typeof rsvp === 'object' ? rsvp : {};
+		const list = (k) => (Array.isArray(r[k]) ? r[k] : []);
+		return {
+			yes: list('yes').reduce((n, x) => n + 1 + (Number(x && x.guests) || 0), 0),
+			maybe: list('maybe').length,
+			no: list('no').length,
+			mine: ['yes', 'maybe', 'no'].includes(r.mine) ? r.mine : null,
+			myGuests: Number(r.myGuests) || 0,
+		};
+	}
+
+	/** Date badge and times of an event: { month 'OKT', day '26', weekday 'SO', time '12:30 – 16:00', rel 'in 8 Tagen', past }. */
+	function eventView(ev, ctx, now = Date.now()) {
+		const e = ev && typeof ev === 'object' ? ev : {};
+		const d = new Date(e.startsAt);
+		if (Number.isNaN(d.getTime())) return { month: '', day: '', weekday: '', time: '', rel: '', past: false };
+		const tag = localeTag(ctx.locale);
+		const end = e.endsAt ? new Date(e.endsAt) : null;
+		let time;
+		if (e.allDay) time = ctx.t('chat.event.allDay');
+		else time = hm(e.startsAt, ctx.locale) + (end && !Number.isNaN(end.getTime()) ? ` – ${hm(e.endsAt, ctx.locale)}` : '');
+		const days = Math.round((dayStart(d) - dayStart(new Date(now))) / DAY);
+		let rel = '';
+		if (days === 0) rel = ctx.t('chat.rel.today');
+		else if (days === 1) rel = ctx.t('chat.event.tomorrow');
+		else if (days > 1) rel = ctx.t('chat.event.inDays', { n: days });
+		const over = (end && !Number.isNaN(end.getTime()) ? end.getTime() : d.getTime() + (e.allDay ? DAY : 0)) < now;
+		return {
+			month: d.toLocaleDateString(tag, { month: 'short' }).replace('.', '').toUpperCase(),
+			day: String(d.getDate()),
+			weekday: d.toLocaleDateString(tag, { weekday: 'short' }).replace('.', '').toUpperCase(),
+			date: d.toLocaleDateString(tag, { weekday: 'short', day: '2-digit', month: '2-digit' }),
+			time,
+			rel,
+			past: over,
+		};
+	}
+
+	/** May the viewer edit / cancel an event (creator, or a group admin)? */
+	function canEditEvent(ev, c, ctx) {
+		const meId = ctx && ctx.me && ctx.me.user ? ctx.me.user.id : null;
+		if (!ev || ev.cancelled || meId === null) return false;
+		if (ev.creatorId === meId) return true;
+		return !!(c && c.kind === 'group' && c.me && c.me.role === 'admin');
+	}
+
+	/** "3,1 km" / "450 m" */
+	function distanceText(m, locale) {
+		const v = Number(m);
+		if (!Number.isFinite(v) || v < 0) return '';
+		if (v < 1000) return `${Math.round(v / 10) * 10} m`;
+		return `${(v / 1000).toLocaleString(localeTag(locale), { maximumFractionDigits: 1 })} km`;
+	}
+
+	/** A live arrival for the bubble: { state, label, eta '17:40', minutes, distance, progress 0…1, live }. */
+	function arrivalView(a, ctx, now = Date.now()) {
+		const x = a && typeof a === 'object' ? a : {};
+		const state = ['live', 'arrived', 'stopped'].includes(x.state) ? x.state : 'stopped';
+		const eta = x.etaAt && !Number.isNaN(new Date(x.etaAt).getTime()) ? x.etaAt : null;
+		const minutes = eta ? Math.max(0, Math.round((new Date(eta).getTime() - now) / 60000)) : null;
+		const p = Number(x.progress);
+		return {
+			state,
+			live: state === 'live',
+			label: str(x.dest && x.dest.label) || ctx.t('chat.arrival.dest'),
+			eta: eta ? hm(eta, ctx.locale) : '',
+			minutes,
+			distance: distanceText(x.distanceM, ctx.locale),
+			progress: state === 'arrived' ? 1 : (Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : 0),
+			position: x.position && Number.isFinite(x.position.lat) && Number.isFinite(x.position.lon) ? x.position : null,
+			dest: x.dest && Number.isFinite(x.dest.lat) && Number.isFinite(x.dest.lon) ? x.dest : null,
+		};
+	}
+
+	/**
+	 * A home action message: head text, state line and the buttons the viewer
+	 * gets (`can` of the server). A request counts as done only once approved.
+	 */
+	function actionView(m, c, ctx) {
+		const t = ctx.t;
+		const a = (m && m.action) || {};
+		const can = a.can || {};
+		const state = ['open', 'done', 'denied', 'expired'].includes(a.state) ? a.state : 'open';
+		const label = str(a.label) || t('chat.kind.action');
+		let head;
+		if (a.mode === 'request') head = t('chat.action.headRequest', { name: nameOf(c, m.senderId, ctx, { you: false }) });
+		else if (a.mode === 'grant') head = t('chat.action.headGrant');
+		else head = t('chat.action.headRun');
+		let sub = '';
+		if (a.mode === 'grant' && a.grant) {
+			sub = t('chat.action.grantTo', { name: nameOf(c, a.grant.toUserId, ctx), time: hm(a.grant.until, ctx.locale) });
+		}
+		const stateText = state === 'open' ? (a.mode === 'request' ? t('chat.action.waiting') : '') : t(`chat.action.state.${state}`);
+		const open = state === 'open';
+		return {
+			head, label, sub, state, stateText,
+			run: open && can.run === true && a.mode !== 'request',
+			approve: open && can.approve === true && a.mode === 'request',
+			deny: open && can.deny === true && a.mode === 'request',
+			needsConfirm: a.needsConfirm === true,
+			result: a.result && typeof a.result === 'object' ? a.result : null,
+			icon: typeof a.icon === 'string' ? a.icon : null,
+		};
+	}
+
+	/** Head of a plugin card: "KLINGEL · Haustür · 17:52". */
+	function cardHead(m, ctx) {
+		const card = (m && m.card) || {};
+		const kind = card.kind === 'doorbell' ? ctx.t('chat.card.doorbell') : ctx.t('chat.card.notice');
+		return [kind, str(card.title), hm(m && m.createdAt, ctx.locale)].filter(Boolean).join(' · ');
+	}
+
+	/** A card link the app can open (another plugin's app route plg-…), or null. */
+	function cardRoute(link) {
+		const r = link && typeof link.route === 'string' ? link.route : '';
+		return /^plg-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(r) && r.length <= 80 ? r : null;
+	}
+
+	/** SVG path data of an action icon (24 × 24) when it looks like one, else null. */
+	function iconPath(d) {
+		return typeof d === 'string' && d.length <= 2000 && /^[MmLlHhVvCcSsQqTtAaZz0-9.,\s-]+$/.test(d) ? d : null;
+	}
+
+	/** "online" / "zuletzt online heute um 17:44" / null (hidden or unknown). */
+	function lastSeenText(p, ctx, now = Date.now()) {
+		if (!p || p.gone) return null;
+		if (p.online === true) return ctx.t('chat.seen.online');
+		if (!p.lastSeenAt) return null;
+		const d = new Date(p.lastSeenAt);
+		if (Number.isNaN(d.getTime())) return null;
+		const diff = Math.round((dayStart(new Date(now)) - dayStart(d)) / DAY);
+		const time = hm(p.lastSeenAt, ctx.locale);
+		if (diff <= 0) return ctx.t('chat.seen.today', { time });
+		if (diff === 1) return ctx.t('chat.seen.yesterday', { time });
+		return ctx.t('chat.seen.date', { date: d.toLocaleDateString(localeTag(ctx.locale), { day: '2-digit', month: '2-digit' }), time });
+	}
+
+	/**
+	 * The chat list for a filter chip: 'all' | 'unread' | 'groups' | 'list:<id>',
+	 * archived chats apart (archived: true shows only those).
+	 */
+	function listFilter(list, { filter = 'all', archived = false, lists = [] } = {}) {
+		const items = (Array.isArray(list) ? list : []).filter((c) => !!c.archived === !!archived);
+		if (archived || filter === 'all') return items;
+		if (filter === 'unread') return items.filter((c) => (c.unread || 0) > 0);
+		if (filter === 'groups') return items.filter((c) => c.kind === 'group');
+		if (str(filter).startsWith('list:')) {
+			const l = (Array.isArray(lists) ? lists : []).find((x) => x && `list:${x.id}` === filter);
+			const ids = new Set(l && Array.isArray(l.conversationIds) ? l.conversationIds : []);
+			return items.filter((c) => ids.has(c.id));
+		}
+		return items;
+	}
+
+	/** Archived chats and their unread messages (the "Archiviert" row). */
+	function archivedInfo(list) {
+		const a = (Array.isArray(list) ? list : []).filter((c) => c.archived);
+		return { count: a.length, unread: a.reduce((n, c) => n + (c.muted ? 0 : (c.unread || 0)), 0) };
+	}
+
+	/** Home actions for the attach menu without the ones switched off in "Haus-Aktionen" (ids). */
+	function shownActions(actions, hidden) {
+		const off = new Set(Array.isArray(hidden) ? hidden : []);
+		return (Array.isArray(actions) ? actions : []).filter((a) => a && typeof a.id === 'string' && !off.has(a.id));
+	}
+
+	/** A new id for a custom chat list ([A-Za-z0-9_-]{1,40}). */
+	function listId(name, existing) {
+		const base = str(name).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'liste';
+		const taken = new Set((Array.isArray(existing) ? existing : []).map((l) => l && l.id));
+		let id = base;
+		for (let i = 2; taken.has(id); i++) id = `${base}-${i}`;
+		return id;
+	}
+
+	/** Font size choice → scale of the chat text. */
+	function fontScale(size) {
+		return size === 'small' ? 0.92 : size === 'large' ? 1.14 : 1;
+	}
+
+	/** <input type="datetime-local"> value of a time (local), and back to ISO. */
+	function localInput(iso) {
+		const d = new Date(iso);
+		if (Number.isNaN(d.getTime())) return '';
+		const p = (n) => String(n).padStart(2, '0');
+		return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+	}
+	function fromLocalInput(v) {
+		if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) return null;
+		const d = new Date(v);
+		return Number.isNaN(d.getTime()) ? null : d.toISOString();
+	}
+
 	return {
+		SHOWN_KINDS,
+		isShownKind,
+		STORY_EMOJIS,
+		STORY_COLORS,
+		PRESETS,
+		features14,
+		familie,
+		presetLabel,
+		statusLine,
+		shortWhen,
+		statusRing,
+		firstUnseen,
+		relAge,
+		remaining,
+		untilOptions,
+		remindOptions,
+		pollView,
+		nextVotes,
+		pollHead,
+		rsvpCounts,
+		eventView,
+		canEditEvent,
+		distanceText,
+		arrivalView,
+		actionView,
+		cardHead,
+		cardRoute,
+		iconPath,
+		lastSeenText,
+		listFilter,
+		archivedInfo,
+		shownActions,
+		listId,
+		fontScale,
+		localInput,
+		fromLocalInput,
 		EMOJIS,
 		member,
 		nameOf,
