@@ -378,8 +378,8 @@ test.describe('chats – Messenger 1.4.0', () => {
     await page.locator('#page-chats .cv-head .cv-ib-flat[aria-label]').last().click();
     await page.locator('#page-chats .cv-tool[data-tool="export"]').click();
     await expect.poll(() => ms.log.exports.length).toBe(1);
-    await expect.poll(() => require('fs').existsSync(out)).toBe(true);
-    expect(require('fs').readFileSync(out, 'utf8')).toContain('Anna: Kannst du morgen Milch');
+    // The file exists before its text is written: wait for the content, not only the file.
+    await expect.poll(() => (require('fs').existsSync(out) ? require('fs').readFileSync(out, 'utf8') : '')).toContain('Anna: Kannst du morgen Milch');
 
     await page.locator('#page-chats .cv-tool[data-tool="block"]').click();
     await page.locator('#page-chats .cv-overlay .cv-danger').click();
