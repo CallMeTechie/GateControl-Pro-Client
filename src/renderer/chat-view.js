@@ -1788,6 +1788,11 @@
 			if (!c) { refs.composer.hidden = true; return; }
 			refs.composer.hidden = false;
 			const text = !reset && refs.input ? refs.input.value : '';
+			// A re-render (e.g. the chat list refreshed while typing) keeps the
+			// focus and the caret in the new field; otherwise keys typed right
+			// then (Enter / Strg+Enter) would go nowhere.
+			const prev = refs.input;
+			const keep = !reset && !!prev && document.activeElement === prev ? { start: prev.selectionStart, end: prev.selectionEnd, dir: prev.selectionDirection } : null;
 			clear(refs.composer);
 			const block = CS.composerBlock(c);
 			if (block) {
@@ -1849,6 +1854,10 @@
 			]));
 			refs.composer.appendChild(el('div', { class: 'cv-compose-hint', text: `${enterSends() ? t('chat.enterHint') : t('chat.enterHintCtrl')} · ${t('chat.dropHint')}` }));
 			grow();
+			if (keep) {
+				refs.input.focus();
+				try { refs.input.setSelectionRange(keep.start, keep.end, keep.dir || 'none'); } catch (_) { /* no selection */ }
+			}
 		}
 
 		/**
