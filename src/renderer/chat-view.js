@@ -11,7 +11,10 @@
  * files; offline outbox entries with "Erneut senden" / "Verwerfen";
  * "Standort senden" (map dialog: own position, a point on the map or an
  * address) and map previews of locations; the pinned inbox marks each entry
- * read once it has been in view.
+ * read once it has been in view; videos (a frame at ~1 s as preview, length,
+ * played in an overlay) and file previews (Messenger 1.3.0); jumps to search
+ * hits and quotes that are not loaded (`around`, Messenger 1.1.0) with a
+ * window of its own until it meets the newest messages.
  *
  * Map tiles and addresses come from the main process (chat.mapTile /
  * mapSearch / mapReverse → core MapService, OpenStreetMap) as bytes / data;
@@ -66,6 +69,7 @@
 		retry: 'M21 12a9 9 0 1 1-3-6.7L21 8|M21 3v5h-5',
 		minus: 'M5 12h14',
 		target: 'M12 5a7 7 0 1 0 0 14a7 7 0 1 0 0-14|M12 10a2 2 0 1 0 0 4a2 2 0 1 0 0-4|M12 2v3M12 19v3M2 12h3M19 12h3',
+		video: 'M3 6h12v12H3z|M15 10l6-3v10l-6-3z',
 	};
 	const FILLED = new Set(['play', 'pause']);
 
@@ -122,6 +126,7 @@
 	 * @param {(id: ?number) => void} [o.openInbox] - "In Mitteilungen öffnen"
 	 * @param {(st: object) => void} [o.onStatus] - availability (nav entry)
 	 * @param {(n: number) => void} [o.onUnread] - nav badge
+	 * @param {() => void} [o.checkUpdate] - the app's update check (button of the "newer version" banner)
 	 */
 	function mount(o) {
 		const api = o.api;
@@ -153,7 +158,9 @@
 			inbox: { items: [], unread: 0 },
 			media: new Map(),       // mediaId → Promise<objectURL|null>
 			avatars: new Map(),     // url → Promise<objectURL|null>
-			local: new Map(),       // clientId → objectURL (pending pictures)
+			local: new Map(),       // clientId → objectURL (pending pictures, video / file previews)
+			localVideo: new Map(),  // clientId → objectURL of a video just sent from here
+			mediaFilter: 'image',   // chat info: 'image' | 'video' | 'file'
 			shown: false,
 			loadingOlder: false,
 			menu: null,
@@ -204,7 +211,8 @@
 
 		refs.info = el('aside', { class: 'cv-info scroll', hidden: true, 'aria-label': t('chat.info.title') });
 		refs.state = el('div', { class: 'cv-state', hidden: true });
-		rootEl.append(refs.list, refs.chat, refs.info, refs.state);
+		refs.hint = el('div', { class: 'cv-hint', role: 'status', hidden: true });
+		rootEl.append(refs.list, refs.chat, refs.info, refs.state, refs.hint);
 
 		// ── Avatars and media ────────────────────────────────
 
@@ -256,7 +264,29 @@
 			refs.state.hidden = available;
 			if (!available) renderState(st);
 			renderBanner();
+			renderHint();
 			if (typeof o.onUnread === 'function') o.onUnread(available ? (st.unread || 0) : 0);
+		}
+
+		/**
+		 * The server has chat functions this version does not know: a small
+		 * banner on top, never blocking; closed → hidden for this set of features.
+		 */
+		function renderHint() {
+			const h = CS.updateHint(S.status);
+			clear(refs.hint);
+			refs.hint.hidden = !h;
+			if (!h) return;
+			refs.hint.append(...[
+				icon('info', 16),
+				el('span', { class: 'cv-hint-tx', text: t('chat.updateHint.text') }),
+				typeof o.checkUpdate === 'function' ? el('button', { type: 'button', class: 'btn btn-sec btn-sm cv-hint-check', text: t('chat.updateHint.check'), on: { click: () => o.checkUpdate() } }) : null,
+				iconBtn('close', t('chat.updateHint.dismiss'), () => {
+					refs.hint.hidden = true;
+					if (S.status) S.status.updateHint = null;
+					if (typeof api.dismissUpdateHint === 'function') api.dismissUpdateHint().catch(() => {});
+				}, 'cv-ib-flat cv-ib-sm cv-hint-close'),
+			].filter(Boolean));
 		}
 
 		function renderState(st) {
@@ -591,16 +621,31 @@
 		function atBottom() {
 			return refs.msgs.scrollHeight - refs.msgs.scrollTop - refs.msgs.clientHeight < 80;
 		}
-		function scrollBottom(smooth) {
+		function scrollEnd(smooth) {
 			refs.msgs.scrollTo({ top: refs.msgs.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
-			refs.toLatest.hidden = true;
+			refs.toLatest.hidden = !(S.view && S.view.detached);
+		}
+		/** To the newest message — out of a jump window first (reload the newest page). */
+		function scrollBottom(smooth) {
+			if (S.view && S.view.detached) { goLatest(); return; }
+			scrollEnd(smooth);
+		}
+		async function goLatest() {
+			const id = S.cur;
+			if (typeof id !== 'number') return;
+			const r = await api.messages(id).catch(() => null);
+			if (S.cur !== id || !r || r.ok === false) return;
+			S.view = r;
+			renderMessages('bottom');
 		}
 
-		/** mode: 'bottom' | 'keep' (stay at the bottom, else keep the position) | 'prepend' */
+		/** mode: 'bottom' | 'keep' (stay at the bottom, else keep the position) | 'prepend' | 'stay' (keep the position) */
 		function renderMessages(mode = 'keep') {
 			const c = curConv();
 			const v = S.view;
 			if (!c || !v) return;
+			// A jump window does not follow new messages: no auto-scroll to its end.
+			if (v.detached && mode === 'keep') mode = 'stay';
 			const wasBottom = atBottom();
 			const prevHeight = refs.msgs.scrollHeight;
 			const prevTop = refs.msgs.scrollTop;
@@ -618,8 +663,12 @@
 				else if (it.type === 'unread') refs.msgs.appendChild(el('div', { class: 'cv-unread-line' }, [el('span', { text: t('chat.unreadLine') })]));
 				else refs.msgs.appendChild(it.m.kind === 'system' ? systemEl(it.m, c, cx) : bubbleEl(it, c, cx));
 			}
+			if (v.detached && v.hasMoreAfter) {
+				refs.msgs.appendChild(el('button', { type: 'button', class: 'cv-newer btn btn-ghost btn-sm', text: t('chat.toLatest'), on: { click: () => goLatest() } }));
+			}
 			if (v.offline) refs.msgs.appendChild(el('div', { class: 'cv-note', text: t('chat.offline') }));
-			if (mode === 'bottom' || (mode === 'keep' && wasBottom)) scrollBottom(false);
+			if (v.detached) refs.toLatest.hidden = false;
+			if (mode === 'bottom' || (mode === 'keep' && wasBottom)) scrollEnd(false);
 			else if (mode === 'prepend') refs.msgs.scrollTop = refs.msgs.scrollHeight - prevHeight + prevTop;
 			else refs.msgs.scrollTop = prevTop;
 		}
@@ -668,7 +717,7 @@
 				if (m.replyTo) b.appendChild(quoteEl(m.replyTo, c, cx));
 				if (m.kind === 'image') b.appendChild(imageEl(m));
 				else if (m.kind === 'voice') b.appendChild(voiceEl(m));
-				else if (m.kind === 'file') b.appendChild(fileEl(m, cx));
+				else if (m.kind === 'file') b.appendChild(CS.videoInfo(m) ? videoEl(m, cx) : fileEl(m, cx));
 				else if (m.kind === 'location') b.appendChild(locationEl(m));
 				if (m.undecryptable) b.appendChild(el('div', { class: 'cv-text cv-dim', text: t('chat.msg.undecryptable') }));
 				else if (m.text && m.kind !== 'location') b.appendChild(el('div', { class: 'cv-text', text: m.text }));
@@ -684,7 +733,7 @@
 				b.appendChild(el('div', { class: 'cv-failed' }, [
 					el('span', { text: t('chat.outbox.failed', { error: CS.errorText(m.error, t) }) }),
 					el('button', { type: 'button', class: 'btn btn-sec btn-xs', on: { click: () => api.retry(m.clientId) } }, [icon('retry', 13), t('chat.outbox.retry')]),
-					el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('chat.outbox.discard'), on: { click: () => { const u = S.local.get(m.clientId); if (u) { URL.revokeObjectURL(u); S.local.delete(m.clientId); } api.discard(m.clientId); } } }),
+					el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('chat.outbox.discard'), on: { click: () => { for (const map of [S.local, S.localVideo]) { const u = map.get(m.clientId); if (u) { URL.revokeObjectURL(u); map.delete(m.clientId); } } api.discard(m.clientId); } } }),
 				]));
 			} else if (m.pending && m.error) {
 				b.appendChild(el('div', { class: 'cv-waiting', text: t('chat.outbox.waiting') }));
@@ -779,7 +828,69 @@
 			return el('div', { class: 'cv-voice' }, [btn, wave, time]);
 		}
 
+		/** Preview picture of a file / video message: the one sent from here, else media.thumbId. */
+		function previewUrl(m) {
+			const local = m.clientId ? S.local.get(m.clientId) || null : null;
+			if (local) return Promise.resolve(local);
+			return m.media && m.media.thumbId ? mediaUrl(m.media.thumbId) : Promise.resolve(null);
+		}
+
 		function fileEl(m, cx) {
+			const card = fileCard(m, cx);
+			if (!(m.media && m.media.thumbId) && !(m.clientId && S.local.has(m.clientId))) return card;
+			// Messenger 1.3.0: a preview of the file (e.g. the first page) above the card.
+			const thumb = el('button', { type: 'button', class: 'cv-file-thumb', 'aria-label': t('chat.msg.open'), hidden: true, on: { click: (e) => { e.stopPropagation(); if (!m.pending && m.media) openMedia(m); } } });
+			previewUrl(m).then((u) => { if (u) { thumb.appendChild(el('img', { src: u, alt: '', draggable: 'false' })); thumb.hidden = false; } });
+			return el('div', { class: 'cv-file-wrap' }, [thumb, card]);
+		}
+
+		/** Video bubble: preview with play button and length; plays in an overlay. */
+		function videoEl(m, cx) {
+			const v = CS.videoInfo(m) || {};
+			const size = CS.bubbleSize({ w: v.width, h: v.height });
+			const box = el('button', { type: 'button', class: 'cv-video', style: `width:${size.w}px;aspect-ratio:${size.w} / ${size.h}`, 'aria-label': t('chat.msg.openVideo'), title: t('chat.msg.openVideo') });
+			previewUrl(m).then((u) => {
+				if (u) box.insertBefore(el('img', { src: u, alt: '', draggable: 'false' }), box.firstChild);
+				else box.classList.add('is-missing');
+			});
+			box.append(...[
+				el('span', { class: 'cv-video-play', 'aria-hidden': 'true' }, [icon('play', 22)]),
+				v.durationMs ? el('span', { class: 'cv-video-dur' }, [icon('video', 12), CS.duration(v.durationMs)]) : null,
+			].filter(Boolean));
+			box.addEventListener('click', (e) => { e.stopPropagation(); playVideo(m); });
+			const name = (m.meta && m.meta.fileName) || t('chat.kind.video');
+			return el('div', { class: 'cv-video-wrap' }, [
+				box,
+				el('div', { class: 'cv-file-sub cv-video-sub' }, [
+					el('span', { class: 'cv-video-name', text: name, title: name }),
+					el('span', { text: m.media ? CS.bytes(m.media.bytes, cx.locale) : '' }),
+					!m.pending && m.media ? el('button', { type: 'button', class: 'cv-link', text: t('chat.msg.saveAs'), on: { click: (e) => { e.stopPropagation(); saveMedia(m); } } }) : null,
+				]),
+			]);
+		}
+
+		async function playVideo(m) {
+			const local = m.clientId ? S.localVideo.get(m.clientId) || null : null;
+			const u = local || (m.media && m.media.id ? await mediaUrl(m.media.id) : null);
+			if (!u) { toast(t('chat.msg.mediaUnavailable'), 'error'); return; }
+			const ov = el('div', { class: 'cv-overlay cv-lightbox cv-player', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('chat.msg.openVideo') });
+			const video = el('video', { src: u, controls: true, autoplay: true, playsinline: true, preload: 'auto' });
+			const close = () => { try { video.pause(); } catch (_) { /* gone */ } ov.remove(); document.removeEventListener('keydown', onKey, true); };
+			const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+			video.addEventListener('error', () => toast(t('chat.msg.videoUnsupported'), 'warning'));
+			ov.append(
+				el('div', { class: 'cv-lightbox-bar' }, [
+					m.media && m.media.id && !m.pending ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => saveMedia(m) } }, [icon('down', 14), t('chat.msg.saveAs')]) : null,
+					iconBtn('close', t('chat.common.close'), close),
+				]),
+				video,
+			);
+			ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+			document.addEventListener('keydown', onKey, true);
+			rootEl.appendChild(ov);
+		}
+
+		function fileCard(m, cx) {
 			const name = (m.meta && m.meta.fileName) || t('chat.kind.file');
 			const mime = m.media && m.media.mime;
 			return el('div', { class: 'cv-file' }, [
@@ -1154,11 +1265,37 @@
 			renderMessages('prepend');
 		}
 
+		/** The newer page of a jump window (it joins the newest messages at the end). */
+		async function loadNewer() {
+			const c = curConv();
+			const v = S.view;
+			if (!c || !v || !v.detached || !v.hasMoreAfter || S.loadingNewer || !v.messages.length) return;
+			S.loadingNewer = true;
+			const r = await api.messages(c.id, { after: v.messages[v.messages.length - 1].id }).catch(() => null);
+			S.loadingNewer = false;
+			if (S.cur !== c.id || !r || r.ok === false) return;
+			S.view = r;
+			renderMessages('stay');
+		}
+
 		async function jumpTo(id) {
-			let node = refs.msgs.querySelector(`[data-id="${Number(id)}"]`);
-			for (let i = 0; !node && i < 10 && S.view && S.view.hasMore; i++) {
-				await loadOlder();
-				node = refs.msgs.querySelector(`[data-id="${Number(id)}"]`);
+			const find = () => refs.msgs.querySelector(`[data-id="${Number(id)}"]`);
+			let node = find();
+			const cid = S.cur;
+			if (!node && typeof cid === 'number' && S.view) {
+				// Messenger ≥ 1.1.0: the page around the message, however old it is.
+				const r = await api.messages(cid, { around: Number(id) }).catch(() => null);
+				if (S.cur !== cid) return;
+				if (r && r.ok !== false) {
+					S.view = r;
+					renderMessages('stay');
+					node = find();
+				} else if (r && r.code === 'unsupported') {
+					for (let i = 0; !node && i < 10 && S.view && S.view.hasMore; i++) {
+						await loadOlder();
+						node = find();
+					}
+				}
 			}
 			if (!node) { toast(t('chat.msg.quoteMissing'), 'info'); return; }
 			node.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -1167,8 +1304,10 @@
 		}
 
 		refs.msgs.addEventListener('scroll', () => {
-			refs.toLatest.hidden = atBottom();
+			const detached = !!(S.view && S.view.detached);
+			refs.toLatest.hidden = atBottom() && !detached;
 			if (refs.msgs.scrollTop < 40 && S.view && S.view.hasMore) loadOlder();
+			if (detached && S.view.hasMoreAfter && refs.msgs.scrollHeight - refs.msgs.scrollTop - refs.msgs.clientHeight < 40) loadNewer();
 		});
 
 		// ── Message menu ─────────────────────────────────────
@@ -1359,8 +1498,9 @@
 			return new Uint8Array(await blob.arrayBuffer());
 		}
 
-		function canvasBlob(img, max, type, quality) {
-			const size = CS.scaledSize(img.width, img.height, max);
+		/** src: ImageBitmap / <img> / <video>; w, h: its pixel size (default src.width / src.height). */
+		function canvasBlob(img, max, type, quality, w = img.width, h = img.height) {
+			const size = CS.scaledSize(w, h, max);
 			const cv = document.createElement('canvas');
 			cv.width = size.w;
 			cv.height = size.h;
@@ -1370,6 +1510,59 @@
 					if (b && b.type === type) resolve({ blob: b, w: size.w, h: size.h });
 					else cv.toBlob((j) => resolve({ blob: j, w: size.w, h: size.h }), 'image/jpeg', quality);
 				}, type, quality);
+			});
+		}
+
+		/** Preview ≤ maxBytes from a picture source: WebP (JPEG without a WebP encoder), smaller until it fits. */
+		async function smallPreview(src, w, h, maxBytes, maxSide) {
+			for (const [side, q] of CS.thumbSteps(maxSide)) {
+				const out = await canvasBlob(src, side, 'image/webp', q, w, h);
+				if (out.blob && out.blob.size <= maxBytes) return out.blob;
+			}
+			return null;
+		}
+
+		/**
+		 * A video file → { video: { durationMs, width, height }, blob } (frame at
+		 * ~1 s as preview, null when it cannot be drawn) or null when the engine
+		 * cannot read the file (no codec): sent as a plain file then.
+		 */
+		function videoPreview(file, maxBytes, maxSide) {
+			return new Promise((resolve) => {
+				const url = URL.createObjectURL(file);
+				const v = document.createElement('video');
+				let done = false;
+				let timer = null;
+				const finish = (res) => {
+					if (done) return;
+					done = true;
+					clearTimeout(timer);
+					v.removeAttribute('src');
+					try { v.load(); } catch (_) { /* detached */ }
+					URL.revokeObjectURL(url);
+					resolve(res);
+				};
+				timer = setTimeout(() => finish(null), 10000);
+				const grab = async () => {
+					const d = Number.isFinite(v.duration) ? v.duration : 0;
+					const video = {};
+					if (d > 0) video.durationMs = Math.round(d * 1000);
+					if (v.videoWidth > 0 && v.videoHeight > 0) { video.width = v.videoWidth; video.height = v.videoHeight; }
+					let blob = null;
+					try { if (video.width) blob = await smallPreview(v, v.videoWidth, v.videoHeight, maxBytes, maxSide); } catch (_) { blob = null; }
+					finish({ video, blob });
+				};
+				v.muted = true;
+				v.preload = 'auto';
+				v.playsInline = true;
+				v.addEventListener('error', () => finish(null));
+				v.addEventListener('loadedmetadata', () => {
+					const at = CS.videoFrameTime(v.duration);
+					if (at > 0) { v.addEventListener('seeked', grab, { once: true }); v.currentTime = at; }
+					else if (v.readyState >= 2) grab();
+					else v.addEventListener('loadeddata', grab, { once: true });
+				}, { once: true });
+				v.src = url;
 			});
 		}
 
@@ -1401,8 +1594,21 @@
 					req.kind = 'file';
 					req.meta = { fileName: (file.name || t('chat.kind.file')).slice(0, 200) };
 					req.file = { name: file.name || null, mime: file.type, data: await blobBytes(file) };
+					// Messenger 1.3.0: length and size of a video, a frame as preview.
+					const me = S.status && S.status.me;
+					const wantMeta = CS.hasFeature(me, 'video_meta');
+					const wantThumb = CS.hasFeature(me, 'file_thumbs');
+					let thumbBlob = null;
+					if (k.kind === 'video' && (wantMeta || wantThumb)) {
+						const pv = await videoPreview(file, lim.thumbMaxBytes || 65536, lim.thumbMaxSide || 640);
+						if (pv && wantMeta && Object.keys(pv.video).length) req.video = pv.video;
+						if (pv && wantThumb && pv.blob) { thumbBlob = pv.blob; req.thumb = { mime: pv.blob.type, data: await blobBytes(pv.blob) }; }
+					}
 					const r = await api.send(req);
 					if (r && r.ok === false) { toast(CS.errorText(r, t), 'error'); return; }
+					const cid = r && r.message && r.message.clientId;
+					if (cid && thumbBlob) S.local.set(cid, URL.createObjectURL(thumbBlob));
+					if (cid && k.kind === 'video') S.localVideo.set(cid, URL.createObjectURL(file));
 				}
 			} catch (err) {
 				toast(CS.errorText(null, t), 'error');
@@ -1621,22 +1827,9 @@
 			sec.appendChild(kv(t('chat.info.media'), 'image', mediaCount));
 			refs.info.appendChild(sec);
 
-			const grid = el('div', { class: 'cv-grid' });
-			const mediaSec = el('div', { class: 'cv-info-sec', hidden: true }, [el('div', { class: 'cv-sec', text: t('chat.info.recentMedia') }), grid]);
+			const mediaSec = el('div', { class: 'cv-info-sec cv-media-sec', hidden: true }, [el('div', { class: 'cv-sec', text: t('chat.info.recentMedia') })]);
 			refs.info.appendChild(mediaSec);
-			api.mediaList(c.id, { kind: 'image', limit: 9 }).then((r) => {
-				if (!r || r.ok === false) { mediaCount.textContent = '–'; return; }
-				const n = (r.counts.image || 0) + (r.counts.voice || 0) + (r.counts.file || 0);
-				mediaCount.textContent = String(n);
-				if (!r.items.length) return;
-				mediaSec.hidden = false;
-				for (const m of r.items) {
-					if (!m.media) continue;
-					const cell = el('button', { type: 'button', class: 'cv-grid-cell', 'aria-label': t('chat.msg.openImage'), on: { click: () => lightbox(m) } });
-					mediaUrl(m.media.thumbId || m.media.id).then((u) => { if (u) cell.appendChild(el('img', { src: u, alt: '' })); });
-					grid.appendChild(cell);
-				}
-			}).catch(() => { mediaCount.textContent = '–'; });
+			mediaPane(c, cx, mediaSec, mediaCount);
 
 			if (c.kind === 'group' && !c.readonly) {
 				const ms = el('div', { class: 'cv-info-sec' }, [el('div', { class: 'cv-sec', text: `${t('chat.info.members')} · ${(c.members || []).length}` })]);
@@ -1657,6 +1850,68 @@
 			const foot = el('div', { class: 'cv-info-sec' }, [el('p', { class: 'cv-note cv-note-lock' }, [icon('lock', 14), el('span', { text: t('chat.info.encrypted') })])]);
 			if (c.can && c.can.leave) foot.appendChild(el('button', { type: 'button', class: 'btn btn-danger cv-danger btn-sm', text: t('chat.info.leave'), on: { click: () => leave(c) } }));
 			refs.info.appendChild(foot);
+		}
+
+		/**
+		 * "Zuletzt geteilt" with the filters Fotos / Videos / Dateien (Videos:
+		 * kind=video of Messenger 1.3.0, shown when the server has it).
+		 */
+		function mediaPane(c, cx, sec, countEl) {
+			let filters = CS.mediaFilters(cx.me, null);
+			if (!filters.includes(S.mediaFilter)) S.mediaFilter = 'image';
+			const tabs = el('div', { class: 'cv-tabs cv-media-tabs', role: 'group', 'aria-label': t('chat.info.recentMedia') });
+			const body = el('div', { class: 'cv-media-body' });
+			sec.append(tabs, body);
+			const labels = { image: 'chat.info.filterImages', video: 'chat.info.filterVideos', file: 'chat.info.filterFiles' };
+			let seq = 0;
+			const drawTabs = () => {
+				clear(tabs);
+				for (const k of filters) {
+					tabs.appendChild(el('button', { type: 'button', 'data-kind': k, 'aria-pressed': S.mediaFilter === k ? 'true' : 'false', text: t(labels[k]), on: { click: () => { if (S.mediaFilter === k) return; S.mediaFilter = k; drawTabs(); load(); } } }));
+				}
+			};
+			async function load() {
+				const mine = ++seq;
+				const kind = S.mediaFilter;
+				const r = await api.mediaList(c.id, { kind, limit: kind === 'file' ? 20 : 9 }).catch(() => null);
+				if (mine !== seq || !sec.isConnected) return;
+				if (!r || r.ok === false) { countEl.textContent = '–'; return; }
+				const n = CS.mediaTotal(r.counts);
+				countEl.textContent = String(n);
+				sec.hidden = n <= 0;
+				const next = CS.mediaFilters(cx.me, r.counts);
+				if (next.length !== filters.length) { filters = next; drawTabs(); }
+				clear(body);
+				const items = r.items.filter((m) => m && m.media && (kind !== 'file' || !CS.videoInfo(m)));
+				if (!items.length) { body.appendChild(el('p', { class: 'cv-dim cv-media-none', text: t('chat.info.noMedia') })); return; }
+				if (kind === 'file') {
+					const list = el('div', { class: 'cv-media-files' });
+					for (const m of items) {
+						const name = (m.meta && m.meta.fileName) || t('chat.kind.file');
+						list.appendChild(el('button', { type: 'button', class: 'cv-media-file', title: name, on: { click: () => openMedia(m) } }, [
+							el('span', { class: 'cv-file-badge', text: CS.fileBadge(name, m.media.mime) }),
+							el('span', { class: 'cv-file-tx' }, [el('b', { text: name }), el('span', { class: 'cv-file-sub', text: `${CS.bytes(m.media.bytes, cx.locale)} · ${CS.when(m.createdAt, cx.locale)}` })]),
+						]));
+					}
+					body.appendChild(list);
+					return;
+				}
+				const grid = el('div', { class: 'cv-grid' });
+				for (const m of items) {
+					const video = kind === 'video' ? (CS.videoInfo(m) || {}) : null;
+					const cell = el('button', { type: 'button', class: `cv-grid-cell${video ? ' is-video' : ''}`, 'aria-label': t(video ? 'chat.msg.openVideo' : 'chat.msg.openImage'), on: { click: () => (video ? playVideo(m) : lightbox(m)) } });
+					const src = video ? m.media.thumbId : (m.media.thumbId || m.media.id);
+					if (src) mediaUrl(src).then((u) => { if (u) cell.insertBefore(el('img', { src: u, alt: '' }), cell.firstChild); });
+					if (video) {
+						cell.appendChild(el('span', { class: 'cv-video-play is-small', 'aria-hidden': 'true' }, [icon('play', 14)]));
+						if (video.durationMs) cell.appendChild(el('span', { class: 'cv-video-dur', text: CS.duration(video.durationMs) }));
+					}
+					grid.appendChild(cell);
+				}
+				body.appendChild(grid);
+			}
+			drawTabs();
+			load();
 		}
 
 		const pluginName = (id) => (id === 'gatecontrol-familie' ? t('chat.info.pluginFamilie') : id);

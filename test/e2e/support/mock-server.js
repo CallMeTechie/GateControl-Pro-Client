@@ -278,9 +278,9 @@ async function startMockServer() {
     /** Sends a notification to the open streams (and the inbox). */
     pushNotification: (n) => addNotification(n),
     pushStreams: () => streams.size,
-    /** Enables the Messenger plugin; returns its in-memory state (support/messenger-mock.js). */
-    setMessenger() {
-      messenger = createMessenger({ emit: (type, data) => { for (const r of streams) sse(r, 'plugin', { plugin: 'gatecontrol-messenger', type, data }); } });
+    /** Enables the Messenger plugin ({ features } as `GET me` lists them); returns its in-memory state (support/messenger-mock.js). */
+    setMessenger(opts = {}) {
+      messenger = createMessenger({ ...opts, emit: (type, data) => { for (const r of streams) sse(r, 'plugin', { plugin: 'gatecontrol-messenger', type, data }); } });
       return messenger;
     },
     /** A chat notification (kind "message") to the open streams — not stored in the inbox. */
