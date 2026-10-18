@@ -652,10 +652,57 @@
 	const STORY_COLORS = ['#0F766E', '#1D4ED8', '#7C3AED', '#BE185D', '#B45309', '#334155'];
 	const PRESETS = ['homeoffice', 'away', 'dnd', 'auto_place'];
 
-	/** Which 1.4.0 parts the server offers (`GET me` features: true keys only). */
+	// Messenger 1.4.1: story durations in hours (`durationH`, `limits.storyDurationsH`); the server's default is 24.
+	const STORY_DURATIONS_H = [1, 3, 6, 12, 24];
+	const STORY_DURATION_DEFAULT_H = 24;
+
+	/** Which 1.4.0 parts the server offers (`GET me` features: true keys only); storyDuration since 1.4.1. */
 	function features14(me) {
 		const f = (k) => hasFeature(me, k);
-		return { status: f('status'), stories: f('stories'), polls: f('polls'), events: f('events'), arrival: f('arrival'), actions: f('actions'), tools: f('msg_tools'), privacy: f('privacy2') };
+		return {
+			status: f('status'), stories: f('stories'), polls: f('polls'), events: f('events'), arrival: f('arrival'), actions: f('actions'), tools: f('msg_tools'), privacy: f('privacy2'),
+			storyDuration: f('stories') && f('story_duration'),
+		};
+	}
+
+	/**
+	 * The story durations to offer (Messenger 1.4.1 `story_duration`):
+	 * `limits.storyDurationsH` limited to the known hours, all known hours
+	 * when it sends none — null when the server takes no duration (24 h).
+	 */
+	function storyDurations(me) {
+		if (!features14(me).storyDuration) return null;
+		const src = me && me.limits && Array.isArray(me.limits.storyDurationsH) ? me.limits.storyDurationsH : null;
+		const list = src ? STORY_DURATIONS_H.filter((h) => src.includes(h)) : [];
+		return list.length ? list : STORY_DURATIONS_H.slice();
+	}
+
+	/** The own feed item's active stories → { count, viewers } (viewers: the views of all of them). */
+	function ownStoryStats(item, now = Date.now()) {
+		const list = (item && Array.isArray(item.stories) ? item.stories : []).filter((s) => s && !(s.expiresAt && new Date(s.expiresAt).getTime() <= now));
+		return { count: list.length, viewers: list.reduce((n, s) => n + (Number(s.viewerCount) > 0 ? Number(s.viewerCount) : 0), 0) };
+	}
+
+	/** "2 Storys aktiv · Gesehen von 5" (card "Meine Storys"). */
+	function ownStoryLine(stats, t) {
+		const n = stats && stats.count ? stats.count : 0;
+		return [n === 1 ? t('chat.st.storiesOne') : t('chat.st.storiesN', { n }), t('chat.story.viewers', { n: stats && stats.viewers ? stats.viewers : 0 })].join(' · ');
+	}
+
+	/**
+	 * A story just posted, added to the feed before it is fetched again
+	 * (shown at once in "Mein Status") → a new feed; a story already there is
+	 * not added twice.
+	 */
+	function addOwnStory(feed, story, meUser) {
+		const f = feed && typeof feed === 'object' ? feed : {};
+		const items = Array.isArray(f.items) ? f.items : [];
+		if (!story || typeof story !== 'object' || story.id == null) return { ...f, items };
+		const u = meUser || {};
+		const mine = f.me && typeof f.me === 'object' ? f.me : { user: { id: u.id, name: u.name, avatarUrl: u.avatarUrl, initials: u.initials, colorHex: u.colorHex }, status: null, stories: [], unseen: false };
+		const stories = Array.isArray(mine.stories) ? mine.stories.filter((s) => s && s.id !== story.id) : [];
+		stories.push({ viewerCount: 0, reactionCount: 0, ...story, seen: true });
+		return { ...f, items, me: { ...mine, stories } };
 	}
 
 	/** integrations.familie of `GET me` → { lists, calendar, places }. */
@@ -1000,8 +1047,14 @@
 		isShownKind,
 		STORY_EMOJIS,
 		STORY_COLORS,
+		STORY_DURATIONS_H,
+		STORY_DURATION_DEFAULT_H,
 		PRESETS,
 		features14,
+		storyDurations,
+		ownStoryStats,
+		ownStoryLine,
+		addOwnStory,
 		familie,
 		presetLabel,
 		statusLine,

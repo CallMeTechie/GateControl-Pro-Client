@@ -13,6 +13,9 @@
  * chats, blocks, archive, pins, lists, export, reminders, suggestions (with
  * `familie: true` also to-list / to-calendar / places), polls, events, live
  * arrival, home actions and plugin cards (card pictures as base64).
+ * Messenger 1.4.1 (FEATURES_141): `story_duration` — POST status/stories
+ * takes durationH (limits.storyDurationsH). failStory(code) makes the next
+ * story post fail, `st14.feedFail` makes GET status/feed fail.
  */
 
 const crypto = require('crypto');
@@ -25,6 +28,9 @@ const FEATURES_14 = Object.freeze({
   direct: true, groups: true, voice: true, files: true, location: true, reactions: true, edit: true, search: true, disappearing: true, bridges: false, e2e: false,
   video_meta: true, file_thumbs: true, status: true, stories: true, polls: true, events: true, arrival: true, actions: true, msg_tools: true, privacy2: true,
 });
+// Messenger 1.4.1: a story's duration (`durationH`)
+const FEATURES_141 = Object.freeze({ ...FEATURES_14, story_duration: true });
+const STORY_DURATIONS_H = [1, 3, 6, 12, 24];
 
 function createMessenger({ emit = () => {}, features = null, familie = false } = {}) {
   const users = [
@@ -43,7 +49,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   };
   const st14 = {
     prefs: { readReceipts: true, typing: true, preview: true, privacy: { lastSeen: 'all', avatar: 'all', statusDefault: 'all', placeInStatus: 'family', groupAdd: 'all', defaultDisappearingS: 0 }, notify: { groupsMentionsOnly: false, reactions: true, statusDigest: false, eventReminderMin: 60 }, chats: { keepArchived: true } },
-    statuses: new Map(), stories: [], nextStory: 300, blocks: new Set(), lists: [], reminders: [], nextReminder: 1,
+    statuses: new Map(), stories: [], nextStory: 300, storyFail: null, feedFail: false, blocks: new Set(), lists: [], reminders: [], nextReminder: 1,
     suggest: { items: [], dates: [] }, presence: new Map(),
     actions: [
       { id: 'garage.open', plugin: 'gatecontrol-garage', label: 'Garage öffnen', icon: 'M3 21V9l9-6 9 6v12H3z', kind: 'button', needsConfirm: false, state: null, subtitle: null, pluginName: 'Garage' },
@@ -152,7 +158,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   const userOut = (id) => { const u = users.find((x) => x.id === id) || {}; return { id, name: u.name || null, avatarUrl: null, initials: u.initials || null, colorHex: u.colorHex || null }; };
   const storyOut = (x, own) => ({
     id: x.id, kind: x.kind, text: x.text || null, bg: x.bg || null, font: x.font || null, mediaId: x.mediaId || null, thumbMediaId: x.thumbMediaId || null, video: x.video || null,
-    url: null, thumbUrl: null, createdAt: iso(x.createdAt), expiresAt: iso(x.createdAt + 86400000), seen: own ? true : x.seen.has(ME), place: x.place || null, eventMessageId: x.eventMessageId || null,
+    url: null, thumbUrl: null, createdAt: iso(x.createdAt), expiresAt: iso(x.createdAt + (x.durationH || 24) * 3600000), seen: own ? true : x.seen.has(ME), place: x.place || null, eventMessageId: x.eventMessageId || null,
     ...(own ? { viewerCount: x.seen.size, reactionCount: x.reactions.size, visibility: x.visibility || 'all' } : {}),
   });
   function feed() {
@@ -198,11 +204,23 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       }
       if (method === 'DELETE') { st14.statuses.delete(ME); emit('status.update', { userId: ME }); return json(200, { ok: true, status: null }), true; }
     }
-    if (a === 'status' && b === 'feed') return json(200, { ok: true, ...feed() }), true;
+    if (a === 'status' && b === 'feed') {
+      if (st14.feedFail) return json(503, { ok: false, code: 'unavailable' }), true;
+      return json(200, { ok: true, ...feed() }), true;
+    }
     if (a === 'status' && b === 'stories') {
       if (!c && method === 'POST') {
         log.stories.push(body);
-        const x = { id: st14.nextStory++, userId: ME, ...body, createdAt: Date.now(), seen: new Set(), reactions: new Map() };
+        if (st14.storyFail) { const code = st14.storyFail; st14.storyFail = null; return json(code === 'too_many' ? 409 : 403, { ok: false, code, error: code }), true; }
+        if (body.kind === 'text' && !body.text) return json(400, { ok: false, code: 'invalid' }), true;
+        // 1.4.1: durationH only with story_duration, one of limits.storyDurationsH
+        if (body.durationH !== undefined && !(features && features.story_duration === true && STORY_DURATIONS_H.includes(body.durationH))) return json(400, { ok: false, code: 'invalid' }), true;
+        // the known fields only (no key of the request body is written into the stored story)
+        const x = {
+          id: st14.nextStory++, userId: ME, kind: body.kind, text: body.text, bg: body.bg, font: body.font, mediaId: body.mediaId, thumbMediaId: body.thumbMediaId,
+          video: body.video, visibility: body.visibility, userIds: body.userIds, place: body.place, eventMessageId: body.eventMessageId, durationH: body.durationH || 24,
+          createdAt: Date.now(), seen: new Set(), reactions: new Map(),
+        };
         st14.stories.push(x);
         emit('story.new', { userId: ME, storyId: x.id });
         return json(200, { ok: true, story: storyOut(x, true) }), true;
@@ -340,7 +358,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
         ...(api.features14 ? { integrations: { familie: { lists: !!familie, calendar: !!familie, places: !!familie } } } : {}),
         license: { licensed: true, state: 'active', expiresAt: null },
         features: api.features || { direct: true, groups: true, voice: true, files: true, location: true, reactions: true, edit: true, search: true, disappearing: true, bridges: false, e2e: false },
-        limits: { maxBytes: 25 * 1024 * 1024, types: ['image/webp', 'image/jpeg', 'image/png', 'audio/ogg', 'audio/webm', 'audio/mp4', 'video/webm', 'video/mp4', 'application/pdf'], quotaFull: false, editWindowS: 900, maxVoiceS: 300, textMax: 4000, thumbMaxBytes: 65536, imageMaxSide: 2048, groupMax: 256, titleMax: 80, pageMax: 100, typingS: 6, typingEveryS: 3, activeS: 30, disappearingS: [0, 86400, 604800, 2592000], retentionDays: 0, ...(api.features14 ? { statusTextMax: 60, storyTextMax: 700, pollOptionsMax: 12, pollQuestionMax: 200, pollOptionMax: 80, eventTitleMax: 120, eventChecklistMax: 20, pinsMax: 3, listsMax: 20 } : {}) },
+        limits: { maxBytes: 25 * 1024 * 1024, types: ['image/webp', 'image/jpeg', 'image/png', 'audio/ogg', 'audio/webm', 'audio/mp4', 'video/webm', 'video/mp4', 'application/pdf'], quotaFull: false, editWindowS: 900, maxVoiceS: 300, textMax: 4000, thumbMaxBytes: 65536, imageMaxSide: 2048, groupMax: 256, titleMax: 80, pageMax: 100, typingS: 6, typingEveryS: 3, activeS: 30, disappearingS: [0, 86400, 604800, 2592000], retentionDays: 0, ...(api.features14 ? { statusTextMax: 60, storyTextMax: 700, ...(features && features.story_duration === true ? { storyDurationsH: STORY_DURATIONS_H } : {}), pollOptionsMax: 12, pollQuestionMax: 200, pollOptionMax: 80, eventTitleMax: 120, eventChecklistMax: 20, pinsMax: 3, listsMax: 20 } : {}) },
         serverTime: iso(Date.now()),
       }), true;
     }
@@ -461,6 +479,8 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       emit('story.new', { userId, storyId: x.id });
       return x.id;
     },
+    /** The next story post fails with `code` (e.g. 'feature_off', 'too_many'). */
+    failStory(code = 'feature_off') { st14.storyFail = code; },
     /** Online / last seen of a person. */
     setPresence(userId, p) { st14.presence.set(userId, p); },
     /** A card picture (bytes) for a card message. */
@@ -518,4 +538,4 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   return api;
 }
 
-module.exports = { createMessenger, PLUGIN, FEATURES_14 };
+module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141 };

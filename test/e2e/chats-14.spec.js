@@ -2,7 +2,7 @@
 
 const { test, expect } = require('./support/fixtures');
 const { setupWithApiKey } = require('./support/ui');
-const { FEATURES_14 } = require('./support/messenger-mock');
+const { FEATURES_14, FEATURES_141 } = require('./support/messenger-mock');
 
 // Messenger 1.4.0 in the Chats page: status strip and stories, the settings
 // page, chat tools (archive, pins, lists, block, export, remind me,
@@ -71,17 +71,170 @@ test.describe('chats – Messenger 1.4.0', () => {
     expect(Date.parse(put.until)).toBeGreaterThan(Date.now());
     await expect(page.locator('#page-chats .cv-me')).toHaveAttribute('title', /Im Garten/);
 
-    // a text story from "Mein Status"
-    await strip.locator('.cv-st.is-me').click();
-    await page.locator('#page-chats .cv-menu-item').nth(1).click();
+    // a text story with "+" at "Mein Status" (no own stories yet: no ring)
+    await expect(strip.locator('.cv-st.is-me .cv-ring')).toHaveClass(/is-none/);
+    await strip.locator('.cv-st.is-me .cv-st-plus').click();
     const sdlg = page.locator('#page-chats .cv-overlay').last();
+    // a 1.4.0 server takes no duration: "24 Std." as plain text, not a button
+    await expect(sdlg.locator('.cv-story-dur-fixed')).toHaveText(/^(24 Std\.|24 h)$/);
+    await expect(sdlg.locator('.cv-story-dur')).toHaveCount(0);
+    await expect(sdlg.locator('button[data-h]')).toHaveCount(0);
     await sdlg.locator('.cv-story-input').fill('Grillen heute ab 18 Uhr');
     await sdlg.locator('.cv-story-color').nth(2).click();
     await shot(page, '14-story-compose');
-    await sdlg.locator('.btn-pri').click();
+    await sdlg.locator('.cv-dlg-foot .btn-pri').click();
     await expect.poll(() => ms.log.stories.length).toBe(1);
     expect(ms.log.stories[0]).toMatchObject({ kind: 'text', text: 'Grillen heute ab 18 Uhr', bg: '#7C3AED', font: 'sans' });
+    expect(ms.log.stories[0]).not.toHaveProperty('durationH');
+    await expect(sdlg).toBeHidden();
+    // now with the ring; the avatar opens the own story
+    await expect(strip.locator('.cv-st.is-me')).toHaveClass(/has-stories/);
+    await expect(strip.locator('.cv-st.is-me .cv-ring')).toHaveClass(/is-own/);
+    await strip.locator('.cv-st.is-me .cv-st-av').click();
+    await expect(viewer.locator('.cv-story-text')).toHaveText('Grillen heute ab 18 Uhr');
+    await expect(viewer.locator('.cv-story-viewers')).toHaveText(/(Gesehen von|Seen by) 0/);
+    await page.keyboard.press('Escape');
+    await expect(viewer).toBeHidden();
   });
+
+  test('own active stories: ring in the strip and the list head, viewer with viewers, "Meine Storys"', async ({ launchApp, mock }) => {
+    mock.setPush({ topics: [], items: [] });
+    const ms = mock.setMessenger({ features: FEATURES_141 });
+    ms.addMsg(ms.addConv(), { text: 'Hallo' });
+    const id = ms.addStory(7, { text: 'Schon unterwegs', bg: '#0F766E' });
+    ms.st14.stories.find((x) => x.id === id).seen.add(8);
+    ms.addStory(7, { text: 'Zweite Story', bg: '#1D4ED8' });
+    const { page } = await openChats(launchApp, mock);
+
+    const strip = page.locator('#page-chats .cv-strip');
+    const own = strip.locator('.cv-st.is-me');
+    await expect(own).toHaveClass(/has-stories/);
+    const ring = own.locator('.cv-ring');
+    await expect(ring).toHaveClass(/is-own/);
+    expect(await ring.evaluate((n) => getComputedStyle(n).backgroundImage)).toContain('conic-gradient');
+    await expect(page.locator('#page-chats .cv-me .cv-ring.is-own')).toBeVisible();
+    await expect(page.locator('#page-chats .cv-me')).toHaveAttribute('title', /(2 Storys aktiv|2 stories active)/);
+    await shot(page, '141-own-ring');
+
+    // avatar → own stories in the viewer, with the viewers
+    await own.locator('.cv-st-av').click();
+    const viewer = page.locator('#page-chats .cv-story');
+    await expect(viewer.locator('.cv-story-text')).toHaveText('Schon unterwegs');
+    await expect(viewer.locator('.cv-story-bar')).toHaveCount(2);
+    await expect(viewer.locator('.cv-story-viewers')).toHaveText(/(Gesehen von|Seen by) 1/);
+    await viewer.locator('.cv-story-viewers').click();
+    const vdlg = page.locator('#page-chats .cv-overlay:not(.cv-story)').last();
+    await expect(vdlg.locator('.cv-member')).toHaveText(/Anna/);
+    await vdlg.locator('.cv-dlg-foot .btn').click();
+    await expect(vdlg).toBeHidden();
+    await page.keyboard.press('Escape');
+    await expect(viewer).toBeHidden();
+    expect(ms.log.seen).toEqual([], 'own stories are not marked seen');
+
+    // "Dein Status" → the card "Meine Storys" → "Ansehen"
+    await page.locator('#page-chats .cv-me').click();
+    const dlg = page.locator('#page-chats .cv-overlay:not(.cv-story)').last();
+    const card = dlg.locator('.cv-mystories');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText(/Meine Storys|My stories/);
+    await expect(card).toContainText(/(2 Storys aktiv · Gesehen von 1|2 stories active · Seen by 1)/);
+    await shot(page, '141-my-stories-card');
+    await card.locator('button').click();
+    await expect(dlg).toBeHidden();
+    await expect(viewer.locator('.cv-story-text')).toHaveText('Schon unterwegs');
+    await page.keyboard.press('Escape');
+    await expect(viewer).toBeHidden();
+  });
+
+  test('story composer: duration (1.4.1), a failed post stays as an error, a posted story shows at once', async ({ launchApp, mock }) => {
+    mock.setPush({ topics: [], items: [] });
+    const ms = mock.setMessenger({ features: FEATURES_141 });
+    ms.addMsg(ms.addConv(), { text: 'Hallo' });
+    const { page } = await openChats(launchApp, mock);
+    const own = page.locator('#page-chats .cv-strip .cv-st.is-me');
+    await expect(own).not.toHaveClass(/has-stories/);
+
+    await own.locator('.cv-st-plus').click();
+    const dlg = page.locator('#page-chats .cv-overlay').last();
+    const dur = dlg.locator('.cv-story-dur .cv-chip-btn');
+    await expect(dur).toHaveText([/^(1 Std\.|1 h)$/, /^(3 Std\.|3 h)$/, /^(6 Std\.|6 h)$/, /^(12 Std\.|12 h)$/, /^(24 Std\.|24 h)$/]);
+    await expect(dlg.locator('.cv-story-dur .cv-chip-btn[data-h="24"]')).toHaveAttribute('aria-checked', 'true');
+    await dlg.locator('.cv-story-dur .cv-chip-btn[data-h="3"]').click();
+    await expect(dlg.locator('.cv-story-dur .cv-chip-btn[data-h="3"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(dlg.locator('.cv-note')).toContainText(/3 Std\.|3 h/);
+    await dlg.locator('.cv-story-input').fill('Kurz im Garten');
+
+    // the server refuses: the error stays in the composer, the text is kept
+    ms.failStory('feature_off');
+    await dlg.locator('.cv-dlg-foot .btn-pri').click();
+    const err = dlg.locator('.cv-story-msg');
+    await expect(err).toBeVisible();
+    await expect(err).toHaveAttribute('data-type', 'error');
+    await expect(err).toHaveText(/(Nicht geteilt|Not shared)/);
+    await shot(page, '141-story-failed');
+    await page.waitForTimeout(4500); // longer than a toast
+    await expect(err).toBeVisible();
+    await expect(dlg.locator('.cv-story-input')).toHaveValue('Kurz im Garten');
+    await expect(dlg.locator('.cv-dlg-foot .btn-pri')).toBeEnabled();
+
+    // second try while the feed cannot be fetched: the story still shows at once
+    ms.st14.feedFail = true;
+    await dlg.locator('.cv-dlg-foot .btn-pri').click();
+    await expect(dlg).toBeHidden();
+    expect(ms.log.stories.at(-1)).toMatchObject({ kind: 'text', text: 'Kurz im Garten', durationH: 3 });
+    expect(ms.st14.stories.at(-1).durationH).toBe(3);
+    await expect(own).toHaveClass(/has-stories/);
+    await expect(own.locator('.cv-ring')).toHaveClass(/is-own/);
+    await own.locator('.cv-st-av').click();
+    const viewer = page.locator('#page-chats .cv-story');
+    await expect(viewer.locator('.cv-story-text')).toHaveText('Kurz im Garten');
+    await expect(viewer.locator('.cv-story-head small')).toContainText(/noch [23] Std\.|[23] h left/); // 3 h story
+    await page.keyboard.press('Escape');
+  });
+
+  for (const theme of ['dark', 'light']) {
+    test(`story composer is readable in the ${theme} theme`, async ({ launchApp, mock }) => {
+      mock.setPush({ topics: [], items: [] });
+      const ms = mock.setMessenger({ features: FEATURES_141 });
+      ms.addMsg(ms.addConv(), { text: 'Hallo' });
+      const { page } = await openChats(launchApp, mock);
+      await page.evaluate((th) => { if (th === 'light') document.documentElement.setAttribute('data-theme', 'light'); else document.documentElement.removeAttribute('data-theme'); }, theme);
+      await page.locator('#page-chats .cv-strip .cv-st.is-me .cv-st-plus').click();
+      const dlg = page.locator('#page-chats .cv-overlay').last();
+      await dlg.locator('.cv-story-input').fill('Lesbar?');
+      // WCAG contrast of text against the nearest opaque background behind it
+      const contrast = (sel) => dlg.locator(sel).first().evaluate((node) => {
+        const rgb = (c) => { const m = c.match(/[\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m.length > 3 ? m[3] : 1 }; };
+        const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+        let bg = null;
+        for (let n = node; n && n.nodeType === 1; n = n.parentElement) { const c = rgb(getComputedStyle(n).backgroundColor); if (c.a >= 0.99) { bg = c; break; } }
+        bg = bg || { r: 255, g: 255, b: 255 };
+        const st = getComputedStyle(node);
+        const fg = rgb(st.webkitTextFillColor && st.webkitTextFillColor !== 'currentcolor' ? st.webkitTextFillColor : st.color);
+        const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x);
+        return (a + 0.05) / (b + 0.05);
+      });
+      expect(await contrast('.cv-story-input')).toBeGreaterThan(4.5);
+      expect(await contrast('.cv-tabs button[aria-pressed="true"]')).toBeGreaterThan(4.5);
+      expect(await contrast('.cv-tabs button[aria-pressed="false"]')).toBeGreaterThan(3);
+      expect(await contrast('.cv-story-dur .cv-chip-btn[aria-checked="true"]')).toBeGreaterThan(3);
+      expect(await contrast('.cv-story-dur .cv-chip-btn[aria-checked="false"]')).toBeGreaterThan(3);
+      expect(await contrast('.cv-field > span')).toBeGreaterThan(3);
+      expect(await contrast('.cv-note')).toBeGreaterThan(3);
+      await shot(page, `141-compose-text-${theme}`);
+      // picture tab without a file: the note on the dark preview and the caption field
+      await page.evaluate(() => { HTMLInputElement.prototype.click = function () {}; });
+      await dlg.locator('.cv-tabs button[data-kind="image"]').click();
+      expect(await contrast('.cv-story-empty')).toBeGreaterThan(4.5);
+      await dlg.locator('.cv-story-cap .cv-story-input').fill('Bildunterschrift');
+      expect(await contrast('.cv-story-cap .cv-story-input')).toBeGreaterThan(4.5);
+      // an error in the composer
+      await dlg.locator('.cv-dlg-foot .btn-pri').click();
+      await expect(dlg.locator('.cv-story-msg')).toBeVisible();
+      expect(await contrast('.cv-story-msg')).toBeGreaterThan(4.5);
+      await shot(page, `141-compose-image-${theme}`);
+    });
+  }
 
   test('settings page: privacy, notifications, chats (Enter sends), lists as chips, blocked people, storage, home actions', async ({ launchApp, mock }) => {
     mock.setPush({ topics: [], items: [] });

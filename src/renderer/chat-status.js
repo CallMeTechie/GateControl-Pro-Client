@@ -8,6 +8,14 @@
  * progress, previous / next, reply and reaction, viewers of one's own) and
  * "Status erstellen" (text and picture stories).
  *
+ * Own active stories: the glowing ring around "Mein Status" (and the own
+ * avatar in the list head), a click on the avatar shows them with their
+ * viewers, "+" adds a new one, the card "Meine Storys" in "Dein Status". A
+ * posted story is added to the feed at once (before it is fetched again).
+ * Messenger 1.4.1 (`story_duration`): the duration 1 / 3 / 6 / 12 / 24 Std.;
+ * without it "24 Std." is plain text. A failed post stays as an error in
+ * the composer.
+ *
  * Mounted by chat-view.js with its kit: window.GCChatStatus.create(kit).
  * Shown only when `GET me` features has `status` (stories: `stories`).
  *
@@ -44,6 +52,19 @@
 			const u = me && me.user ? me.user : { id: null, name: null };
 			return (S.feed && S.feed.me) || { user: { id: u.id, name: u.name, avatarUrl: u.avatarUrl, initials: u.initials, colorHex: u.colorHex }, status: null, stories: [] };
 		}
+		/** Has the own user active stories? (ring around "Mein Status" and the own avatar) */
+		const hasOwnStories = () => CS.ownStoryStats(mine()).count > 0;
+		/** The own stories in the viewer (with "Gesehen von" and the viewers list). */
+		function viewOwn() {
+			const own = mine();
+			if (!own.stories || !own.stories.length) return;
+			viewer([own], 0, 0);
+		}
+		/** A story just posted: shown at once in "Mein Status", before the feed is fetched again. */
+		function addOwn(story) {
+			const me = kit.me();
+			set(CS.addOwnStory(S.feed || { items: [] }, story, me && me.user));
+		}
 
 		// ── Strip ───────────────────────────────────────────
 
@@ -58,13 +79,22 @@
 			if (!f14().status) return null;
 			const box = el('div', { class: 'cv-strip', role: 'list', 'aria-label': t('chat.st.strip') });
 			const own = mine();
-			const ownRing = CS.statusRing(own);
-			const ownBtn = el('button', { type: 'button', class: 'cv-st is-me', role: 'listitem', title: CS.statusLine(own.status, kit.ctx()) || t('chat.st.mine'), on: { click: (e) => ownMenu(e.currentTarget) } }, [
-				ringAvatar(own, 50, ownRing === 'none' ? 'none' : 'seen'),
-				el('span', { class: 'cv-st-plus', 'aria-hidden': 'true' }, [icon('plus', 12, '3')]),
+			const active = hasOwnStories();
+			const ownLine = CS.statusLine(own.status, kit.ctx());
+			const avLabel = active ? t('chat.st.viewMine') : t('chat.st.yours');
+			// avatar: the own stories (or "Dein Status" without any); "+": a new status / story
+			const ownEl = el('div', { class: `cv-st is-me${active ? ' has-stories' : ''}`, role: 'listitem' }, [
+				el('button', {
+					type: 'button', class: 'cv-st-av', title: ownLine ? `${avLabel} · ${ownLine}` : avLabel, 'aria-label': ownLine ? `${avLabel}: ${ownLine}` : avLabel,
+					on: { click: () => (active ? viewOwn() : statusDialog()) },
+				}, [ringAvatar(own, 50, active ? 'own' : 'none')]),
+				el('button', {
+					type: 'button', class: 'cv-st-plus', title: t('chat.st.addStory'), 'aria-label': t('chat.st.addStory'),
+					on: { click: () => (f14().stories ? composeStory() : statusDialog()) },
+				}, [icon('plus', 12, '3')]),
 				el('span', { class: 'cv-st-cap', text: t('chat.st.mine') }),
 			]);
-			box.appendChild(ownBtn);
+			box.appendChild(ownEl);
 			const items = S.feed ? S.feed.items : [];
 			items.forEach((it, i) => {
 				const ring = CS.statusRing(it);
@@ -77,16 +107,6 @@
 				}, [ringAvatar(it, 50, ring), el('span', { class: 'cv-st-cap', text: name.split(' ')[0] })]));
 			});
 			return box;
-		}
-
-		function ownMenu(anchor) {
-			const own = mine();
-			const items = [
-				['pen', t('chat.st.setStatus'), () => statusDialog()],
-				f14().stories ? ['image', t('chat.st.newStory'), () => composeStory()] : null,
-				own.stories && own.stories.length ? ['play', t('chat.st.myStories', { n: own.stories.length }), () => viewer([own], 0, 0)] : null,
-			].filter(Boolean);
-			kit.popMenu(anchor, items);
 		}
 
 		/** A person with only a status: a small card with "Nachricht schreiben". */
@@ -172,8 +192,18 @@
 				load(true);
 				return true;
 			} });
+			let closeFn = null;
 			if (f14().stories) bodyEl.insertBefore(el('button', { type: 'button', class: 'btn btn-sec btn-sm cv-st-story', on: { click: () => { composeStory(); } } }, [icon('image', 14), t('chat.st.newStory')]), bodyEl.firstChild);
-			return dialog(t('chat.st.yours'), bodyEl, buttons);
+			// "Meine Storys": the own active stories, prominent on top
+			const stats = CS.ownStoryStats(own);
+			if (stats.count) {
+				bodyEl.insertBefore(el('div', { class: 'cv-mystories' }, [
+					ringAvatar(own, 44, 'own'),
+					el('span', { class: 'cv-mystories-tx' }, [el('b', { text: t('chat.st.myStoriesTitle') }), el('small', { text: CS.ownStoryLine(stats, t) })]),
+					el('button', { type: 'button', class: 'btn btn-pri btn-sm', 'aria-label': t('chat.st.viewMine'), text: t('chat.st.open'), on: { click: () => { if (closeFn) closeFn(null); viewOwn(); } } }),
+				]), bodyEl.firstChild);
+			}
+			return dialog(t('chat.st.yours'), bodyEl, buttons, { onOpen: (done) => { closeFn = done; } });
 		}
 
 		/** "Sichtbar für": Alle / Familie / Ausgewählte … (people) → { el, value() }. */
@@ -224,7 +254,30 @@
 			const fontBtn = el('button', { type: 'button', class: 'btn btn-sec btn-sm', title: t('chat.story.font'), 'aria-label': t('chat.story.font'), text: 'Aa', on: { click: () => { font = font === 'sans' ? 'serif' : font === 'serif' ? 'mono' : 'sans'; draw(); } } });
 			const pickBtn = el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => { fileIn.value = ''; fileIn.click(); } } }, [icon('image', 14), t('chat.story.pick')]);
 			const vis = audiencePicker(null, null);
-			const msg = el('p', { class: 'cv-dlg-err', role: 'status' });
+			// Messenger 1.4.1: the duration when the server takes one, else "24 Std." as plain text
+			const durations = CS.storyDurations(kit.me());
+			let durationH = CS.STORY_DURATION_DEFAULT_H;
+			if (durations && !durations.includes(durationH)) durationH = durations[durations.length - 1];
+			const hours = (h) => t('chat.story.hours', { n: h });
+			const hint = el('p', { class: 'cv-note' });
+			const durEl = durations
+				? el('div', { class: 'cv-chips cv-story-dur', role: 'radiogroup', 'aria-label': t('chat.story.duration') }, durations.map((h) => el('button', {
+					type: 'button', role: 'radio', class: 'cv-chip-btn', 'data-h': String(h), text: hours(h), on: { click: () => { durationH = h; drawDur(); } },
+				})))
+				: el('span', { class: 'cv-story-dur-fixed', 'data-h': String(CS.STORY_DURATION_DEFAULT_H), text: hours(CS.STORY_DURATION_DEFAULT_H) });
+			const drawDur = () => {
+				if (durations) for (const b of durEl.querySelectorAll('button')) b.setAttribute('aria-checked', b.dataset.h === String(durationH) ? 'true' : 'false');
+				hint.textContent = t('chat.story.hintTime', { time: hours(durations ? durationH : CS.STORY_DURATION_DEFAULT_H) });
+			};
+			drawDur();
+			// A failed post stays here as an error (not only a toast), until the next try.
+			const msg = el('p', { class: 'cv-story-msg', role: 'alert', hidden: true });
+			const showMsg = (text, type = 'error') => {
+				msg.textContent = text;
+				msg.dataset.type = type;
+				msg.hidden = !text;
+				if (text && typeof msg.scrollIntoView === 'function') msg.scrollIntoView({ block: 'nearest' });
+			};
 			const draw = () => {
 				for (const b of tabs.querySelectorAll('button')) b.setAttribute('aria-pressed', b.dataset.kind === kind ? 'true' : 'false');
 				for (const b of colors.querySelectorAll('button')) b.setAttribute('aria-checked', b.dataset.c === bg ? 'true' : 'false');
@@ -241,7 +294,7 @@
 					preview.style.background = '#0b0f14';
 					if (fileUrl && file && /^video\//.test(file.type)) preview.appendChild(el('video', { src: fileUrl, muted: true, autoplay: true, loop: true, playsinline: true }));
 					else if (fileUrl) preview.appendChild(el('img', { src: fileUrl, alt: '' }));
-					else preview.appendChild(el('span', { class: 'cv-dim', text: t('chat.story.noFile') }));
+					else preview.appendChild(el('span', { class: 'cv-story-empty', text: t('chat.story.noFile') }));
 					text.setAttribute('placeholder', t('chat.story.captionPh'));
 					preview.appendChild(el('div', { class: 'cv-story-cap' }, [text]));
 				}
@@ -264,30 +317,50 @@
 				preview,
 				fileIn,
 				el('div', { class: 'cv-field' }, [el('span', { text: t('chat.st.visible') }), vis.el]),
-				el('p', { class: 'cv-note', text: t('chat.story.hint') }),
+				el('div', { class: 'cv-field' }, [el('span', { text: t('chat.story.duration') }), durEl]),
+				hint,
 				msg,
 			]);
+			const share = async () => {
+				const req = { kind, ...vis.value() };
+				if (text.value.trim()) req.text = text.value.trim();
+				if (req.visibility === 'custom' && !req.userIds.length) { showMsg(t('chat.st.needPeople')); return false; }
+				if (kind === 'text') {
+					if (!req.text) { showMsg(t('chat.story.needText')); return false; }
+					req.bg = bg;
+					req.font = font;
+				} else if (!file) { showMsg(t('chat.story.needFile')); return false; }
+				if (durations) req.durationH = durationH;
+				showMsg(t('chat.story.sharing'), 'busy');
+				if (kind !== 'text') {
+					try { Object.assign(req, await kit.storyFile(file, kind)); } catch (_) { showMsg(t('chat.story.failed', { error: t('chat.error.media_invalid') })); return false; }
+				}
+				const r = await api.createStory(req).catch((e) => ({ ok: false, error: e && e.message }));
+				if (!r || r.ok === false) { showMsg(t('chat.story.failed', { error: CS.errorText(r, t) })); return false; }
+				showMsg('');
+				if (r.story) addOwn(r.story);
+				toast(t('chat.story.shared'), 'success');
+				load(true);
+				return true;
+			};
+			let busy = false;
 			return dialog(t('chat.story.create'), bodyEl, [
 				{ label: t('chat.common.cancel'), value: null },
 				{ label: t('chat.story.share'), primary: true, onClick: async () => {
-					const req = { kind, ...vis.value() };
-					if (text.value.trim()) req.text = text.value.trim();
-					if (req.visibility === 'custom' && !req.userIds.length) { msg.textContent = t('chat.st.needPeople'); return false; }
+					if (busy) return false;
+					busy = true;
+					const dlg = msg.closest('.cv-dlg');
+					const btn = dlg ? dlg.querySelector('.cv-dlg-foot .btn-pri') : null;
+					if (btn) btn.disabled = true;
 					try {
-						if (kind === 'text') {
-							if (!req.text) { msg.textContent = t('chat.story.needText'); return false; }
-							req.bg = bg;
-							req.font = font;
-						} else {
-							if (!file) { msg.textContent = t('chat.story.needFile'); return false; }
-							Object.assign(req, await kit.storyFile(file, kind));
-						}
-					} catch (_) { msg.textContent = t('chat.error.media_invalid'); return false; }
-					const r = await api.createStory(req).catch((e) => ({ ok: false, error: e && e.message }));
-					if (!r || r.ok === false) { msg.textContent = CS.errorText(r, t); return false; }
-					toast(t('chat.story.shared'), 'success');
-					load(true);
-					return true;
+						return await share();
+					} catch (e) {
+						showMsg(t('chat.story.failed', { error: CS.errorText({ ok: false, error: e && e.message }, t) }));
+						return false;
+					} finally {
+						busy = false;
+						if (btn) btn.disabled = false;
+					}
 				} },
 			], { wide: true }).then((v) => { if (fileUrl) URL.revokeObjectURL(fileUrl); return v; });
 		}
@@ -471,6 +544,8 @@
 			statusDialog,
 			composeStory,
 			viewer,
+			viewOwn,
+			hasOwnStories,
 			mine,
 			feed: () => S.feed,
 			onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },

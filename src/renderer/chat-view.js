@@ -453,10 +453,16 @@
 			if (!on) return;
 			const u = (me() && me().user) || {};
 			const own = status.mine();
-			clear(refs.meBtn).appendChild(avatar(CS.personAvatar({ name: u.name, initials: u.initials, colorHex: u.colorHex, avatarUrl: u.avatarUrl }), 34));
+			// own active stories: the same glowing ring as in the status strip
+			const stories = status.hasOwnStories();
+			const av = avatar(CS.personAvatar({ name: u.name, initials: u.initials, colorHex: u.colorHex, avatarUrl: u.avatarUrl }), stories ? 30 : 34);
+			clear(refs.meBtn).appendChild(stories ? el('span', { class: 'cv-ring is-own' }, [av]) : av);
 			const line = CS.statusLine(own && own.status, ctx());
-			refs.meBtn.title = line ? `${t('chat.st.yours')}: ${line}` : t('chat.st.yours');
+			const label = [line ? `${t('chat.st.yours')}: ${line}` : t('chat.st.yours'), stories ? CS.ownStoryLine(CS.ownStoryStats(own), t) : null].filter(Boolean).join(' · ');
+			refs.meBtn.title = label;
+			refs.meBtn.setAttribute('aria-label', label);
 			refs.meBtn.classList.toggle('has-status', !!line);
+			refs.meBtn.classList.toggle('has-stories', stories);
 		}
 
 		async function loadLists() {
