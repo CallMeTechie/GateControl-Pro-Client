@@ -4,7 +4,8 @@
  * Pure helpers for the page "Chats" (GateControl Messenger): names, titles,
  * list previews, system message texts, "schreibt …", ticks, the timeline
  * with day separators and the unread line, edit/delete windows, mute and
- * disappearing options, error texts, voice-recording helpers. Loaded as a
+ * disappearing options, error texts, voice-recording helpers, video files
+ * (frame time, preview sizes, media filters). Loaded as a
  * plain script before chat-view.js (window.GCChatState) and required by the
  * node tests (test/chat-state.test.js).
  *
@@ -102,6 +103,8 @@
 			case 'title': return t('chat.sys.title', { name: who, title: s.title || '' });
 			case 'avatar': return t('chat.sys.avatar', { name: who });
 			case 'disappearing': return s.seconds ? t('chat.sys.disOn', { name: who, time: disLabel(s.seconds, t) }) : t('chat.sys.disOff', { name: who });
+			// Messenger 1.1.0: the plugin handed its managed group over.
+			case 'released': return t('chat.sys.released');
 			default: return str(m && m.text);
 		}
 	}
@@ -109,6 +112,67 @@
 	function duration(ms) {
 		const s = Math.max(0, Math.round((Number(ms) || 0) / 1000));
 		return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+	}
+
+	/** Does the server offer a feature (`GET me` features: flags or a list of names)? */
+	function hasFeature(me, name) {
+		const f = me && me.features;
+		if (Array.isArray(f)) return f.includes(name);
+		return !!f && typeof f === 'object' && f[name] === true;
+	}
+
+	const isVideoMime = (m) => /^video\//i.test(str(m));
+
+	/**
+	 * A video file (Messenger 1.3.0 `video`, or a `video/*` file of an older
+	 * server): { durationMs, width, height } (null where unknown), or null.
+	 */
+	function videoInfo(m) {
+		if (!m || m.kind !== 'file' || m.deleted) return null;
+		const v = (m.video && typeof m.video === 'object' && m.video) || (m.meta && m.meta.video && typeof m.meta.video === 'object' && m.meta.video) || null;
+		if (!v && !isVideoMime(m.media && m.media.mime)) return null;
+		const num = (x) => (Number.isFinite(Number(x)) && Number(x) > 0 ? Number(x) : null);
+		const src = v || {};
+		return { durationMs: num(src.durationMs), width: num(src.width), height: num(src.height) };
+	}
+
+	/** Second of a video whose frame becomes the preview: ~1 s, the middle of shorter ones. */
+	function videoFrameTime(durationS) {
+		const d = Number(durationS);
+		if (!Number.isFinite(d) || d <= 0) return 0;
+		return d >= 2 ? 1 : d / 2;
+	}
+
+	/** Attempts for a preview ≤ 64 KB: [long side, WebP quality], smaller each time. */
+	const THUMB_STEPS = [[640, 0.72], [640, 0.55], [480, 0.5], [360, 0.45], [240, 0.4]];
+
+	/** THUMB_STEPS with the long side capped at the server's limits.thumbMaxSide (default 640). */
+	function thumbSteps(maxSide) {
+		const cap = Number(maxSide) > 0 ? Math.floor(Number(maxSide)) : 640;
+		const out = [];
+		for (const [side, q] of THUMB_STEPS) {
+			const s = Math.min(side, cap);
+			if (!out.some(([a, b]) => a === s && b === q)) out.push([s, q]);
+		}
+		return out;
+	}
+
+	/** The "newer version of GateControl" banner: status().updateHint while available, else null. */
+	function updateHint(st) {
+		const h = st && st.state === 'available' ? st.updateHint : null;
+		return h && Array.isArray(h.features) && h.features.length ? h : null;
+	}
+
+	/** Filters of the media list in the chat info: Fotos, Videos (when the server has them), Dateien. */
+	function mediaFilters(me, counts) {
+		const video = hasFeature(me, 'video_meta') || !!(counts && Number.isFinite(counts.video));
+		return video ? ['image', 'video', 'file'] : ['image', 'file'];
+	}
+
+	/** Shared media in all (counts of GET …/media). */
+	function mediaTotal(counts) {
+		const c = counts || {};
+		return ['image', 'voice', 'file', 'video'].reduce((n, k) => n + (Number(c[k]) || 0), 0);
 	}
 
 	/** One line about a message (list preview, quotes, search results). */
@@ -120,7 +184,11 @@
 		switch (m.kind) {
 			case 'image': return t('chat.kind.image') + (m.text ? `: ${m.text}` : '');
 			case 'voice': return t('chat.kind.voice') + (m.meta && m.meta.durationMs != null ? ` · ${duration(m.meta.durationMs)}` : '');
-			case 'file': return (m.meta && m.meta.fileName) || t('chat.kind.file');
+			case 'file': {
+				const v = videoInfo(m);
+				if (v) return t('chat.kind.video') + (v.durationMs ? ` · ${duration(v.durationMs)}` : '') + (m.text ? `: ${m.text}` : '');
+				return (m.meta && m.meta.fileName) || t('chat.kind.file');
+			}
 			case 'location': return t('chat.kind.location') + (m.location && m.location.label ? `: ${m.location.label}` : '');
 			case 'system': return systemText(m, c, ctx);
 			default: return str(m.text);
@@ -379,7 +447,10 @@
 		return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) };
 	}
 
-	/** What to do with a dropped / picked file: 'image' (scaled), 'file', or null (refused) + reason. */
+	/**
+	 * What to do with a dropped / picked file: 'image' (scaled), 'video' (sent
+	 * as a file with preview and length), 'file', or null (refused) + reason.
+	 */
 	function attachKind(file, limits) {
 		const type = str(file && file.type).toLowerCase();
 		const types = Array.isArray(limits && limits.types) ? limits.types : [];
@@ -387,7 +458,7 @@
 		if (/^image\/(jpeg|png|webp|gif|bmp)$/.test(type)) return { kind: 'image' };
 		if (!type || (types.length && !types.includes(type))) return { kind: null, reason: 'unsupported_type' };
 		if (file.size > max) return { kind: null, reason: 'too_large' };
-		return { kind: 'file' };
+		return { kind: isVideoMime(type) ? 'video' : 'file' };
 	}
 
 	/** Dimensions for an image bubble (≤ 320 × 320, keeps the ratio). */
@@ -553,6 +624,14 @@
 		disLabel,
 		systemText,
 		duration,
+		hasFeature,
+		videoInfo,
+		videoFrameTime,
+		THUMB_STEPS,
+		thumbSteps,
+		updateHint,
+		mediaFilters,
+		mediaTotal,
 		summary,
 		typingText,
 		preview,

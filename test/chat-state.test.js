@@ -68,6 +68,8 @@ describe('chat-state: names, titles, previews', () => {
     assert.equal(CS.systemText(sys({ event: 'disappearing', by: 8, seconds: 86400 }), c, ctx), 'chat.sys.disOn(Anna,[chat.dis.86400])');
     assert.equal(CS.systemText(sys({ event: 'disappearing', by: 8, seconds: 0 }), c, ctx), 'chat.sys.disOff(Anna)');
     assert.equal(CS.systemText({ kind: 'system', system: { event: 'notice' }, text: 'Tim ist zu Hause' }, c, ctx), 'Tim ist zu Hause');
+    // Messenger 1.1.0: the managed group was handed over
+    assert.equal(CS.systemText(sys({ event: 'released', by: null }), c, ctx), 'chat.sys.released');
   });
 
   it('header sub line and closed composer', () => {
@@ -330,5 +332,60 @@ describe('Chats page', () => {
       assert.ok(key in de, `de: ${key}`);
       assert.ok(key in en, `en: ${key}`);
     }
+  });
+});
+
+describe('chat-state: videos and file previews (Messenger 1.3.0)', () => {
+  const file = (extra = {}) => msg(300, { kind: 'file', text: null, meta: { fileName: 'clip.mp4' }, media: { id: 'a'.repeat(32), mime: 'video/mp4', bytes: 2048, thumbId: 'b'.repeat(32) }, ...extra });
+
+  it('a video is a file with `video` or a video/* type', () => {
+    assert.deepEqual(CS.videoInfo(file({ video: { durationMs: 14200, width: 1280, height: 720 } })), { durationMs: 14200, width: 1280, height: 720 });
+    assert.deepEqual(CS.videoInfo(file()), { durationMs: null, width: null, height: null });
+    assert.equal(CS.videoInfo(file({ media: { id: 'a'.repeat(32), mime: 'application/pdf' } })), null);
+    assert.equal(CS.videoInfo(file({ deleted: true })), null);
+    assert.equal(CS.videoInfo(msg(1, { kind: 'image', media: { mime: 'image/webp' } })), null);
+    // a pending video (outbox): `video` from the send body, the local type
+    assert.deepEqual(CS.videoInfo({ pending: true, kind: 'file', video: { durationMs: 1000 }, media: { id: null, mime: 'video/webm', local: true } }), { durationMs: 1000, width: null, height: null });
+  });
+
+  it('summary: "Video · 0:14" instead of the file name', () => {
+    assert.equal(CS.summary(file({ video: { durationMs: 14200 } }), direct(), ctx), 'chat.kind.video · 0:14');
+    assert.equal(CS.summary(file({ text: 'Urlaub' }), direct(), ctx), 'chat.kind.video: Urlaub');
+    assert.equal(CS.summary(file({ media: { mime: 'application/pdf' }, meta: { fileName: 'a.pdf' } }), direct(), ctx), 'a.pdf');
+  });
+
+  it('frame time, preview steps, features, filters, attach kind', () => {
+    assert.equal(CS.videoFrameTime(30), 1);
+    assert.equal(CS.videoFrameTime(1.2), 0.6);
+    assert.equal(CS.videoFrameTime(Infinity), 0);
+    assert.equal(CS.videoFrameTime(NaN), 0);
+    assert.ok(CS.THUMB_STEPS.every(([side, q]) => side <= 640 && q > 0 && q < 1));
+    assert.deepEqual(CS.thumbSteps(640), CS.THUMB_STEPS);
+    assert.deepEqual(CS.thumbSteps(undefined), CS.THUMB_STEPS);
+    assert.ok(CS.thumbSteps(320).every(([side]) => side <= 320));
+    assert.equal(new Set(CS.thumbSteps(200).map((x) => x.join())).size, CS.thumbSteps(200).length);
+    assert.equal(CS.hasFeature({ features: ['video_meta'] }, 'video_meta'), true);
+    assert.equal(CS.hasFeature({ features: { file_thumbs: true } }, 'file_thumbs'), true);
+    assert.equal(CS.hasFeature(ME, 'video_meta'), false);
+    assert.deepEqual(CS.mediaFilters(ME, null), ['image', 'file']);
+    assert.deepEqual(CS.mediaFilters({ features: ['video_meta'] }, null), ['image', 'video', 'file']);
+    assert.deepEqual(CS.mediaFilters(ME, { image: 1, voice: 0, file: 2, video: 0 }), ['image', 'video', 'file']);
+    assert.equal(CS.mediaTotal({ image: 1, voice: 2, file: 3, video: 4 }), 10);
+    assert.equal(CS.mediaTotal(null), 0);
+    const lim = { types: ['video/mp4', 'application/pdf'], maxBytes: 1000 };
+    assert.deepEqual(CS.attachKind({ type: 'video/mp4', size: 10 }, lim), { kind: 'video' });
+    assert.deepEqual(CS.attachKind({ type: 'video/webm', size: 10 }, lim), { kind: null, reason: 'unsupported_type' });
+    assert.deepEqual(CS.attachKind({ type: 'video/mp4', size: 5000 }, lim), { kind: null, reason: 'too_large' });
+  });
+});
+
+describe('chat-state: update hint', () => {
+  it('only while available and with unknown features', () => {
+    const h = { features: ['polls'], key: 'polls' };
+    assert.deepEqual(CS.updateHint({ state: 'available', updateHint: h }), h);
+    assert.equal(CS.updateHint({ state: 'available', updateHint: null }), null);
+    assert.equal(CS.updateHint({ state: 'unavailable', updateHint: h }), null);
+    assert.equal(CS.updateHint({ state: 'available', updateHint: { features: [] } }), null);
+    assert.equal(CS.updateHint(null), null);
   });
 });

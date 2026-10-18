@@ -2430,6 +2430,8 @@ chatView = chatApi && window.GCChatView && $('#page-chats')
 			if (!show && currentPage === 'chats' && st && st.state === 'unavailable') navigateTo('status');
 		},
 		onUnread: (n) => renderChatBadge(n),
+		// "Newer version of GateControl" banner (unknown chat features): the update check in Settings › About.
+		checkUpdate: () => { navigateTo('settings'); showSettingsTab('about'); $('#nav-update')?.click(); },
 	})
 	: null;
 

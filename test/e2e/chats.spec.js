@@ -9,7 +9,9 @@ const { setupWithApiKey } = require('./support/ui');
 // list, chat, sending (outbox → POST with clientId), live events on the push
 // stream (new message, "schreibt …", read ticks), reactions, file upload,
 // chat pushes outside the inbox, "Standort senden" (own position, a point on
-// the map, an address; map previews), the pinned inbox read entry by entry.
+// the map, an address; map previews), the pinned inbox read entry by entry,
+// videos and file previews (Messenger 1.3.0), jumps with `around`, ticks from
+// the read event and a released group (Messenger 1.1.0).
 // Selectors by id/class, texts in both languages where needed.
 
 test.describe('chats', () => {
@@ -251,5 +253,164 @@ test.describe('chats', () => {
     await page.locator('#nav-inbox').click();
     await expect(page.locator('#inbox-list .inbox-row')).toHaveCount(0);
     await expect(page.locator('#inbox-badge')).toBeHidden();
+  });
+
+  const CLIP = path.join(__dirname, 'fixtures', 'clip.webm'); // 3 s, 320×180, VP8
+  const FEATURES_13 = { direct: true, groups: true, voice: true, files: true, location: true, reactions: true, edit: true, search: true, disappearing: true, bridges: false, e2e: false, video_meta: true, file_thumbs: true };
+
+  test('video: a frame as preview, length and size go along (Messenger 1.3.0); played in an overlay; Videos in the chat info', async ({ launchApp, mock }) => {
+    mock.setPush({ topics: [], items: [] });
+    const ms = mock.setMessenger({ features: FEATURES_13 });
+    const anna = ms.addConv();
+    ms.addMsg(anna, { text: 'Zeig mal das Video' });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await page.locator('#nav-chats').click();
+    await page.locator(`#page-chats .cv-row[data-id="${anna}"]`).click();
+    await expect(page.locator('#page-chats .cv-msg .cv-text')).toHaveText(['Zeig mal das Video']);
+
+    await page.locator('#page-chats input[type=file][multiple]').setInputFiles(CLIP);
+    await expect.poll(() => ms.log.sent.length).toBe(1);
+    const sent = ms.log.sent[0];
+    expect(sent.kind).toBe('file');
+    // the preview is uploaded first, then the video
+    expect(ms.log.uploads.map((u) => u.mime)).toEqual([expect.stringMatching(/^image\/(webp|jpeg)$/), 'video/webm']);
+    expect(ms.log.uploads[0].bytes).toBeLessThanOrEqual(65536);
+    expect(sent.thumbMediaId).toBe(ms.log.uploads[0].mediaId);
+    expect(sent.mediaId).toBe(ms.log.uploads[1].mediaId);
+    expect(sent.meta.fileName).toBe('clip.webm');
+    expect(sent.video.width).toBe(320);
+    expect(sent.video.height).toBe(180);
+    expect(Math.abs(sent.video.durationMs - 3000)).toBeLessThan(250);
+
+    const mine = page.locator('#page-chats .cv-msg.is-out .cv-video').last();
+    await expect(mine.locator('img')).toBeAttached();
+    await expect(mine.locator('.cv-video-dur')).toHaveText('0:03');
+    await expect(page.locator(`#page-chats .cv-row[data-id="${anna}"] .cv-row-pv`)).toHaveText(/Video · 0:03$/);
+    await mine.click();
+    const player = page.locator('#page-chats .cv-player video');
+    await expect(player).toBeVisible();
+    await expect.poll(() => player.evaluate((v) => v.readyState)).toBeGreaterThan(0);
+    await page.keyboard.press('Escape');
+    await expect(player).toHaveCount(0);
+
+    // received: a video with preview and length
+    ms.receive(anna, { kind: 'file', text: null, mediaId: ms.log.uploads[1].mediaId, thumbMediaId: ms.log.uploads[0].mediaId, video: { durationMs: 65000, width: 320, height: 180 }, meta: { fileName: 'urlaub.webm' } });
+    const recv = page.locator('#page-chats .cv-msg.is-in .cv-video').last();
+    await expect(recv.locator('.cv-video-dur')).toHaveText('1:05');
+    await expect(recv.locator('img')).toBeAttached();
+
+    // chat info: Fotos / Videos / Dateien, Videos through kind=video
+    await page.locator('#page-chats .cv-head-who').click();
+    const tabs = page.locator('#page-chats .cv-media-tabs button');
+    await expect(tabs).toHaveCount(3);
+    await page.locator('#page-chats .cv-media-tabs button[data-kind="video"]').click();
+    await expect.poll(() => ms.log.mediaLists.at(-1) && ms.log.mediaLists.at(-1).kind).toBe('video');
+    await expect(page.locator('#page-chats .cv-grid-cell.is-video')).toHaveCount(2);
+    await page.locator('#page-chats .cv-media-tabs button[data-kind="file"]').click();
+    await expect(page.locator('#page-chats .cv-media-none')).toBeVisible();
+  });
+
+  test('video to an older Messenger: a plain file message (no preview, no video meta), still shown as a video', async ({ launchApp, mock }) => {
+    mock.setPush({ topics: [], items: [] });
+    const ms = mock.setMessenger();
+    const anna = ms.addConv();
+    ms.addMsg(anna, { text: 'Hallo' });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await page.locator('#nav-chats').click();
+    await page.locator(`#page-chats .cv-row[data-id="${anna}"]`).click();
+    await page.locator('#page-chats input[type=file][multiple]').setInputFiles(CLIP);
+    await expect.poll(() => ms.log.sent.length).toBe(1);
+    expect(ms.log.uploads.map((u) => u.mime)).toEqual(['video/webm']);
+    expect(ms.log.sent[0].kind).toBe('file');
+    expect(ms.log.sent[0].thumbMediaId).toBeUndefined();
+    expect(ms.log.sent[0].video).toBeUndefined();
+    const mine = page.locator('#page-chats .cv-msg.is-out .cv-video').last();
+    await expect(mine).toBeVisible();
+    await expect(mine.locator('.cv-video-dur')).toHaveCount(0);
+    await page.locator('#page-chats .cv-head-who').click();
+    await expect(page.locator('#page-chats .cv-media-tabs button')).toHaveCount(2);
+  });
+
+  test('jump to an old search hit (around) and back; ticks from the read event; a released group', async ({ launchApp, mock }) => {
+    mock.setPush({ topics: [], items: [] });
+    const ms = mock.setMessenger();
+    const anna = ms.addConv();
+    const old = ms.addMsg(anna, { text: 'Treffpunkt am Brunnen' });
+    for (let i = 0; i < 120; i++) ms.addMsg(anna, { text: `Nachricht ${i}` });
+    const fam = ms.addConv({ kind: 'group', members: [7, 8, 9], title: 'Familie' });
+    ms.addMsg(fam, { senderId: 9, text: 'Hallo zusammen' });
+    ms.manage(fam, 'gatecontrol-familie');
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await page.locator('#nav-chats').click();
+    await page.locator(`#page-chats .cv-row[data-id="${anna}"]`).click();
+    await expect(page.locator('#page-chats .cv-msg .cv-text').last()).toHaveText('Nachricht 119');
+
+    // search → a hit far older than the loaded page → messages?around=
+    await page.getByRole('button', { name: /^(Im Chat suchen|Search in chat)$/ }).click();
+    await page.locator('#page-chats .cv-searchbar input').fill('Brunnen');
+    await page.locator('#page-chats .cv-result').first().click();
+    await expect.poll(() => ms.log.around.map((a) => a.around)).toContain(old.id);
+    const hit = page.locator(`#page-chats .cv-msg[data-id="${old.id}"]`);
+    await expect(hit).toBeVisible();
+    await expect(hit.locator('.cv-text')).toHaveText('Treffpunkt am Brunnen');
+    await expect(page.locator('#page-chats .cv-tolatest')).toBeVisible();
+    // back to the newest messages
+    await page.locator('#page-chats .cv-tolatest').click();
+    await expect(page.locator('#page-chats .cv-msg .cv-text').last()).toHaveText('Nachricht 119');
+    await expect(hit).toHaveCount(0);
+
+    // ticks straight from the read event (no GET conversations/:id)
+    const input = page.locator('#page-chats .cv-input');
+    await input.fill('Bin gleich da');
+    await input.press('Enter');
+    const mine = page.locator('#page-chats .cv-msg.is-out').last();
+    await expect(mine.locator('.cv-tick')).toHaveClass(/is-sent/);
+    await page.waitForTimeout(800);
+    const convGets = () => mock.requests.filter((r) => r.method === 'GET' && r.path === `/api/v1/client/plugins/gatecontrol-messenger/api/conversations/${anna}`).length;
+    const before = convGets();
+    ms.readBy(anna, 8, ms.messages(anna).at(-1).id);
+    await expect(mine.locator('.cv-tick')).toHaveClass(/is-read/);
+    await page.waitForTimeout(500);
+    expect(convGets()).toBe(before);
+
+    // the plugin hands its group over: system line, a normal group in the info
+    await page.locator(`#page-chats .cv-row[data-id="${fam}"]`).click();
+    await page.locator('#page-chats .cv-head-who').click();
+    await expect(page.locator('#page-chats .cv-info-top .cv-dim')).toHaveText(/verwaltet von|managed by/);
+    ms.release(fam);
+    await expect(page.locator('#page-chats .cv-sys').last()).toHaveText(/GateControl hat die Gruppe freigegeben – sie ist jetzt eine normale Gruppe|GateControl released the group – it is a normal group now/);
+    await expect(page.locator('#page-chats .cv-info-top .cv-dim')).not.toHaveText(/verwaltet von|managed by/);
+    await expect(page.locator('#page-chats .cv-info-btns')).toBeVisible();
+  });
+
+  test('a server with chat functions this version does not know: a dismissible update hint, never blocking', async ({ launchApp, mock }) => {
+    mock.setPush({ topics: [], items: [] });
+    const ms = mock.setMessenger({ features: { direct: true, groups: true, voice: true, files: true, location: true, reactions: true, edit: true, search: true, disappearing: true, bridges: false, e2e: false, video_meta: true, file_thumbs: true, polls: true } });
+    const anna = ms.addConv();
+    ms.addMsg(anna, { text: 'Hallo' });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await page.locator('#nav-chats').click();
+    const hint = page.locator('#page-chats .cv-hint');
+    await expect(hint).toBeVisible();
+    await expect(hint.locator('.cv-hint-tx')).toHaveText(/Für alle Chat-Funktionen gibt es eine neuere Version von GateControl|A newer version of GateControl is available for all chat features/);
+    // the chats work as always
+    await page.locator(`#page-chats .cv-row[data-id="${anna}"]`).click();
+    await expect(page.locator('#page-chats .cv-msg .cv-text')).toHaveText(['Hallo']);
+
+    // "Nach Updates suchen" → the app's update check
+    const checks = mock.count('/api/v1/client/update/check');
+    await hint.locator('.cv-hint-check').click();
+    await expect(page.locator('#page-settings')).toHaveClass(/active/);
+    await expect.poll(() => mock.count('/api/v1/client/update/check')).toBeGreaterThan(checks);
+
+    // dismissed: gone, also for the next status (this set of features)
+    await page.locator('#nav-chats').click();
+    await hint.locator('.cv-hint-close').click();
+    await expect(hint).toBeHidden();
+    await expect.poll(() => page.evaluate(() => window.gatecontrol.chat.status().then((st) => st.updateHint))).toBeNull();
   });
 });
