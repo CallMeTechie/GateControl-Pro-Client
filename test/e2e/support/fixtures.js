@@ -69,6 +69,7 @@ const test = base.test.extend({
         GC_E2E_DIR: dir,
         GC_E2E_CA: caFile,
         GC_E2E_UPDATE_PUBKEY: updateKey.pubFile,
+        GC_E2E_MAP_URL: mock.url,
         ELECTRON_ENABLE_LOGGING: '1',
       };
       delete env.ELECTRON_RUN_AS_NODE;

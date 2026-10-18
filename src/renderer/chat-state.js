@@ -407,6 +407,129 @@
 		return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
 	}
 
+	// ── Map (location dialog and previews; Web Mercator, 256 px tiles) ──
+
+	const TILE = 256;
+	const MAP_MIN_ZOOM = 2;
+	const MAP_MAX_ZOOM = 19;
+	const MAX_LAT = 85.05112878;
+
+	const clampZoom = (z) => Math.max(MAP_MIN_ZOOM, Math.min(MAP_MAX_ZOOM, Math.round(Number(z) || MAP_MIN_ZOOM)));
+
+	/** lat/lon → world pixel at zoom z ({ x, y }, 0 … 256·2^z). */
+	function worldPx(lat, lon, z) {
+		const size = TILE * 2 ** z;
+		const la = Math.max(-MAX_LAT, Math.min(MAX_LAT, Number(lat) || 0));
+		const s = Math.sin((la * Math.PI) / 180);
+		return {
+			x: ((Number(lon) || 0) + 180) / 360 * size,
+			y: (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * size,
+		};
+	}
+
+	/** World pixel at zoom z → { lat, lon } (longitude wrapped to −180 … 180). */
+	function lonLat(x, y, z) {
+		const size = TILE * 2 ** z;
+		let lon = (x / size) * 360 - 180;
+		lon = ((((lon + 180) % 360) + 360) % 360) - 180;
+		const n = Math.PI - (2 * Math.PI * Math.max(0, Math.min(size, y))) / size;
+		const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+		return { lat, lon };
+	}
+
+	/**
+	 * Tiles covering a w × h view whose centre is world pixel (cx, cy) at zoom z:
+	 * [{ key, z, x, y, left, top }] (x wrapped around the date line, rows
+	 * outside the map left out; left/top relative to the view).
+	 */
+	function tileGrid(cx, cy, z, w, h) {
+		const n = 2 ** z;
+		const x0 = cx - w / 2;
+		const y0 = cy - h / 2;
+		const out = [];
+		for (let ty = Math.floor(y0 / TILE); ty <= Math.floor((y0 + h - 1) / TILE); ty++) {
+			if (ty < 0 || ty >= n) continue;
+			for (let tx = Math.floor(x0 / TILE); tx <= Math.floor((x0 + w - 1) / TILE); tx++) {
+				const x = ((tx % n) + n) % n;
+				out.push({ key: `${z}/${tx}/${ty}`, z, x, y: ty, left: Math.round(tx * TILE - x0), top: Math.round(ty * TILE - y0) });
+			}
+		}
+		return out;
+	}
+
+	/** Metres per screen pixel at a latitude and zoom (accuracy circle). */
+	function metersPerPx(lat, z) {
+		return (156543.03392 * Math.cos(((Number(lat) || 0) * Math.PI) / 180)) / 2 ** z;
+	}
+
+	/** Zoom that shows an accuracy radius (m) comfortably: 18 for a few metres … 11 for kilometres. */
+	function zoomForAccuracy(acc) {
+		const a = Number(acc);
+		if (!Number.isFinite(a) || a <= 0) return 16;
+		if (a <= 30) return 17;
+		if (a <= 150) return 16;
+		if (a <= 600) return 15;
+		if (a <= 2500) return 13;
+		return 11;
+	}
+
+	/** Coordinates as sent: 6 decimals (~10 cm). */
+	const roundCoord = (v) => Math.round(Number(v) * 1e6) / 1e6;
+
+	/** "48.13743, 11.57549" */
+	function coordText(loc) {
+		if (!loc || !Number.isFinite(loc.lat) || !Number.isFinite(loc.lon)) return '';
+		return `${loc.lat.toFixed(5)}, ${loc.lon.toFixed(5)}`;
+	}
+
+	/** GeolocationPositionError (or none) → 'denied' | 'unavailable' | 'timeout'. */
+	function geoError(err) {
+		const code = err && Number(err.code);
+		if (code === 1) return 'denied';
+		if (code === 3) return 'timeout';
+		return 'unavailable';
+	}
+
+	/**
+	 * Location message body from the dialog: { lat, lon, label?, accuracy? }
+	 * or null without a valid point. Accuracy only for an own position
+	 * that was not moved afterwards.
+	 */
+	function locationBody(point, label, accuracy) {
+		if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon) || Math.abs(point.lat) > 90 || Math.abs(point.lon) > 180) return null;
+		const body = { lat: roundCoord(point.lat), lon: roundCoord(point.lon) };
+		const l = str(label).replace(/\s+/g, ' ').trim().slice(0, 200);
+		if (l) body.label = l;
+		const a = Number(accuracy);
+		if (Number.isFinite(a) && a >= 0 && accuracy !== null && accuracy !== undefined) body.accuracy = Math.round(a);
+		return body;
+	}
+
+	// ── Pinned "GateControl" (notification inbox) ──
+
+	/** Inbox entries oldest first, as the chat shows them. */
+	function inboxTimeline(inbox) {
+		const items = inbox && Array.isArray(inbox.items) ? inbox.items : [];
+		return items.slice().reverse();
+	}
+
+	/** Id of the oldest unread entry (where the chat opens), or null. */
+	function inboxFirstUnread(inbox) {
+		const first = inboxTimeline(inbox).find((e) => e && e.state === 'delivered');
+		return first ? first.id : null;
+	}
+
+	/**
+	 * Has an entry been seen? It counts once most of it is in view (60 %), or
+	 * — for an entry taller than the list — once it fills half the list.
+	 * ratio: IntersectionObserverEntry.intersectionRatio; shownPx: height of the
+	 * visible part; viewPx: height of the list.
+	 */
+	function inboxSeen(ratio, shownPx, viewPx) {
+		if (Number(ratio) >= 0.6) return true;
+		return Number(viewPx) > 0 && Number(shownPx) >= Number(viewPx) * 0.5;
+	}
+
 	/** The pinned "GateControl" row from the inbox (core NotificationCenter list()). */
 	function inboxRow(inbox, ctx, now = Date.now()) {
 		const items = inbox && Array.isArray(inbox.items) ? inbox.items : [];
@@ -457,5 +580,21 @@
 		bubbleSize,
 		mapUrl,
 		inboxRow,
+		TILE,
+		MAP_MIN_ZOOM,
+		MAP_MAX_ZOOM,
+		clampZoom,
+		worldPx,
+		lonLat,
+		tileGrid,
+		metersPerPx,
+		zoomForAccuracy,
+		roundCoord,
+		coordText,
+		geoError,
+		locationBody,
+		inboxTimeline,
+		inboxFirstUnread,
+		inboxSeen,
 	};
 });

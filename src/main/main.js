@@ -41,6 +41,9 @@ let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
   ({ app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen } = require('electron'));
+  // Chats "Standort senden": navigator.geolocation from the Windows location
+  // service (Electron has no key for Google's network location).
+  if (process.platform === 'win32') app.commandLine.appendSwitch('enable-features', 'WinrtGeolocationImplementation');
 
   // Before any core service is required; a packaged build never loads it.
   e2e = require('./e2e-guard').loadE2eHooks({ app });

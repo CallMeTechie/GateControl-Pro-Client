@@ -8,8 +8,9 @@ const { setupWithApiKey } = require('./support/ui');
 // Chats (GateControl Messenger): shown only when the server has the plugin;
 // list, chat, sending (outbox → POST with clientId), live events on the push
 // stream (new message, "schreibt …", read ticks), reactions, file upload,
-// chat pushes outside the inbox. Selectors by id/class, texts in both
-// languages where needed.
+// chat pushes outside the inbox, "Standort senden" (own position, a point on
+// the map, an address; map previews), the pinned inbox read entry by entry.
+// Selectors by id/class, texts in both languages where needed.
 
 test.describe('chats', () => {
   test('no Messenger plugin on the server: no "Chats" entry', async ({ launchApp, mock }) => {
@@ -112,6 +113,117 @@ test.describe('chats', () => {
     await page.locator('#page-chats .cv-row.is-pinned').click();
     await expect(page.locator('#page-chats .cv-sysbub .cv-sys-title')).toHaveText(['Update verfügbar']);
     await expect.poll(() => mock.acks().some((a) => a.state === 'read')).toBe(true);
+  });
+
+  test('location: own position, a point on the map, an address; received ones with a map preview', async ({ launchApp, mock }) => {
+    mock.setPush({ topics: [], items: [] });
+    const ms = mock.setMessenger();
+    const anna = ms.addConv();
+    ms.addMsg(anna, { kind: 'location', text: null, location: { lat: 48.137154, lon: 11.576124, label: 'Marienplatz', accuracy: 20 } });
+    const { page, events } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await page.locator('#nav-chats').click();
+    await page.locator(`#page-chats .cv-row[data-id="${anna}"]`).click();
+
+    // received: a small map (tiles from the main process as blob: images), label, coordinates
+    const recv = page.locator('#page-chats .cv-msg.is-in .cv-loc').first();
+    await expect(recv.locator('.cv-loc-tx b')).toHaveText('Marienplatz');
+    await expect(recv.locator('.cv-loc-sub')).toContainText('48.13715, 11.57612');
+    await expect(recv.locator('.cv-map-tile[src^="blob:"]').first()).toBeAttached();
+    await expect(recv.locator('.cv-map-pin')).toBeVisible();
+    expect(mock.requests.some((r) => /^\/osm\/15\/\d+\/\d+\.png$/.test(r.path))).toBe(true);
+    await recv.locator('.cv-loc-map').click();
+    await expect.poll(() => events().filter((e) => e.type === 'shell.openExternal').map((e) => e.url)).toContainEqual(expect.stringContaining('mlat=48.137154'));
+
+    const dlg = page.locator('#page-chats .cv-overlay');
+    const status = dlg.locator('.cv-loc-status');
+    const label = dlg.locator('.cv-field input');
+    const send = dlg.locator('.cv-dlg-foot .btn-pri');
+    const geo = (mode) => page.evaluate((m) => {
+      navigator.geolocation.getCurrentPosition = (ok, err) => setTimeout(() => {
+        if (m === 'ok') ok({ coords: { latitude: 48.306123, longitude: 11.907123, accuracy: 25 } });
+        else err({ code: m === 'denied' ? 1 : 2, message: m });
+      }, 50);
+    }, mode);
+
+    // 1) own position (Windows location API via navigator.geolocation), address as label
+    await geo('ok');
+    await page.locator('#page-chats .cv-loc-btn').click();
+    await expect(status).toHaveText(/± 25 m/);
+    await expect(label).toHaveValue('Am Bahnhof 1, 85435 Erding');
+    await send.click();
+    await expect(dlg).toHaveCount(0);
+    await expect.poll(() => ms.log.sent.length).toBe(1);
+    expect(ms.log.sent[0].kind).toBe('location');
+    expect(ms.log.sent[0].clientId).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+    expect(ms.log.sent[0].location).toEqual({ lat: 48.306123, lon: 11.907123, label: 'Am Bahnhof 1, 85435 Erding', accuracy: 25 });
+    await expect(page.locator('#page-chats .cv-msg.is-out .cv-loc .cv-loc-tx b').last()).toHaveText('Am Bahnhof 1, 85435 Erding');
+
+    // 2) location access denied: a point on the map, own label
+    await geo('denied');
+    await page.locator('#page-chats .cv-loc-btn').click();
+    await expect(status).toHaveAttribute('data-type', 'warn');
+    await expect(status).toHaveText(/Datenschutz|Privacy/);
+    await send.click();
+    await expect(status).toHaveText(/Punkt auf der Karte|point on the map/);
+    await dlg.locator('.cv-map').click({ position: { x: 120, y: 150 } });
+    await expect(status).toHaveText(/Gewählter Punkt|Selected point/);
+    await expect(dlg.locator('.cv-map-pin')).toBeVisible();
+    await label.fill('Treffpunkt');
+    await send.click();
+    await expect.poll(() => ms.log.sent.length).toBe(2);
+    const picked = ms.log.sent[1].location;
+    expect(picked.label).toBe('Treffpunkt');
+    expect(picked.accuracy).toBeUndefined();
+    expect(Math.abs(picked.lat)).toBeLessThanOrEqual(90);
+    expect(Math.abs(picked.lon)).toBeLessThanOrEqual(180);
+
+    // 3) no position on this PC: address search
+    await geo('unavailable');
+    await page.locator('#page-chats .cv-loc-btn').click();
+    await expect(status).toHaveText(/nicht verfügbar|not available/);
+    await dlg.locator('input[type=search]').fill('Marienplatz');
+    await dlg.locator('input[type=search]').press('Enter');
+    await expect(dlg.locator('.cv-loc-hit')).toHaveText(['Marienplatz, 80331 München']);
+    expect(mock.requests.find((r) => r.path === '/nominatim/search').query.q).toBe('Marienplatz');
+    await dlg.locator('.cv-loc-hit').click();
+    await expect(label).toHaveValue('Marienplatz, 80331 München');
+    await send.click();
+    await expect.poll(() => ms.log.sent.length).toBe(3);
+    expect(ms.log.sent[2].location).toEqual({ lat: 48.137154, lon: 11.576124, label: 'Marienplatz, 80331 München' });
+  });
+
+  test('pinned inbox: entries are marked read one by one as they come into view', async ({ launchApp, mock }) => {
+    // newest first, like the server's inbox; seq 101 = "Mitteilung 1" (the oldest)
+    const items = Array.from({ length: 24 }, (_, i) => ({ id: 300 + i, topic: 'system', title: `Mitteilung ${i + 1}`, body: 'Zeile eins\nZeile zwei\nZeile drei' })).reverse();
+    mock.setPush({ topics: [], items });
+    mock.setMessenger().addConv();
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await page.locator('#nav-chats').click();
+    await page.locator('#page-chats .cv-row.is-pinned').click();
+    await expect(page.locator('#page-chats .cv-sysbub')).toHaveCount(24);
+    const readSeqs = () => mock.acks().filter((a) => a.state === 'read').flatMap((a) => a.seqs);
+
+    // opens at the first unread entry (the oldest): only what is in view is read
+    await expect(page.locator('#page-chats .cv-msgs .cv-unread-line')).toBeVisible();
+    await expect.poll(readSeqs).toContain(101);
+    await page.waitForTimeout(800);
+    expect(readSeqs()).not.toContain(124);
+    expect(new Set(readSeqs()).size).toBeLessThan(24);
+
+    // scrolling to the newest reads those as well, never everything at once
+    await page.locator('#page-chats .cv-msgs').evaluate((n) => { n.scrollTop = n.scrollHeight; });
+    await expect.poll(readSeqs).toContain(124);
+    expect(mock.acks().filter((a) => a.state === 'read').every((a) => a.seqs.length < 24)).toBe(true);
+    await expect(page.locator('#page-chats .cv-sysbub').last()).not.toHaveClass(/is-unread/);
+
+    // entries skipped in between stay unread until "Alle als gelesen markieren"
+    expect(new Set(readSeqs()).size).toBeLessThan(24);
+    await expect(page.locator('#page-chats .cv-head')).not.toContainText('null');
+    await page.locator('#page-chats .cv-inbox-readall').click();
+    await expect.poll(() => new Set(readSeqs()).size).toBe(24);
+    await expect(page.locator('#page-chats .cv-inbox-readall')).toHaveCount(0);
   });
 
   test('a chat push stays out of the inbox', async ({ launchApp, mock }) => {
