@@ -14,6 +14,8 @@
  *     instead of build/update-signing.pub,
  *   - keeps the real Updater (signature, hash and download checks run
  *     unchanged) but downloads into GC_E2E_DIR and exposes the instance,
+ *   - points the map of "Standort senden" (core MapService) at the mock
+ *     server (GC_E2E_MAP_URL) instead of OpenStreetMap,
  *   - records shell.openPath (the installer launch) instead of starting the
  *     file, plus quit and service calls, in GC_E2E_DIR/events.jsonl and on
  *     globalThis.__gcE2E (reachable via electronApp.evaluate()).
@@ -129,6 +131,18 @@ function install({ app, env }) {
     ...require(migrationFile),
     runRdpTrustMigration: async () => { record('rdpTrustMigration.skipped'); return 'skipped'; },
   });
+
+  // ── Map tiles / addresses from the mock server, not OpenStreetMap ──
+  const mapFile = coreFile('src/services/map-service');
+  const RealMapService = require(mapFile);
+  class E2EMapService extends RealMapService {
+    constructor(opts = {}) {
+      const base = env.GC_E2E_MAP_URL || 'https://127.0.0.1:9';
+      super({ ...opts, tileUrl: `${base}/osm`, geocodeUrl: `${base}/nominatim`, geocodeGapMs: 0 });
+    }
+  }
+  Object.assign(E2EMapService, RealMapService);
+  stubModule(mapFile, E2EMapService);
 
   // ── Update key: throwaway test key instead of build/update-signing.pub ──
   const keyFile = coreFile('src/utils/update-public-key');

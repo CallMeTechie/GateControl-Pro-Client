@@ -41,8 +41,8 @@ function createMessenger({ emit = () => {} } = {}) {
     return id;
   }
 
-  function addMsg(convId, { senderId = 8, text = 'Hallo', kind = 'text', clientId = null, mediaId = null, meta = null, replyTo = null } = {}) {
-    const m = { id: nextMsg++, conversationId: convId, senderId, clientId, kind, text, mediaId, meta, replyTo, createdAt: Date.now(), editedAt: null, deleted: false, reactions: [] };
+  function addMsg(convId, { senderId = 8, text = 'Hallo', kind = 'text', clientId = null, mediaId = null, meta = null, replyTo = null, location = null } = {}) {
+    const m = { id: nextMsg++, conversationId: convId, senderId, clientId, kind, text, mediaId, meta, replyTo, location, createdAt: Date.now(), editedAt: null, deleted: false, reactions: [] };
     msgs.get(convId).push(m);
     const c = convs.get(convId);
     c.updatedAt = Date.now();
@@ -70,7 +70,7 @@ function createMessenger({ emit = () => {} } = {}) {
       text: m.deleted ? null : m.text,
       replyTo: q ? { id: q.id, senderId: q.senderId, kind: q.kind, text: q.text, deleted: q.deleted, missing: false } : null,
       media: f && !m.deleted ? { id: m.mediaId, mime: f.mime, bytes: f.data.length, url: null, thumbId: null, thumbUrl: null } : null,
-      meta: m.deleted ? null : m.meta, location: null, system: null, reactions: m.deleted ? [] : m.reactions,
+      meta: m.deleted ? null : m.meta, location: m.deleted ? null : (m.location || null), system: null, reactions: m.deleted ? [] : m.reactions,
       status: m.senderId === ME ? (m.id <= r.readUpTo ? 'read' : m.id <= r.deliveredUpTo ? 'delivered' : 'sent') : null,
     };
   }
@@ -164,7 +164,7 @@ function createMessenger({ emit = () => {} } = {}) {
         const dup = list.find((x) => x.clientId === body.clientId && x.senderId === ME);
         if (dup) return json(200, { ok: true, message: msgView(dup), duplicate: true }), true;
         if (body.mediaId && !media.has(body.mediaId)) return json(409, { ok: false, code: 'media_invalid' }), true;
-        const m = addMsg(conv.id, { senderId: ME, text: body.text || null, kind: body.kind || 'text', clientId: body.clientId, mediaId: body.mediaId || null, meta: body.meta || null, replyTo: body.replyTo || null });
+        const m = addMsg(conv.id, { senderId: ME, text: body.text || null, kind: body.kind || 'text', clientId: body.clientId, mediaId: body.mediaId || null, meta: body.meta || null, replyTo: body.replyTo || null, location: body.location || null });
         log.sent.push(body);
         emit('message.new', { conversationId: conv.id, messageId: m.id, senderId: ME, clientId: m.clientId, kind: m.kind, createdAt: iso(m.createdAt) });
         return json(200, { ok: true, message: msgView(m), duplicate: false }), true;

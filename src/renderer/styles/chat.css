@@ -147,8 +147,48 @@
 .cv-file-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cv-file-tx b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv-file-sub { display: flex; gap: 10px; font-size: 12px; color: var(--muted); }
-.cv-loc { display: flex; align-items: center; gap: 10px; padding: 4px 0; color: var(--acc-t); }
-.cv-loc-tx { display: flex; flex-direction: column; color: var(--text); }
+.cv-loc { display: flex; flex-direction: column; gap: 6px; padding: 2px 0 4px; max-width: 100%; }
+.cv-loc-row { display: flex; align-items: center; gap: 10px; color: var(--acc-t); }
+.cv-loc-tx { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; color: var(--text); }
+.cv-loc-sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cv-loc-map { display: block; max-width: 100%; padding: 0; border: 0; border-radius: 12px; overflow: hidden; background: none; cursor: pointer; }
+.cv-loc-map:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.cv-loc-map .cv-map { max-width: 100%; }
+
+/* Map (tiles as blob: images, pin, accuracy circle) */
+.cv-map { position: relative; overflow: hidden; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line2); user-select: none; touch-action: none; }
+.cv-map.is-live { cursor: crosshair; }
+.cv-map.is-live.is-drag { cursor: grabbing; }
+.cv-map:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.cv-map-tiles { position: absolute; inset: 0; }
+.cv-map-tile { position: absolute; left: 0; top: 0; width: 256px; height: 256px; max-width: none; pointer-events: none; }
+.cv-map-pin { position: absolute; left: -15px; top: -26px; width: 30px; height: 30px; filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .45)); pointer-events: none; }
+.cv-map-pin svg { display: block; stroke: #fff; stroke-width: 1.6; }
+.cv-map-pin path:first-child { fill: #E5484D; }
+.cv-map-pin path + path { fill: #fff; stroke: none; }
+.cv-map-pin[hidden], .cv-map-acc[hidden] { display: none; }
+.cv-map-acc { position: absolute; left: 0; top: 0; border-radius: 50%; background: rgba(66, 133, 244, .16); border: 1.5px solid rgba(66, 133, 244, .7); pointer-events: none; }
+.cv-map-zoom { position: absolute; right: 8px; top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.cv-map-zoom .cv-ib { background: var(--panel); box-shadow: var(--shadow); }
+.cv-map-attr { position: absolute; right: 0; bottom: 0; padding: 1px 6px; border-top-left-radius: 6px; background: rgba(255, 255, 255, .78); color: #333; font-size: 10px; pointer-events: none; }
+
+/* "Standort senden" */
+.cv-dlg.is-wide { width: 640px; }
+.cv-loc-dlg { display: flex; flex-direction: column; gap: 10px; }
+.cv-loc-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cv-loc-q { flex: 1 1 220px; min-width: 0; }
+.cv-loc-mine svg { flex-shrink: 0; }
+.cv-loc-results { display: flex; flex-direction: column; gap: 2px; max-height: 170px; overflow: auto; padding: 4px; border: 1px solid var(--line2); border-radius: 10px; background: var(--panel); }
+.cv-loc-results[hidden] { display: none; }
+.cv-loc-hit { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; cursor: pointer; font-size: 13px; }
+.cv-loc-hit:hover, .cv-loc-hit:focus-visible { background: var(--panel2); outline: none; }
+.cv-loc-hit svg { flex-shrink: 0; color: var(--acc-t); }
+.cv-loc-note { padding: 7px 8px; color: var(--muted); font-size: 13px; }
+.cv-loc-status { margin: 0; min-height: 1.4em; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.cv-loc-status[data-type="warn"] { color: var(--warn); }
+.cv-loc-status[data-type="ok"] { color: var(--acc-t); }
+.cv-loc-src { margin: 0; font-size: 11.5px; color: var(--faint); }
+.cv-inbox-readall { white-space: nowrap; }
 
 .cv-reacts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .cv-react { display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 7px; border-radius: 12px; border: 1px solid var(--line2); background: var(--panel); cursor: pointer; font-size: 13px; }

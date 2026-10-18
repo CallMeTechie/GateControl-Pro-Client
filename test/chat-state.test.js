@@ -205,6 +205,78 @@ describe('chat-state: files, recording, errors', () => {
   });
 });
 
+describe('chat-state: map and location', () => {
+  it('Web Mercator: world pixels and back', () => {
+    assert.deepEqual(CS.worldPx(0, 0, 0), { x: 128, y: 128 });
+    const p = CS.worldPx(48.137154, 11.576124, 15);
+    const back = CS.lonLat(p.x, p.y, 15);
+    assert.ok(Math.abs(back.lat - 48.137154) < 1e-9 && Math.abs(back.lon - 11.576124) < 1e-9);
+    assert.ok(Math.abs(CS.worldPx(90, 0, 0).y) < 1e-6, 'clamped to the map');
+    assert.ok(Math.abs(CS.lonLat(256 * 4 + 128, 128, 0).lon) < 1e-9, 'longitude wraps');
+    assert.equal(CS.clampZoom(25), 19);
+    assert.equal(CS.clampZoom(-3), 2);
+    assert.equal(CS.clampZoom('x'), 2);
+  });
+
+  it('tile grid covers the view, wraps x, leaves out rows outside the map', () => {
+    const g = CS.tileGrid(128, 128, 0, 256, 256);
+    assert.deepEqual(g, [{ key: '0/0/0', z: 0, x: 0, y: 0, left: 0, top: 0 }]);
+    const wide = CS.tileGrid(512, 512, 2, 600, 300);
+    assert.equal(new Set(wide.map((x) => x.key)).size, wide.length);
+    for (const tl of wide) {
+      assert.ok(tl.left > -256 && tl.left < 600 && tl.top > -256 && tl.top < 300);
+      assert.ok(tl.x >= 0 && tl.x < 4 && tl.y >= 0 && tl.y < 4);
+    }
+    const edge = CS.tileGrid(10, 10, 1, 256, 256);
+    assert.ok(edge.some((tl) => tl.x === 1 && tl.left < 0), 'left of the date line: the last column');
+    assert.ok(edge.every((tl) => tl.y >= 0));
+  });
+
+  it('accuracy: metres per pixel, zoom for a radius', () => {
+    assert.ok(Math.abs(CS.metersPerPx(0, 0) - 156543.03392) < 1e-6);
+    assert.ok(CS.metersPerPx(60, 10) < CS.metersPerPx(0, 10));
+    assert.equal(CS.zoomForAccuracy(12), 17);
+    assert.equal(CS.zoomForAccuracy(400), 15);
+    assert.equal(CS.zoomForAccuracy(20000), 11);
+    assert.equal(CS.zoomForAccuracy(null), 16);
+  });
+
+  it('location body: rounded, label trimmed, accuracy only when given', () => {
+    assert.deepEqual(CS.locationBody({ lat: 48.1371549, lon: 11.5761249 }, '  Treff  punkt ', 23.4), { lat: 48.137155, lon: 11.576125, label: 'Treff punkt', accuracy: 23 });
+    assert.deepEqual(CS.locationBody({ lat: 1, lon: 2 }, '', null), { lat: 1, lon: 2 });
+    assert.equal(CS.locationBody(null, 'x'), null);
+    assert.equal(CS.locationBody({ lat: 91, lon: 0 }), null);
+    assert.equal(CS.locationBody({ lat: 1, lon: 2 }, 'x'.repeat(300)).label.length, 200);
+    assert.equal(CS.coordText({ lat: 48.1371549, lon: 11.5 }), '48.13715, 11.50000');
+    assert.equal(CS.coordText(null), '');
+  });
+
+  it('geolocation errors → denied / unavailable / timeout', () => {
+    assert.equal(CS.geoError({ code: 1 }), 'denied');
+    assert.equal(CS.geoError({ code: 2 }), 'unavailable');
+    assert.equal(CS.geoError({ code: 3 }), 'timeout');
+    assert.equal(CS.geoError(null), 'unavailable');
+  });
+});
+
+describe('chat-state: pinned inbox', () => {
+  const inbox = { unread: 2, items: [{ id: 5, state: 'delivered' }, { id: 4, state: 'delivered' }, { id: 3, state: 'read' }] };
+
+  it('oldest first; the first unread entry is where the chat opens', () => {
+    assert.deepEqual(CS.inboxTimeline(inbox).map((e) => e.id), [3, 4, 5]);
+    assert.equal(CS.inboxFirstUnread(inbox), 4);
+    assert.equal(CS.inboxFirstUnread({ items: [{ id: 1, state: 'read' }] }), null);
+    assert.equal(CS.inboxFirstUnread(null), null);
+  });
+
+  it('seen: most of the entry in view, or a tall entry filling half the list', () => {
+    assert.equal(CS.inboxSeen(0.6, 40, 500), true);
+    assert.equal(CS.inboxSeen(0.3, 40, 500), false);
+    assert.equal(CS.inboxSeen(0.3, 260, 500), true);
+    assert.equal(CS.inboxSeen(0, 0, 0), false);
+  });
+});
+
 describe('Chats page', () => {
   const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
   const view = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'chat-view.js'), 'utf8');
@@ -251,6 +323,7 @@ describe('Chats page', () => {
     for (const k of ['direct', 'group']) keys.add(`chat.new.${k}`);
     for (const k of ['not_installed', 'unsupported', 'hidden', 'forbidden']) keys.add(`chat.unavailable.${k}`);
     for (const k of ['off', '86400', '604800', '2592000']) keys.add(`chat.dis.${k}`);
+    for (const k of ['denied', 'unavailable', 'timeout']) keys.add(`chat.loc.${k}`);
     keys.delete('chat.dis.');
     assert.ok(keys.size > 100, `only ${keys.size} keys found`);
     for (const key of keys) {

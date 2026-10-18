@@ -8,7 +8,15 @@
  * edit / delete, ticks, day separators and the unread line; new chat / group,
  * chat info (members, mute, disappearing, media), search (list: Strg+K, in a
  * chat: server search), "Meine Chat-Einstellungen"; drag & drop and paste of
- * files; offline outbox entries with "Erneut senden" / "Verwerfen".
+ * files; offline outbox entries with "Erneut senden" / "Verwerfen";
+ * "Standort senden" (map dialog: own position, a point on the map or an
+ * address) and map previews of locations; the pinned inbox marks each entry
+ * read once it has been in view.
+ *
+ * Map tiles and addresses come from the main process (chat.mapTile /
+ * mapSearch / mapReverse → core MapService, OpenStreetMap) as bytes / data;
+ * the page shows them as blob: URLs, it never loads anything from the
+ * network itself.
  *
  * Data: window.gatecontrol.chat (core MessengerService over IPC); texts:
  * chat.* of the core locales; view logic without DOM: chat-state.js
@@ -56,6 +64,8 @@
 		external: 'M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6',
 		copy: 'M9 9h11v11H9z|M5 15H4V4h11v1',
 		retry: 'M21 12a9 9 0 1 1-3-6.7L21 8|M21 3v5h-5',
+		minus: 'M5 12h14',
+		target: 'M12 5a7 7 0 1 0 0 14a7 7 0 1 0 0-14|M12 10a2 2 0 1 0 0 4a2 2 0 1 0 0-4|M12 2v3M12 19v3M2 12h3M19 12h3',
 	};
 	const FILLED = new Set(['play', 'pause']);
 
@@ -148,6 +158,7 @@
 			loadingOlder: false,
 			menu: null,
 			search: null,
+			inboxFrom: null,        // first unread inbox entry when the inbox chat was opened
 		};
 		const ctx = () => ({ t, locale: o.getLocale(), me: S.status && S.status.me, people: S.people });
 		const conv = (id) => S.convs.find((c) => c.id === id) || null;
@@ -351,9 +362,7 @@
 		function reportOpen() {
 			const visible = S.shown && document.visibilityState === 'visible' && document.hasFocus();
 			api.open(typeof S.cur === 'number' ? S.cur : null, visible).catch(() => {});
-			if (S.cur === 'inbox' && visible && o.notify && S.inbox.unread > 0) {
-				o.notify.read('all').catch(() => {});
-			}
+			if (S.cur === 'inbox' && visible) markInboxSeen();
 		}
 
 		async function openChat(id) {
@@ -366,6 +375,7 @@
 			}
 			const cc = conv(id);
 			if (!cc) return;
+			if (S.cur === 'inbox') stopInboxObs();
 			if (S.cur !== id) {
 				stopRec(false);
 				S.reply = null;
@@ -399,6 +409,7 @@
 
 		function closeChat() {
 			stopRec(false);
+			stopInboxObs();
 			S.cur = null;
 			S.view = null;
 			S.infoOpen = false;
@@ -415,14 +426,26 @@
 		}
 
 		// ── Pinned "GateControl" (notification inbox) ────────
+		// Entries are marked read one by one once they have been in view while
+		// the window is shown (notify.read(ids) → core ack of their seqs with
+		// state "read"), not all at once when the chat is opened.
+
+		let inboxObs = null;
+		const inboxInView = new Set();   // unread entries in view right now
+		const inboxSeenQ = new Set();    // seen, waiting for the next read call
+		const inboxSent = new Map();     // id → time read was asked (no second call)
+		let inboxReadTimer = null;
 
 		async function loadInbox() {
 			if (!o.notify) return;
 			const r = await o.notify.list({ limit: 100 }).catch(() => null);
 			if (!r) return;
 			S.inbox = { items: Array.isArray(r.items) ? r.items : [], unread: Number(r.unread) || 0 };
+			// A read that did not arrive may be asked again after a while.
+			const now = Date.now();
+			for (const e of S.inbox.items) if (e.state === 'delivered' && inboxSent.has(e.id) && now - inboxSent.get(e.id) > 10000) inboxSent.delete(e.id);
 			renderList();
-			if (S.cur === 'inbox') renderInbox();
+			if (S.cur === 'inbox') renderInbox('keep');
 		}
 
 		function openInboxChat() {
@@ -430,6 +453,7 @@
 			S.cur = 'inbox';
 			S.view = null;
 			S.infoOpen = false;
+			S.inboxFrom = CS.inboxFirstUnread(S.inbox);
 			closeSearch();
 			rootEl.setAttribute('data-pane', 'chat');
 			refs.pick.hidden = true;
@@ -437,28 +461,86 @@
 			refs.composer.hidden = true;
 			renderInfo();
 			renderList();
-			renderInbox();
+			renderInbox('open');
 			reportOpen();
 		}
 
-		function renderInbox() {
-			clear(refs.head).append(
+		function inboxShown() {
+			return S.cur === 'inbox' && S.shown && document.visibilityState === 'visible' && document.hasFocus();
+		}
+
+		/** The entries in view count as seen (only while the window is shown). */
+		function markInboxSeen() {
+			if (!o.notify || !inboxShown()) return;
+			for (const id of inboxInView) if (!inboxSent.has(id)) inboxSeenQ.add(id);
+			if (!inboxSeenQ.size) return;
+			clearTimeout(inboxReadTimer);
+			inboxReadTimer = setTimeout(flushInboxRead, 250);
+		}
+
+		function flushInboxRead() {
+			const ids = [...inboxSeenQ].filter((id) => !inboxSent.has(id));
+			inboxSeenQ.clear();
+			if (!ids.length || !o.notify) return;
+			const now = Date.now();
+			for (const id of ids) {
+				inboxSent.set(id, now);
+				const b = refs.msgs.querySelector(`[data-nid="${id}"]`);
+				if (b) b.classList.remove('is-unread');
+			}
+			o.notify.read(ids).catch(() => {});
+		}
+
+		function stopInboxObs() {
+			if (inboxObs) inboxObs.disconnect();
+			inboxObs = null;
+			inboxInView.clear();
+		}
+
+		function onInboxIntersect(entries) {
+			const viewPx = refs.msgs.clientHeight;
+			for (const en of entries) {
+				const id = Number(en.target.getAttribute('data-nid'));
+				if (en.isIntersecting && CS.inboxSeen(en.intersectionRatio, en.intersectionRect.height, viewPx)) inboxInView.add(id);
+				else inboxInView.delete(id);
+			}
+			markInboxSeen();
+		}
+
+		/** mode: 'open' (first unread entry, else the newest) | 'keep' (stay at the bottom, else keep the position) */
+		function renderInbox(mode = 'keep') {
+			const unread = Number(S.inbox.unread) || 0;
+			clear(refs.head).append(...[
 				iconBtn('back', t('chat.common.back'), () => closeChat(), 'cv-ib-flat cv-only-narrow'),
 				avatar({ kind: 'icon', icon: 'system' }, 38),
 				el('span', { class: 'cv-head-tx' }, [el('b', { text: t('chat.inbox.title') }), el('span', { class: 'cv-head-sub', text: t('chat.inbox.sub') })]),
 				el('span', { class: 'cv-grow' }),
+				unread > 0 && o.notify ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm cv-inbox-readall', text: t('chat.inbox.readAll'), on: { click: () => { o.notify.read('all').catch(() => {}).then(() => loadInbox()); } } }) : null,
 				o.openInbox ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => o.openInbox(null) } }, [icon('external', 14), t('chat.inbox.openAll')]) : null,
-			);
+			].filter(Boolean));
+			const wasBottom = atBottom();
+			const prevTop = refs.msgs.scrollTop;
+			if (inboxObs) inboxObs.disconnect();
+			inboxInView.clear();
 			clear(refs.msgs);
-			const items = S.inbox.items.slice().reverse();
+			const items = CS.inboxTimeline(S.inbox);
 			if (!items.length) { refs.msgs.appendChild(el('div', { class: 'cv-empty', text: t('chat.inbox.empty') })); return; }
+			inboxObs = typeof IntersectionObserver === 'function'
+				? new IntersectionObserver(onInboxIntersect, { root: refs.msgs, threshold: [0, 0.25, 0.5, 0.6, 0.75, 1] })
+				: null;
 			const c = ctx();
 			let lastDay = null;
+			let anchor = null;
 			for (const e of items) {
 				const iso = e.created_at || e.received_at;
 				const day = CS.dayLabel(iso, c);
 				if (day !== lastDay) { refs.msgs.appendChild(el('div', { class: 'cv-day' }, [el('span', { text: day })])); lastDay = day; }
-				const bubble = el('div', { class: `cv-bub cv-in cv-sysbub${e.state === 'delivered' ? ' is-unread' : ''}` }, [
+				if (S.inboxFrom !== null && e.id === S.inboxFrom) {
+					anchor = el('div', { class: 'cv-unread-line' }, [el('span', { text: t('chat.unreadLine') })]);
+					refs.msgs.appendChild(anchor);
+				}
+				const isUnread = e.state === 'delivered' && !inboxSent.has(e.id);
+				const bubble = el('div', { class: `cv-bub cv-in cv-sysbub${isUnread ? ' is-unread' : ''}`, 'data-nid': String(e.id) }, [
 					el('b', { class: 'cv-sys-title', text: e.title || '—' }),
 					e.body ? el('div', { class: 'cv-text', text: e.body }) : null,
 				]);
@@ -472,8 +554,17 @@
 				}
 				bubble.appendChild(el('div', { class: 'cv-meta' }, [el('span', { text: CS.hm(iso, c.locale) })]));
 				refs.msgs.appendChild(bubble);
+				if (isUnread) {
+					if (inboxObs) inboxObs.observe(bubble);
+					else inboxInView.add(e.id); // no observer: everything shown counts as seen
+				}
 			}
-			scrollBottom(false);
+			if (mode === 'open') {
+				if (anchor) refs.msgs.scrollTop += anchor.getBoundingClientRect().top - refs.msgs.getBoundingClientRect().top - 8;
+				else scrollBottom(false);
+			} else if (wasBottom) scrollBottom(false);
+			else refs.msgs.scrollTop = prevTop;
+			if (!inboxObs) markInboxSeen();
 		}
 
 		// ── Header ───────────────────────────────────────────
@@ -705,15 +796,326 @@
 		}
 
 		function locationEl(m) {
-			const url = CS.mapUrl(m.location);
-			const label = (m.location && m.location.label) || t('chat.kind.location');
+			const loc = m.location;
+			const url = CS.mapUrl(loc);
+			const label = (loc && loc.label) || t('chat.kind.location');
+			const open = (e) => { e.stopPropagation(); if (url && root.gatecontrol && root.gatecontrol.shell) root.gatecontrol.shell.openExternal(url); };
+			let preview = null;
+			if (url && typeof api.mapTile === 'function') {
+				const mv = mapView({ lat: loc.lat, lon: loc.lon, zoom: 15, width: 260, height: 140 });
+				mv.marker(loc.lat, loc.lon, loc.accuracy);
+				preview = el('button', { type: 'button', class: 'cv-loc-map', 'aria-label': t('chat.msg.mapOpen'), title: t('chat.msg.mapOpen'), on: { click: open } }, [mv.el]);
+			}
+			const sub = [CS.coordText(loc), loc && Number.isFinite(loc.accuracy) ? t('chat.loc.accuracyShort', { m: Math.round(loc.accuracy) }) : null].filter(Boolean).join(' · ');
 			return el('div', { class: 'cv-loc' }, [
-				icon('pin', 18),
-				el('span', { class: 'cv-loc-tx' }, [
-					el('b', { text: label }),
-					url ? el('button', { type: 'button', class: 'cv-link', text: t('chat.msg.mapOpen'), on: { click: (e) => { e.stopPropagation(); if (root.gatecontrol && root.gatecontrol.shell) root.gatecontrol.shell.openExternal(url); } } }) : null,
+				preview,
+				el('div', { class: 'cv-loc-row' }, [
+					icon('pin', 18),
+					el('span', { class: 'cv-loc-tx' }, [
+						el('b', { text: label }),
+						sub ? el('span', { class: 'cv-loc-sub', text: sub }) : null,
+						url ? el('button', { type: 'button', class: 'cv-link', text: t('chat.msg.mapOpen'), on: { click: open } }) : null,
+					]),
 				]),
 			]);
+		}
+
+		// ── Map (OpenStreetMap tiles from the main process) ──
+
+		const tileCache = new Map(); // 'z/x/y' → Promise<objectURL|null> (insertion order = LRU)
+		const TILE_CACHE_MAX = 384;
+
+		function tileUrl(z, x, y) {
+			const key = `${z}/${x}/${y}`;
+			let p = tileCache.get(key);
+			if (p) { tileCache.delete(key); tileCache.set(key, p); return p; }
+			p = api.mapTile(z, x, y)
+				.then((r) => (r && r.ok !== false && r.data ? URL.createObjectURL(new Blob([r.data], { type: r.mime || 'image/png' })) : null))
+				.catch(() => null);
+			tileCache.set(key, p);
+			// A tile that failed is asked again next time.
+			p.then((u) => { if (!u && tileCache.get(key) === p) tileCache.delete(key); });
+			while (tileCache.size > TILE_CACHE_MAX) {
+				const [k, old] = tileCache.entries().next().value;
+				tileCache.delete(k);
+				old.then((u) => { if (u) setTimeout(() => URL.revokeObjectURL(u), 5000); });
+			}
+			return p;
+		}
+
+		/**
+		 * Slippy map with a pin and an optional accuracy circle.
+		 * mo: { lat, lon, zoom, height, width?, interactive?, onPick?(lat, lon), label? }
+		 * → { el, center(lat, lon, zoom?), marker(lat, lon, accuracy?) (null = none) }
+		 * Interactive: drag to move, wheel / buttons / +/- to zoom, click or
+		 * Enter to pick (the centre with the keyboard), arrow keys to move.
+		 */
+		function mapView(mo) {
+			let z = CS.clampZoom(mo.zoom);
+			let c = CS.worldPx(mo.lat, mo.lon, z);
+			let mark = null;
+			const imgs = new Map(); // tile key → <img>
+			const layer = el('div', { class: 'cv-map-tiles' });
+			const acc = el('div', { class: 'cv-map-acc', hidden: true });
+			const pin = el('div', { class: 'cv-map-pin', hidden: true }, [icon('pin', 30, '2')]);
+			const box = el('div', { class: `cv-map${mo.interactive ? ' is-live' : ''}`, style: `${mo.width ? `width:${mo.width}px;` : ''}height:${mo.height}px` }, [layer, acc, pin]);
+			const size = () => ({ w: box.clientWidth || mo.width || 0, h: box.clientHeight || mo.height || 0 });
+			let raf = 0;
+			const schedule = () => { if (!raf) raf = requestAnimationFrame(draw); };
+			const resetTiles = () => { for (const img of imgs.values()) img.remove(); imgs.clear(); };
+			const clampY = () => { const n = CS.TILE * 2 ** z; c = { x: c.x, y: Math.max(0, Math.min(n, c.y)) }; };
+
+			function draw() {
+				raf = 0;
+				const { w, h } = size();
+				if (!w || !h) return;
+				const want = new Set();
+				for (const tl of CS.tileGrid(c.x, c.y, z, w, h)) {
+					want.add(tl.key);
+					let img = imgs.get(tl.key);
+					if (!img) {
+						img = el('img', { class: 'cv-map-tile', alt: '', draggable: 'false' });
+						imgs.set(tl.key, img);
+						layer.appendChild(img);
+						const mine = img;
+						tileUrl(tl.z, tl.x, tl.y).then((u) => { if (u && imgs.get(tl.key) === mine) mine.src = u; });
+					}
+					img.style.transform = `translate(${tl.left}px, ${tl.top}px)`;
+				}
+				for (const [k, img] of imgs) if (!want.has(k)) { img.remove(); imgs.delete(k); }
+				if (mark) {
+					const p = CS.worldPx(mark.lat, mark.lon, z);
+					const x = Math.round(p.x - c.x + w / 2);
+					const y = Math.round(p.y - c.y + h / 2);
+					pin.hidden = false;
+					pin.style.transform = `translate(${x}px, ${y}px)`;
+					const r = mark.accuracy ? mark.accuracy / CS.metersPerPx(mark.lat, z) : 0;
+					acc.hidden = !(r >= 6);
+					if (!acc.hidden) {
+						acc.style.width = `${Math.round(r * 2)}px`;
+						acc.style.height = `${Math.round(r * 2)}px`;
+						acc.style.transform = `translate(${Math.round(x - r)}px, ${Math.round(y - r)}px)`;
+					}
+				} else {
+					pin.hidden = true;
+					acc.hidden = true;
+				}
+			}
+
+			function zoomAt(dz, px, py) {
+				const nz = CS.clampZoom(z + dz);
+				if (nz === z) return;
+				const { w, h } = size();
+				const ox = px === undefined ? 0 : px - w / 2;
+				const oy = py === undefined ? 0 : py - h / 2;
+				const k = 2 ** (nz - z);
+				c = { x: (c.x + ox) * k - ox, y: (c.y + oy) * k - oy };
+				z = nz;
+				clampY();
+				resetTiles();
+				schedule();
+			}
+
+			const pickAt = (px, py) => {
+				if (!mo.onPick) return;
+				const { w, h } = size();
+				const p = CS.lonLat(c.x - w / 2 + px, c.y - h / 2 + py, z);
+				mo.onPick(p.lat, p.lon);
+			};
+
+			if (mo.interactive) {
+				box.setAttribute('tabindex', '0');
+				box.setAttribute('role', 'application');
+				box.setAttribute('aria-label', mo.label || t('chat.loc.map'));
+				box.appendChild(el('div', { class: 'cv-map-zoom' }, [
+					iconBtn('plus', t('chat.loc.zoomIn'), (e) => { e.stopPropagation(); zoomAt(1); }, 'cv-ib-sm'),
+					iconBtn('minus', t('chat.loc.zoomOut'), (e) => { e.stopPropagation(); zoomAt(-1); }, 'cv-ib-sm'),
+				]));
+				let drag = null;
+				box.addEventListener('pointerdown', (e) => {
+					if (e.button !== 0 || (e.target.closest && e.target.closest('button'))) return;
+					drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+					try { box.setPointerCapture(e.pointerId); } catch { /* pointer gone */ }
+				});
+				box.addEventListener('pointermove', (e) => {
+					if (!drag || e.pointerId !== drag.id) return;
+					const dx = e.clientX - drag.x;
+					const dy = e.clientY - drag.y;
+					if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 5) return;
+					drag.moved = true;
+					box.classList.add('is-drag');
+					c = { x: c.x - dx, y: c.y - dy };
+					clampY();
+					drag.x = e.clientX;
+					drag.y = e.clientY;
+					schedule();
+				});
+				const end = (e) => {
+					if (!drag || e.pointerId !== drag.id) return;
+					const click = !drag.moved && e.type === 'pointerup';
+					drag = null;
+					box.classList.remove('is-drag');
+					if (click) { const r = box.getBoundingClientRect(); pickAt(e.clientX - r.left, e.clientY - r.top); }
+				};
+				box.addEventListener('pointerup', end);
+				box.addEventListener('pointercancel', end);
+				box.addEventListener('wheel', (e) => {
+					e.preventDefault();
+					const r = box.getBoundingClientRect();
+					zoomAt(e.deltaY < 0 ? 1 : -1, e.clientX - r.left, e.clientY - r.top);
+				}, { passive: false });
+				box.addEventListener('keydown', (e) => {
+					if (e.target !== box) return;
+					const step = 96;
+					const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+					if (moves[e.key]) { e.preventDefault(); c = { x: c.x + moves[e.key][0], y: c.y + moves[e.key][1] }; clampY(); schedule(); }
+					else if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomAt(1); }
+					else if (e.key === '-') { e.preventDefault(); zoomAt(-1); }
+					else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const { w, h } = size(); pickAt(w / 2, h / 2); }
+				});
+			}
+			box.appendChild(el('span', { class: 'cv-map-attr', text: t('chat.loc.attribution') }));
+			if (typeof ResizeObserver === 'function') new ResizeObserver(() => schedule()).observe(box);
+			schedule();
+
+			return {
+				el: box,
+				center(lat, lon, zoom) {
+					if (zoom !== undefined && CS.clampZoom(zoom) !== z) { z = CS.clampZoom(zoom); resetTiles(); }
+					c = CS.worldPx(lat, lon, z);
+					schedule();
+				},
+				marker(lat, lon, accuracy) {
+					mark = lat === null || lat === undefined ? null : { lat, lon, accuracy: Number.isFinite(accuracy) ? accuracy : null };
+					schedule();
+				},
+			};
+		}
+
+		// ── "Standort senden" ────────────────────────────────
+
+		const DEFAULT_VIEW = { lat: 51.1657, lon: 10.4515, zoom: 5 };
+		const VIEW_KEY = 'gc.chat.locView';
+
+		/** Where the dialog opens: around the last sent location (~1 km), else Germany. */
+		function lastView() {
+			try {
+				const v = JSON.parse(root.localStorage.getItem(VIEW_KEY) || 'null');
+				if (v && Number.isFinite(v.lat) && Number.isFinite(v.lon)) return { lat: v.lat, lon: v.lon, zoom: CS.clampZoom(v.zoom) };
+			} catch { /* storage unavailable */ }
+			return DEFAULT_VIEW;
+		}
+		function saveView(loc) {
+			try { root.localStorage.setItem(VIEW_KEY, JSON.stringify({ lat: Math.round(loc.lat * 100) / 100, lon: Math.round(loc.lon * 100) / 100, zoom: 12 })); } catch { /* storage unavailable */ }
+		}
+
+		function locationDialog() {
+			const c = curConv();
+			if (!c || CS.composerBlock(c)) return;
+			const lang = o.getLocale() === 'en' ? 'en' : 'de';
+			const st = { open: true, point: null, accuracy: null, manual: false, autoLabel: '', revSeq: 0, revTimer: null };
+			const status = el('p', { class: 'cv-loc-status', role: 'status', text: t('chat.loc.hint') });
+			const setStatus = (text, type = 'info') => { status.textContent = text; status.setAttribute('data-type', type); };
+			const label = el('input', { class: 'inp', maxlength: '200', placeholder: t('chat.loc.labelPh'), 'aria-label': t('chat.loc.label') });
+			const q = el('input', { class: 'inp cv-q', type: 'search', placeholder: t('chat.loc.searchPh'), 'aria-label': t('chat.loc.search'), spellcheck: 'false' });
+			const results = el('div', { class: 'cv-loc-results', role: 'list', hidden: true });
+			const map = mapView({ ...lastView(), height: 300, interactive: true, onPick: (lat, lon) => setPoint({ lat, lon }, null, 'map') });
+			const mineBtn = el('button', { type: 'button', class: 'btn btn-sec btn-sm cv-loc-mine', on: { click: () => locate() } }, [icon('target', 14), t('chat.loc.mine')]);
+
+			const setLabel = (v) => {
+				if (!v) return;
+				if (!label.value.trim() || label.value === st.autoLabel) { label.value = v; st.autoLabel = v; }
+			};
+
+			function setPoint(p, accuracy, source, text) {
+				st.point = { lat: p.lat, lon: p.lon };
+				st.accuracy = Number.isFinite(accuracy) ? accuracy : null;
+				if (source !== 'gps') st.manual = true;
+				map.marker(p.lat, p.lon, st.accuracy);
+				if (source !== 'gps') setStatus(`${t('chat.loc.picked')}: ${CS.coordText(p)}`);
+				if (source === 'search') { st.revSeq++; setLabel(text); return; }
+				// Address of the point (core: Nominatim, one request per second).
+				const seq = ++st.revSeq;
+				clearTimeout(st.revTimer);
+				st.revTimer = setTimeout(() => {
+					api.mapReverse(p.lat, p.lon, lang)
+						.then((r) => { if (st.open && seq === st.revSeq && r && r.ok !== false && r.label) setLabel(r.label); })
+						.catch(() => {});
+				}, source === 'gps' ? 0 : 600);
+			}
+
+			function locate() {
+				const geo = root.navigator && root.navigator.geolocation;
+				if (!geo) { setStatus(t('chat.loc.unavailable'), 'warn'); return; }
+				st.manual = false;
+				mineBtn.disabled = true;
+				setStatus(t('chat.loc.locating'));
+				geo.getCurrentPosition((pos) => {
+					mineBtn.disabled = false;
+					if (!st.open) return;
+					const a = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null;
+					const msg = a !== null ? t('chat.loc.accuracy', { m: Math.round(a) }) : t('chat.loc.picked');
+					// A point picked meanwhile stays.
+					if (st.manual) return;
+					const p = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+					map.center(p.lat, p.lon, CS.zoomForAccuracy(a));
+					setPoint(p, a, 'gps');
+					setStatus(msg, 'ok');
+				}, (err) => {
+					mineBtn.disabled = false;
+					if (!st.open || st.manual) return;
+					setStatus(t(`chat.loc.${CS.geoError(err)}`), 'warn');
+				}, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+			}
+
+			async function search() {
+				const text = q.value.trim();
+				if (text.length < 2) return;
+				clear(results).hidden = false;
+				results.appendChild(el('div', { class: 'cv-loc-note', text: t('chat.loc.searching') }));
+				const r = await api.mapSearch(text, lang).catch(() => null);
+				if (!st.open) return;
+				clear(results);
+				if (!r || r.ok === false) { results.appendChild(el('div', { class: 'cv-loc-note', text: t('chat.loc.searchFailed') })); return; }
+				if (!r.results.length) { results.appendChild(el('div', { class: 'cv-loc-note', text: t('chat.loc.noResults') })); return; }
+				for (const hit of r.results) {
+					results.appendChild(el('button', { type: 'button', class: 'cv-loc-hit', role: 'listitem', on: { click: () => {
+						results.hidden = true;
+						map.center(hit.lat, hit.lon, 17);
+						setPoint(hit, null, 'search', hit.label);
+					} } }, [icon('pin', 14), el('span', { text: hit.label })]));
+				}
+			}
+			q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } });
+
+			const body = el('div', { class: 'cv-loc-dlg' }, [
+				el('div', { class: 'cv-loc-tools' }, [
+					el('label', { class: 'cv-search cv-loc-q' }, [icon('search', 15), q]),
+					el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('chat.loc.searchBtn'), on: { click: () => search() } }),
+					mineBtn,
+				]),
+				results,
+				map.el,
+				status,
+				el('label', { class: 'cv-field' }, [el('span', { text: t('chat.loc.label') }), label]),
+				el('p', { class: 'cv-loc-src', text: t('chat.loc.source') }),
+			]);
+
+			dialog(t('chat.loc.title'), body, [
+				{ label: t('chat.common.cancel'), value: null },
+				{ label: t('chat.loc.send'), primary: true, onClick: async () => {
+					const loc = CS.locationBody(st.point, label.value, st.accuracy);
+					if (!loc) { setStatus(t('chat.loc.needPoint'), 'warn'); return false; }
+					const req = { conversationId: c.id, kind: 'location', location: loc };
+					if (S.reply) req.replyTo = S.reply.id;
+					const r = await api.send(req).catch((e) => ({ ok: false, error: e && e.message }));
+					if (r && r.ok === false) { setStatus(CS.errorText(r, t), 'warn'); return false; }
+					saveView(loc);
+					if (S.reply) { S.reply = null; renderComposer(false); }
+					scrollBottom(true);
+					return true;
+				} },
+			], { wide: true, onOpen: () => locate() }).then(() => { st.open = false; clearTimeout(st.revTimer); });
 		}
 
 		async function openMedia(m) {
@@ -914,6 +1316,7 @@
 			const features = (cx.me && cx.me.features) || {};
 			refs.composer.appendChild(el('div', { class: 'cv-row-compose' }, [
 				features.files !== false ? iconBtn('attach', t('chat.attach'), () => { refs.file.value = ''; refs.file.click(); }) : null,
+				features.location !== false && typeof api.mapTile === 'function' ? iconBtn('pin', t('chat.loc.button'), () => locationDialog(), 'cv-loc-btn') : null,
 				refs.input,
 				features.voice !== false && recordingSupported() ? iconBtn('mic', t('chat.recStart'), () => startRec()) : null,
 				el('button', { type: 'button', class: 'cv-ib cv-ib-pri', 'aria-label': t('chat.send'), title: t('chat.send'), on: { click: () => submit() } }, [icon('send', 16, '2.2')]),
@@ -1283,7 +1686,7 @@
 
 		// ── Dialogs ──────────────────────────────────────────
 
-		function dialog(titleText, body, buttons = [], { onOpen } = {}) {
+		function dialog(titleText, body, buttons = [], { onOpen, wide = false } = {}) {
 			return new Promise((resolve) => {
 				let ov = null;
 				const done = (v) => { if (!ov || !ov.parentNode) return; ov.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
@@ -1293,7 +1696,7 @@
 					on: { click: async () => { if (b.onClick) { const r = await b.onClick(); if (r === false) return; done(b.value !== undefined ? b.value : r); } else done(b.value); } },
 				}))) : null;
 				ov = el('div', { class: 'cv-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': titleText }, [
-					el('div', { class: 'cv-dlg card' }, [
+					el('div', { class: `cv-dlg card${wide ? ' is-wide' : ''}` }, [
 						el('div', { class: 'cv-dlg-head' }, [el('b', { text: titleText }), iconBtn('close', t('chat.common.close'), () => done(null), 'cv-ib-flat')]),
 						el('div', { class: 'cv-dlg-body' }, [body]),
 						foot,

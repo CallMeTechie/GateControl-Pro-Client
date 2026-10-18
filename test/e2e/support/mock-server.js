@@ -23,6 +23,10 @@
  * streams as `event: plugin`; `pushChat(payload)` sends a chat notification
  * (`kind: "message"`, never part of the inbox).
  *
+ * Map ("Standort senden"): /osm/<z>/<x>/<y>.png answers a PNG tile and
+ * /nominatim/search, /nominatim/reverse canned addresses (`setGeocode()`)
+ * — the app's MapService points there in e2e mode (GC_E2E_MAP_URL).
+ *
  * The update offer is configurable per test (`server.setUpdate(...)`), all
  * requests are recorded (`server.requests`).
  */
@@ -33,6 +37,8 @@ const selfsigned = require('selfsigned');
 const { createMessenger } = require('./messenger-mock');
 
 const API_TOKEN = 'gc_e2e_test_token';
+// 1 × 1 PNG, served for every map tile
+const TILE_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const PEER_ID = 4242;
 
 async function createCertificate() {
@@ -92,6 +98,10 @@ async function startMockServer() {
   let messenger = null; // support/messenger-mock.js, null = no Messenger plugin
   const acks = [];
   const prefs = [];
+  let geocode = {
+    search: [{ lat: '48.137154', lon: '11.576124', display_name: 'Marienplatz, Altstadt, München, Bayern, 80331, Deutschland', address: { road: 'Marienplatz', postcode: '80331', city: 'München' } }],
+    reverse: { display_name: 'Am Bahnhof 1, 85435 Erding, Deutschland', address: { road: 'Am Bahnhof', house_number: '1', postcode: '85435', town: 'Erding' } },
+  };
 
   const sse = (res, event, data, id) => {
     res.write(`${id ? `id: ${id}\n` : ''}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -134,6 +144,14 @@ async function startMockServer() {
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': update.served.length });
         return res.end(update.served);
       }
+
+      if (url.pathname.startsWith('/osm/')) {
+        if (!/^\/osm\/\d+\/\d+\/\d+\.png$/.test(url.pathname)) return json(404, { ok: false });
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': TILE_PNG.length });
+        return res.end(TILE_PNG);
+      }
+      if (url.pathname === '/nominatim/search') return json(200, geocode.search);
+      if (url.pathname === '/nominatim/reverse') return json(200, geocode.reverse);
 
       if (!url.pathname.startsWith('/api/v1/client/')) return json(404, { ok: false });
       const route = url.pathname.slice('/api/v1/client/'.length);
@@ -278,6 +296,8 @@ async function startMockServer() {
     /** Sends `event: control` (no id) to the open streams, e.g. { type: 'policy_changed', policy_version: 2 }. */
     pushControl(c) { for (const res of streams) sse(res, 'control', c); },
     acks: () => acks.slice(),
+    /** Canned Nominatim answers: { search: [results], reverse: result }. */
+    setGeocode(g) { geocode = { ...geocode, ...g }; },
     pushPrefs: () => prefs.slice(),
     count(pathname) { return requests.filter((r) => r.path === pathname).length; },
     close: () => new Promise((resolve) => {
