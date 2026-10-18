@@ -415,8 +415,8 @@ describe('chat-state: Messenger 1.4.0', () => {
   const cx14 = { ...ctx, me: me14 };
 
   it('features, Familie integrations and kinds this version draws', () => {
-    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true });
-    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false });
+    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false });
+    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false });
     assert.deepEqual(CS.familie(me14), { lists: true, calendar: false, places: true });
     assert.deepEqual(CS.familie(ME), { lists: false, calendar: false, places: false });
     for (const k of ['poll', 'event', 'arrival', 'action', 'card', 'text']) assert.equal(CS.isShownKind({ kind: k }), true, k);
@@ -424,6 +424,44 @@ describe('chat-state: Messenger 1.4.0', () => {
     assert.equal(CS.summary({ kind: 'hologram', text: 'x' }, direct(), ctx), 'chat.msg.unsupported');
     assert.equal(CS.summary({ kind: 'poll', poll: { question: 'Pizza?' } }, direct(), ctx), '📊 chat.kind.poll: Pizza?');
     assert.equal(CS.summary({ kind: 'card', card: { title: 'Haustür', text: 'Es klingelt' } }, direct(), ctx), 'Haustür: Es klingelt');
+  });
+
+  it('story duration (Messenger 1.4.1): offered only with story_duration (and stories)', () => {
+    const withDur = { ...me14, features: { ...me14.features, story_duration: true } };
+    assert.equal(CS.features14(withDur).storyDuration, true);
+    assert.deepEqual(CS.storyDurations(withDur), [1, 3, 6, 12, 24]);
+    assert.deepEqual(CS.storyDurations({ ...withDur, limits: { storyDurationsH: [24, 3, 48] } }), [3, 24], 'limits, known hours only');
+    assert.deepEqual(CS.storyDurations({ ...withDur, limits: { storyDurationsH: [] } }), [1, 3, 6, 12, 24]);
+    assert.equal(CS.storyDurations(me14), null, 'no key → 24 h, no choice');
+    assert.equal(CS.storyDurations({ ...ME, features: { story_duration: true } }), null, 'not without stories');
+    assert.equal(CS.STORY_DURATION_DEFAULT_H, 24);
+  });
+
+  it('own active stories: stats, the "Meine Storys" line, a posted story added at once', () => {
+    const later = new Date(NOW + 3600000).toISOString();
+    const gone = new Date(NOW - 1000).toISOString();
+    const own = { user: { id: 7 }, stories: [{ id: 1, viewerCount: 2, expiresAt: later }, { id: 2, viewerCount: 3, expiresAt: later }, { id: 3, viewerCount: 9, expiresAt: gone }] };
+    assert.deepEqual(CS.ownStoryStats(own, NOW), { count: 2, viewers: 5 });
+    assert.deepEqual(CS.ownStoryStats({ stories: [] }, NOW), { count: 0, viewers: 0 });
+    assert.deepEqual(CS.ownStoryStats(null, NOW), { count: 0, viewers: 0 });
+    assert.equal(CS.ownStoryLine({ count: 2, viewers: 5 }, t), 'chat.st.storiesN(2) · chat.story.viewers(5)');
+    assert.equal(CS.ownStoryLine({ count: 1, viewers: 0 }, t), 'chat.st.storiesOne · chat.story.viewers(0)');
+
+    const story = { id: 301, kind: 'text', text: 'Grillen', createdAt: new Date(NOW).toISOString(), expiresAt: later };
+    const feed = { items: [{ user: { id: 8 }, stories: [] }], me: { user: { id: 7, name: 'Marc' }, status: { preset: 'dnd' }, stories: [{ id: 300, expiresAt: later }] } };
+    const next = CS.addOwnStory(feed, story, { id: 7, name: 'Marc' });
+    assert.deepEqual(next.me.stories.map((x) => x.id), [300, 301]);
+    assert.equal(next.me.stories[1].viewerCount, 0);
+    assert.equal(next.me.status.preset, 'dnd', 'status kept');
+    assert.equal(next.items, feed.items);
+    assert.equal(feed.me.stories.length, 1, 'the old feed is not changed');
+    assert.deepEqual(CS.addOwnStory(next, story, null).me.stories.map((x) => x.id), [300, 301], 'not twice');
+    const fresh = CS.addOwnStory(null, story, { id: 7, name: 'Marc', initials: 'MA' });
+    assert.deepEqual(fresh.items, []);
+    assert.equal(fresh.me.user.name, 'Marc');
+    assert.deepEqual(fresh.me.stories.map((x) => x.id), [301]);
+    assert.equal(CS.ownStoryStats(fresh.me, NOW).count, 1);
+    assert.equal(CS.addOwnStory(feed, null, null).me, feed.me, 'no story: unchanged');
   });
 
   it('status lines, rings, ages and "Löschen nach"', () => {

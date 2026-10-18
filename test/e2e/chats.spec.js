@@ -413,4 +413,38 @@ test.describe('chats', () => {
     await expect(hint).toBeHidden();
     await expect.poll(() => page.evaluate(() => window.gatecontrol.chat.status().then((st) => st.updateHint))).toBeNull();
   });
+
+  test('typing while the chat list refreshes: the field keeps focus and caret, Enter still sends', async ({ launchApp, mock }) => {
+    mock.setPush({ topics: [], items: [] });
+    const ms = mock.setMessenger();
+    const anna = ms.addConv();
+    ms.addMsg(anna, { text: 'Hallo' });
+    const family = ms.addConv({ kind: 'group', members: [7, 8, 9], title: 'Familie' });
+    ms.addMsg(family, { senderId: 9, text: 'Wer kommt?' });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await page.locator('#nav-chats').click();
+    await page.locator(`#page-chats .cv-row[data-id="${anna}"]`).click();
+    await expect(page.locator('#page-chats .cv-head-tx b')).toHaveText('Anna');
+
+    const input = page.locator('#page-chats .cv-input');
+    await input.click();
+    await page.keyboard.type('Bin gleich da');
+    await page.keyboard.press('ArrowLeft');
+    await input.evaluate((n) => { n.dataset.old = '1'; });
+    // a message in another chat refreshes the list, and with it the composer of the open chat
+    ms.receive(family, { senderId: 9, text: 'Ich komme mit' });
+    await expect(page.locator(`#page-chats .cv-row[data-id="${family}"] .cv-row-pv`)).toContainText('Ich komme mit');
+    await expect(page.locator('#page-chats .cv-input:not([data-old])')).toHaveCount(1);
+    expect(await page.evaluate(() => {
+      const a = document.activeElement;
+      return a && a.classList.contains('cv-input') ? [a.value, a.selectionStart, a.selectionEnd] : null;
+    })).toEqual(['Bin gleich da', 12, 12]);
+    // keys go on into the new field (no click in between)
+    await page.keyboard.type('!');
+    await page.keyboard.press('End');
+    await page.keyboard.type('?');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => ms.log.sent.map((x) => x.text)).toEqual(['Bin gleich d!a?']);
+  });
 });

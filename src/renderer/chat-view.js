@@ -453,10 +453,16 @@
 			if (!on) return;
 			const u = (me() && me().user) || {};
 			const own = status.mine();
-			clear(refs.meBtn).appendChild(avatar(CS.personAvatar({ name: u.name, initials: u.initials, colorHex: u.colorHex, avatarUrl: u.avatarUrl }), 34));
+			// own active stories: the same glowing ring as in the status strip
+			const stories = status.hasOwnStories();
+			const av = avatar(CS.personAvatar({ name: u.name, initials: u.initials, colorHex: u.colorHex, avatarUrl: u.avatarUrl }), stories ? 30 : 34);
+			clear(refs.meBtn).appendChild(stories ? el('span', { class: 'cv-ring is-own' }, [av]) : av);
 			const line = CS.statusLine(own && own.status, ctx());
-			refs.meBtn.title = line ? `${t('chat.st.yours')}: ${line}` : t('chat.st.yours');
+			const label = [line ? `${t('chat.st.yours')}: ${line}` : t('chat.st.yours'), stories ? CS.ownStoryLine(CS.ownStoryStats(own), t) : null].filter(Boolean).join(' · ');
+			refs.meBtn.title = label;
+			refs.meBtn.setAttribute('aria-label', label);
 			refs.meBtn.classList.toggle('has-status', !!line);
+			refs.meBtn.classList.toggle('has-stories', stories);
 		}
 
 		async function loadLists() {
@@ -1782,6 +1788,11 @@
 			if (!c) { refs.composer.hidden = true; return; }
 			refs.composer.hidden = false;
 			const text = !reset && refs.input ? refs.input.value : '';
+			// A re-render (e.g. the chat list refreshed while typing) keeps the
+			// focus and the caret in the new field; otherwise keys typed right
+			// then (Enter / Strg+Enter) would go nowhere.
+			const prev = refs.input;
+			const keep = !reset && !!prev && document.activeElement === prev ? { start: prev.selectionStart, end: prev.selectionEnd, dir: prev.selectionDirection } : null;
 			clear(refs.composer);
 			const block = CS.composerBlock(c);
 			if (block) {
@@ -1843,6 +1854,10 @@
 			]));
 			refs.composer.appendChild(el('div', { class: 'cv-compose-hint', text: `${enterSends() ? t('chat.enterHint') : t('chat.enterHintCtrl')} · ${t('chat.dropHint')}` }));
 			grow();
+			if (keep) {
+				refs.input.focus();
+				try { refs.input.setSelectionRange(keep.start, keep.end, keep.dir || 'none'); } catch (_) { /* no selection */ }
+			}
 		}
 
 		/**
