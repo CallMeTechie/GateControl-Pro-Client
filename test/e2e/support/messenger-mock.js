@@ -176,7 +176,15 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     if (!api.features14) return false;
     if (a === 'prefs' && method === 'PUT') {
       log.prefs.push(body);
-      for (const [k, v] of Object.entries(body)) st14.prefs[k] = v && typeof v === 'object' ? { ...st14.prefs[k], ...v } : v;
+      // only the known prefs (never a key taken over from the body, e.g. __proto__)
+      for (const k of ['readReceipts', 'typing', 'preview']) if (typeof body[k] === 'boolean') st14.prefs[k] = body[k];
+      for (const k of ['privacy', 'notify', 'chats']) {
+        const v = body[k];
+        if (!v || typeof v !== 'object') continue;
+        const next = { ...st14.prefs[k] };
+        for (const key of Object.keys(st14.prefs[k])) if (Object.prototype.hasOwnProperty.call(v, key)) next[key] = v[key];
+        st14.prefs[k] = next;
+      }
       return json(200, { ok: true, prefs: st14.prefs }), true;
     }
     if (a === 'status' && !b) {
@@ -267,7 +275,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
         log.rsvps.push({ id: m.id, ...body });
         const r = m.event.rsvp;
         for (const k of ['yes', 'maybe', 'no']) r[k] = r[k].filter((x) => x.userId !== ME);
-        if (body.answer) r[body.answer].push({ userId: ME, guests: body.guests || 0 });
+        if (['yes', 'maybe', 'no'].includes(body.answer)) r[body.answer].push({ userId: ME, guests: body.guests || 0 });
         r.mine = body.answer || null;
         r.myGuests = body.answer === 'yes' ? (body.guests || 0) : 0;
         changed(m, 'event.update');
@@ -276,8 +284,9 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       if (c === 'checklist') { log.checks.push({ id: m.id, itemId: d, done: body.done }); const it = m.event.checklist.find((x) => x.id === d); it.doneBy = body.done ? ME : null; changed(m, 'event.update'); return out(), true; }
       if (c === 'event' && method === 'PATCH') {
         log.eventEdits.push({ id: m.id, ...body });
-        const { checklist, rsvp, ...rest } = body;
-        Object.assign(m.event, rest);
+        for (const k of ['title', 'startsAt', 'endsAt', 'allDay', 'place', 'description', 'guests', 'reminderMin', 'familyCalendar', 'departureHint', 'cancelled']) {
+          if (Object.prototype.hasOwnProperty.call(body, k)) m.event[k] = body[k];
+        }
         changed(m, 'event.update');
         return out(), true;
       }

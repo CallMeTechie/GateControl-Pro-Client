@@ -179,6 +179,9 @@ test.describe('chats – Messenger 1.4.0', () => {
     ms.setPresence(9, { online: false, lastSeenAt: new Date().toISOString() });
     ms.st14.suggest = { items: ['Milch', 'Brot', 'Kaffee'], dates: [{ startsAt: new Date(Date.now() + 3 * 86400000).toISOString(), label: 'Do., 15:00', title: 'Zahnarzt', allDay: false }] };
     const { page, app } = await openChats(launchApp, mock);
+    // the size of a 1280 px window at 125 % scaling (the CI runners): the chat info lies over the chat
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1024, 760));
+    await expect.poll(() => page.evaluate(() => window.innerWidth)).toBeLessThan(1181);
 
     await expect(page.locator(`#page-chats .cv-row[data-id="${anna}"] .cv-online`)).toBeVisible();
     await page.locator(`#page-chats .cv-row[data-id="${lena}"]`).click();
@@ -229,9 +232,16 @@ test.describe('chats – Messenger 1.4.0', () => {
     await page.locator('#page-chats .cv-overlay .cv-danger').click();
     await expect.poll(() => ms.log.blocks).toEqual([{ userId: 8, blocked: true }]);
     await expect(page.locator('#page-chats .cv-composer .cv-blocked')).toContainText(/blockiert|blocked/);
+    // the info pane shows "Nicht mehr blockieren" now; in narrow windows it lies over the
+    // chat (header and composer), so close it to use the composer's own button
+    await expect(page.locator('#page-chats .cv-tool[data-tool="unblock"]')).toBeVisible();
+    await page.locator('#page-chats .cv-info-head .cv-ib-flat').click(); // the pane's own close button
+    await expect(page.locator('#page-chats .cv-info')).toBeHidden();
     await page.locator('#page-chats .cv-composer .cv-blocked .btn').click();
     await expect.poll(() => ms.log.blocks.at(-1)).toEqual({ userId: 8, blocked: false });
+    await expect(page.locator('#page-chats .cv-composer .cv-input')).toBeVisible();
 
+    await page.locator('#page-chats .cv-head .cv-ib-flat[aria-label]').last().click();
     await page.locator('#page-chats .cv-tool[data-tool="archive"]').click();
     await expect.poll(() => ms.log.archives).toEqual([{ id: anna, archived: true }]);
     await expect(page.locator('#page-chats .cv-archived')).toBeVisible();
