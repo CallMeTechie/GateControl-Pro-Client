@@ -49,7 +49,9 @@ try {
   e2e = require('./e2e-guard').loadE2eHooks({ app });
 
   writeCrashLog('IMPORT', 'Loading electron-store...');
-  Store = require('electron-store');
+  // electron-store 9+ is ESM-only: require() gives the namespace, the class is its default.
+  const electronStore = require('electron-store');
+  Store = electronStore.default || electronStore;
 
   writeCrashLog('IMPORT', 'Loading electron-log...');
   log = require('electron-log');
@@ -135,7 +137,7 @@ const { execFile: _execFile } = require('child_process');
 const { promisify: _promisify } = require('util');
 const execFileAsync = _promisify(_execFile);
 
-const keyStore = new (require('electron-store'))({ name: 'gatecontrol-pro-keyfile', encryptionKey: 'gc-pro-bootstrap' });
+const keyStore = new Store({ name: 'gatecontrol-pro-keyfile', encryptionKey: 'gc-pro-bootstrap' });
 
 if (!keyStore.get('machineKey')) {
   const newKey = crypto.randomBytes(32).toString('hex');
