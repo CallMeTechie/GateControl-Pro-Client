@@ -181,6 +181,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       // … and the messenger (chat:* channels)
       messenger: { on() {}, status: () => ({ state: 'unavailable' }) },
       chatNotifier: { on() {} },
+      // … and Schule (school:* channels; a core before Schule ignores it)
+      school: { on() {}, status: () => ({ state: 'unavailable' }) },
     };
     const registered = registerProIpc(ipcMain, ctx);
     return { handlers, stored, written, calls, registered, apiClient };
@@ -218,6 +220,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       'notify:test', 'notify:status', 'notify:dnd',
       // chats (core, opt-in via ctx.messenger)
       'chat:status', 'chat:conversations', 'chat:messages', 'chat:send', 'chat:open', 'chat:media', 'chat:media:save', 'chat:media:open',
+      // Schule (core with services/school.js, opt-in via ctx.school)
+      ...(fs.existsSync(path.join(coreDir, 'src', 'ipc', 'school-handlers.js')) ? ['school:status', 'school:timetable', 'school:changes', 'school:messages', 'school:absences', 'school:avatar'] : []),
     ]) {
       assert.equal(typeof handlers[ch], 'function', ch);
     }

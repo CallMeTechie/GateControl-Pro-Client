@@ -23,6 +23,11 @@
  * streams as `event: plugin`; `pushChat(payload)` sends a chat notification
  * (`kind: "message"`, never part of the inbox).
  *
+ * Schule: without `server.setSchool()` the plugin list has no
+ * `gatecontrol-schule`. With it (support/school-mock.js) the list names it
+ * and app/timetable, app/changes (and with plugin 1.4.0 app/messages,
+ * app/absences) answer from the test's data.
+ *
  * Map ("Standort senden"): /osm/<z>/<x>/<y>.png answers a PNG tile and
  * /nominatim/search, /nominatim/reverse canned addresses (`setGeocode()`)
  * — the app's MapService points there in e2e mode (GC_E2E_MAP_URL).
@@ -35,6 +40,7 @@ const https = require('https');
 const crypto = require('crypto');
 const selfsigned = require('selfsigned');
 const { createMessenger } = require('./messenger-mock');
+const { createSchool } = require('./school-mock');
 
 const API_TOKEN = 'gc_e2e_test_token';
 // 1 × 1 PNG, served for every map tile
@@ -96,6 +102,7 @@ async function startMockServer() {
   let push = null; // { topics, items: [notification + state], quiet?, state? }, null = old server (404)
   const streams = new Set();
   let messenger = null; // support/messenger-mock.js, null = no Messenger plugin
+  let school = null; // support/school-mock.js, null = no Schule plugin
   const acks = [];
   const prefs = [];
   let geocode = {
@@ -214,6 +221,16 @@ async function startMockServer() {
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
 
+      if (school) {
+        const ctx = { method: req.method, route, query: Object.fromEntries(url.searchParams) };
+        // The plugin list names both plugins when both are set.
+        if (route === 'plugins') {
+          const list = messenger ? [{ id: 'gatecontrol-messenger', name: 'Messenger', version: '1.0.0', tab: { label: 'Chats', icon: 'M0 0' } }] : [];
+          return json(200, { ok: true, plugins: [...list, school.entry()] });
+        }
+        if (school.handle(ctx, json)) return undefined;
+      }
+
       if (messenger) {
         const sendRaw = (status, type, data) => {
           res.writeHead(status, { 'Content-Type': type, 'Content-Length': data.length });
@@ -282,6 +299,11 @@ async function startMockServer() {
     setMessenger(opts = {}) {
       messenger = createMessenger({ ...opts, emit: (type, data) => { for (const r of streams) sse(r, 'plugin', { plugin: 'gatecontrol-messenger', type, data }); } });
       return messenger;
+    },
+    /** Enables the Schule plugin (support/school-mock.js); returns its state. */
+    setSchool(opts = {}) {
+      school = createSchool(opts);
+      return school;
     },
     /** A chat notification (kind "message") to the open streams — not stored in the inbox. */
     pushChat(n) {

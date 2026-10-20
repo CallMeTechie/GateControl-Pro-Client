@@ -231,14 +231,19 @@
 
 	/**
 	 * Where a notify:navigate event leads: { page, id } (app routes of the
-	 * contract; the rest opens the entry in the inbox).
+	 * contract; the rest opens the entry in the inbox). Schule (a toast the
+	 * core's SchoolService claimed) also passes its `context` (child, day,
+	 * message) on: { page: 'schule', id: null, context }.
 	 */
 	function navigateTarget(evt, pages) {
 		const route = evt && evt.route;
 		const id = evt && Number.isSafeInteger(evt.id) ? evt.id : null;
-		const map = { vpn: 'status', services: 'services', inbox: 'inbox', 'plg-gatecontrol-messenger': 'chats' };
+		const map = { vpn: 'status', services: 'services', inbox: 'inbox', 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule' };
 		const page = map[route];
-		if (page && (!pages || pages.includes(page))) return { page, id: page === 'inbox' ? id : null };
+		if (page && (!pages || pages.includes(page))) {
+			if (page === 'schule') return { page, id: null, context: evt.context && typeof evt.context === 'object' ? evt.context : null };
+			return { page, id: page === 'inbox' ? id : null };
+		}
 		return { page: 'inbox', id };
 	}
 
