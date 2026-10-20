@@ -143,6 +143,11 @@ describe('inbox empty states and hints', () => {
     // the messenger's route opens the chats page when the app has it
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 7 }, [...pages, 'chats']), { page: 'chats', id: null });
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 7 }, pages.filter((p) => p !== 'chats')), { page: 'inbox', id: 7 });
+    // Schule: a toast the core claimed opens the page with its context (child / day / message)
+    const ctx = { kind: 'changes', studentId: 3, date: '2026-10-20', messageId: null };
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7, context: ctx }, [...pages, 'schule']), { page: 'schule', id: null, context: ctx });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7 }, [...pages, 'schule']), { page: 'schule', id: null, context: null });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7, context: ctx }, pages), { page: 'inbox', id: 7 });
   });
 });
 

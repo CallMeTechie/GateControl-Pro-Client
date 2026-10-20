@@ -36,6 +36,7 @@ let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, 
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
 let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema, setupNotifications;
 let MessengerService, ChatNotifier, setupMessenger;
+let SchoolService;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
 
 try {
@@ -88,6 +89,8 @@ try {
   // (core docs/messenger.md).
   ({ MessengerService, ChatNotifier } = require('@gatecontrol/client-core'));
   ({ setupMessenger } = require('./messenger'));
+  // Schule (plugin gatecontrol-schule): WebUntis timetable (core services/school.js).
+  ({ SchoolService } = require('@gatecontrol/client-core'));
   RdpManager = require('../services/rdp/rdp-manager');
   ({ runRdpTrustMigration } = require('../services/rdp/rdp-trust-migration'));
   RdpWolClient = require('../services/rdp/rdp-wol');
@@ -218,6 +221,7 @@ let rdpWolClient = null;
 let supportBundle = null; // "Support-Paket senden" (core src/support/sender.js)
 let notifications = null; // notification center (./notifications.js), one per app lifetime
 let chats = null; // messenger (./messenger.js), one per app lifetime
+let school = null; // Schule (core SchoolService), one per app lifetime
 let trayState = 'disconnected'; // last state drawn in the tray (refresh on unread / DND changes)
 let pendingUpdate = null;
 // Version for which the "Update erforderlich" notification was already shown
@@ -853,6 +857,13 @@ function initializeServices() {
     onChange: () => updateTray(trayState),
   });
 
+  // Schule: shown while the server lists the plugin; its toasts open the page.
+  school = SchoolService ? new SchoolService({
+    apiClient, log,
+    notificationCenter: notifications?.notificationCenter,
+    pushClient: notifications?.pushClient,
+  }) : null;
+
   wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
   killSwitchSvc = new KillSwitch(log, { edition: 'pro' });
   rdpAllowSvc = new RdpAllowSvc(log, { edition: 'pro' });
@@ -1095,6 +1106,8 @@ function registerIpcHandlers() {
     // chat:* channels + events, reset on server:setup (core, opt-in)
     messenger: chats?.messenger,
     chatNotifier: chats?.chatNotifier,
+    // school:* channels + events, reset on server:setup (core, opt-in)
+    school,
     // Result of a bundle the admin requested (the button shows its own toast).
     onSupportResult: (res) => {
       if (!res || res.cancelled) return;
@@ -1164,6 +1177,8 @@ app.on('ready', () => {
   if (notifications.handleArgv(process.argv)) log.info('Started from a notification');
   // Chats: availability check, live events, chat toasts.
   chats.start();
+  // Schule: availability check, push → page.
+  school?.start();
 
   // Autostart mit Windows synchronisieren (Task Scheduler; nicht im E2E-Test)
   if (!e2e && store.get('app.startWithWindows', true)) {
@@ -1278,6 +1293,7 @@ app.on('before-quit', (e) => {
   notifications?.stop();
   // Chats: save the cache, leave the open chat.
   chats?.stop();
+  school?.stop();
 
   // Critical: cleanup all RDP sessions
   if (rdpManager) {

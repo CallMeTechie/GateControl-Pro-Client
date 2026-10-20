@@ -10,7 +10,7 @@
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
-	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi,
+	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
 
@@ -186,6 +186,7 @@ function refreshTexts() {
 	renderInbox();
 	renderNotifySettings();
 	chatView?.relabel();
+	schoolView?.relabel();
 }
 
 // ── State ───────────────────────────────────────────────
@@ -199,6 +200,7 @@ let currentRdpRoute = null; // route being viewed/connected
 let currentPortalUrl = null; // pushed from main on connect/disconnect
 let currentPage = 'status';
 let chatView = null; // chat-view.js instance (CHATS section below)
+let schoolView = null; // school-view.js instance (SCHULE section below)
 let appVersion = '';
 let serverUrl = '';
 let servicesList = [];
@@ -346,7 +348,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'chats', 'inbox', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'inbox', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -380,6 +382,9 @@ function navigateTo(page, opts = {}) {
 	// Chats: "active" / read marks only while the page is shown
 	if (page === 'chats' && prev !== 'chats') chatView?.show();
 	else if (prev === 'chats' && page !== 'chats') chatView?.hide();
+	// Schule: loads when shown (the timetable of this / next week)
+	if (page === 'schule' && prev !== 'schule') schoolView?.show();
+	else if (prev === 'schule' && page !== 'schule') schoolView?.hide();
 	if (page === 'settings' && opts.tab) showSettingsTab(opts.tab);
 	if (page === 'setup' && prev !== 'setup') resetSetup();
 	if (prev === 'setup' && page !== 'setup') stopQRScan();
@@ -2151,6 +2156,16 @@ function renderInboxDetail() {
 	}
 
 	const actions = Array.isArray(entry.actions) ? entry.actions : [];
+	// Schule message: open the timetable on its child / day (or the message) here in the app.
+	const schoolCtx = window.GCSchoolState && shownPages().includes('schule') ? window.GCSchoolState.entryContext(entry) : null;
+	if (schoolCtx) {
+		const row = h('div', 'inbox-actions');
+		const btn = h('button', 'btn btn-pri', t('school.inboxOpen'));
+		btn.type = 'button';
+		btn.addEventListener('click', () => openSchool(schoolCtx));
+		row.appendChild(btn);
+		detail.appendChild(row);
+	}
 	if (actions.length) {
 		const row = h('div', 'inbox-actions');
 		actions.forEach((a, i) => {
@@ -2189,6 +2204,18 @@ function selectInboxEntry(id) {
 			renderInboxBadge();
 		}).catch(() => {});
 	}
+}
+
+/** Pages that exist right now (Chats / Schule only while the server offers them). */
+function shownPages() {
+	return PAGES.filter((p) => (p === 'chats' ? !!chatView && !$('#nav-chats').hidden : p === 'schule' ? !!schoolView && !$('#nav-schule').hidden : true));
+}
+
+/** Schule on a push target (child, day or message), e.g. from a toast click. */
+function openSchool(context) {
+	if (!schoolView) return;
+	schoolView.open(context || null);
+	navigateTo('schule');
 }
 
 function openInbox(id = null) {
@@ -2234,10 +2261,12 @@ if (notifyAvailable()) {
 		if (currentPage === 'inbox') renderInbox();
 	});
 	notifyApi.onNavigate((evt) => {
-		const target = NS.navigateTarget(evt, chatView && !$('#nav-chats').hidden ? PAGES : PAGES.filter((p) => p !== 'chats'));
+		const target = NS.navigateTarget(evt, shownPages());
 		if (target.page === 'inbox') {
 			openInbox(target.id);
 			loadInbox();
+		} else if (target.page === 'schule') {
+			openSchool(target.context);
 		} else {
 			navigateTo(target.page);
 		}
@@ -2437,6 +2466,26 @@ chatView = chatApi && window.GCChatView && $('#page-chats')
 		// → false without a portal (VPN not connected): the chat page says so.
 		openRoute: (route) => (currentPortalUrl ? portal.open({ next: `/portal#${route}` }).catch(() => false) : Promise.resolve(false)),
 		openPortal: () => (currentPortalUrl ? portal.open().catch(() => false) : Promise.resolve(false)),
+	})
+	: null;
+
+// ══════════════════════════════════════════════════════════
+//  SCHULE (plugin gatecontrol-schule, WebUntis timetable)
+//  Data: window.gatecontrol.school (core SchoolService in main); the page
+//  is built by school-view.js (window.GCSchoolView) with school-state.js.
+//  The nav entry is shown only while the server lists the plugin.
+// ══════════════════════════════════════════════════════════
+schoolView = schoolApi && window.GCSchoolView && $('#page-schule')
+	? window.GCSchoolView.mount({
+		root: $('#page-schule'),
+		api: schoolApi,
+		t,
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		onStatus: (st) => {
+			const show = !!st && st.state === 'available';
+			$('#nav-schule').hidden = !show;
+			if (!show && currentPage === 'schule' && st && st.state === 'unavailable') navigateTo('status');
+		},
 	})
 	: null;
 
