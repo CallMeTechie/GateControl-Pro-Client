@@ -8,7 +8,9 @@
  *   …", blocked people) · Benachrichtigungen (server notify.* prefs, preview,
  *   the sound of this PC) · Chats (Enter sends, font size, archive, export)
  *   · Listen (own chat filters) · Erinnerungen · Speicher · Haus-Aktionen
- *   (which actions the attach menu shows, a setting of this PC).
+ *   (which actions the attach menu shows, a setting of this PC) · Wo
+ *   Mitteilungen erscheinen (Messenger 1.6, core push routes:
+ *   notify-routes.js, the same view as in Einstellungen › Benachrichtigungen).
  * The 1.0 settings (read receipts, typing, preview) work with every server;
  * the rest appears only when `GET me` features has privacy2 / msg_tools /
  * actions.
@@ -59,7 +61,14 @@
 				f.tools ? { id: 'reminders', icon: 'clock', label: t('chat.set.reminders'), sub: t('chat.set.remindersSub') } : null,
 				{ id: 'storage', icon: 'disk', label: t('chat.set.storage'), sub: t('chat.set.storageSub') },
 				f.actions ? { id: 'actions', icon: 'home', label: t('chat.set.actions'), sub: t('chat.set.actionsSub') } : null,
+				routesShown() ? { id: 'routes', icon: 'bell', label: t('chat.set.routes'), sub: t('chat.set.routesSub') } : null,
 			].filter(Boolean);
+		}
+
+		/** "Wo Mitteilungen erscheinen": Messenger 1.6 (`notices` / `notice_routes`) and a core with the routes API. */
+		function routesShown() {
+			const f = f14();
+			return (f.notices || f.noticeRoutes) && !!root.GCNotifyRoutes && root.GCNotifyRoutes.supported(kit.notify);
 		}
 
 		// ── Page ────────────────────────────────────────────
@@ -108,7 +117,7 @@
 				el('div', { class: 'cv-set-main' }, [nav, body]),
 			);
 			const draw = {
-				account: drawAccount, privacy: drawPrivacy, notify: drawNotify, chats: drawChats, lists: drawLists, reminders: drawReminders, storage: drawStorage, actions: drawActions,
+				account: drawAccount, privacy: drawPrivacy, notify: drawNotify, chats: drawChats, lists: drawLists, reminders: drawReminders, storage: drawStorage, actions: drawActions, routes: drawRoutes,
 			}[section];
 			const cur = list.find((s) => s.id === section);
 			body.appendChild(el('h2', { class: 'cv-set-title', text: cur ? cur.label : '' }));
@@ -254,6 +263,11 @@
 				row(t('chat.set.sound'), t('chat.set.soundHint'), toggle(t('chat.set.sound'), local.get(LOCAL.sound, true) !== false, async (v) => { local.set(LOCAL.sound, v); if (v) kit.playSound('in'); return true; }), 'sound'),
 				row(t('chat.prefs.preview'), t('chat.prefs.previewHint'), toggle(t('chat.prefs.preview'), p.preview !== false, (v) => savePrefs({ preview: v })), 'preview'),
 			], t('chat.prefs.toastHint')));
+			if (routesShown()) {
+				body.appendChild(group(t('push.routes.title'), [
+					row(t('push.routes.title'), t('push.routes.entryDesc'), el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('push.routes.open'), on: { click: () => { section = 'routes'; render(); } } }), 'routes'),
+				]));
+			}
 			if (f.privacy) {
 				body.appendChild(group(t('chat.set.groupsAndMore'), [
 					row(t('chat.set.mentionsOnly'), t('chat.set.mentionsOnlyHint', { name: (me().user && me().user.name ? me().user.name.split(' ')[0] : '') }), toggle(t('chat.set.mentionsOnly'), n.groupsMentionsOnly === true, (v) => savePrefs({ notify: { groupsMentionsOnly: v } })), 'groupsMentionsOnly'),
@@ -376,6 +390,13 @@
 				row(t('chat.set.outbox'), null, el('span', { class: 'cv-dim', text: String(r.outbox || 0) }), 'outbox'),
 				el('div', { class: 'cv-set-pad' }, [el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('chat.set.clearCache'), on: { click: async () => { await api.clearCache().catch(() => null); kit.clearMediaUrls(); toast(t('chat.set.cacheCleared'), 'success'); render(); } } })]),
 			);
+		}
+
+		/** GateControl, family chat or an own chat per kind of notification (shared view, skin of this page). */
+		function drawRoutes(body) {
+			const host = el('div', { class: 'nr-host' });
+			body.appendChild(host);
+			root.GCNotifyRoutes.mount(host, { api: kit.notify, t, toast, skin: 'chat' }).load();
 		}
 
 		async function drawActions(body) {

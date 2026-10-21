@@ -415,8 +415,8 @@ describe('chat-state: Messenger 1.4.0', () => {
   const cx14 = { ...ctx, me: me14 };
 
   it('features, Familie integrations and kinds this version draws', () => {
-    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false });
-    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false });
+    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false, notices: false, noticeRoutes: false });
+    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false, notices: false, noticeRoutes: false });
     assert.deepEqual(CS.familie(me14), { lists: true, calendar: false, places: true });
     assert.deepEqual(CS.familie(ME), { lists: false, calendar: false, places: false });
     for (const k of ['poll', 'event', 'arrival', 'action', 'card', 'text']) assert.equal(CS.isShownKind({ kind: k }), true, k);
@@ -581,5 +581,71 @@ describe('chat-state: Messenger 1.4.0', () => {
     assert.equal(CS.systemText({ kind: 'system', system: { event: 'arrived', userId: 8, label: 'Zuhause' } }, c, ctx), 'chat.sys.arrived(Anna,Zuhause)');
     assert.equal(CS.systemText({ kind: 'system', system: { event: 'action_run', userId: 9, asUserId: 8, label: 'Licht' } }, c, ctx), 'chat.sys.actionRunAs(Lena,Licht,Anna)');
     assert.equal(CS.systemText({ kind: 'system', system: { event: 'something_new' } }, c, ctx), 'chat.sys.unknown');
+  });
+});
+
+describe('Messenger 1.6: notifications in chats', () => {
+  const me16 = { ...ME, features: { ...ME.features, status: true, notices: true, notice_routes: true } };
+
+  it('knows the 1.6 features', () => {
+    const f = CS.features14(me16);
+    assert.deepEqual([f.notices, f.noticeRoutes], [true, true]);
+    assert.deepEqual([CS.features14(ME).notices, CS.features14(ME).noticeRoutes], [false, false]);
+  });
+
+  it('list sections: pinned chats (listPinned) apart, each in its order; none while searching', () => {
+    const fam = group({ id: 20, title: 'Familie', listPinned: true, unread: 0 });
+    const list = [direct({ id: 1 }), fam, group({ id: 2 })];
+    const s = CS.listSections(list);
+    assert.deepEqual(s.pinned.map((c) => c.id), [20]);
+    assert.deepEqual(s.chats.map((c) => c.id), [1, 2]);
+    const q = CS.listSections(list, { sectioned: false });
+    assert.deepEqual([q.pinned.length, q.chats.map((c) => c.id)], [0, [1, 20, 2]]);
+    assert.deepEqual(CS.listSections(null), { pinned: [], chats: [] });
+    // filters apply to pinned chats as well (the list is split after filtering)
+    assert.deepEqual(CS.listSections(CS.listFilter([fam, direct({ id: 1, unread: 1 })], { filter: 'unread' })).pinned, []);
+  });
+
+  it('notice channels: tag, header line, no "kept by a plugin"', () => {
+    const ch = group({ id: 30, title: 'Schule', readonly: true, managedBy: 'gatecontrol-messenger', can: { send: false }, notice: { source: 'plugin:gatecontrol-schule', label: 'Schule' } });
+    assert.equal(CS.isNotice(ch), true);
+    assert.equal(CS.isNotice(group()), false);
+    assert.equal(CS.noticeLabel(ch), 'Schule');
+    assert.equal(CS.headSub(ch, ctx).text, 'chat.notice.infoSub(Schule)');
+    assert.equal(CS.headSub({ ...ch, notice: {} }, ctx).text, 'chat.channelSub');
+    assert.equal(CS.composerBlock(ch), 'readonly');
+    // the list preview without "GateControl:" in front
+    assert.equal(CS.preview({ ...ch, lastMessage: { kind: 'text', text: 'Neu', senderId: null } }, ctx).text, 'Neu');
+  });
+
+  it('notice cards: head "<source> · <topic>", checked notice, picture and link to the notification', () => {
+    const card = {
+      kind: 'notice', title: 'Elternbrief', text: 'Zeile 1\nZeile 2', image: null, imageUrl: '/notify-media/schule0001ab.jpg',
+      link: { label: 'Ganze Nachricht lesen', route: 'plg-gatecontrol-schule/messages/4711', kind: null },
+      actions: [], lastRun: null,
+      notice: { source: 'plugin:gatecontrol-schule', sourceLabel: 'Schule', topic: 'plugin:gatecontrol-schule:messages', topicLabel: 'Nachrichten der Schule', priority: 'high', data: { schule: { studentId: 3, messageId: 4711 } } },
+    };
+    const m = { id: 5, kind: 'card', createdAt: at(17, 52), card };
+    assert.equal(CS.cardHead(m, ctx), 'Schule · Nachrichten der Schule · 17:52');
+    // without labels: the old head
+    assert.equal(CS.cardHead({ ...m, card: { ...card, notice: { topic: 'devices' } } }, ctx), 'chat.card.notice · Elternbrief · 17:52');
+    assert.equal(CS.noticeImage(card), '/notify-media/schule0001ab.jpg');
+    assert.equal(CS.noticeImage({ imageUrl: 'https://evil.example/notify-media/schule0001ab.jpg' }), null);
+    assert.equal(CS.noticeImage({ imageUrl: '/notify-media/../x.jpg' }), null);
+    const n = CS.noticeOf(card);
+    assert.deepEqual([n.source, n.topic, n.priority, n.data.schule.messageId], ['plugin:gatecontrol-schule', 'plugin:gatecontrol-schule:messages', 'high', 4711]);
+    assert.deepEqual(CS.noticeOf({ notice: { source: 'evil', topic: '../x', sourceLabel: 'A\u0000B', priority: 'urgent', data: [1] } }), { source: null, sourceLabel: 'A B', topic: null, topicLabel: null, priority: 'normal', data: null });
+    assert.equal(CS.noticeOf({}), null);
+    const link = CS.cardLink(card, t);
+    assert.deepEqual(link, {
+      route: 'plg-gatecontrol-schule/messages/4711', label: 'Ganze Nachricht lesen', icon: 'external',
+      target: { route: 'plg-gatecontrol-schule/messages/4711', topic: 'plugin:gatecontrol-schule:messages', data: { schule: { studentId: 3, messageId: 4711 } } },
+    });
+    // the doorbell's link keeps working; labels ≤ 40, default label
+    assert.deepEqual(CS.cardLink({ link: { route: 'plg-gatecontrol-door', kind: 'live_view' } }, t), { route: 'plg-gatecontrol-door', label: 'chat.card.open', icon: 'video', target: { route: 'plg-gatecontrol-door', topic: null, data: null } });
+    assert.equal(CS.cardLink({ link: { route: 'plg-x', label: 'x'.repeat(60) } }, t).label.length, 40);
+    for (const bad of ['plg-x/../y', 'plg-x/..', 'plg-x/a/b/c/d', 'vpn', 'https://x']) assert.equal(CS.cardLink({ link: { route: bad } }, t), null, bad);
+    // the whole text, line breaks kept (preview of the list: title and text)
+    assert.equal(CS.summary(m, group(), ctx), 'Elternbrief: Zeile 1\nZeile 2');
   });
 });
