@@ -578,7 +578,8 @@
 					body.appendChild(row);
 					if (tg.link && D.sel.link) {
 						const seg = el('div', { class: 'seg gd-exp', role: 'radiogroup', 'aria-label': t('gatedrop.dialog.expires') });
-						for (const x of GS.EXPIRES) {
+						if (!tg.expires.includes(D.sel.expires)) D.sel.expires = tg.expires.includes('1d') ? '1d' : tg.expires[0];
+						for (const x of tg.expires) {
 							seg.appendChild(el('button', { type: 'button', role: 'radio', 'aria-checked': D.sel.expires === x ? 'true' : 'false', class: D.sel.expires === x ? 'on' : '', text: t(`gatedrop.expires.${x}`), on: { click: () => { D.sel.expires = x; renderDialog(); } } }));
 						}
 						const pinLabel = nextId('gd-pin');

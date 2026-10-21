@@ -118,11 +118,14 @@
 		const devices = (tg.devices || []).filter((d) => !d.self).slice().sort((a, b) => (Number(b.online) - Number(a.online)) || str(a.name).localeCompare(str(b.name)));
 		const people = (tg.people || []).slice().sort((a, b) => (Number(b.kind === 'family') - Number(a.kind === 'family')) || str(a.name).localeCompare(str(b.name)));
 		const me = tg.me || {};
+		// Validities the plugin offers (limits.linkExpires), in the known order.
+		const offered = tg.limits && Array.isArray(tg.limits.linkExpires) ? EXPIRES.filter((x) => tg.limits.linkExpires.includes(x)) : [];
 		return {
 			devices,
 			people,
 			nas: me.canNas ? (tg.nas || []) : [],
 			link: !!(me.canLink && tg.links && tg.links.enabled),
+			expires: offered.length ? offered : EXPIRES.slice(),
 		};
 	}
 
@@ -179,7 +182,8 @@
 		const items = s.items || [];
 		const bytes = items.reduce((sum, it) => sum + (Number(it.bytes) || 0), 0);
 		const meta = [];
-		if (s.from && s.from.name) meta.push(t('gatedrop.list.from', { name: s.from.name }));
+		const fromName = s.from && (s.from.name || s.from.deviceName);
+		if (fromName) meta.push(t('gatedrop.list.from', { name: s.from.name && s.from.deviceName ? `${s.from.name} (${s.from.deviceName})` : fromName }));
 		if (s.at) meta.push(when(s.at, now, locale, t));
 		if (s.via === 'direct') meta.push(t('gatedrop.via.direct'));
 		return {

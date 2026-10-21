@@ -80,6 +80,8 @@ describe('gatedrop-state', () => {
     assert.deepEqual(tg.people.map((p) => p.id), ['family', '9']);
     assert.deepEqual(tg.nas, []);
     assert.equal(tg.link, false);
+    assert.deepEqual(tg.expires, ['1h', '1d', '7d', 'once']);
+    assert.deepEqual(GS.dialogTargets({ limits: { linkExpires: ['once', '1d', 'forever'] } }).expires, ['1d', 'once']);
     assert.equal(GS.deviceMeta({ online: true, direct: true }, t), 'gatedrop.dialog.online · gatedrop.dialog.direct');
   });
 
