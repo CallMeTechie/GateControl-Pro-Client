@@ -233,6 +233,8 @@
 		const s = summary(m, c, ctx);
 		if (m.kind === 'system') return { text: s, typing: false };
 		if (m.mine) return { text: `${ctx.t('chat.you')}: ${s}`, typing: false };
+		// Messenger 1.6 notice channel: everything in it comes from GateControl
+		if (isNotice(c)) return { text: s, typing: false };
 		if (c.kind === 'group') return { text: `${nameOf(c, m.senderId, ctx)}: ${s}`, typing: false };
 		return { text: s, typing: false };
 	}
@@ -393,6 +395,8 @@
 		const typing = typingText(c, ctx);
 		if (typing) return { text: typing, typing: true };
 		if (!c) return { text: '', typing: false };
+		// Messenger 1.6 notice channel: "Mitteilungen von Schule – nur für dich"
+		if (isNotice(c) && noticeLabel(c)) return { text: ctx.t('chat.notice.infoSub', { source: noticeLabel(c) }), typing: false };
 		if (c.readonly) return { text: ctx.t('chat.channelSub'), typing: false };
 		if (c.kind === 'group') {
 			const meId = ctx.me && ctx.me.user ? ctx.me.user.id : null;
@@ -662,6 +666,8 @@
 		return {
 			status: f('status'), stories: f('stories'), polls: f('polls'), events: f('events'), arrival: f('arrival'), actions: f('actions'), tools: f('msg_tools'), privacy: f('privacy2'),
 			storyDuration: f('stories') && f('story_duration'),
+			// Messenger 1.6: notice channels / cards, the family chat pinned to the list, "Wo Mitteilungen erscheinen"
+			notices: f('notices'), noticeRoutes: f('notice_routes'),
 		};
 	}
 
@@ -954,17 +960,96 @@
 		};
 	}
 
-	/** Head of a plugin card: "KLINGEL · Haustür · 17:52". */
+	/**
+	 * Head of a plugin card: "KLINGEL · Haustür · 17:52"; a notice card of
+	 * Messenger 1.6 names its notification: "Schule · Nachrichten der Schule · 17:52".
+	 */
 	function cardHead(m, ctx) {
 		const card = (m && m.card) || {};
+		const n = noticeOf(card);
+		if (n && (n.sourceLabel || n.topicLabel)) return [n.sourceLabel, n.topicLabel, hm(m && m.createdAt, ctx.locale)].filter(Boolean).join(' · ');
 		const kind = card.kind === 'doorbell' ? ctx.t('chat.card.doorbell') : ctx.t('chat.card.notice');
 		return [kind, str(card.title), hm(m && m.createdAt, ctx.locale)].filter(Boolean).join(' · ');
 	}
 
-	/** A card link the app can open (another plugin's app route plg-…), or null. */
+	/**
+	 * A card link the app can open: another plugin's app route plg-<id>; since
+	 * Messenger 1.6 it may name a screen of the plugin after a `/`
+	 * (plg-gatecontrol-schule/messages/4711, at most three segments, no `.` / `..`).
+	 */
 	function cardRoute(link) {
 		const r = link && typeof link.route === 'string' ? link.route : '';
-		return /^plg-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(r) && r.length <= 80 ? r : null;
+		return r.length <= 200 && /^plg-[a-z0-9]+(?:-[a-z0-9]+)*(?:\/(?!\.{1,2}(?:\/|$))[A-Za-z0-9_.:-]{1,80}){0,3}$/.test(r) ? r : null;
+	}
+
+	const NOTICE_SOURCE_RE = /^(?:core|plugin:[a-z0-9]+(?:-[a-z0-9]+)*)$/;
+	const NOTICE_TOPIC_RE = /^(?:[a-z][a-z0-9_]{0,31}|plugin:[a-z0-9]+(?:-[a-z0-9]+)*:[a-z][a-z0-9_-]{0,31})$/;
+	const NOTIFY_MEDIA_RE = /^\/notify-media\/[A-Za-z0-9_-]{8,128}\.(?:jpg|jpeg|png|webp)$/;
+	const line = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+
+	/**
+	 * The notification a notice card carries (Messenger 1.6 `card.notice`):
+	 * { source, sourceLabel, topic, topicLabel, priority, data } with checked
+	 * ids and plain labels, or null. `data` is untrusted (like a push's data).
+	 */
+	function noticeOf(card) {
+		const n = card && card.notice && typeof card.notice === 'object' && !Array.isArray(card.notice) ? card.notice : null;
+		if (!n) return null;
+		const data = n.data && typeof n.data === 'object' && !Array.isArray(n.data) ? n.data : null;
+		return {
+			source: typeof n.source === 'string' && NOTICE_SOURCE_RE.test(n.source) ? n.source : null,
+			sourceLabel: line(n.sourceLabel, 60) || null,
+			topic: typeof n.topic === 'string' && NOTICE_TOPIC_RE.test(n.topic) ? n.topic : null,
+			topicLabel: line(n.topicLabel, 80) || null,
+			priority: ['info', 'normal', 'high', 'critical'].includes(n.priority) ? n.priority : 'normal',
+			data,
+		};
+	}
+
+	/** The picture of a notice card on the own server (`imageUrl`: /notify-media/…), or null. */
+	function noticeImage(card) {
+		const u = card && typeof card.imageUrl === 'string' ? card.imageUrl.trim() : '';
+		return NOTIFY_MEDIA_RE.test(u) ? u : null;
+	}
+
+	/**
+	 * A card's link → { route, label, icon, target } or null: `target` is what
+	 * notify.open() gets ({ route, topic, data } of the card's notification),
+	 * so the link opens what a click on that notification would.
+	 */
+	function cardLink(card, t) {
+		const l = card && card.link && typeof card.link === 'object' ? card.link : null;
+		const route = cardRoute(l);
+		if (!route) return null;
+		const n = noticeOf(card);
+		return {
+			route,
+			label: line(l.label, 40) || t('chat.card.open'),
+			icon: l.kind === 'live_view' ? 'video' : 'external',
+			target: { route, topic: n ? n.topic : null, data: n ? n.data : null },
+		};
+	}
+
+	/** A notice channel of Messenger 1.6 (`notice { source, label }`): GateControl's notifications of one source. */
+	function isNotice(c) {
+		return !!(c && c.notice && typeof c.notice === 'object' && !Array.isArray(c.notice));
+	}
+
+	/** The source name of a notice channel ("Schule"), or ''. */
+	function noticeLabel(c) {
+		return isNotice(c) ? line(c.notice.label, 60) : '';
+	}
+
+	/**
+	 * The chat list's sections (Messenger 1.6): under "Angeheftet" the chats
+	 * the server pins to the list (`listPinned`, the family group) after the
+	 * GateControl entry, under "Chats" the rest — each in its order. Without
+	 * sections (search) pinned chats simply appear among the results.
+	 */
+	function listSections(list, { sectioned = true } = {}) {
+		const items = Array.isArray(list) ? list : [];
+		if (!sectioned) return { pinned: [], chats: items };
+		return { pinned: items.filter((c) => c && c.listPinned === true), chats: items.filter((c) => !(c && c.listPinned === true)) };
 	}
 
 	/** SVG path data of an action icon (24 × 24) when it looks like one, else null. */
@@ -1076,6 +1161,12 @@
 		actionView,
 		cardHead,
 		cardRoute,
+		noticeOf,
+		noticeImage,
+		cardLink,
+		isNotice,
+		noticeLabel,
+		listSections,
 		iconPath,
 		lastSeenText,
 		listFilter,

@@ -2,7 +2,10 @@
  * GateControl -- Chats: message kinds of Messenger 1.4.0 (renderer)
  *
  * Bubbles for polls, events, live arrivals, home actions and plugin cards
- * (doorbell with picture, buttons and the "Live-Bild" link), the bubble for
+ * (doorbell with picture, buttons and the "Live-Bild" link; Messenger 1.6
+ * notice cards with "<Quelle> · <Art>", title, the whole text, the
+ * notification's picture and a link that opens what a click on the
+ * notification would), the bubble for
  * kinds this version does not know, and the dialogs that create them:
  * "Abstimmung erstellen", "Ereignis erstellen / bearbeiten", "Haus-Aktion
  * senden", plus the suggestion dialogs of the message menu ("Auf
@@ -282,21 +285,27 @@
 			else toast(res.message || t('chat.action.failedToast'), 'error');
 		}
 
-		// ── Plugin card (doorbell, notice) ──
+		// ── Plugin card (doorbell, notice; Messenger 1.6: a GateControl notification) ──
 		function cardEl(m, c, cx) {
 			const card = m.card;
-			const box = el('div', { class: `cv-card is-${card.kind === 'doorbell' ? 'doorbell' : 'notice'}` });
+			const notice = CS.noticeOf(card);
+			const box = el('div', { class: `cv-card is-${card.kind === 'doorbell' ? 'doorbell' : 'notice'}${notice ? ' is-gc-notice' : ''}`, 'data-priority': notice ? notice.priority : null });
 			box.appendChild(head(CS.cardHead(m, cx)));
-			if (card.image) {
+			// the picture: the plugin's (base64 / card image) or, for notice cards, the core's /notify-media/…
+			const noticeImg = CS.noticeImage(card);
+			const load = card.image ? () => kit.cardImageUrl(m.id) : (noticeImg && typeof kit.noticeImageUrl === 'function' ? () => kit.noticeImageUrl(noticeImg) : null);
+			if (load) {
 				const img = el('button', { type: 'button', class: 'cv-card-img is-loading', 'aria-label': t('chat.card.picture') });
 				box.appendChild(img);
-				kit.cardImageUrl(m.id).then((u) => {
+				load().then((u) => {
 					img.classList.remove('is-loading');
 					if (!u) { img.classList.add('is-missing'); img.appendChild(icon('image', 26, '1.6')); return; }
 					img.appendChild(el('img', { src: u, alt: '', draggable: 'false' }));
 					img.addEventListener('click', (e) => { e.stopPropagation(); kit.lightboxUrl(u); });
 				});
 			}
+			// A notice card names its notification in the head; its title leads the (whole) text.
+			if (notice && (notice.sourceLabel || notice.topicLabel) && card.title) box.appendChild(el('b', { class: 'cv-event-title cv-card-title', text: String(card.title) }));
 			const text = card.text || m.text;
 			if (text) box.appendChild(el('div', { class: 'cv-text', text }));
 			const btns = el('div', { class: 'cv-rich-btns' });
@@ -309,9 +318,9 @@
 					if (r) resultToast(r.result);
 				} } }, [serverIcon(a.icon, 15), el('span', { text: a.label || t('chat.action.run') })]));
 			}
-			const route = CS.cardRoute(card.link);
-			if (route && typeof kit.openRoute === 'function') {
-				btns.appendChild(el('button', { type: 'button', class: 'btn btn-sec btn-sm cv-card-link', 'data-route': route, on: { click: (e) => { e.stopPropagation(); kit.openRoute(route); } } }, [icon(card.link.kind === 'live_view' ? 'video' : 'external', 15), el('span', { text: card.link.label || t('chat.card.open') })]));
+			const link = CS.cardLink(card, t);
+			if (link && typeof kit.openRoute === 'function') {
+				btns.appendChild(el('button', { type: 'button', class: 'btn btn-sec btn-sm cv-card-link', 'data-route': link.route, on: { click: (e) => { e.stopPropagation(); kit.openRoute(link.route, link.target); } } }, [icon(link.icon, 15), el('span', { text: link.label })]));
 			}
 			if (btns.childNodes.length) box.appendChild(btns);
 			if (card.lastRun && card.lastRun.at) {

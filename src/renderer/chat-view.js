@@ -21,6 +21,11 @@
  * (chat-settings.js), archive, pinned messages, chat lists as filters,
  * blocking, export, "Erinnere mich", suggestions to Familie, the bar of the
  * next event, last seen in direct chats.
+ * Messenger 1.6 (GateControl's notifications in chats): "Mein Status" above
+ * "Angeheftet", the chats the server pins to the list (`listPinned`, the
+ * family group) under the GateControl entry, notice channels tagged
+ * "Mitteilungen", notice cards (chat-rich.js) and "Wo Mitteilungen
+ * erscheinen" in the chat settings (notify-routes.js).
  *
  * Map tiles and addresses come from the main process (chat.mapTile /
  * mapSearch / mapReverse → core MapService, OpenStreetMap) as bytes / data;
@@ -148,7 +153,9 @@
 	 * @param {(st: object) => void} [o.onStatus] - availability (nav entry)
 	 * @param {(n: number) => void} [o.onUnread] - nav badge
 	 * @param {() => void} [o.checkUpdate] - the app's update check (button of the "newer version" banner)
-	 * @param {(route: string) => Promise<boolean>} [o.openRoute] - open another plugin's app route (card link "Live-Bild": plg-…) as its portal tab; false: no portal now
+	 * @param {(route: string, target?: object) => Promise<boolean>} [o.openRoute] - open a card link: another plugin's app route
+	 *   (plg-…, "Live-Bild"; Messenger 1.6 also plg-…/<screen>) — `target` { route, topic, data } of a notice card's notification
+	 *   opens what a click on it would; else the app's page or the plugin's portal tab; false: not reachable now
 	 * @param {() => Promise<boolean>} [o.openPortal] - open the portal (profile is managed there); false: no portal now
 	 */
 	function mount(o) {
@@ -292,6 +299,14 @@
 			return S.media.get(key);
 		}
 
+		/** Picture of a notice card (Messenger 1.6 `imageUrl`, /notify-media/… loaded by main over the device token). */
+		function noticeImageUrl(path) {
+			if (!path) return Promise.resolve(null);
+			const key = `notice:${path}`;
+			if (!S.media.has(key)) S.media.set(key, (typeof api.noticeImage === 'function' ? api.noticeImage(path) : Promise.resolve(null)).then(blobUrl).catch(() => null));
+			return S.media.get(key);
+		}
+
 		function clearMediaUrls() {
 			for (const p of S.media.values()) p.then((u) => { if (u) setTimeout(() => URL.revokeObjectURL(u), 5000); });
 			S.media.clear();
@@ -407,7 +422,9 @@
 			avatar: (a, size) => avatar(a, size),
 			mediaUrl: (id) => mediaUrl(id),
 			cardImageUrl,
+			noticeImageUrl,
 			clearMediaUrls,
+			notify: o.notify || null,
 			lightboxUrl: (u) => lightboxUrl(u),
 			mapView: (mo) => mapView(mo),
 			ctx: () => ctx(),
@@ -422,7 +439,7 @@
 			openDirect: async (userId) => { const cid = await directWith(userId); if (cid) openChat(cid); },
 			openMessage: async (cid, mid) => { await openChat(cid); if (mid) jumpTo(mid); },
 			// another plugin's page (card link) / the portal: false → not reachable now (no VPN)
-			openRoute: typeof o.openRoute === 'function' ? (route) => Promise.resolve(o.openRoute(route)).then((ok) => { if (ok === false) toast(t('chat.card.noPortal'), 'warning'); }) : null,
+			openRoute: typeof o.openRoute === 'function' ? (route, target) => Promise.resolve(o.openRoute(route, target || null)).then((ok) => { if (ok === false) toast(t('chat.card.noPortal'), 'warning'); }) : null,
 			openPortal: typeof o.openPortal === 'function' ? () => Promise.resolve(o.openPortal()).then((ok) => { if (ok === false) toast(t('chat.card.noPortal'), 'warning'); }) : null,
 			afterSend: () => { playSound('out'); scrollBottom(true); },
 			exportChat,
@@ -583,12 +600,19 @@
 			renderChips();
 			clear(refs.rows);
 			const strip = !S.q && !S.archived && status ? status.strip() : null;
+			// Messenger 1.6: "Angeheftet" holds the GateControl entry and the chats the
+			// server pins to the list (`listPinned`, the family group); "Chats" the rest.
+			const sec = CS.listSections(list, { sectioned: !S.q && !S.archived });
 			if (S.archived) {
 				refs.rows.appendChild(el('button', { type: 'button', class: 'cv-archived-head', on: { click: () => { S.archived = false; renderList(); } } }, [icon('back', 16), el('b', { text: t('chat.archive.title') }), el('span', { class: 'cv-dim', text: String(arch.count) })]));
 			} else {
-				if (strip || (f.status && o.notify && !S.q)) refs.rows.appendChild(el('div', { class: 'cv-list-sec', text: t('chat.list.pinned') }));
+				const inbox = !!o.notify && !S.q;
+				const labels = !S.q && (!!strip || (f.status && !!o.notify) || sec.pinned.length > 0);
+				// "Mein Status" above "Angeheftet"
 				if (strip) refs.rows.appendChild(strip);
-				if (o.notify && !S.q) refs.rows.appendChild(inboxRowEl());
+				if (labels && (inbox || sec.pinned.length)) refs.rows.appendChild(el('div', { class: 'cv-list-sec', text: t('chat.list.pinned') }));
+				if (inbox) refs.rows.appendChild(inboxRowEl());
+				for (const cv of sec.pinned) refs.rows.appendChild(rowEl(cv, c, { pinned: true }));
 				if (arch.count && !S.q && S.filter === 'all') {
 					refs.rows.appendChild(el('button', { type: 'button', class: 'cv-archived', on: { click: () => { S.archived = true; renderList(); } } }, [
 						el('span', { class: 'cv-archived-ic' }, [icon('archive', 18)]),
@@ -597,9 +621,9 @@
 						arch.unread ? el('span', { class: 'cv-badge is-muted', text: String(arch.unread) }) : el('span', { class: 'cv-dim', text: String(arch.count) }),
 					]));
 				}
-				if (strip) refs.rows.appendChild(el('div', { class: 'cv-list-sec', text: t('chat.list.chats') }));
+				if (labels && sec.chats.length) refs.rows.appendChild(el('div', { class: 'cv-list-sec', text: t('chat.list.chats') }));
 			}
-			for (const cv of list) refs.rows.appendChild(rowEl(cv, c));
+			for (const cv of sec.chats) refs.rows.appendChild(rowEl(cv, c));
 			const unread = S.convs.reduce((n, x) => n + (x.muted || x.archived ? 0 : (x.unread || 0)), 0);
 			refs.count.textContent = unread > 0 ? String(unread) : '';
 			refs.count.hidden = unread <= 0;
@@ -637,16 +661,20 @@
 			]);
 		}
 
-		function rowEl(c, cx) {
+		/** A chat in the list; `pinned`: shown under "Angeheftet" (Messenger 1.6 `listPinned`). */
+		function rowEl(c, cx, { pinned = false } = {}) {
 			const pv = CS.preview(c, cx);
 			const on = S.cur === c.id;
 			const time = CS.listTime(c.lastMessage ? c.lastMessage.createdAt : (c.updatedAt || c.createdAt), cx);
 			const name = CS.title(c, t);
-			const b = el('button', { type: 'button', class: `cv-row${on ? ' is-on' : ''}${c.unread ? ' is-unread' : ''}`, role: 'listitem', 'aria-current': on ? 'true' : 'false', 'data-id': String(c.id), on: { click: () => openChat(c.id) } }, [
+			const b = el('button', { type: 'button', class: `cv-row${pinned ? ' is-list-pinned' : ''}${on ? ' is-on' : ''}${c.unread ? ' is-unread' : ''}`, role: 'listitem', 'aria-current': on ? 'true' : 'false', 'data-id': String(c.id), on: { click: () => openChat(c.id) } }, [
 				rowAvatar(c),
 				el('span', { class: 'cv-row-tx' }, [
 					el('span', { class: 'cv-row-top' }, [
 						el('b', { class: 'cv-row-name', text: name }),
+						// Messenger 1.6: a notice channel (GateControl's notifications of one source, read only)
+						CS.isNotice(c) ? el('span', { class: 'cv-chip cv-row-tag', text: t('chat.notice.tag') }) : null,
+						pinned ? el('span', { class: 'cv-row-pin' }, [icon('pin', 12)]) : null,
 						c.muted ? el('span', { class: 'cv-row-muted', title: t('chat.mute.always') }, [icon('bellOff', 12)]) : null,
 						el('span', { class: 'cv-row-time', text: time }),
 					]),
@@ -2237,10 +2265,14 @@
 			const cx = ctx();
 			clear(refs.info);
 			refs.info.appendChild(el('div', { class: 'cv-info-head' }, [el('b', { text: t('chat.info.title') }), iconBtn('close', t('chat.common.close'), () => toggleInfo(), 'cv-ib-flat')]));
-			const sub = c.kind === 'group'
-				? (c.managedBy ? t('chat.info.managed', { plugin: pluginName(c.managedBy) }) : t('chat.membersN', { n: (c.members || []).length }))
-				: (c.peer && c.peer.gone ? t('chat.peerGone') : (CS.lastSeenText(c.peer, cx) || t('chat.directSub')));
-			const top = el('div', { class: 'cv-info-top' }, [avatar(CS.avatarOf(c), 76), el('b', { text: CS.title(c, t) }), el('span', { class: 'cv-dim', text: sub })]);
+			const notice = CS.isNotice(c);
+			const sub = notice
+				// Messenger 1.6 notice channel: no "kept by a plugin" hint
+				? (CS.noticeLabel(c) ? t('chat.notice.infoSub', { source: CS.noticeLabel(c) }) : t('chat.channelSub'))
+				: c.kind === 'group'
+					? (c.managedBy ? t('chat.info.managed', { plugin: pluginName(c.managedBy) }) : t('chat.membersN', { n: (c.members || []).length }))
+					: (c.peer && c.peer.gone ? t('chat.peerGone') : (CS.lastSeenText(c.peer, cx) || t('chat.directSub')));
+			const top = el('div', { class: 'cv-info-top' }, [avatar(CS.avatarOf(c), 76), el('b', { text: CS.title(c, t) }), notice ? el('span', { class: 'cv-chip cv-row-tag', text: t('chat.notice.tag') }) : null, el('span', { class: 'cv-dim', text: sub })]);
 			if (c.can && c.can.editInfo) {
 				top.appendChild(el('div', { class: 'cv-info-btns' }, [
 					el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => renameDialog(c) } }, [icon('pen', 13), t('chat.info.rename')]),
@@ -2309,7 +2341,7 @@
 					if (c.can && c.can.manageMembers && !me) row.appendChild(iconBtn('more', t('chat.info.memberActions', { name: mb.name || '' }), () => memberDialog(c, mb), 'cv-ib-flat'));
 					ms.appendChild(row);
 				}
-				if (c.managedBy) ms.appendChild(el('p', { class: 'cv-note', text: t('chat.info.managedHint', { plugin: pluginName(c.managedBy) }) }));
+				if (c.managedBy && !notice) ms.appendChild(el('p', { class: 'cv-note', text: t('chat.info.managedHint', { plugin: pluginName(c.managedBy) }) }));
 				refs.info.appendChild(ms);
 			}
 			const foot = el('div', { class: 'cv-info-sec' }, [el('p', { class: 'cv-note cv-note-lock' }, [icon('lock', 14), el('span', { text: t('chat.info.encrypted') })])]);

@@ -248,6 +248,25 @@
 	}
 
 	/**
+	 * A card link in a chat (plg-<id>, Messenger 1.6 also plg-<id>/<screen>)
+	 * → this app's page for it: { page, context } — Schule on its tab or
+	 * message (`plg-gatecontrol-schule/messages/<id>`) — or null when the app
+	 * has no page for it (then the plugin's portal tab opens).
+	 */
+	function routeTarget(route, pages) {
+		const parts = str(route).split('/');
+		const map = { 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule' };
+		const page = map[parts[0]];
+		if (!page || (pages && !pages.includes(page))) return null;
+		if (page !== 'schule') return { page, context: null };
+		const kind = ['messages', 'absences', 'changes'].includes(parts[1]) ? parts[1] : null;
+		const raw = kind === 'messages' && /^[A-Za-z0-9_.:-]{1,80}$/.test(str(parts[2])) ? parts[2] : null;
+		// ids as the Schule service has them: numbers stay numbers
+		const messageId = raw && /^[1-9]\d{0,14}$/.test(raw) ? Number(raw) : raw;
+		return { page, context: kind ? { kind, studentId: null, date: null, messageId } : null };
+	}
+
+	/**
 	 * Quiet hours card (read-only; set in the portal). Input: notify status()
 	 * (quiet, quietKnown) or notify.quiet() ({ known, quiet }).
 	 * → null while unknown (server without quiet hours / not connected yet),
@@ -288,5 +307,6 @@
 		killSwitchNote,
 		badgeText,
 		navigateTarget,
+		routeTarget,
 	};
 });

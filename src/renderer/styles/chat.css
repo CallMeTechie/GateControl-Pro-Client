@@ -602,6 +602,18 @@
 .cv-info-tools { gap: 6px; }
 .cv-tool { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-start; width: 100%; }
 
+/* ── Messenger 1.6: notifications in chats ─────────────── */
+.cv-row-tag { height: 18px; padding: 0 6px; border-radius: 9px; font-size: 10px; flex-shrink: 0; }
+.cv-card-title { display: block; margin: 0 0 4px; }
+/* "Wo Mitteilungen erscheinen" (notify-routes.js; chat settings and Einstellungen › Benachrichtigungen) */
+.nr-group + .nr-group { margin-top: 10px; }
+.nr-src { padding: 12px 0 2px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+.nr-note { margin: 6px 0; }
+.nr-note.nr-nosink { color: var(--warn); }
+.nr-row select.nr-select { width: 340px; max-width: 55%; flex-shrink: 0; }
+.nr-locked, .nr-fixed { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.nr-retry { margin-top: 6px; }
+
 [data-theme="light"] .cv-poll-opt, [data-theme="light"] .cv-rsvp-btn { background: var(--panel); }
 [data-theme="light"] .cv-ring .cv-av { box-shadow: 0 0 0 3px var(--bg); }
 [data-theme="light"] .cv-set-card { box-shadow: var(--seg-shadow); }
