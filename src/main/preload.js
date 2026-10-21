@@ -3,7 +3,7 @@
  * Common bridge from core (createBridgeApi) plus the Pro RDP channels.
  */
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const { i18n, createBridgeApi, createSubscriber } = require('@gatecontrol/client-core');
 const { registerTranslations } = i18n;
 
@@ -15,7 +15,8 @@ const subscribe = createSubscriber(ipcRenderer);
 
 // Channels shared with Community (tunnel, config, logs, update, locale, …).
 // Pro announces downloaded updates on 'update:ready'.
-const api = createBridgeApi(ipcRenderer, i18n, { updateReadyChannel: 'update:ready' });
+// webUtils: paths of files dropped on the window (GateDrop send dialog).
+const api = createBridgeApi(ipcRenderer, i18n, { updateReadyChannel: 'update:ready', webUtils });
 
 // Short device ID (first 8 hex of the machine fingerprint) or null.
 api.getDeviceId = () => ipcRenderer.invoke('app:device-id');

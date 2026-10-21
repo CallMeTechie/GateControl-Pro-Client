@@ -247,7 +247,9 @@ describe('NSIS installer script (build/installer.nsh)', () => {
 
   it('never reads the user-writable kill-switch state file', () => {
     assert.ok(!/killswitch-state/i.test(code));
-    assert.ok(!/APPDATA|LOCALAPPDATA/.test(code));
+    // The only APPDATA path: deleting the fixed "Senden an -> GateDrop" shortcut.
+    const sendTo = 'Delete "$APPDATA\\Microsoft\\Windows\\SendTo\\GateDrop.lnk"';
+    assert.ok(!/APPDATA|LOCALAPPDATA/.test(code.split(sendTo).join('')));
   });
 
   it('escapes every PowerShell variable as $$ for NSIS', () => {
@@ -324,6 +326,34 @@ describe('NSIS installer script (build/installer.nsh)', () => {
     const start = body.indexOf('${IfNot} ${isUpdated}');
     const end = body.indexOf('${EndIf}', start);
     assert.ok(start >= 0 && start < del && del < end, 'Autostart-Aufgabe darf nur bei echter Deinstallation geloescht werden');
+  });
+
+  it('GateDrop: inbound TCP 47731 for the app exe, private profile only; removed on uninstall', () => {
+    assert.equal(defines.GC_GATEDROP_PORT, '47731');
+    assert.equal(defines.GC_GATEDROP_RULE, 'GateControl Pro GateDrop');
+    const add = resolveDefines(macroBody('GC_GATEDROP_FIREWALL_ADD'));
+    const rule = add.match(/add rule name="GateControl Pro GateDrop"([^\n]*)/);
+    assert.ok(rule, 'GateDrop-Regel fehlt');
+    assert.match(rule[1], / dir=in /);
+    assert.match(rule[1], / action=allow /);
+    assert.match(rule[1], / protocol=TCP localport=47731 /);
+    assert.match(rule[1], / profile=private /);
+    assert.doesNotMatch(rule[1], /public|domain|any/i);
+    assert.match(rule[1], /program="\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}"/);
+    assert.ok(add.indexOf('delete rule name="GateControl Pro GateDrop"') < add.indexOf('add rule'), 'alte Regel zuerst loeschen');
+    assert.match(macroBody('customInstall'), /!insertmacro GC_GATEDROP_FIREWALL_ADD/);
+    assert.match(macroBody('customUnInstall'), /!insertmacro GC_GATEDROP_FIREWALL_REMOVE/);
+    assert.match(resolveDefines(macroBody('GC_GATEDROP_FIREWALL_REMOVE')), /delete rule name="GateControl Pro GateDrop"/);
+  });
+
+  it('GateDrop: the SendTo shortcut goes only on a real uninstall without the other edition', () => {
+    const body = macroBody('customUnInstall');
+    const at = body.indexOf('!insertmacro GC_GATEDROP_SENDTO_REMOVE');
+    const start = body.indexOf('${IfNot} ${isUpdated}');
+    const end = body.indexOf('${EndIf}', start);
+    assert.ok(start >= 0 && start < at && at < end);
+    const m = macroBody('GC_GATEDROP_SENDTO_REMOVE');
+    assert.match(m, /!insertmacro GC_DETECT_OTHER_EDITION\s*\$\{If\} \$6 == 0\s*SetShellVarContext current\s*Delete "\$APPDATA\\Microsoft\\Windows\\SendTo\\GateDrop\.lnk"\s*SetShellVarContext all/);
   });
 
   it('release workflow patches the real app exe in win-unpacked', () => {
