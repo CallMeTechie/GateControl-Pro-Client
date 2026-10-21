@@ -11,7 +11,10 @@
  * Shown in Einstellungen › Benachrichtigungen (skin 'settings') and in the
  * chat settings (skin 'chat'); the same file is used by Pro and Community.
  * Data: window.gatecontrol.notify.routes() / setRoute(topic, dest) (core
- * NotificationCenter → GET/PUT /api/v1/client/push/routes); texts:
+ * NotificationCenter → GET/PUT /api/v1/client/push/routes; on "own" the
+ * answer names the source's own chat, GateControl 1.192: a toast says
+ * whether it was created or is the existing one, and the page's onChat
+ * reloads the chat list); texts:
  * push.routes.* of the core locales. The view logic is pure and exported for
  * the node tests (test/notify-routes.test.js); mount() needs a DOM.
  *
@@ -104,6 +107,17 @@
 	}
 
 	/**
+	 * The confirmation after a choice of the own chat: "Chat „Schule“ angelegt"
+	 * (created) or "Erscheint im vorhandenen Chat „Schule“" — '' when the answer
+	 * names no chat (inbox / family, older servers or cores, failures).
+	 */
+	function chatNotice(res, dest, t) {
+		const chat = res && res.ok && dest === 'own' ? res.chat : null;
+		if (!chat || typeof chat !== 'object' || !str(chat.label)) return '';
+		return t(chat.created === true ? 'push.routes.chatCreated' : 'push.routes.chatExisting', { label: str(chat.label) });
+	}
+
+	/**
 	 * State of the page from a routes() answer: 'unsupported' (older server or
 	 * an app core without the API — the entries are hidden), 'error', 'empty'
 	 * or 'ready' (+ routes).
@@ -172,6 +186,7 @@
 	 * @param {(msg: string, type?: string) => void} [o.toast]
 	 * @param {'settings'|'chat'} [o.skin='settings']
 	 * @param {(state: string) => void} [o.onState] - 'unsupported' | 'error' | 'empty' | 'ready' after each load
+	 * @param {(chat: object) => void} [o.onChat] - after "own" named the source's own chat (reload the chat list)
 	 * @returns {{ load(): Promise<string>, render(): void }}
 	 */
 	function mount(host, o) {
@@ -238,6 +253,11 @@
 			busy = null;
 			if (res && res.ok && res.routes) {
 				view = viewState(res);
+				const msg = chatNotice(res, dest, t);
+				if (msg) {
+					toast(msg, 'success');
+					if (typeof o.onChat === 'function') Promise.resolve().then(() => o.onChat(res.chat)).catch(() => {});
+				}
 			} else {
 				view = { ...view, routes: before };
 				if (res && res.error === 'unsupported') view = { state: 'unsupported', routes: null };
@@ -276,6 +296,7 @@
 		optionLabel,
 		hint,
 		errorKey,
+		chatNotice,
 		viewState,
 		supported,
 		mount,

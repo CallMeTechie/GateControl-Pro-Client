@@ -396,7 +396,9 @@
 		function drawRoutes(body) {
 			const host = el('div', { class: 'nr-host' });
 			body.appendChild(host);
-			root.GCNotifyRoutes.mount(host, { api: kit.notify, t, toast, skin: 'chat' }).load();
+			// the own chat a choice created / names: into the chat list at once
+			const onChat = () => { if (typeof kit.refreshList === 'function') kit.refreshList({ server: true }); };
+			root.GCNotifyRoutes.mount(host, { api: kit.notify, t, toast, skin: 'chat', onChat }).load();
 		}
 
 		async function drawActions(body) {

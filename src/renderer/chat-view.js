@@ -449,6 +449,7 @@
 			statusDialog: () => (status ? status.statusDialog() : null),
 			ownStatus: () => (status ? status.mine() : null),
 			listsChanged: (lists) => { S.lists = Array.isArray(lists) ? lists : []; renderList(); },
+			refreshList: (opts) => refreshList(opts),
 			onSettingsClosed: () => { renderList(); if (typeof S.cur === 'number') { renderComposer(false); renderMessages('keep'); } },
 			mount: (node) => rootEl.appendChild(node),
 		};
@@ -2692,6 +2693,8 @@
 			/** Messenger 1.4.0: the settings page (optional section id). */
 			openSettings: (section) => openSettings(section),
 			openInbox: () => openInboxChat(),
+			/** Reload the chat list ({ server: true }: ask the server, e.g. for a chat it just created). */
+			refreshList: (opts) => refreshList(opts),
 			status: () => S.status,
 			/** Locale changed: rebuild the texts. */
 			relabel() {

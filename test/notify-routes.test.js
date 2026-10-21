@@ -83,6 +83,94 @@ describe('notify-routes view logic', () => {
   });
 });
 
+describe('the own chat of a choice (GateControl 1.192)', () => {
+  const chat = (created) => ({ source: 'plugin:gatecontrol-schule', label: 'Schule', conversationId: '42', created });
+
+  it('says whether the own chat was created or is the existing one; nothing without a chat', () => {
+    assert.equal(NR.chatNotice({ ok: true, routes: routes(), chat: chat(true) }, 'own', t), 'push.routes.chatCreated(Schule)');
+    assert.equal(NR.chatNotice({ ok: true, routes: routes(), chat: chat(false) }, 'own', t), 'push.routes.chatExisting(Schule)');
+    assert.equal(NR.chatNotice({ ok: true, routes: routes(), chat: null }, 'own', t), '', 'older server or failure');
+    assert.equal(NR.chatNotice({ ok: true, routes: routes() }, 'own', t), '', 'older core');
+    assert.equal(NR.chatNotice({ ok: true, routes: routes(), chat: chat(true) }, 'inbox', t), '');
+    assert.equal(NR.chatNotice({ ok: false, error: 'no_sink', chat: chat(true) }, 'own', t), '');
+    assert.equal(NR.chatNotice({ ok: true, chat: { label: '' } }, 'own', t), '');
+    assert.equal(NR.chatNotice(null, 'own', t), '');
+  });
+
+  /** A tiny DOM: enough for mount() (elements, attributes, children, change events). */
+  function fakeDom() {
+    const node = (tag) => {
+      const n = {
+        tagName: tag, children: [], attrs: {}, listeners: {}, textContent: '', className: '', value: '',
+        get firstChild() { return n.children[0] || null; },
+        setAttribute(k, v) { n.attrs[k] = v; },
+        removeAttribute(k) { delete n.attrs[k]; },
+        addEventListener(ev, fn) { (n.listeners[ev] = n.listeners[ev] || []).push(fn); },
+        appendChild(c) { n.children.push(c); return c; },
+        removeChild(c) { n.children.splice(n.children.indexOf(c), 1); return c; },
+        all(pred, out = []) { for (const c of n.children) { if (pred(c)) out.push(c); if (c.all) c.all(pred, out); } return out; },
+      };
+      return n;
+    };
+    return { createElement: node, createElementNS: (_, tag) => node(tag), createTextNode: (text) => ({ text }) };
+  }
+
+  /** notify-routes.js with `document` (its factory takes the global of the page). */
+  function withDom(fn) {
+    const file = require.resolve('../src/renderer/notify-routes');
+    const had = Object.prototype.hasOwnProperty.call(globalThis, 'self');
+    const prev = globalThis.self;
+    const document = fakeDom();
+    globalThis.self = { document };
+    delete require.cache[file];
+    try { return fn(require(file), document); } finally {
+      delete require.cache[file];
+      if (had) globalThis.self = prev; else delete globalThis.self;
+    }
+  }
+
+  async function choose(answer, dest) {
+    const toasts = [];
+    const chats = [];
+    const api = { routes: async () => ({ ok: true, routes: routes() }), setRoute: async () => answer };
+    const view = withDom((M, document) => {
+      const host = document.createElement('div');
+      return { host, page: M.mount(host, { api, t, toast: (msg, type) => toasts.push([msg, type]), onChat: (c) => chats.push(c) }) };
+    });
+    await view.page.load();
+    const sel = view.host.all((n) => n.tagName === 'select' && n.attrs['data-topic'] === 'devices')[0];
+    sel.value = dest;
+    for (const fn of sel.listeners.change) fn();
+    await new Promise((r) => setImmediate(r));
+    return { toasts, chats };
+  }
+
+  it('after "own": the toast and a reload of the chat list; "inbox": neither', async () => {
+    const created = await choose({ ok: true, routes: routes(), chat: chat(true) }, 'own');
+    assert.deepEqual(created.toasts, [['push.routes.chatCreated(Schule)', 'success']]);
+    assert.deepEqual(created.chats, [chat(true)]);
+    const existing = await choose({ ok: true, routes: routes(), chat: chat(false) }, 'own');
+    assert.deepEqual(existing.toasts, [['push.routes.chatExisting(Schule)', 'success']]);
+    assert.equal(existing.chats.length, 1);
+    const older = await choose({ ok: true, routes: routes() }, 'own');
+    assert.deepEqual([older.toasts, older.chats], [[], []]);
+    const inbox = await choose({ ok: true, routes: routes({ groups: [{ ...core, topics: [core.topics[0], { ...core.topics[1], dest: 'own' }] }, schule] }), chat: null }, 'inbox');
+    assert.deepEqual([inbox.toasts, inbox.chats], [[], []]);
+    const refused = await choose({ ok: false, error: 'no_sink' }, 'own');
+    assert.deepEqual([refused.toasts, refused.chats], [[['push.routes.err.noSink', 'error']], []]);
+  });
+
+  it('both pages reload the chat list after it (chat settings and Einstellungen)', () => {
+    const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'renderer.js'), 'utf8');
+    const settings = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'chat-settings.js'), 'utf8');
+    const view = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'chat-view.js'), 'utf8');
+    assert.match(renderer, /onChat: \(\) => \{ chatView\?\.refreshList\(\{ server: true \}\); \}/);
+    assert.match(settings, /kit\.refreshList\(\{ server: true \}\)/);
+    assert.match(settings, /GCNotifyRoutes\.mount\(host, \{[^}]*onChat/);
+    assert.equal((view.match(/refreshList: \(opts\) => refreshList\(opts\)/g) || []).length, 2, 'in the kit and the public view');
+  });
+});
+
 describe('card links in chats (notify-state routeTarget)', () => {
   const pages = ['status', 'inbox', 'chats', 'schule', 'settings'];
 
