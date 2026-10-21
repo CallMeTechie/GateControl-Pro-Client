@@ -148,6 +148,12 @@ describe('inbox empty states and hints', () => {
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7, context: ctx }, [...pages, 'schule']), { page: 'schule', id: null, context: ctx });
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7 }, [...pages, 'schule']), { page: 'schule', id: null, context: null });
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7, context: ctx }, pages), { page: 'inbox', id: 7 });
+    // GateDrop: a received send opens the page on Empfangen / Links
+    const gctx = { tab: 'received', sendId: '41' };
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-gatedrop', id: 8, context: gctx }, [...pages, 'gatedrop']), { page: 'gatedrop', id: null, context: gctx });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-gatedrop', id: 8, context: gctx }, pages), { page: 'inbox', id: 8 });
+    assert.deepEqual(NS.routeTarget('plg-gatecontrol-gatedrop/links', [...pages, 'gatedrop']), { page: 'gatedrop', context: { tab: 'links', sendId: null } });
+    assert.deepEqual(NS.routeTarget('plg-gatecontrol-gatedrop', [...pages, 'gatedrop']), { page: 'gatedrop', context: null });
   });
 });
 

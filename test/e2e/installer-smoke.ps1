@@ -21,7 +21,7 @@ $cfg = @{
     Shortcut      = 'GateControl Pro'
     RulePrefix    = 'GateControl_Pro'
     # Created by build/installer.nsh customInstall, removed by customUnInstall.
-    InstallRules  = @('GateControl Pro WireGuard', 'GateControl Pro RDP')
+    InstallRules  = @('GateControl Pro WireGuard', 'GateControl Pro RDP', 'GateControl Pro GateDrop')
     DataDir       = 'gatecontrol-client-pro'
     # URL protocol of the toast buttons (app: setAsDefaultProtocolClient, HKCU)
     Protocol      = 'gatecontrol-pro'
@@ -30,7 +30,7 @@ $cfg = @{
     Product       = 'GateControl Community Client'
     Shortcut      = 'GateControl'
     RulePrefix    = 'GateControl_Community'
-    InstallRules  = @()
+    InstallRules  = @('GateControl Community GateDrop')
     DataDir       = 'gatecontrol-client'
     # URL protocol of the toast buttons (app: setAsDefaultProtocolClient, HKCU)
     Protocol      = 'gatecontrol-community'

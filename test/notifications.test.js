@@ -413,7 +413,8 @@ describe('main.js notification wiring', () => {
   });
 
   it('second-instance: toast button first, otherwise bring the window up', () => {
-    assert.match(MAIN_JS, /app\.on\('second-instance', \(_event, argv\) => \{\s*if \(notifications\?\.handleArgv\(argv\)\) return;\s*showWindow\(\);\s*\}\);/);
+    // "Senden an -> GateDrop" first (its argv carries --gatedrop-send), then toast buttons.
+    assert.match(MAIN_JS, /app\.on\('second-instance', \(_event, argv\) => \{[^}]*?if \(gatedrop\?\.handleArgv\(argv\)\) return;\s*if \(notifications\?\.handleArgv\(argv\)\) return;\s*showWindow\(\);\s*\}\);/);
   });
 
   it('attaches the push control after the connection monitor, with the config check', () => {

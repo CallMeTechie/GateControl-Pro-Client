@@ -29,7 +29,7 @@ process.on('unhandledRejection', (reason) => {
 
 writeCrashLog('STARTUP', 'Process starting...');
 
-let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen;
+let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard;
 let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, mandatoryNotice;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
@@ -37,11 +37,12 @@ let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
 let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema, setupNotifications;
 let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
+let GateDropService, gatedropShell, setupGateDrop;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
-  ({ app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen } = require('electron'));
+  ({ app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard } = require('electron'));
   // Chats "Standort senden": navigator.geolocation from the Windows location
   // service (Electron has no key for Google's network location).
   if (process.platform === 'win32') app.commandLine.appendSwitch('enable-features', 'WinrtGeolocationImplementation');
@@ -91,6 +92,10 @@ try {
   ({ setupMessenger } = require('./messenger'));
   // Schule (plugin gatecontrol-schule): WebUntis timetable (core services/school.js).
   ({ SchoolService } = require('@gatecontrol/client-core'));
+  // GateDrop (plugin gatecontrol-gatedrop): send / receive files, LAN listener,
+  // "Senden an" in the Explorer (core services/gatedrop.js).
+  ({ GateDropService, gatedropShell } = require('@gatecontrol/client-core'));
+  ({ setupGateDrop } = require('./gatedrop'));
   RdpManager = require('../services/rdp/rdp-manager');
   ({ runRdpTrustMigration } = require('../services/rdp/rdp-trust-migration'));
   RdpWolClient = require('../services/rdp/rdp-wol');
@@ -222,6 +227,7 @@ let supportBundle = null; // "Support-Paket senden" (core src/support/sender.js)
 let notifications = null; // notification center (./notifications.js), one per app lifetime
 let chats = null; // messenger (./messenger.js), one per app lifetime
 let school = null; // Schule (core SchoolService), one per app lifetime
+let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
 let trayState = 'disconnected'; // last state drawn in the tray (refresh on unread / DND changes)
 let pendingUpdate = null;
 // Version for which the "Update erforderlich" notification was already shown
@@ -357,6 +363,7 @@ function updateTray(connState) {
   const notifyItems = [
     ...(chats ? chats.menuItems(t, () => { showWindow(); mainWindow?.webContents.send('navigate', 'chats'); }) : []),
     ...(notifications ? notifications.menuItems(t) : []),
+    ...(gatedrop ? gatedrop.menuItems(t) : []),
   ];
 
   // Build context menu with RDP status
@@ -864,6 +871,21 @@ function initializeServices() {
     pushClient: notifications?.pushClient,
   }) : null;
 
+  // GateDrop: shown while the server lists the plugin; receives into
+  // Downloads\GateControl, listens on TCP 47731 in private networks.
+  gatedrop = GateDropService && setupGateDrop ? setupGateDrop({
+    app, store, log, apiClient, notifications,
+    GateDropService, gatedropShell,
+    shell, clipboard, dialog, t,
+    protocol: 'gatecontrol-pro',
+    toastImagePath: path.join(RESOURCES_PATH, 'icons', 'app-icon.png'),
+    showWindow: () => showWindow(),
+    getMainWindow: () => mainWindow,
+    // E2E runs must not touch the SendTo folder of the test machine.
+    manageShortcut: !e2e,
+    onChange: () => updateTray(trayState),
+  }) : null;
+
   wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
   killSwitchSvc = new KillSwitch(log, { edition: 'pro' });
   rdpAllowSvc = new RdpAllowSvc(log, { edition: 'pro' });
@@ -1108,6 +1130,9 @@ function registerIpcHandlers() {
     chatNotifier: chats?.chatNotifier,
     // school:* channels + events, reset on server:setup (core, opt-in)
     school,
+    // gatedrop:* channels + events, reset on server:setup (core, opt-in)
+    gatedrop: gatedrop?.service,
+    gatedropExplorer: gatedrop?.explorer,
     // Result of a bundle the admin requested (the button shows its own toast).
     onSupportResult: (res) => {
       if (!res || res.cancelled) return;
@@ -1179,6 +1204,10 @@ app.on('ready', () => {
   chats.start();
   // Schule: availability check, push → page.
   school?.start();
+  // GateDrop: availability, presence, LAN listener; started by
+  // "Senden an → GateDrop" → the send dialog opens once the window is ready.
+  gatedrop?.start();
+  if (gatedrop?.handleArgv(process.argv)) log.info('Started from "Senden an → GateDrop"');
 
   // Autostart mit Windows synchronisieren (Task Scheduler; nicht im E2E-Test)
   if (!e2e && store.get('app.startWithWindows', true)) {
@@ -1256,6 +1285,8 @@ app.on('ready', () => {
 // A second start (shortcut, autostart, or a toast button: <protocol>://notify/…)
 // only brings this instance to the front or performs the toast action.
 app.on('second-instance', (_event, argv) => {
+  // "Senden an → GateDrop" (Explorer): open the send dialog with the files.
+  if (gatedrop?.handleArgv(argv)) return;
   if (notifications?.handleArgv(argv)) return;
   showWindow();
 });
@@ -1294,6 +1325,8 @@ app.on('before-quit', (e) => {
   // Chats: save the cache, leave the open chat.
   chats?.stop();
   school?.stop();
+  // GateDrop: LAN listener and timers.
+  gatedrop?.stop();
 
   // Critical: cleanup all RDP sessions
   if (rdpManager) {

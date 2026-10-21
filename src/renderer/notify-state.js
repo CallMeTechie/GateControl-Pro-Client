@@ -233,15 +233,16 @@
 	 * Where a notify:navigate event leads: { page, id } (app routes of the
 	 * contract; the rest opens the entry in the inbox). Schule (a toast the
 	 * core's SchoolService claimed) also passes its `context` (child, day,
-	 * message) on: { page: 'schule', id: null, context }.
+	 * message) on: { page: 'schule', id: null, context }; GateDrop likewise
+	 * ({ tab, sendId }): { page: 'gatedrop', id: null, context }.
 	 */
 	function navigateTarget(evt, pages) {
 		const route = evt && evt.route;
 		const id = evt && Number.isSafeInteger(evt.id) ? evt.id : null;
-		const map = { vpn: 'status', services: 'services', inbox: 'inbox', 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule' };
+		const map = { vpn: 'status', services: 'services', inbox: 'inbox', 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule', 'plg-gatecontrol-gatedrop': 'gatedrop' };
 		const page = map[route];
 		if (page && (!pages || pages.includes(page))) {
-			if (page === 'schule') return { page, id: null, context: evt.context && typeof evt.context === 'object' ? evt.context : null };
+			if (page === 'schule' || page === 'gatedrop') return { page, id: null, context: evt.context && typeof evt.context === 'object' ? evt.context : null };
 			return { page, id: page === 'inbox' ? id : null };
 		}
 		return { page: 'inbox', id };
@@ -255,9 +256,11 @@
 	 */
 	function routeTarget(route, pages) {
 		const parts = str(route).split('/');
-		const map = { 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule' };
+		const map = { 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule', 'plg-gatecontrol-gatedrop': 'gatedrop' };
 		const page = map[parts[0]];
 		if (!page || (pages && !pages.includes(page))) return null;
+		// GateDrop: plg-gatecontrol-gatedrop[/received|sent|links]
+		if (page === 'gatedrop') return { page, context: ['received', 'sent', 'links'].includes(parts[1]) ? { tab: parts[1], sendId: null } : null };
 		if (page !== 'schule') return { page, context: null };
 		const kind = ['messages', 'absences', 'changes'].includes(parts[1]) ? parts[1] : null;
 		const raw = kind === 'messages' && /^[A-Za-z0-9_.:-]{1,80}$/.test(str(parts[2])) ? parts[2] : null;

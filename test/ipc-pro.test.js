@@ -183,6 +183,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       chatNotifier: { on() {} },
       // … and Schule (school:* channels; a core before Schule ignores it)
       school: { on() {}, status: () => ({ state: 'unavailable' }) },
+      // … and GateDrop (gatedrop:* channels)
+      gatedrop: { on() {}, status: () => ({ state: 'unavailable' }) },
     };
     const registered = registerProIpc(ipcMain, ctx);
     return { handlers, stored, written, calls, registered, apiClient };
