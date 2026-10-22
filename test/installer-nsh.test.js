@@ -328,7 +328,7 @@ describe('NSIS installer script (build/installer.nsh)', () => {
     assert.ok(start >= 0 && start < del && del < end, 'Autostart-Aufgabe darf nur bei echter Deinstallation geloescht werden');
   });
 
-  it('GateDrop: inbound TCP 47731 for the app exe, private profile only; removed on uninstall', () => {
+  it('GateDrop: inbound TCP 47731 for the app exe, local subnet only, every profile; removed on uninstall', () => {
     assert.equal(defines.GC_GATEDROP_PORT, '47731');
     assert.equal(defines.GC_GATEDROP_RULE, 'GateControl Pro GateDrop');
     const add = resolveDefines(macroBody('GC_GATEDROP_FIREWALL_ADD'));
@@ -337,8 +337,10 @@ describe('NSIS installer script (build/installer.nsh)', () => {
     assert.match(rule[1], / dir=in /);
     assert.match(rule[1], / action=allow /);
     assert.match(rule[1], / protocol=TCP localport=47731 /);
-    assert.match(rule[1], / profile=private /);
-    assert.doesNotMatch(rule[1], /public|domain|any/i);
+    // every profile (home Wi-Fi is often "Public"), but only peers from the local subnet
+    assert.match(rule[1], / remoteip=localsubnet /);
+    assert.match(rule[1], / profile=any /);
+    assert.doesNotMatch(rule[1], /remoteip=any|profile=(private|public|domain)/i);
     assert.match(rule[1], /program="\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}"/);
     assert.ok(add.indexOf('delete rule name="GateControl Pro GateDrop"') < add.indexOf('add rule'), 'alte Regel zuerst loeschen');
     assert.match(macroBody('customInstall'), /!insertmacro GC_GATEDROP_FIREWALL_ADD/);
