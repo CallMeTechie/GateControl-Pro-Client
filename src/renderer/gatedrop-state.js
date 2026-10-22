@@ -274,6 +274,28 @@
 		return null;
 	}
 
+	/** First line of the send toast: "angebot.pdf" / "3 Dateien" / "Text". */
+	function sendLabel(files, t) {
+		const list = Array.isArray(files) ? files : [];
+		if (list.length === 1) return str(list[0].name);
+		if (list.length > 1) return t('gatedrop.sendToast.files', { count: list.length });
+		return t('gatedrop.sendToast.text');
+	}
+
+	/**
+	 * Send toast of one job ({ phase, sent, total, via } from 'progress', error text)
+	 * → { tone: 'busy' | 'ok' | 'err', text, percent } (percent null: no known share yet).
+	 */
+	function sendToastView(job, t) {
+		const j = job || {};
+		if (j.error) return { tone: 'err', text: `${t('gatedrop.sendToast.failed')}: ${str(j.error)}`, percent: null };
+		if (j.phase === 'done') return { tone: 'ok', text: t(j.via === 'direct' ? 'gatedrop.sendToast.doneDirect' : 'gatedrop.sendToast.done'), percent: 100 };
+		if (j.phase === 'failed') return { tone: 'busy', text: t('gatedrop.progress.failed'), percent: null };
+		if (j.phase === 'upload' || j.phase === 'direct') return { tone: 'busy', text: progressText(j, t), percent: percent(j.sent, j.total) };
+		if (j.phase === 'sent') return { tone: 'busy', text: t('gatedrop.sendToast.transferring'), percent: null };
+		return { tone: 'busy', text: t('gatedrop.sendToast.preparing'), percent: null };
+	}
+
 	/** Rejected files of a prepare → texts. */
 	function rejectedTexts(rejected, t) {
 		return (rejected || []).slice(0, 5).map((r) => {
@@ -336,6 +358,8 @@
 		linkView,
 		sortLinks,
 		progressText,
+		sendLabel,
+		sendToastView,
 		rejectedTexts,
 		errorText,
 		mergeFiles,

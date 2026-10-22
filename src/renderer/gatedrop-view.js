@@ -93,6 +93,8 @@
 	 * @param {(st: object) => void} [o.onStatus] - availability (nav entry)
 	 * @param {() => void} [o.onOpen] - show the page (push / toast click)
 	 * @param {HTMLElement} [o.dialogHost] - where the send dialog goes (default document.body)
+	 * @param {HTMLElement} [o.toastHost] - the app's toast stack (bottom right) for the send toasts;
+	 *   without one they get an own stack in dialogHost
 	 * @param {() => number} [o.now]
 	 */
 	function mount(o) {
@@ -277,13 +279,84 @@
 
 		function onProgress(p) {
 			if (!p || !p.id) return;
-			if (p.phase === 'done' || p.phase === 'sent') {
+			trackSendToast(p);
+			if (p.phase === 'done' || p.phase === 'sent' || p.phase === 'error') {
 				S.jobs.delete(p.id);
 			} else {
 				S.jobs.set(p.id, p);
 				if (p.phase === 'failed') setTimeout(() => { if (S.jobs.get(p.id) === p) { S.jobs.delete(p.id); renderJobs(); } }, 8000);
 			}
 			renderJobs();
+		}
+
+		// ── Send toasts (bottom right) ───────────────────────
+		// One per send: progress bar while it runs, closes itself when done,
+		// stays with the reason (and "Erneut versuchen") when it failed.
+
+		const sendToasts = new Map(); // job id → toast
+		let sendStack = null;
+		let jobSeq = 0;
+
+		function startSendToast(label, retry) {
+			jobSeq += 1;
+			const st = { id: `w${Date.now().toString(36)}-${jobSeq}`, job: {}, tone: null, ended: false, timer: null, retry };
+			st.ic = el('span', { class: 'gd-stx-ic' });
+			st.sub = el('span', { class: 'gd-stx-sub' });
+			st.fill = el('span');
+			st.bar = el('div', { class: 'gd-job-bar gd-stx-bar' }, [st.fill]);
+			st.act = el('div', { class: 'gd-stx-act', hidden: true }, [
+				el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('gatedrop.sendToast.retry'), on: { click: () => { dropSendToast(st); if (st.retry) st.retry(); } } }),
+			]);
+			st.node = el('div', { class: 'gd-stx' }, [
+				st.ic,
+				el('div', { class: 'gd-stx-tx' }, [el('b', { class: 'gd-stx-h', text: label }), st.sub, st.bar, st.act]),
+				el('button', { type: 'button', class: 'gd-stx-x', 'aria-label': t('gatedrop.sendToast.close'), title: t('gatedrop.sendToast.close'), on: { click: () => dropSendToast(st) } }, [icon('close', 14)]),
+			]);
+			if (o.toastHost) o.toastHost.appendChild(st.node);
+			else {
+				if (!sendStack || !sendStack.isConnected) { sendStack = el('div', { class: 'gd-stxs' }); host.appendChild(sendStack); }
+				sendStack.appendChild(st.node);
+			}
+			sendToasts.set(st.id, st);
+			updateSendToast(st, {});
+			return st;
+		}
+
+		function updateSendToast(st, change) {
+			if (st.ended) return;
+			st.job = { ...st.job, ...change };
+			const v = GS.sendToastView(st.job, t);
+			st.node.className = `gd-stx is-${v.tone}`;
+			st.node.setAttribute('role', v.tone === 'err' ? 'alert' : 'status');
+			if (st.tone !== v.tone) {
+				clear(st.ic).appendChild(icon(v.tone === 'ok' ? 'check' : v.tone === 'err' ? 'alert' : 'up', 16));
+				st.tone = v.tone;
+			}
+			st.sub.textContent = v.text;
+			st.bar.hidden = v.tone === 'err';
+			st.bar.classList.toggle('is-indef', v.percent === null);
+			st.fill.style.width = `${v.percent === null ? 100 : v.percent}%`;
+			st.act.hidden = !(v.tone === 'err' && st.retry);
+			if (v.tone === 'ok') {
+				st.ended = true;
+				st.timer = setTimeout(() => dropSendToast(st), 2500);
+			} else if (v.tone === 'err') {
+				st.ended = true;
+			}
+		}
+
+		function dropSendToast(st) {
+			clearTimeout(st.timer);
+			sendToasts.delete(st.id);
+			st.node.remove();
+		}
+
+		/** 'progress' of a send this window started → its toast. */
+		function trackSendToast(p) {
+			const st = p.dir === 'out' ? sendToasts.get(p.id) : null;
+			if (!st) return;
+			if (p.phase === 'error') updateSendToast(st, { error: GS.errorText({ code: p.code }, t) });
+			else updateSendToast(st, { phase: p.phase, sent: p.sent, total: p.total, via: p.via });
 		}
 
 		// ── Tabs / lists ─────────────────────────────────────
@@ -442,15 +515,16 @@
 			if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 		}
 
-		function openDialog({ files = [], rejected = [] } = {}) {
+		function openDialog({ files = [], rejected = [], draft = null } = {}) {
 			if (!available()) { toast(t('gatedrop.unavailable'), 'error'); return; }
 			if (D.open && !D.result) {
-				addFiles(files, rejected);
+				addFiles(draft ? draft.files : files, rejected);
 				return;
 			}
 			Object.assign(D, { open: true, files: [], text: '', note: '', sel: GS.emptySelection(), error: null, result: null, busy: false });
+			if (draft) Object.assign(D, { text: draft.text, note: draft.note, sel: draft.sel });
 			D.prevFocus = document.activeElement;
-			addFiles(files, rejected, { render: false });
+			addFiles(draft ? draft.files : files, rejected, { render: false });
 			dlg.scrim.hidden = false;
 			renderDialog();
 			loadTargets(false);
@@ -458,11 +532,22 @@
 			setTimeout(() => (first || dlg.box).focus(), 0);
 		}
 
+		const linkResults = []; // link answers waiting for an open dialog to close
 		function closeDialog() {
 			D.open = false;
 			dlg.scrim.hidden = true;
 			clear(dlg.box);
 			if (D.prevFocus && D.prevFocus.focus) { try { D.prevFocus.focus(); } catch { /* gone */ } }
+			if (linkResults.length) setTimeout(() => showLinkResult(linkResults.shift()), 0);
+		}
+
+		/** The public link of a send (URL, PIN) — after another open dialog if need be. */
+		function showLinkResult(r) {
+			if (D.open) { linkResults.push(r); return; }
+			D.prevFocus = document.activeElement;
+			Object.assign(D, { open: true, result: r, busy: false, error: null });
+			dlg.scrim.hidden = false;
+			renderDialog();
 		}
 
 		function addFiles(files, rejected, { render = true } = {}) {
@@ -623,32 +708,28 @@
 			const c = GS.canSend({ files: D.files, text: D.text, selection: D.sel, targets: D.targets });
 			if (!c.ok || D.busy) return;
 			const tl = GS.splitTextLink(D.text);
-			D.busy = true;
-			D.error = null;
-			renderDialog();
+			const msg = { files: D.files.map((f) => f.id), text: tl.text, link: tl.link, note: D.note.trim() || null, to: GS.buildTo(D.sel, D.targets) };
+			// "Erneut versuchen" opens the dialog again with what was sent
+			const draft = { files: D.files.slice(), text: D.text, note: D.note, sel: { ...D.sel, devices: [...D.sel.devices], people: [...D.sel.people], nas: [...D.sel.nas] } };
+			const st = startSendToast(GS.sendLabel(D.files, t), () => openDialog({ draft }));
+			msg.job = st.id;
+			closeDialog();
 			let r;
 			try {
-				r = await api.send({ files: D.files.map((f) => f.id), text: tl.text, link: tl.link, note: D.note.trim() || null, to: GS.buildTo(D.sel, D.targets) });
+				r = await api.send(msg);
 			} catch (err) {
 				r = { ok: false, code: err && err.code };
 			}
-			D.busy = false;
-			if (!D.open) return;
 			if (!r || r.ok === false) {
-				D.error = GS.errorText(r, t);
-				renderDialog();
+				updateSendToast(st, { error: GS.errorText(r, t) });
 				return;
 			}
 			S.dirty.add('sent');
 			S.dirty.add('links');
 			if (S.shown && (S.tab === 'sent' || S.tab === 'links')) load(S.tab);
-			if (r.link || (r.direct && r.direct.length)) {
-				D.result = r;
-				renderDialog();
-			} else {
-				closeDialog();
-				toast(t('gatedrop.result.title'), 'success');
-			}
+			// Without direct transfers the send is complete now; with them the job's 'done' / 'error' decides.
+			if (!(r.direct && r.direct.length) || !r.job) updateSendToast(st, { phase: 'done', via: 'server' });
+			if (r.link && r.link.url) showLinkResult(r);
 		}
 
 		function renderResult() {
@@ -660,7 +741,6 @@
 				]),
 			];
 			const body = el('div', { class: 'gd-dlg-body' });
-			if (r.direct && r.direct.length) body.appendChild(el('span', { class: 'gd-none', text: t('gatedrop.result.direct') }));
 			if (r.link && r.link.url) {
 				const copyBtn = el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: async () => {
 					const ok = await call(api.copy(r.link.pin ? `${r.link.url}\nPIN: ${r.link.pin}` : r.link.url));
