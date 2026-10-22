@@ -27,7 +27,8 @@
 	const MAX_ITEMS = 20;
 	const MAX_TEXT = 20000;
 	const ERRORS = ['unavailable', 'network', 'timeout', 'too_large', 'quota_exceeded', 'no_target', 'missing', 'changed', 'forbidden', 'invalid'];
-	const STATUS = ['pending', 'direct', 'delivered', 'opened', 'failed', 'expired'];
+	// waiting (GateDrop 1.1.0): the own device was offline, the send waits until it is online again.
+	const STATUS = ['pending', 'waiting', 'direct', 'delivered', 'opened', 'failed', 'expired'];
 
 	const str = (v) => (v === null || v === undefined ? '' : String(v));
 	const localeTag = (locale) => (locale === 'en' ? 'en-GB' : 'de-DE');
@@ -129,9 +130,12 @@
 		};
 	}
 
-	/** Device line: "online · im selben WLAN" */
+	/**
+	 * Device line: "online · im selben WLAN". Offline devices stay selectable
+	 * (GateDrop 1.1.0 keeps the send for them): "offline · kommt an, sobald es online ist".
+	 */
 	function deviceMeta(d, t) {
-		const parts = [d && d.online ? t('gatedrop.dialog.online') : t('gatedrop.dialog.offline')];
+		const parts = [d && d.online ? t('gatedrop.dialog.online') : t('gatedrop.dialog.offlineLater')];
 		if (d && d.direct) parts.push(t('gatedrop.dialog.direct'));
 		return parts.join(' · ');
 	}
@@ -197,16 +201,23 @@
 		};
 	}
 
-	/** Sent send → { title, meta, deliveries: [{ label, status, statusKey, tone }] } */
+	/**
+	 * Sent send → { title, meta, deliveries: [{ label, kind, status, text, full, tone }] }.
+	 * full: `text` names the target itself ("Wartet, bis „Pixel“ online ist"), shown without the label.
+	 */
 	function sentView(s, { t, locale, now }) {
 		const deliveries = (s.deliveries || []).map((d) => {
 			const status = STATUS.includes(d.status) ? d.status : 'pending';
+			const label = d.targetName || d.target || t(`gatedrop.kind.${d.kind}`);
+			const full = status === 'waiting';
 			return {
-				label: d.targetName || d.target || t(`gatedrop.kind.${d.kind}`),
+				label,
 				kind: d.kind,
 				status,
-				text: t(`gatedrop.status.${status}`) + (d.via && (status === 'delivered' || status === 'opened') ? ` · ${t(`gatedrop.via.${d.via}`)}` : ''),
-				tone: status === 'failed' || status === 'expired' ? 'err' : status === 'pending' ? 'muted' : 'ok',
+				text: full ? t('gatedrop.status.waiting', { device: label })
+					: t(`gatedrop.status.${status}`) + (d.via && (status === 'delivered' || status === 'opened') ? ` · ${t(`gatedrop.via.${d.via}`)}` : ''),
+				full,
+				tone: status === 'failed' || status === 'expired' ? 'err' : status === 'pending' || status === 'waiting' ? 'muted' : 'ok',
 			};
 		});
 		const meta = [];

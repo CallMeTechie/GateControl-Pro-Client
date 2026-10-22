@@ -83,6 +83,29 @@ describe('gatedrop-state', () => {
     assert.deepEqual(tg.expires, ['1h', '1d', '7d', 'once']);
     assert.deepEqual(GS.dialogTargets({ limits: { linkExpires: ['once', '1d', 'forever'] } }).expires, ['1d', 'once']);
     assert.equal(GS.deviceMeta({ online: true, direct: true }, t), 'gatedrop.dialog.online · gatedrop.dialog.direct');
+    // Offline own devices stay in the list (selectable): "offline · kommt an, sobald es online ist".
+    const off = GS.dialogTargets({ devices: [{ id: 'p', name: 'Pixel', online: false, direct: false }, { id: 'l', name: 'Laptop', online: true }] });
+    assert.deepEqual(off.devices.map((d) => d.id), ['l', 'p']);
+    assert.equal(GS.deviceMeta(off.devices[1], t), 'gatedrop.dialog.offlineLater');
+  });
+
+  it('the send dialog never disables an offline device', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'gatedrop-view.js'), 'utf8');
+    const row = src.slice(src.indexOf("nextId('gd-dev')"), src.indexOf("sectionLabel(t('gatedrop.dialog.people'))"));
+    assert.match(row, /type: 'checkbox', checked, disabled: D\.busy,/);
+    assert.doesNotMatch(row, /disabled: [^,]*online/);
+  });
+
+  it('sent list: `waiting` reads "Wartet, bis „<Gerät>“ online ist"', () => {
+    const s = GS.sentView({ id: '7', items: [{ name: 'a' }], deliveries: [{ kind: 'device', target: '43', targetName: 'Pixel', status: 'waiting', via: null }, { kind: 'device', target: '44', status: 'delivered', via: 'server' }] }, { t, locale: 'de', now: NOW });
+    assert.deepEqual(s.deliveries.map((d) => [d.status, d.tone, d.full]), [['waiting', 'muted', true], ['delivered', 'ok', false]]);
+    assert.equal(s.deliveries[0].text, 'gatedrop.status.waiting(Pixel)');
+    const dir = coreDir();
+    if (dir) {
+      const de = JSON.parse(fs.readFileSync(path.join(dir, 'src', 'i18n', 'locales', 'de.json'), 'utf8')).gatedrop;
+      assert.equal(de.status.waiting.replace('{{device}}', 'Pixel'), 'Wartet, bis „Pixel“ online ist');
+      assert.equal(de.dialog.offlineLater, 'offline · kommt an, sobald es online ist');
+    }
   });
 
   it('list lines: received, sent, links', () => {
