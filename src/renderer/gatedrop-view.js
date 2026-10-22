@@ -363,7 +363,7 @@
 
 		function sentRow(s) {
 			const v = GS.sentView(s, { t, locale: locale(), now: now() });
-			const chips = el('div', { class: 'gd-chips' }, v.deliveries.map((d) => el('span', { class: `gd-st gd-st-${d.tone}`, text: `${d.label}: ${d.text}` })));
+			const chips = el('div', { class: 'gd-chips' }, v.deliveries.map((d) => el('span', { class: `gd-st gd-st-${d.tone}`, text: d.full ? d.text : `${d.label}: ${d.text}` })));
 			return el('div', { class: 'gd-row' }, [
 				rowIcon('up'),
 				el('div', { class: 'gd-row-tx' }, [el('b', { class: 'gd-row-title', text: v.title }), el('span', { class: 'gd-row-meta', text: v.meta }), v.deliveries.length ? chips : null]),
