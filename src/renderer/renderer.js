@@ -2572,6 +2572,7 @@ gatedropView = gatedropApi && window.GCGateDropView && $('#page-gatedrop')
 		t,
 		getLocale: () => window.gatecontrol.i18n.getLocale(),
 		toast: (msg, type) => showToast(msg, type || 'info'),
+		toastHost: $('#toasts'),
 		onOpen: () => navigateTo('gatedrop'),
 		onStatus: (st) => {
 			const show = !!st && st.state === 'available';

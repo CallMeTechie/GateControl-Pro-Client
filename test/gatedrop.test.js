@@ -131,6 +131,18 @@ describe('gatedrop-state', () => {
   it('progress, rejected files, errors, merging, navigation', () => {
     assert.equal(GS.progressText({ phase: 'upload', sent: 1, total: 4 }, t), 'gatedrop.progress.upload(25)');
     assert.equal(GS.progressText({ phase: 'done' }, t), null);
+    // send toast
+    assert.equal(GS.sendLabel([{ name: 'a.pdf' }], t), 'a.pdf');
+    assert.equal(GS.sendLabel([{ name: 'a' }, { name: 'b' }], t), 'gatedrop.sendToast.files(2)');
+    assert.equal(GS.sendLabel([], t), 'gatedrop.sendToast.text');
+    assert.deepEqual(GS.sendToastView(null, t), { tone: 'busy', text: 'gatedrop.sendToast.preparing', percent: null });
+    assert.deepEqual(GS.sendToastView({ phase: 'upload', sent: 1, total: 4 }, t), { tone: 'busy', text: 'gatedrop.progress.upload(25)', percent: 25 });
+    assert.deepEqual(GS.sendToastView({ phase: 'sent' }, t), { tone: 'busy', text: 'gatedrop.sendToast.transferring', percent: null });
+    assert.deepEqual(GS.sendToastView({ phase: 'direct', sent: 1, total: 2 }, t), { tone: 'busy', text: 'gatedrop.progress.direct(50)', percent: 50 });
+    assert.equal(GS.sendToastView({ phase: 'failed' }, t).text, 'gatedrop.progress.failed');
+    assert.deepEqual(GS.sendToastView({ phase: 'done', via: 'direct' }, t), { tone: 'ok', text: 'gatedrop.sendToast.doneDirect', percent: 100 });
+    assert.equal(GS.sendToastView({ phase: 'done', via: 'server' }, t).text, 'gatedrop.sendToast.done');
+    assert.deepEqual(GS.sendToastView({ phase: 'upload', error: 'Kein Netz' }, t), { tone: 'err', text: 'gatedrop.sendToast.failed: Kein Netz', percent: null });
     assert.deepEqual(GS.rejectedTexts([{ name: 'Ordner', reason: 'directory' }, { name: 'x', reason: 'weird' }], t), ['gatedrop.rejected.directory(Ordner)', 'gatedrop.rejected.invalid(x)']);
     assert.equal(GS.errorText({ ok: false, code: 'quota_exceeded' }, t), 'gatedrop.error.quota_exceeded');
     assert.equal(GS.errorText({ ok: false, code: 'http_500' }, t), 'gatedrop.error.failed(http_500)');
