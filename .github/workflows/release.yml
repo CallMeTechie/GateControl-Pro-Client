@@ -94,6 +94,16 @@ jobs:
           fetch-tags: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Back-to-back merges: this run waited for the previous one (concurrency),
+      # which pushed its version bump meanwhile. Build on that master instead of
+      # the triggering commit, so the version is counted from the latest
+      # package.json and the bump push does not conflict with the previous one.
+      - name: Build on the latest master
+        shell: bash
+        run: |
+          git fetch origin master
+          git reset --hard origin/master
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
