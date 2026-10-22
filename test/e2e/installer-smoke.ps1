@@ -93,6 +93,16 @@ foreach ($r in $cfg.InstallRules) {
 $unexpected = @($newRules | Where-Object { $cfg.InstallRules -notcontains $_.DisplayName })
 Check ($unexpected.Count -eq 0) "no other GateControl rules at install time (kill switch / RDP allow): $(($unexpected | ForEach-Object DisplayName) -join ', ')"
 Check ((OutboundPolicy) -eq $policyBefore) "outbound firewall policy unchanged by install"
+# GateDrop: inbound only from the local subnet, but in every profile (home
+# Wi-Fi is often classified as "Public").
+$gdRule = $newRules | Where-Object { $_.DisplayName -like '* GateDrop' }
+if ($gdRule) {
+  $addr = ($gdRule | Get-NetFirewallAddressFilter).RemoteAddress
+  Check ($addr -contains 'LocalSubnet') "GateDrop rule limited to the local subnet ($addr)"
+  Check ("$($gdRule.Profile)" -eq 'Any') "GateDrop rule applies to all profiles ($($gdRule.Profile))"
+  $port = ($gdRule | Get-NetFirewallPortFilter).LocalPort
+  Check ($port -eq '47731') "GateDrop rule opens TCP 47731 ($port)"
+}
 $wgRule = $newRules | Where-Object DisplayName -eq 'GateControl Pro WireGuard'
 if ($wgRule) {
   $prog = ($wgRule | Get-NetFirewallApplicationFilter).Program

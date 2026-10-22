@@ -9,7 +9,7 @@
 !define GC_OTHER_EDITION_GUID "aa07f3aa-9926-52f3-be30-dbe287d6b2ea"
 !define GC_OTHER_EDITION_PRODUCT "GateControl Community Client"
 ; Eingehende Regel fuer GateDrop (Direktuebertragung im WLAN, TCP 47731,
-; nur privates Profil) - pro Edition eigener Name.
+; nur aus dem lokalen Subnetz) - pro Edition eigener Name.
 !define GC_GATEDROP_RULE "GateControl Pro GateDrop"
 !define GC_GATEDROP_PORT "47731"
 
@@ -327,12 +327,14 @@
 ;
 ; Die App hoert auf TCP ${GC_GATEDROP_PORT}, gebunden nur an private
 ; LAN-Adressen (core services/gatedrop-listener.js). Die Freigabe gilt nur
-; fuer das Firewall-Profil "Privat" und nur fuer die App-Exe; in oeffentlichen
-; Netzen bleibt der Port zu (dann laeuft GateDrop ueber den Server).
+; fuer die App-Exe und nur fuer Gegenstellen im lokalen Subnetz, in allen
+; Firewall-Profilen: Windows stuft das Heim-WLAN oft als "Oeffentlich" ein,
+; dann kam das Handy nicht an den PC (GateDrop fiel auf den Server zurueck).
+; Von ausserhalb des Subnetzes bleibt der Port zu.
 ; ======================================================================
 !macro GC_GATEDROP_FIREWALL_ADD
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${GC_GATEDROP_RULE}"'
-  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${GC_GATEDROP_RULE}" dir=in action=allow protocol=TCP localport=${GC_GATEDROP_PORT} profile=private program="$INSTDIR\${APP_EXECUTABLE_FILENAME}" enable=yes'
+  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${GC_GATEDROP_RULE}" dir=in action=allow protocol=TCP localport=${GC_GATEDROP_PORT} remoteip=localsubnet profile=any program="$INSTDIR\${APP_EXECUTABLE_FILENAME}" enable=yes'
 !macroend
 
 !macro GC_GATEDROP_FIREWALL_REMOVE
@@ -372,7 +374,7 @@
   ; Allow mstsc.exe outbound (usually already allowed, but ensure)
   nsExec::ExecToLog 'netsh advfirewall firewall add rule name="GateControl Pro RDP" dir=out action=allow program="%SystemRoot%\system32\mstsc.exe" enable=yes'
 
-  ; GateDrop: eingehend TCP 47731, nur privates Netzwerkprofil
+  ; GateDrop: eingehend TCP 47731, nur aus dem lokalen Subnetz
   !insertmacro GC_GATEDROP_FIREWALL_ADD
 !macroend
 
