@@ -62,6 +62,7 @@ describe('quick search keys (Strg+Alt+P window)', () => {
     assert.equal(VS.quickCommand('username', code), null);
     assert.equal(VS.quickCommand('url', code), null);
     assert.equal(VS.quickCommand('url', sum({ urls: ['javascript:alert(1)', 'ftp://x'] })), null, 'only http(s) opens');
+    assert.deepEqual(VS.quickCommand('url', sum({ urls: ['javascript:alert(1)', 'github.com/login'] })), { kind: 'open', url: 'https://github.com/login' }, 'a bare host opens like on the page');
     const note = sum({ type: 'note', hasPassword: false, username: '', urls: [] });
     assert.equal(VS.quickCommand('password', note), null);
     assert.equal(VS.quickCommand('password', null), null);
@@ -246,6 +247,11 @@ describe('detail and edit draft', () => {
     assert.equal(VS.openableUrl('amazon.de/login'), 'https://amazon.de/login');
     assert.equal(VS.openableUrl('javascript:alert(1)'), null);
     assert.equal(VS.openableUrl('file:///C:/x'), null);
+    assert.equal(VS.openableUrl('nas.local:5000'), 'https://nas.local:5000');
+    assert.equal(VS.openableUrl('nas.local:5000/admin'), 'https://nas.local:5000/admin');
+    assert.equal(VS.openableUrl('mailto:a@b.de'), null);
+    assert.equal(VS.openableUrl('javascript:1'), null);
+    assert.equal(VS.openableUrl('data:text/html,x'), null);
     assert.equal(VS.openableUrl('not a url'), null);
     assert.equal(VS.openableUrl(''), null);
   });

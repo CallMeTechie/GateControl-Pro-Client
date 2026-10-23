@@ -255,7 +255,7 @@
 	 */
 	function quickCommand(action, hit) {
 		if (!hit) return null;
-		const url = Array.isArray(hit.urls) ? hit.urls.find((u) => /^https?:\/\//i.test(str(u).trim())) : null;
+		const url = Array.isArray(hit.urls) ? hit.urls.map(openableUrl).find(Boolean) : null;
 		switch (action) {
 			case 'password':
 				if (hit.hasPassword) return { kind: 'copy', field: 'password' };
@@ -264,7 +264,7 @@
 				return null;
 			case 'username': return hit.username ? { kind: 'copy', field: 'username' } : null;
 			case 'totp': return hit.hasTotp ? { kind: 'copy', field: 'totp' } : null;
-			case 'url': return url ? { kind: 'open', url: url.trim() } : null;
+			case 'url': return url ? { kind: 'open', url } : null;
 			default: return null;
 		}
 	}
@@ -400,7 +400,8 @@
 		const u = str(url).trim();
 		if (!u || /\s/.test(u)) return null;
 		if (/^https?:\/\//i.test(u)) return u;
-		if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return null;
+		// a scheme (javascript:, file:, mailto: …) is not opened; 'nas.local:5000' is a host with a port
+		if (/^[a-z][a-z0-9+.-]*:(?!\d+(\/|$))/i.test(u)) return null;
 		return /^[\w-]+(\.[\w-]+)+(:\d+)?(\/.*)?$/.test(u) ? `https://${u}` : null;
 	}
 

@@ -25,7 +25,7 @@
 	const statusEl = $('vq-status');
 	const foot = $('vq-foot');
 
-	const S = { status: null, entries: [], names: new Map(), hits: [], sel: 0, codes: new Map(), busy: false, lastTouch: 0, hideTimer: null, gen: 0 };
+	const S = { status: null, entries: [], names: new Map(), hits: [], sel: 0, codes: new Map(), busy: false, lastTouch: 0, hideTimer: null, gen: 0, shown: false };
 
 	function el(tag, cls, text) {
 		const n = document.createElement(tag);
@@ -123,8 +123,16 @@
 			}
 		} else {
 			S.entries = [];
+			S.names = new Map();
+			S.codes.clear();
 		}
 		search();
+	}
+
+	/** Vault was locked while this window is open (auto-lock, lock screen): back to the password field. */
+	async function lockedMeanwhile() {
+		await refresh();
+		if (mode() === 'locked') input.focus();
 	}
 
 	function search() {
@@ -142,6 +150,7 @@
 			if (c && c.until > Date.now()) continue;
 			const r = await Promise.resolve(Q.totp(h.id)).catch(() => null);
 			if (gen !== S.gen) return;
+			if (r && r.code === 'locked') { lockedMeanwhile(); return; }
 			if (r && r.ok) S.codes.set(h.id, { code: r.code, until: Date.now() + (Number(r.secondsLeft) || 1) * 1000 });
 		}
 		render();
@@ -188,7 +197,11 @@
 		}
 		const label = t(cmd.field === 'totp' ? 'vault.field.totp' : `vault.field.${cmd.field}`);
 		const r = await Promise.resolve(Q.copy(hit.id, cmd.field)).catch(() => ({ ok: false, code: 'failed' }));
-		if (!r.ok) { say(VS.errorText(r, t), true); return; }
+		if (!r.ok) {
+			if (r.code === 'locked') await lockedMeanwhile();
+			say(VS.errorText(r, t), true);
+			return;
+		}
 		say(t('vault.copiedSecret', { label, seconds: Math.round((r.clearsInMs || 30000) / 1000) }));
 		hideSoon(700);
 	}
@@ -211,13 +224,17 @@
 	document.addEventListener('wheel', touch, { capture: true, passive: true });
 	input.addEventListener('input', () => { say(''); if (mode() === 'search') { S.sel = 0; search(); } });
 
-	// codes run out: fetch again
+	// codes run out: fetch again; a lock meanwhile (this window gets no vault:state) empties the list
 	setInterval(() => {
+		if (S.shown && mode() === 'search') {
+			Promise.resolve(Q.status()).then((st) => { if (st && S.shown && mode() === 'search' && !(st.state === 'available' && st.unlocked)) lockedMeanwhile(); }).catch(() => {});
+		}
 		if (mode() !== 'search' || !S.hits.some((h) => h.hasTotp)) return;
 		if (S.hits.some((h) => h.hasTotp && (!S.codes.has(h.id) || S.codes.get(h.id).until <= Date.now()))) loadCodes();
 	}, 1000);
 
 	Q.onShow(async (p) => {
+		S.shown = true;
 		clearTimeout(S.hideTimer);
 		document.documentElement.setAttribute('data-theme', p.theme);
 		document.documentElement.lang = p.locale === 'en' ? 'en' : 'de';
@@ -239,6 +256,7 @@
 	});
 	// hidden: nothing stays on screen for next time
 	Q.onHide(() => {
+		S.shown = false;
 		input.value = '';
 		S.hits = [];
 		S.codes.clear();

@@ -353,6 +353,11 @@
 			if (S.sub === 'emView' || S.sub === 'import') S.sub = 'list';
 			closeDialog();
 			closeMenu();
+			// the next build only detaches the page: empty what held revealed secrets / the edit form now
+			for (const k of ['detail', 'emDetail', 'page']) if (refs[k]) clear(refs[k]);
+			refs.detailKey = null;
+			refs.totpCode = null;
+			refs.genOut = null;
 		}
 
 		function setStatus(st) {
