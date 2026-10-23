@@ -181,6 +181,8 @@ const proSchema = {
       splitTunnel:   { type: 'boolean', default: false },
       splitRoutes:   { type: 'string', default: '' },
       configPath:    { type: 'string', default: '' },
+      // { domain, server } from GET /client/config, null = internal DNS off
+      internalDns:   { type: ['object', 'null'] },
     },
     default: {},
   },
@@ -597,6 +599,7 @@ async function connectTunnel() {
         }
         await wgService.writeConfig(WG_CONFIG_FILE, config);
         store.set('tunnel.configPath', WG_CONFIG_FILE);
+        rememberInternalDns();
         log.info('Configuration updated from server');
       }
     }
@@ -670,8 +673,8 @@ async function connectTunnel() {
       log.debug('Hostname report skipped:', err.message);
     }
 
-    // Install NRPT rule so Windows routes *.gc.internal queries to the
-    // VPN-internal dnsmasq on 10.8.0.1. Without this, Windows fans the
+    // Install NRPT rule so Windows routes *.<domain> peer-hostname queries
+    // to the VPN-internal dnsmasq. Without this, Windows fans the
     // query out to all configured resolvers and caches the NXDOMAIN
     // that a public resolver returns first — which was exactly why the
     // RDP cred-SSP target (desktop-xxx.gc.internal) previously failed
@@ -679,12 +682,9 @@ async function connectTunnel() {
     try {
       if (DnsPolicy && !dnsPolicy) dnsPolicy = new DnsPolicy(log);
       if (dnsPolicy) {
-        // Keep the namespace hardcoded to match the server default.
-        // If we later expose the domain via the config API, plug it
-        // in here; for now it matches GC_DNS_DOMAIN's default.
-        // dnsPolicy.add() is now idempotent across legacy rule comments
+        // dnsPolicy.add() is idempotent across legacy rule comments
         // (pre-1.17 'GateControl' tag) — see client-core dns-policy.js.
-        dnsPolicy.add('.gc.internal', '10.8.0.1').catch((e) =>
+        installPeerDnsRule().catch((e) =>
           log.debug('NRPT install failed:', e && e.message));
       }
     } catch (err) {
@@ -699,13 +699,31 @@ async function connectTunnel() {
   }
 }
 
+// Internal DNS as the server reported it with the config: { domain, server },
+// null (off), or unset for servers that do not say — kept for connects
+// where the config cannot be fetched.
+function rememberInternalDns() {
+  if (apiClient && apiClient.internalDns !== undefined) store.set('tunnel.internalDns', apiClient.internalDns);
+  else store.delete('tunnel.internalDns');
+}
+
+// Peer hostnames (<host>.<domain>) → the server's dnsmasq, with the domain and
+// resolver of this server (client-core DnsPolicy.ruleFor), not fixed values.
+async function installPeerDnsRule() {
+  const rule = DnsPolicy.ruleFor({
+    internalDns: store.get('tunnel.internalDns'),
+    wgConfig: await wgService.readConfig(WG_CONFIG_FILE),
+  });
+  if (rule) await dnsPolicy.add(rule.namespace, rule.nameServer);
+}
+
 async function disconnectTunnel() {
   try {
     log.info('Disconnecting tunnel...');
 
     if (connectionMonitor) connectionMonitor.stop();
 
-    // Strip NRPT rule first so a stale *.gc.internal -> 10.8.0.1 pin
+    // Strip NRPT rule first so a stale *.<domain> -> resolver pin
     // doesn't linger after the tunnel is torn down (would block DNS).
     if (dnsPolicy) {
       try { await dnsPolicy.removeAll(); } catch (e) { log.debug('NRPT cleanup:', e.message); }
