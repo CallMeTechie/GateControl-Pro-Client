@@ -344,5 +344,473 @@
       "killSwitchNote": "Hinweis zum Kill-Switch",
       "saveFailed": "Einstellung konnte nicht gespeichert werden: {{ error }}"
     }
+  },
+  "vault": {
+    "title": "Vault",
+    "loading": "Vault wird geladen …",
+    "back": "Zurück",
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "next": "Weiter",
+    "close": "Schließen",
+    "copy": "Kopieren",
+    "open": "Öffnen",
+    "create": "Anlegen",
+    "rename": "Umbenennen",
+    "remove": "Entfernen",
+    "retry": "Erneut versuchen",
+    "reveal": "Anzeigen",
+    "conceal": "Verbergen",
+    "copied": "{{ label }} kopiert",
+    "copiedSecret": "{{ label }} kopiert · wird in {{ seconds }} s gelöscht",
+    "pending": "Noch nicht abgeglichen",
+    "unavailable": {
+      "title": "Vault ist nicht erreichbar",
+      "hint": "Vault ist nicht erreichbar. Prüfe die Verbindung zu deinem Server."
+    },
+    "err": {
+      "offline": "Keine Verbindung zum Server.",
+      "generic": "Das hat nicht geklappt ({{ code }}).",
+      "locked": "Vault wurde inzwischen gesperrt.",
+      "wrongPassword": "Falsches Hauptpasswort.",
+      "recoveryKey": "Dieser Wiederherstellungsschlüssel stimmt nicht.",
+      "weakPassword": "Mindestens 12 Zeichen und nicht schwach – ein paar zufällige Wörter eignen sich gut.",
+      "readOnly": "In diesem Tresor darfst du nur lesen.",
+      "forbidden": "Dafür fehlt dir die Berechtigung.",
+      "tooLarge": "Der Eintrag ist zu groß (höchstens 32 KB verschlüsselt).",
+      "lastManager": "Ein Tresor braucht jemanden, der ihn verwaltet. Mache zuerst eine andere Person zur Verwaltung.",
+      "rekeying": "Der Tresor bekommt gerade einen neuen Schlüssel. Versuche es gleich noch einmal.",
+      "limit": "Der Tresor ist voll – die Änderung wurde nicht gespeichert.",
+      "exists": "Das gibt es schon.",
+      "notFound": "Das gibt es nicht mehr.",
+      "noAccount": "Diese Person hat Vault noch nicht eingerichtet.",
+      "empty": "Nichts zum Kopieren.",
+      "unsupported": "Auf diesem Gerät nicht verfügbar.",
+      "rememberFailed": "Die gespeicherte Anmeldung gilt nicht mehr. Entsperre mit deinem Hauptpasswort.",
+      "conflict": "Gleichzeitig auf einem anderen Gerät geändert. Versuche es noch einmal.",
+      "invalid": "Die Eingabe ist nicht gültig.",
+      "setupGone": "Die Einrichtung wurde abgebrochen, weil Vault gesperrt wurde. Bitte gib dein Hauptpasswort noch einmal ein."
+    },
+    "notice": {
+      "conflict": "Auf zwei Geräten gleichzeitig geändert – beide Fassungen bleiben erhalten (die Kopie ist als „Konflikt“ markiert).",
+      "limit": "Der Tresor ist voll – eine Änderung wurde nicht gespeichert.",
+      "refused": "Eine Änderung wurde abgelehnt (keine Berechtigung oder der Tresor ist nicht mehr da).",
+      "dismiss": "Ausblenden"
+    },
+    "unreadable": {
+      "one": "{{ count }} Eintrag ließ sich nicht öffnen.",
+      "other": "{{ count }} Einträge ließen sich nicht öffnen."
+    },
+    "head": {
+      "entries": {
+        "one": "{{ count }} Eintrag",
+        "other": "{{ count }} Einträge"
+      },
+      "vaults": {
+        "one": "{{ count }} Tresor",
+        "other": "{{ count }} Tresore"
+      },
+      "synced": "abgeglichen {{ time }}",
+      "syncing": "gleicht ab …",
+      "offline": "offline",
+      "syncError": "Abgleich fehlgeschlagen",
+      "pending": {
+        "one": "{{ count }} noch nicht abgeglichen",
+        "other": "{{ count }} noch nicht abgeglichen"
+      }
+    },
+    "time": {
+      "today": "heute {{ time }}",
+      "yesterday": "gestern {{ time }}"
+    },
+    "search": "Suchen",
+    "shortcut": "Strg+Alt+P",
+    "new": "Neu",
+    "lock": "Vault sperren",
+    "more": "Mehr",
+    "menu": {
+      "vaults": "Tresore & Teilen",
+      "emergency": "Notfallzugriff",
+      "import": "Importieren",
+      "trash": "Papierkorb",
+      "settings": "Einstellungen",
+      "sync": "Jetzt abgleichen"
+    },
+    "filter": {
+      "label": "Tresor",
+      "all": "Alle",
+      "count": "{{ name }} · {{ count }}"
+    },
+    "section": {
+      "favorites": "Favoriten",
+      "all": "Alle · A–Z"
+    },
+    "list": "Einträge",
+    "entry": "Eintrag",
+    "empty": "Noch keine Einträge. Lege einen mit „Neu“ an oder importiere sie.",
+    "noResults": "Nichts gefunden.",
+    "noSelection": "Wähle links einen Eintrag.",
+    "type": {
+      "login": "Login",
+      "totp": "2FA-Code",
+      "note": "Notiz",
+      "card": "Karte",
+      "wifi": "WLAN",
+      "identity": "Identität"
+    },
+    "newType": {
+      "login": "Neuer Login",
+      "totp": "Neuer 2FA-Code",
+      "note": "Neue Notiz",
+      "card": "Neue Karte",
+      "wifi": "Neues WLAN",
+      "identity": "Neue Identität"
+    },
+    "field": {
+      "title": "Titel",
+      "vault": "Tresor",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "totp": "2FA-Code",
+      "totpSecret": "2FA-Schlüssel (otpauth-Link oder Base32)",
+      "urls": "Website",
+      "url": "Website",
+      "apps": "Programme",
+      "app": "Programm (z. B. putty.exe)",
+      "notes": "Notiz",
+      "holder": "Karteninhaber",
+      "number": "Kartennummer",
+      "expiry": "Gültig bis (MM/JJ)",
+      "cvc": "Prüfnummer",
+      "pin": "PIN",
+      "ssid": "Netzwerkname",
+      "security": "Sicherheit",
+      "name": "Name",
+      "email": "E-Mail",
+      "phone": "Telefon",
+      "address": "Adresse",
+      "birthday": "Geburtstag"
+    },
+    "custom": {
+      "title": "Weitere Felder",
+      "add": "Feld hinzufügen",
+      "name": "Feldname",
+      "value": "Wert",
+      "secret": "Verborgen",
+      "remove": "Feld entfernen",
+      "unnamed": "Feld"
+    },
+    "addUrl": "Website hinzufügen",
+    "addApp": "Programm hinzufügen",
+    "removeUrl": "Entfernen",
+    "totp": {
+      "left": "Noch {{ seconds }} s gültig",
+      "invalid": "Dieser 2FA-Schlüssel lässt sich nicht lesen."
+    },
+    "openWebsite": "Website öffnen",
+    "fav": {
+      "add": "Zu Favoriten",
+      "remove": "Favorit entfernen"
+    },
+    "changed": "{{ vault }} · geändert {{ when }} auf „{{ device }}“",
+    "changedShort": "{{ vault }} · geändert {{ when }}",
+    "history": {
+      "link": "Verlauf ansehen",
+      "title": "Verlauf",
+      "restore": "Diese Fassung wiederherstellen",
+      "empty": "Keine früheren Fassungen.",
+      "version": "Fassung {{ rev }}",
+      "restored": "Fassung wiederhergestellt."
+    },
+    "trash": {
+      "title": "Papierkorb",
+      "action": "In den Papierkorb",
+      "moved": "„{{ title }}“ liegt im Papierkorb.",
+      "empty": "Der Papierkorb ist leer.",
+      "info": "Im Papierkorb – wird nach 30 Tagen endgültig gelöscht."
+    },
+    "restore": "Wiederherstellen",
+    "purge": "Endgültig löschen",
+    "purgeConfirm": "„{{ title }}“ endgültig löschen? Das lässt sich nicht rückgängig machen.",
+    "readOnly": "Nur lesen",
+    "gen": {
+      "title": "Passwort erzeugen",
+      "random": "Zufällig",
+      "words": "Wörter",
+      "length": "Länge",
+      "wordCount": "Wörter",
+      "upper": "Großbuchstaben (A–Z)",
+      "digits": "Ziffern (0–9)",
+      "symbols": "Sonderzeichen (!#$…)",
+      "ambiguous": "Verwechselbare vermeiden (l, 1, O, 0)",
+      "again": "Neu erzeugen",
+      "use": "Übernehmen"
+    },
+    "edit": {
+      "title": "Bearbeiten",
+      "titleRequired": "Ein Titel fehlt.",
+      "saved": "Gespeichert.",
+      "type": "Art"
+    },
+    "discard": {
+      "title": "Änderungen verwerfen?",
+      "yes": "Verwerfen",
+      "keep": "Weiter bearbeiten"
+    },
+    "strength": {
+      "weak": "Schwach",
+      "fair": "Mittel",
+      "strong": "Stark",
+      "very_strong": "Sehr stark",
+      "detail": "{{ chars }} Zeichen · {{ words }} Wörter",
+      "chars": "{{ chars }} Zeichen"
+    },
+    "intro": {
+      "title": "Deine Passwörter, auf deinem Server",
+      "text": "Ende-zu-Ende verschlüsselt: Nur deine Geräte können sie lesen – nicht der Server, kein Admin. Funktioniert offline und gleicht ohne VPN ab.",
+      "start": "Vault einrichten"
+    },
+    "setup": {
+      "title": "Vault einrichten",
+      "step": "Schritt {{ n }} von {{ total }}",
+      "pwTitle": "Dein Hauptpasswort",
+      "pwText": "Es öffnet deinen Vault auf allen Geräten. Es verlässt dieses Gerät nie – auch der GateControl-Server kennt es nicht.",
+      "pwLabel": "Hauptpasswort",
+      "pwRepeat": "Wiederholen",
+      "pwMatch": "Stimmt überein",
+      "pwRule": "Mindestens 12 Zeichen und nicht schwach – ein paar zufällige Wörter eignen sich gut.",
+      "pwMismatch": "Die Passwörter stimmen nicht überein.",
+      "warnTitle": "Niemand kann es zurücksetzen",
+      "warnText": "Auch kein Admin. Im nächsten Schritt bekommst du einen Wiederherstellungsschlüssel – ohne ihn sind die Daten bei vergessenem Passwort verloren.",
+      "creating": "Schlüssel werden erzeugt …",
+      "saving": "Vault wird angelegt …",
+      "doneTitle": "Fast fertig",
+      "doneText": "Wähle, wie du Vault auf diesem PC öffnest.",
+      "finish": "Vault öffnen"
+    },
+    "recovery": {
+      "title": "Dein Wiederherstellungsschlüssel",
+      "text": "Damit kommst du an deinen Vault, wenn du das Hauptpasswort vergisst. Er wird nur dieses eine Mal angezeigt.",
+      "print": "Drucken / PDF",
+      "tip1": "Ausdrucken und zu wichtigen Unterlagen legen.",
+      "tip2": "Nicht als Foto oder Datei in der Cloud speichern.",
+      "tip3": "Zusätzlich kannst du später Vertrauenspersonen für den Notfallzugriff festlegen.",
+      "confirm": "Ich habe den Schlüssel sicher aufbewahrt",
+      "printTitle": "GateControl Vault – Wiederherstellungsschlüssel",
+      "printNote": "Bewahre dieses Blatt sicher auf. Wer diesen Schlüssel und deinen Vault hat, kann ihn lesen. Erstellt am {{ date }}.",
+      "label": "Wiederherstellungsschlüssel"
+    },
+    "remember": {
+      "title": "Angemeldet bleiben",
+      "text": "Vault öffnet sich unter deinem Windows-Konto ohne Hauptpasswort (geschützt durch Windows). Das Hauptpasswort wird nicht gespeichert.",
+      "unavailable": "Auf diesem PC nicht verfügbar."
+    },
+    "quickInfo": {
+      "title": "Schnellsuche",
+      "text": "Mit Strg+Alt+P findest du Passwörter aus jedem Programm heraus."
+    },
+    "locked": {
+      "title": "Vault ist gesperrt",
+      "lastSync": "Zuletzt abgeglichen {{ when }}"
+    },
+    "unlock": {
+      "password": "Hauptpasswort",
+      "button": "Entsperren",
+      "busy": "Entsperre …",
+      "remembered": "Mit gespeicherter Anmeldung entsperren",
+      "forgot": "Passwort vergessen?"
+    },
+    "recover": {
+      "title": "Zugang wiederherstellen",
+      "text": "Gib deinen Wiederherstellungsschlüssel ein. Danach wählst du ein neues Hauptpasswort – und bekommst auch einen neuen Wiederherstellungsschlüssel.",
+      "key": "Wiederherstellungsschlüssel",
+      "typo": "Tippfehler? Der Schlüssel hat 56 Zeichen in 14 Gruppen – prüfe sie noch einmal.",
+      "newPw": "Neues Hauptpasswort",
+      "newPwText": "Wähle ein neues Hauptpasswort. Der alte Wiederherstellungsschlüssel gilt danach nicht mehr.",
+      "newKeyTitle": "Dein neuer Wiederherstellungsschlüssel"
+    },
+    "vaults": {
+      "title": "Tresore",
+      "personal": "Persönlich",
+      "shared": "Geteilt",
+      "newVault": "Neuer geteilter Tresor",
+      "name": "Name",
+      "nameHint": "z. B. Familie, Streaming, Team",
+      "renameTitle": "Tresor umbenennen",
+      "members": {
+        "one": "{{ count }} Mitglied",
+        "other": "{{ count }} Mitglieder"
+      },
+      "rekeyNeeded": "Bekommt beim nächsten Abgleich einen neuen Schlüssel"
+    },
+    "share": {
+      "title": "Tresor „{{ name }}“",
+      "members": "Mitglieder · {{ count }}",
+      "you": "{{ name }} (du)",
+      "addPerson": "Person hinzufügen",
+      "addTitle": "Person zu „{{ vault }}“ hinzufügen",
+      "addSub": "Nur Personen mit eingerichtetem Vault können hinzugefügt werden.",
+      "person": "Person",
+      "people": "Personen",
+      "hasVault": "Vault bereit",
+      "noVault": "Noch kein Vault",
+      "role": "Rolle",
+      "safetyOf": "Sicherheitsnummer von {{ name }}",
+      "safetyText": "Vergleiche diese Nummer mit der auf dem Gerät von {{ name }} (Vault › Einstellungen). Stimmt sie überein, ist sicher, dass niemand dazwischen sitzt.",
+      "compared": "Mit dem Gerät von {{ name }} verglichen – stimmt überein",
+      "add": "Hinzufügen",
+      "leave": "Tresor verlassen",
+      "deleteVault": "Tresor löschen",
+      "removeInfo": "Entfernst du jemanden, bekommt der Tresor einen neuen Schlüssel. Passwörter, die die Person gesehen hat, solltest du danach ändern.",
+      "noPeople": "Noch niemand sonst hat Vault eingerichtet.",
+      "deleteConfirm": "„{{ name }}“ mit allen Einträgen löschen – für alle?",
+      "leaveConfirm": "„{{ name }}“ verlassen? Du verlierst den Zugriff auf die Einträge.",
+      "removeConfirm": "{{ person }} aus „{{ name }}“ entfernen?",
+      "personalHint": "Dein persönlicher Tresor gehört nur dir. Lege einen geteilten Tresor an, um Einträge mit anderen zu teilen."
+    },
+    "role": {
+      "read": "Sehen",
+      "write": "Bearbeiten",
+      "manage": "Verwalten"
+    },
+    "roleHint": {
+      "read": "Kann Einträge sehen, kopieren und zum Ausfüllen nutzen.",
+      "write": "Kann Einträge anlegen, ändern und löschen.",
+      "manage": "Kann zusätzlich Personen hinzufügen und entfernen."
+    },
+    "em": {
+      "title": "Notfallzugriff",
+      "requested": "{{ name }} hat Zugriff angefordert",
+      "requestedText": "Wenn du nicht ablehnst, kann {{ name }} deinen Vault in {{ time }} öffnen.",
+      "deny": "Ablehnen",
+      "approve": "Sofort freigeben",
+      "mine": "Meine Vertrauenspersonen",
+      "wait": "Wartezeit {{ time }} · Lesen",
+      "status": {
+        "ready": "Bereit",
+        "requested": "Angefordert",
+        "granted": "Freigegeben"
+      },
+      "add": "Vertrauensperson hinzufügen",
+      "addTitle": "{{ name }} als Vertrauensperson",
+      "for": "Ich bin Vertrauensperson für",
+      "request": "Anfordern",
+      "requestConfirm": "Zugriff auf den Vault von {{ name }} anfordern? {{ name }} wird benachrichtigt und kann innerhalb von {{ time }} ablehnen.",
+      "open": "Öffnen",
+      "waitingUntil": "Frei in {{ time }}, wenn {{ name }} nicht ablehnt",
+      "info": "Der Server gibt den Zugang erst nach der Wartezeit frei. Lesen kann er ihn nie – nur das Gerät der Vertrauensperson.",
+      "waitLabel": "Wartezeit",
+      "remove": "Entfernen",
+      "decline": "Ablehnen",
+      "takeBack": "Zurücknehmen",
+      "none": "Noch niemand.",
+      "viewTitle": "Vault von {{ name }}",
+      "readOnly": "Nur lesen – Notfallzugriff",
+      "hours": {
+        "one": "{{ count }} Stunde",
+        "other": "{{ count }} Stunden"
+      },
+      "days": {
+        "one": "{{ count }} Tag",
+        "other": "{{ count }} Tage"
+      },
+      "remaining": "{{ hours }} Std. {{ minutes }} Min.",
+      "pick": "Person wählen"
+    },
+    "import": {
+      "title": "Importieren",
+      "from": "Woher?",
+      "sources": "Bitwarden (JSON oder CSV), Chrome / Edge, 1Password, KeePass / KeePassXC und Firefox (CSV).",
+      "pick": "Datei wählen",
+      "other": "Andere Datei",
+      "found": {
+        "one": "{{ count }} Eintrag erkannt",
+        "other": "{{ count }} Einträge erkannt"
+      },
+      "logins": {
+        "one": "{{ count }} Login",
+        "other": "{{ count }} Logins"
+      },
+      "totp": {
+        "one": "{{ count }} mit 2FA",
+        "other": "{{ count }} mit 2FA"
+      },
+      "notes": {
+        "one": "{{ count }} Notiz",
+        "other": "{{ count }} Notizen"
+      },
+      "cards": {
+        "one": "{{ count }} Karte",
+        "other": "{{ count }} Karten"
+      },
+      "dupes": {
+        "one": "{{ count }} Eintrag gibt es schon – er wird übersprungen",
+        "other": "{{ count }} Einträge gibt es schon – sie werden übersprungen"
+      },
+      "into": "In Tresor",
+      "info": "Die Datei wird nur auf diesem Gerät gelesen und verschlüsselt. Lösche sie danach – sie enthält alles im Klartext.",
+      "button": {
+        "one": "{{ count }} Eintrag importieren",
+        "other": "{{ count }} Einträge importieren"
+      },
+      "encrypted": "Dieser Export ist mit einem Passwort geschützt. Exportiere noch einmal ohne Passwort (JSON oder CSV).",
+      "unknown": "Diese Datei ist kein Export, den Vault kennt.",
+      "tooLarge": "Die Datei ist zu groß (höchstens 20 MB).",
+      "done": {
+        "one": "{{ count }} Eintrag importiert.",
+        "other": "{{ count }} Einträge importiert."
+      },
+      "preview": "Vorschau",
+      "more": "… und {{ count }} weitere",
+      "duplicate": "Gibt es schon",
+      "reading": "Datei wird gelesen …",
+      "saving": "Wird importiert …"
+    },
+    "settings": {
+      "title": "Vault-Einstellungen",
+      "autoLock": "Automatisch sperren",
+      "autoLockNow": "Beim Ausblenden",
+      "autoLockAfter": {
+        "one": "Nach {{ count }} Minute",
+        "other": "Nach {{ count }} Minuten"
+      },
+      "autoLockHint": "Bei gesperrtem Bildschirm und im Ruhezustand sperrt Vault immer.",
+      "changePw": "Hauptpasswort ändern",
+      "currentPw": "Aktuelles Hauptpasswort",
+      "changePwDone": "Hauptpasswort geändert.",
+      "mySafety": "Meine Sicherheitsnummer",
+      "mySafetyText": "Andere vergleichen sie, wenn sie einen Tresor mit dir teilen oder dich als Vertrauensperson festlegen.",
+      "deleteAccount": "Vault-Konto löschen",
+      "deleteAccountConfirm": "Dein Vault-Konto löschen? Dein persönlicher Tresor und jeder Tresor, in dem nur du bist, werden endgültig gelöscht – auf allen Geräten.",
+      "deleteAccountCheck": "Ja, alles endgültig löschen",
+      "deleted": "Vault-Konto gelöscht."
+    },
+    "foot": {
+      "locked": "Vault gesperrt",
+      "unlocked": "Vault entsperrt",
+      "unlockedIn": "Vault entsperrt · sperrt in {{ time }} min",
+      "unlockedHidden": "Vault entsperrt · sperrt beim Ausblenden des Fensters",
+      "clipboard": "Zwischenablage wird nach 30 s geleert"
+    },
+    "quick": {
+      "title": "Vault-Schnellsuche",
+      "search": "In Vault suchen",
+      "hits": "Treffer",
+      "password": "Passwort kopieren",
+      "username": "Benutzername",
+      "totp": "2FA-Code",
+      "url": "Website öffnen",
+      "kbdEnter": "Enter",
+      "kbdB": "Strg+B",
+      "kbdT": "Strg+T",
+      "kbdO": "Strg+O",
+      "kbdEsc": "Esc",
+      "lockedHint": "Vault ist gesperrt – Hauptpasswort eingeben und Enter drücken.",
+      "hint": "Tippe, um zu suchen.",
+      "unavailable": "Vault ist auf diesem Server nicht verfügbar.",
+      "noAccount": "Richte Vault zuerst in GateControl ein.",
+      "nothing": "Dafür hat dieser Eintrag nichts."
+    },
+    "inboxOpen": "In Vault öffnen"
   }
 }

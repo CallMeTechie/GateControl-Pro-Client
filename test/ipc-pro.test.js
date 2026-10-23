@@ -55,7 +55,7 @@ const skip = coreUsable ? false : 'gatecontrol-client-core (with dependencies) n
 
 // Load the real preload with a fake electron and call every exposed function
 // once; returns the channels it invokes (core bridge + Pro additions).
-function preloadInvokedChannels() {
+function preloadInvokedChannels(name = 'preload.js') {
   const invoked = new Set();
   let api = null;
   const electron = {
@@ -70,7 +70,7 @@ function preloadInvokedChannels() {
     if (request === 'electron') return electron;
     return realLoad.call(this, request, ...rest);
   };
-  const file = path.join(ROOT, 'src', 'main', 'preload.js');
+  const file = path.join(ROOT, 'src', 'main', name);
   try {
     delete require.cache[file];
     require(file);
@@ -185,6 +185,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       school: { on() {}, status: () => ({ state: 'unavailable' }) },
       // … and GateDrop (gatedrop:* channels)
       gatedrop: { on() {}, status: () => ({ state: 'unavailable' }) },
+      // … and Vault (vault:* channels)
+      vault: { on() {}, touch() {}, status: () => ({ state: 'unavailable' }) },
     };
     const registered = registerProIpc(ipcMain, ctx);
     return { handlers, stored, written, calls, registered, apiClient };
@@ -232,6 +234,14 @@ describe('Pro IPC on core handlers', { skip }, () => {
   it('every channel the Pro preload invokes is handled', () => {
     const invoked = preloadInvokedChannels();
     assert.ok(invoked.includes('tunnel:connect') && invoked.includes('rdp:list') && invoked.includes('dns:check-system'));
+    const { handlers } = setup();
+    for (const ch of invoked) assert.equal(typeof handlers[ch], 'function', ch);
+  });
+
+  it('the Vault quick search preload only reaches handled vault:* channels (and opening a website)', { skip: coreDir && fs.existsSync(path.join(coreDir, 'src', 'ipc', 'vault-handlers.js')) ? false : 'core without Vault' }, () => {
+    const invoked = preloadInvokedChannels('vault-quick-preload.js');
+    assert.deepEqual(invoked.filter((ch) => !ch.startsWith('vault:')), ['shell:open-external']);
+    assert.ok(invoked.includes('vault:unlock') && invoked.includes('vault:copy') && invoked.includes('vault:entries'));
     const { handlers } = setup();
     for (const ch of invoked) assert.equal(typeof handlers[ch], 'function', ch);
   });

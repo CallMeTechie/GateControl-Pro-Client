@@ -10,7 +10,7 @@
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
-	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, gatedrop: gatedropApi,
+	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, gatedrop: gatedropApi, vault: vaultApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
 
@@ -188,6 +188,7 @@ function refreshTexts() {
 	chatView?.relabel();
 	schoolView?.relabel();
 	gatedropView?.relabel();
+	vaultView?.relabel();
 	notifyRoutesView?.render();
 }
 
@@ -204,6 +205,7 @@ let currentPage = 'status';
 let chatView = null; // chat-view.js instance (CHATS section below)
 let schoolView = null; // school-view.js instance (SCHULE section below)
 let gatedropView = null; // gatedrop-view.js instance (GATEDROP section below)
+let vaultView = null; // vault-view.js instance (VAULT section below)
 let notifyRoutesView = null; // notify-routes.js in Settings › Benachrichtigungen
 let appVersion = '';
 let serverUrl = '';
@@ -352,7 +354,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'gatedrop', 'inbox', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'gatedrop', 'vault', 'inbox', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -392,6 +394,9 @@ function navigateTo(page, opts = {}) {
 	// GateDrop: the lists load when shown
 	if (page === 'gatedrop' && prev !== 'gatedrop') gatedropView?.show();
 	else if (prev === 'gatedrop' && page !== 'gatedrop') gatedropView?.hide();
+	// Vault: footer in the status bar, secrets leave the screen with the page
+	if (page === 'vault' && prev !== 'vault') vaultView?.show();
+	else if (prev === 'vault' && page !== 'vault') vaultView?.hide();
 	if (page === 'settings' && opts.tab) showSettingsTab(opts.tab);
 	if (page === 'setup' && prev !== 'setup') resetSetup();
 	if (prev === 'setup' && page !== 'setup') stopQRScan();
@@ -2173,6 +2178,16 @@ function renderInboxDetail() {
 		row.appendChild(btn);
 		detail.appendChild(row);
 	}
+	// Vault message (a shared vault, emergency access): open the page there.
+	const vaultCtx = window.GCVaultState && shownPages().includes('vault') ? window.GCVaultState.entryContext(entry) : null;
+	if (vaultCtx) {
+		const row = h('div', 'inbox-actions');
+		const btn = h('button', 'btn btn-pri', t('vault.inboxOpen'));
+		btn.type = 'button';
+		btn.addEventListener('click', () => openVault(vaultCtx));
+		row.appendChild(btn);
+		detail.appendChild(row);
+	}
 	if (actions.length) {
 		const row = h('div', 'inbox-actions');
 		actions.forEach((a, i) => {
@@ -2213,11 +2228,19 @@ function selectInboxEntry(id) {
 	}
 }
 
-/** Pages that exist right now (Chats / Schule / GateDrop only while the server offers them). */
+/** Pages that exist right now (Chats / Schule / GateDrop / Vault only while the server offers them). */
 function shownPages() {
 	return PAGES.filter((p) => (p === 'chats' ? !!chatView && !$('#nav-chats').hidden
 		: p === 'schule' ? !!schoolView && !$('#nav-schule').hidden
-			: p === 'gatedrop' ? !!gatedropView && !$('#nav-gatedrop').hidden : true));
+			: p === 'gatedrop' ? !!gatedropView && !$('#nav-gatedrop').hidden
+				: p === 'vault' ? !!vaultView && !$('#nav-vault').hidden : true));
+}
+
+/** Vault on a push target (emergency access, a shared vault), e.g. from a toast click. */
+function openVault(context) {
+	if (!vaultView) return;
+	navigateTo('vault');
+	vaultView.open(context || null);
 }
 
 /** GateDrop on a push target (Empfangen / Links, a send), e.g. from a toast click. */
@@ -2285,6 +2308,8 @@ if (notifyAvailable()) {
 			openSchool(target.context);
 		} else if (target.page === 'gatedrop') {
 			openGateDrop(target.context);
+		} else if (target.page === 'vault') {
+			openVault(target.context);
 		} else {
 			navigateTo(target.page);
 		}
@@ -2489,6 +2514,7 @@ async function openCardRoute(route, target) {
 	if (own) {
 		if (own.page === 'schule') openSchool(own.context);
 		else if (own.page === 'gatedrop') openGateDrop(own.context);
+		else if (own.page === 'vault') openVault(own.context);
 		else navigateTo(own.page);
 		return true;
 	}
@@ -2591,6 +2617,30 @@ if (gatedropView) {
 		skip: (target) => !!(target.closest && target.closest('#page-chats')),
 	});
 }
+
+// ══════════════════════════════════════════════════════════
+//  VAULT (plugin gatecontrol-vault, end-to-end encrypted passwords)
+//  Data: window.gatecontrol.vault (core VaultService in main); the page is
+//  built by vault-view.js (window.GCVaultView) with vault-state.js. The nav
+//  entry is shown only while the server lists the plugin; Strg+Alt+P opens
+//  the quick search window (main/vault-quick.js).
+// ══════════════════════════════════════════════════════════
+vaultView = vaultApi && window.GCVaultView && $('#page-vault')
+	? window.GCVaultView.mount({
+		root: $('#page-vault'),
+		api: vaultApi,
+		t,
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		openExternal: (url) => shell.openExternal(url),
+		statusHost: $('#statusbar'),
+		onStatus: (st) => {
+			const show = !!st && st.state === 'available';
+			$('#nav-vault').hidden = !show;
+			if (!show && currentPage === 'vault' && st && st.state === 'unavailable') navigateTo('status');
+		},
+	})
+	: null;
 
 // Initial paint (before the locale round-trip finishes)
 updateDOM();

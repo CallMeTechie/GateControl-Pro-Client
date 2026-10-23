@@ -154,6 +154,13 @@ describe('inbox empty states and hints', () => {
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-gatedrop', id: 8, context: gctx }, pages), { page: 'inbox', id: 8 });
     assert.deepEqual(NS.routeTarget('plg-gatecontrol-gatedrop/links', [...pages, 'gatedrop']), { page: 'gatedrop', context: { tab: 'links', sendId: null } });
     assert.deepEqual(NS.routeTarget('plg-gatecontrol-gatedrop', [...pages, 'gatedrop']), { page: 'gatedrop', context: null });
+    // Vault: a toast click carries the core's context (emergency access, a shared vault)
+    const vctx = { topic: 'emergency', event: 'requested', vaultId: null, emergencyId: 'a'.repeat(24), page: 'emergency' };
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-vault', id: 9, context: vctx }, [...pages, 'vault']), { page: 'vault', id: null, context: vctx });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-vault', id: 9, context: vctx }, pages), { page: 'inbox', id: 9 });
+    assert.deepEqual(NS.routeTarget('plg-gatecontrol-vault', [...pages, 'vault']), { page: 'vault', context: null });
+    assert.equal(NS.routeTarget('plg-gatecontrol-vault/emergency', [...pages, 'vault']).context.page, 'emergency');
+    assert.equal(NS.routeTarget('plg-gatecontrol-vault', pages), null);
   });
 });
 
