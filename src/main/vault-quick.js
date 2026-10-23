@@ -18,6 +18,8 @@
 const ACCELERATOR = 'Control+Alt+P';
 const WIDTH = 640;
 const HEIGHT = 440;
+// Auto-lock "immediately": how long after the quick search hides (the copied password still has to be pasted).
+const HIDDEN_LOCK_MS = 30 * 1000;
 
 /**
  * @param {object} o
@@ -34,12 +36,16 @@ const HEIGHT = 440;
  * @param {object} o.log
  * @param {string} [o.accelerator]
  * @param {boolean} [o.sandbox] - like the main window (false)
+ * @param {() => boolean} [o.isMainVisible] - is the main window on screen
+ * @param {number} [o.hiddenLockMs] - auto-lock "immediately": lock this long after the quick search hides while the
+ *   main window is not on screen either (the clipboard is cleared after 30 s, a copy must still be pasted)
  */
 function setupVaultQuick({
   BrowserWindow, globalShortcut, screen, ipcMain, vault, preload, html, getTheme, getLocale, log,
-  accelerator = ACCELERATOR, sandbox = false,
+  accelerator = ACCELERATOR, sandbox = false, isMainVisible = () => false, hiddenLockMs = HIDDEN_LOCK_MS,
 }) {
   let win = null;
+  let lockTimer = null;
   let registered = false;
   let started = false;
   let quitting = false;
@@ -97,7 +103,28 @@ function setupVaultQuick({
     }
   }
 
+  function cancelLock() {
+    if (lockTimer) clearTimeout(lockTimer);
+    lockTimer = null;
+  }
+
+  /** Auto-lock "immediately" counts the quick search as a window too: once it is gone and the main window is not on
+   * screen, Vault locks (after the time a copied password needs to be pasted). */
+  function lockWhenHidden() {
+    cancelLock();
+    let minutes = null;
+    try { minutes = vault.settings().autoLockMinutes; } catch { /* no settings */ }
+    if (minutes !== 0) return;
+    lockTimer = setTimeout(() => {
+      lockTimer = null;
+      if (win && !(typeof win.isDestroyed === 'function' && win.isDestroyed()) && win.isVisible()) return;
+      if (!isMainVisible()) vault.windowHidden();
+    }, hiddenLockMs);
+    if (lockTimer.unref) lockTimer.unref();
+  }
+
   function show() {
+    cancelLock();
     if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) create();
     place();
     if (typeof win.setBackgroundColor === 'function') win.setBackgroundColor(bg());
@@ -113,6 +140,7 @@ function setupVaultQuick({
     if (win && !(typeof win.isDestroyed === 'function' && win.isDestroyed()) && win.isVisible()) {
       try { win.webContents.send('vault-quick:hide'); } catch { /* closed */ }
       win.hide();
+      lockWhenHidden();
     }
   }
 
@@ -151,6 +179,7 @@ function setupVaultQuick({
       sync(vault.status());
     },
     stop() {
+      cancelLock();
       started = false;
       quitting = true;
       vault.removeListener('state', onState);

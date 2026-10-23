@@ -85,6 +85,35 @@ describe('Vault quick search window', () => {
     assert.equal(vault.listenerCount('state'), 0);
   });
 
+  it('auto-lock "immediately": locks after the quick search hides while the main window is not on screen', async () => {
+    const { o, shortcuts, vault } = fakes();
+    vault.st = { state: 'available' };
+    let minutes = 0;
+    let mainVisible = false;
+    let locks = 0;
+    vault.settings = () => ({ autoLockMinutes: minutes });
+    vault.windowHidden = () => { locks++; };
+    const q = setupVaultQuick({ ...o, hiddenLockMs: 20, isMainVisible: () => mainVisible });
+    q.start();
+    const toggle = shortcuts.get(ACCELERATOR);
+    toggle(); toggle();
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(locks, 1, 'hidden, main window in the tray: locks');
+    toggle(); toggle(); toggle();
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(locks, 1, 'shown again before the time: no lock');
+    toggle();
+    mainVisible = true;
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(locks, 1, 'main window on screen: it decides');
+    mainVisible = false;
+    minutes = 5;
+    toggle(); toggle();
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(locks, 1, 'other auto-lock settings use their own timer');
+    q.stop();
+  });
+
   it('a shortcut taken by another program is not an error', () => {
     const { o, shortcuts, vault } = fakes();
     shortcuts.set(ACCELERATOR, () => {});
