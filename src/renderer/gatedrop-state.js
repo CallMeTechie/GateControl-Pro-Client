@@ -3,9 +3,10 @@
  *
  * Pure helpers for the page "GateDrop" and its send dialog (plugin
  * gatecontrol-gatedrop): sizes, the dialog title, the targets the person
- * picked → `to` of the send, what is missing before "Senden", text vs.
- * link, the lines of the lists (Empfangen / Gesendet / Links), link state,
- * progress, error texts and where a push leads. Loaded as a plain script
+ * picked → `to` of the send (own devices and other people's open ones),
+ * what is missing before "Senden", text vs. link, the lines of the lists
+ * (Empfangen / Gesendet / Links), link state, progress, error texts, where a
+ * push leads and the setting "Wer darf an diesen PC senden?". Loaded as a plain script
  * before gatedrop-view.js (window.GCGateDropState) and required by the node
  * tests (test/gatedrop-state.test.js).
  *
@@ -26,7 +27,9 @@
 	const EXPIRES = ['1h', '1d', '7d', 'once'];
 	const MAX_ITEMS = 20;
 	const MAX_TEXT = 20000;
-	const ERRORS = ['unavailable', 'network', 'timeout', 'too_large', 'quota_exceeded', 'no_target', 'missing', 'changed', 'forbidden', 'invalid'];
+	const ERRORS = ['unavailable', 'target_unavailable', 'network', 'timeout', 'too_large', 'quota_exceeded', 'no_target', 'missing', 'changed', 'forbidden', 'invalid'];
+	// Who may send to this PC (GateDrop 1.2.0): only its owner, or everyone of the GateControl.
+	const ACCESS = ['self', 'everyone'];
 	// waiting (GateDrop 1.1.0): the own device was offline, the send waits until it is online again.
 	const STATUS = ['pending', 'waiting', 'direct', 'delivered', 'opened', 'failed', 'expired'];
 
@@ -85,13 +88,24 @@
 		return list.includes(s) ? list.filter((x) => x !== s) : [...list, s];
 	}
 
+	/**
+	 * Ids of the devices one may send to: own ones and other people's open for
+	 * everyone (peopleDevices) — null while the targets are not known.
+	 */
+	function deviceIds(targets) {
+		if (!targets || (!Array.isArray(targets.devices) && !Array.isArray(targets.peopleDevices))) return null;
+		return new Set([...(targets.devices || []), ...(targets.peopleDevices || [])].map((d) => str(d.id)));
+	}
+
 	/** Dialog selection → `to` of POST sends (null when nothing is picked). */
 	function buildTo(sel, targets) {
 		const s = sel || emptySelection();
 		const nasById = new Map(((targets && targets.nas) || []).map((n) => [n.id, n]));
+		// A device that is no longer offered (closed for others meanwhile) drops out.
+		const known = deviceIds(targets);
 		const to = {
 			people: [...new Set(s.people || [])],
-			devices: [...new Set(s.devices || [])],
+			devices: [...new Set(s.devices || [])].filter((id) => !known || known.has(id)),
 			nas: (s.nas || []).filter((id) => nasById.has(id)).map((id) => ({ id, path: nasById.get(id).path || undefined })),
 		};
 		if (s.link) to.link = { expires: EXPIRES.includes(s.expires) ? s.expires : '1d', pin: s.pin === true };
@@ -113,16 +127,23 @@
 		return { ok: true, key: null };
 	}
 
-	/** Targets → what the dialog shows (own devices first online, Familie first among people). */
+	/**
+	 * Targets → what the dialog shows (own devices first online, Familie first
+	 * among people; other people's open devices by owner, then online first).
+	 */
 	function dialogTargets(targets) {
 		const tg = targets || {};
-		const devices = (tg.devices || []).filter((d) => !d.self).slice().sort((a, b) => (Number(b.online) - Number(a.online)) || str(a.name).localeCompare(str(b.name)));
+		const byOnline = (a, b) => (Number(b.online) - Number(a.online)) || str(a.name).localeCompare(str(b.name));
+		const devices = (tg.devices || []).filter((d) => !d.self).slice().sort(byOnline);
+		const ownerOf = (d) => str(d.owner && d.owner.name);
+		const peopleDevices = (tg.peopleDevices || []).filter((d) => d && d.owner).slice().sort((a, b) => ownerOf(a).localeCompare(ownerOf(b)) || byOnline(a, b));
 		const people = (tg.people || []).slice().sort((a, b) => (Number(b.kind === 'family') - Number(a.kind === 'family')) || str(a.name).localeCompare(str(b.name)));
 		const me = tg.me || {};
 		// Validities the plugin offers (limits.linkExpires), in the known order.
 		const offered = tg.limits && Array.isArray(tg.limits.linkExpires) ? EXPIRES.filter((x) => tg.limits.linkExpires.includes(x)) : [];
 		return {
 			devices,
+			peopleDevices,
 			people,
 			nas: me.canNas ? (tg.nas || []) : [],
 			link: !!(me.canLink && tg.links && tg.links.enabled),
@@ -138,6 +159,26 @@
 		const parts = [d && d.online ? t('gatedrop.dialog.online') : t('gatedrop.dialog.offlineLater')];
 		if (d && d.direct) parts.push(t('gatedrop.dialog.direct'));
 		return parts.join(' · ');
+	}
+
+	/** Another person's device: "Surface · Marc". */
+	function peopleDeviceLabel(d, t) {
+		const owner = d && d.owner && d.owner.name;
+		return owner ? t('gatedrop.dialog.deviceOf', { device: str(d.name), owner: str(owner) }) : str(d && d.name);
+	}
+
+	/**
+	 * "Wer darf an diesen PC senden?" (GET device) → null when the server does
+	 * not offer it (hidden), else { value, options: [{ value, label, on }], hint }.
+	 */
+	function accessView(a, t) {
+		if (!a || a.ok === false || !a.supported) return null;
+		const value = ACCESS.includes(a.receiveFrom) ? a.receiveFrom : 'self';
+		return {
+			value,
+			options: ACCESS.map((x) => ({ value: x, label: t(`gatedrop.access.${x}`), on: x === value })),
+			hint: t(value === 'everyone' ? 'gatedrop.access.everyoneHint' : 'gatedrop.access.selfHint'),
+		};
 	}
 
 	// ── Time ─────────────────────────────────────────────
@@ -338,6 +379,7 @@
 		APP_ROUTE,
 		TABS,
 		EXPIRES,
+		ACCESS,
 		MAX_ITEMS,
 		formatBytes,
 		percent,
@@ -345,10 +387,13 @@
 		splitTextLink,
 		emptySelection,
 		toggle,
+		deviceIds,
 		buildTo,
 		canSend,
 		dialogTargets,
 		deviceMeta,
+		peopleDeviceLabel,
+		accessView,
 		when,
 		relativeFuture,
 		sendTitle,

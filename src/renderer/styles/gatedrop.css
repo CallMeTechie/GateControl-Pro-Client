@@ -43,6 +43,12 @@
 .gd-side-tx b { font-weight: 600; }
 .gd-side-sub { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; user-select: text; }
 .gd-side-note { font-size: 12px; color: var(--faint); }
+.gd-access-row { align-items: flex-start; }
+.gd .gd-access { margin: 6px 0 4px; max-width: 100%; flex-shrink: 1; }
+/* like .gd-exp; a narrow card wraps the option text instead of cutting it */
+.gd .gd-access button { height: auto; min-height: 28px; min-width: 0; padding: 4px 10px; font-size: 12.5px; line-height: 1.25; white-space: normal; }
+.gd .gd-access button:first-child { flex-shrink: 0; white-space: nowrap; }
+.gd .gd-access button:disabled { cursor: default; }
 
 /* Transfers */
 .gd-jobs { display: flex; flex-direction: column; gap: 8px; }
