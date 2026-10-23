@@ -96,6 +96,57 @@ describe('gatedrop-state', () => {
     assert.doesNotMatch(row, /disabled: [^,]*online/);
   });
 
+  it('other people\'s open devices (GateDrop 1.2.0): own section, same selection', () => {
+    const targets = {
+      devices: [{ id: '43', name: 'Pixel', online: true }],
+      peopleDevices: [
+        { id: '52', name: 'Laptop', online: false, direct: false, owner: { id: '4', name: 'Marc' } },
+        { id: '51', name: 'Surface', online: true, direct: true, owner: { id: '3', name: 'Lena' } },
+        { id: '53', name: 'Handy', online: true, owner: { id: '4', name: 'Marc' } },
+        { id: '54', name: 'no owner' },
+      ],
+    };
+    const tg = GS.dialogTargets(targets);
+    assert.deepEqual(tg.peopleDevices.map((d) => d.id), ['51', '53', '52']);
+    assert.deepEqual(GS.dialogTargets({}).peopleDevices, []);
+    assert.equal(GS.peopleDeviceLabel(tg.peopleDevices[0], t), 'gatedrop.dialog.deviceOf(Surface,Lena)');
+    assert.equal(GS.peopleDeviceLabel({ name: 'Surface', owner: {} }, t), 'Surface');
+    assert.equal(GS.deviceMeta(tg.peopleDevices[2], t), 'gatedrop.dialog.offlineLater');
+    // ids of both lists are valid devices; one no longer offered drops out once the targets are known
+    const sel = { ...GS.emptySelection(), devices: ['51', '43', 'gone'] };
+    assert.deepEqual(GS.buildTo(sel, targets).devices, ['51', '43']);
+    assert.deepEqual(GS.buildTo(sel, null).devices, ['51', '43', 'gone']);
+    assert.deepEqual([...GS.deviceIds(targets)], ['43', '52', '51', '53', '54']);
+    assert.equal(GS.deviceIds({ nas: [] }), null);
+    assert.deepEqual(GS.canSend({ files: [{ id: 'f' }], text: '', selection: { ...GS.emptySelection(), devices: ['51'] }, targets }), { ok: true, key: null });
+    assert.deepEqual(GS.canSend({ files: [{ id: 'f' }], text: '', selection: { ...GS.emptySelection(), devices: ['gone'] }, targets }), { ok: false, key: 'gatedrop.dialog.pickTarget' });
+    assert.equal(GS.errorText({ ok: false, code: 'target_unavailable' }, t), 'gatedrop.error.target_unavailable');
+    // the dialog builds both sections with the same device row
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'gatedrop-view.js'), 'utf8');
+    assert.match(src, /for \(const d of tg\.devices\) body\.appendChild\(deviceRow\(d, d\.name\)\)/);
+    assert.match(src, /for \(const d of tg\.peopleDevices\) body\.appendChild\(deviceRow\(d, GS\.peopleDeviceLabel\(d, t\)\)\)/);
+  });
+
+  it('"Wer darf an diesen PC senden?": hidden when not offered, two options', () => {
+    assert.equal(GS.accessView(null, t), null);
+    assert.equal(GS.accessView({ ok: true, supported: false, receiveFrom: null }, t), null);
+    assert.equal(GS.accessView({ ok: false, code: 'network' }, t), null);
+    assert.deepEqual(GS.accessView({ ok: true, supported: true, receiveFrom: 'self' }, t), {
+      value: 'self',
+      options: [{ value: 'self', label: 'gatedrop.access.self', on: true }, { value: 'everyone', label: 'gatedrop.access.everyone', on: false }],
+      hint: 'gatedrop.access.selfHint',
+    });
+    const all = GS.accessView({ ok: true, supported: true, receiveFrom: 'everyone' }, t);
+    assert.deepEqual([all.value, all.options.map((o) => o.on), all.hint], ['everyone', [false, true], 'gatedrop.access.everyoneHint']);
+    assert.equal(GS.accessView({ supported: true, receiveFrom: 'weird' }, t).value, 'self');
+    const dir = coreDir();
+    if (dir) {
+      const de = JSON.parse(fs.readFileSync(path.join(dir, 'src', 'i18n', 'locales', 'de.json'), 'utf8')).gatedrop;
+      assert.deepEqual([de.access.title, de.access.self, de.access.everyone, de.dialog.peopleDevices], ['Wer darf an diesen PC senden?', 'Nur ich', 'Alle im GateControl-Netz', 'Geräte anderer']);
+      assert.equal(de.dialog.deviceOf.replace('{{device}}', 'Surface').replace('{{owner}}', 'Marc'), 'Surface · Marc');
+    }
+  });
+
   it('sent list: `waiting` reads "Wartet, bis „<Gerät>“ online ist"', () => {
     const s = GS.sentView({ id: '7', items: [{ name: 'a' }], deliveries: [{ kind: 'device', target: '43', targetName: 'Pixel', status: 'waiting', via: null }, { kind: 'device', target: '44', status: 'delivered', via: 'server' }] }, { t, locale: 'de', now: NOW });
     assert.deepEqual(s.deliveries.map((d) => [d.status, d.tone, d.full]), [['waiting', 'muted', true], ['delivered', 'ok', false]]);
@@ -268,6 +319,8 @@ describe('GateDrop page wiring', () => {
     for (const x of ['device', 'person', 'nas', 'link']) keys.add(`gatedrop.kind.${x}`);
     for (const x of ['directory', 'too_large', 'empty', 'missing', 'too_many', 'invalid']) keys.add(`gatedrop.rejected.${x}`);
     for (const x of ['emptyReceived', 'emptySent', 'emptyLinks']) keys.add(`gatedrop.list.${x}`);
+    for (const x of GS.ACCESS) keys.add(`gatedrop.access.${x}`);
+    for (const x of ['selfHint', 'everyoneHint']) keys.add(`gatedrop.access.${x}`);
     assert.ok(keys.size > 60, `only ${keys.size} keys`);
     for (const k of keys) {
       assert.ok(k in de, `de: ${k}`);

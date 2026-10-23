@@ -3,14 +3,16 @@
  *
  * The page "GateDrop": a drop zone ("Dateien hierher ziehen oder auswählen",
  * text or link), the state of this PC (direct receiving in the WLAN, the
- * folder Downloads\GateControl, "Senden an" in the Explorer), running
+ * folder Downloads\GateControl, "Senden an" in the Explorer, who may send
+ * to this PC: "Nur ich" / "Alle im GateControl-Netz"), running
  * transfers and the lists Empfangen / Gesendet / Links (show / open / save
  * received files, copy texts, end links).
  *
  * The send dialog ("Teilen: …", opened from the page, by drag & drop on the
  * window, from "Senden an → GateDrop" in the Explorer or the tray): files,
- * text or link, Meine Geräte, Personen, Ablegen (NAS) & Link für Externe
- * (validity + PIN), note; after sending the link and its PIN.
+ * text or link, Meine Geräte, Geräte anderer (open for everyone), Personen,
+ * Ablegen (NAS) & Link für Externe (validity + PIN), note; after sending the
+ * link and its PIN.
  *
  * Data: window.gatecontrol.gatedrop (core GateDropService over IPC); texts:
  * gatedrop.* of the core locales; view logic without DOM: gatedrop-state.js
@@ -44,6 +46,7 @@
 		pc: 'M3 4h18v12H3z|M8 20h8M12 16v4',
 		nas: 'M4 4h16v6H4z|M4 14h16v6H4z|M8 7h.01M8 17h.01',
 		lock: 'M6 11h12v10H6z|M8 11V7a4 4 0 0 1 8 0v4',
+		users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2|M9 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M22 21v-2a4 4 0 0 0-3-3.87|M16 3.13a4 4 0 0 1 0 7.75',
 	};
 
 	function icon(name, size = 16, stroke = '2') {
@@ -128,6 +131,8 @@
 			dirty: new Set(GS.TABS),
 			jobs: new Map(),      // progress id → event
 			explorer: null,       // { enabled, supported }
+			access: null,         // { supported, receiveFrom } who may send to this PC
+			accessBusy: false,
 		};
 
 		// ── Page skeleton ────────────────────────────────────
@@ -155,6 +160,7 @@
 			refs.listen = el('div', { class: 'gd-side-row' });
 			refs.folderPath = el('span', { class: 'gd-side-sub' });
 			refs.explorerRow = el('div', { class: 'gd-side-row', hidden: true });
+			refs.accessRow = el('div', { class: 'gd-side-row gd-access-row', hidden: true });
 			refs.side = el('div', { class: 'card gd-side' }, [
 				refs.listen,
 				el('div', { class: 'gd-side-row' }, [
@@ -163,6 +169,7 @@
 					el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => call(api.openFolder()) } }, [el('span', { text: t('gatedrop.openFolder') })]),
 				]),
 				refs.explorerRow,
+				refs.accessRow,
 				el('span', { class: 'gd-side-note', text: t('gatedrop.retention') }),
 			]);
 
@@ -232,6 +239,47 @@
 					sw,
 				);
 			}
+			renderAccess();
+		}
+
+		/** "Wer darf an diesen PC senden?" — hidden when the server does not offer it. */
+		function renderAccess() {
+			if (!refs.accessRow) return;
+			const v = available() ? GS.accessView(S.access, t) : null;
+			refs.accessRow.hidden = !v;
+			clear(refs.accessRow);
+			if (!v) return;
+			const labelId = nextId('gd-acc');
+			const seg = el('div', { class: 'seg gd-access', role: 'radiogroup', 'aria-labelledby': labelId });
+			for (const x of v.options) {
+				seg.appendChild(el('button', {
+					type: 'button', role: 'radio', 'aria-checked': x.on ? 'true' : 'false', class: x.on ? 'on' : '', text: x.label,
+					disabled: S.accessBusy, on: { click: () => { if (!x.on) setAccess(x.value); } },
+				}));
+			}
+			refs.accessRow.append(
+				el('span', { class: `gd-side-ic${v.value === 'everyone' ? ' is-on' : ''}` }, [icon('users', 16)]),
+				el('div', { class: 'gd-side-tx' }, [el('b', { id: labelId, text: t('gatedrop.access.title') }), seg, el('span', { class: 'gd-side-sub', text: v.hint })]),
+			);
+		}
+
+		async function loadAccess() {
+			if (typeof api.access !== 'function') return;
+			try {
+				const r = await api.access();
+				S.access = r && r.ok !== false ? r : null;
+			} catch { S.access = null; }
+			renderAccess();
+		}
+
+		async function setAccess(mode) {
+			if (S.accessBusy || typeof api.setAccess !== 'function') return;
+			S.accessBusy = true;
+			renderAccess();
+			const r = await call(api.setAccess(mode));
+			S.accessBusy = false;
+			if (r) S.access = r;
+			renderAccess();
 		}
 
 		async function loadExplorer() {
@@ -578,6 +626,18 @@
 			return el('span', { class: 'lbl gd-lbl', text });
 		}
 
+		/** A device line of the dialog (own or another person's): checkbox, icon, name, online / offline. */
+		function deviceRow(d, label) {
+			const id = nextId('gd-dev');
+			const checked = D.sel.devices.includes(d.id);
+			return el('label', { class: 'gd-dev', for: id }, [
+				el('input', { id, type: 'checkbox', checked, disabled: D.busy, on: { change: () => { D.sel.devices = GS.toggle(D.sel.devices, d.id); updateFoot(); } } }),
+				icon(d.platform === 'windows' ? 'pc' : 'phone', 16),
+				el('b', { text: label }),
+				el('span', { class: `gd-dev-meta${d.online ? ' is-on' : ''}`, text: GS.deviceMeta(d, t) }),
+			]);
+		}
+
 		function targetChip({ label, on, onClick, iconName }) {
 			return el('button', { type: 'button', class: `gd-tchip${on ? ' is-on' : ''}`, 'aria-pressed': on ? 'true' : 'false', on: { click: onClick } }, [iconName ? icon(iconName, 14) : null, el('span', { text: label })]);
 		}
@@ -628,15 +688,11 @@
 				const tg = GS.dialogTargets(D.targets);
 				body.appendChild(sectionLabel(t('gatedrop.dialog.devices')));
 				if (!tg.devices.length) body.appendChild(el('span', { class: 'gd-none', text: t('gatedrop.dialog.noDevices') }));
-				for (const d of tg.devices) {
-					const id = nextId('gd-dev');
-					const checked = D.sel.devices.includes(d.id);
-					body.appendChild(el('label', { class: 'gd-dev', for: id }, [
-						el('input', { id, type: 'checkbox', checked, disabled: D.busy, on: { change: () => { D.sel.devices = GS.toggle(D.sel.devices, d.id); updateFoot(); } } }),
-						icon(d.platform === 'windows' ? 'pc' : 'phone', 16),
-						el('b', { text: d.name }),
-						el('span', { class: `gd-dev-meta${d.online ? ' is-on' : ''}`, text: GS.deviceMeta(d, t) }),
-					]));
+				for (const d of tg.devices) body.appendChild(deviceRow(d, d.name));
+				// Other people's devices open for everyone: picked into the same selection.
+				if (tg.peopleDevices.length) {
+					body.appendChild(sectionLabel(t('gatedrop.dialog.peopleDevices')));
+					for (const d of tg.peopleDevices) body.appendChild(deviceRow(d, GS.peopleDeviceLabel(d, t)));
 				}
 				body.appendChild(sectionLabel(t('gatedrop.dialog.people')));
 				if (!tg.people.length) body.appendChild(el('span', { class: 'gd-none', text: t('gatedrop.dialog.noPeople') }));
@@ -775,6 +831,7 @@
 			if (typeof o.onStatus === 'function') { try { o.onStatus(S.status); } catch { /* app */ } }
 			if (!was && available()) {
 				loadExplorer();
+				loadAccess();
 				if (S.shown) reload(false);
 			}
 			if (!available() && D.open && S.status && S.status.state === 'unavailable') closeDialog();
@@ -803,6 +860,7 @@
 		function show() {
 			S.shown = true;
 			if (!S.explorer) loadExplorer();
+			if (!S.access && available()) loadAccess();
 			if (S.dirty.has(S.tab) || !S.lists[S.tab]) load(S.tab);
 		}
 
