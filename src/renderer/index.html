@@ -350,10 +350,16 @@
 							</div>
 							<button class="btn btn-sec btn-sm" id="inbox-read-all" type="button" data-i18n="ui.inbox.readAll">Alle gelesen</button>
 						</div>
-						<div class="fchips" id="inbox-filters" role="tablist" data-i18n-aria-label="ui.inbox.filters" aria-label="Mitteilungen filtern"></div>
+						<div class="inbox-tools" id="inbox-filters">
+							<div class="seg" role="tablist" id="inbox-read-seg" data-i18n-aria-label="ui.inbox.filters" aria-label="Mitteilungen filtern">
+								<button type="button" role="tab" class="on" aria-selected="true" data-read="all" data-i18n="ui.inbox.filterAll">Alle</button>
+								<button type="button" role="tab" aria-selected="false" data-read="unread" data-i18n="ui.inbox.filterUnread">Ungelesen</button>
+							</div>
+							<select class="inp inbox-source" id="inbox-source" data-i18n-aria-label="ui.inbox.source" aria-label="Quelle"></select>
+						</div>
 						<div class="note note-neutral" id="inbox-hint" role="status" hidden></div>
 					</div>
-					<div class="rdp-list scroll" id="inbox-list" role="list"></div>
+					<div class="rdp-list inbox-list scroll" id="inbox-list" role="listbox" data-i18n-aria-label="ui.inbox.title" aria-label="Mitteilungen"></div>
 					<div class="empty" id="inbox-empty" hidden>
 						<strong id="inbox-empty-title"></strong>
 						<span id="inbox-empty-hint"></span>

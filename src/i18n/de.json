@@ -279,6 +279,17 @@
       "filters": "Mitteilungen filtern",
       "filterAll": "Alle",
       "filterUnread": "Ungelesen",
+      "source": "Quelle",
+      "sourceAll": "Alle Quellen",
+      "system": "System",
+      "newCount": "{{ count }} neu",
+      "today": "Heute",
+      "yesterdayDay": "Gestern",
+      "earlier": "Ohne Datum",
+      "receivedAt": "Empfangen: {{ when }}",
+      "answered": "Deine Antwort: {{ label }}",
+      "unreadMark": "Ungelesen",
+      "resetFilter": "Filter zurücksetzen",
       "yesterday": "gestern",
       "received": "Empfangen",
       "unreadCount": "{{ count }} ungelesen",
@@ -293,7 +304,7 @@
       },
       "filtered": {
         "title": "Nichts in diesem Filter",
-        "hint": "Wähle „Alle“, um alle Mitteilungen zu sehen."
+        "hint": "Mit „Alle“ und „Alle Quellen“ siehst du wieder jede Mitteilung."
       },
       "off": {
         "title": "Benachrichtigungen sind ausgeschaltet",

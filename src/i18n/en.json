@@ -279,6 +279,17 @@
       "filters": "Filter notifications",
       "filterAll": "All",
       "filterUnread": "Unread",
+      "source": "Source",
+      "sourceAll": "All sources",
+      "system": "System",
+      "newCount": "{{ count }} new",
+      "today": "Today",
+      "yesterdayDay": "Yesterday",
+      "earlier": "No date",
+      "receivedAt": "Received: {{ when }}",
+      "answered": "Your answer: {{ label }}",
+      "unreadMark": "Unread",
+      "resetFilter": "Reset filter",
       "yesterday": "yesterday",
       "received": "Received",
       "unreadCount": "{{ count }} unread",
@@ -293,7 +304,7 @@
       },
       "filtered": {
         "title": "Nothing in this filter",
-        "hint": "Choose “All” to see every notification."
+        "hint": "Choose “All” and “All sources” to see every notification again."
       },
       "off": {
         "title": "Notifications are switched off",
