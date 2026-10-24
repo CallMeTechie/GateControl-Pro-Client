@@ -811,6 +811,28 @@
       "noAccount": "Set up Vault in GateControl first.",
       "nothing": "This entry has nothing for that."
     },
-    "inboxOpen": "Open in Vault"
+    "inboxOpen": "Open in Vault",
+    "wifi": {
+      "scan": "Find nearby Wi-Fi",
+      "title": "Nearby Wi-Fi networks",
+      "sub": "Pick a network – its name and security are filled in.",
+      "list": "Networks found",
+      "searching": "Searching …",
+      "again": "Search again",
+      "empty": "No Wi-Fi networks found",
+      "connected": "Connected",
+      "open": "Open",
+      "unknown": "Security unknown",
+      "signal": "Signal {{ percent }} %",
+      "openSettings": "Open location settings",
+      "err": {
+        "noAdapter": "No Wi-Fi adapter found. The search only works on a Windows PC with Wi-Fi.",
+        "serviceOff": "The Windows Wi-Fi service (WLAN AutoConfig) is not running. Turn Wi-Fi on and try again.",
+        "radioOff": "Wi-Fi is turned off. Turn it on in the Windows quick settings and try again.",
+        "locationTitle": "Windows does not share the Wi-Fi list",
+        "location": "Since Windows 11 24H2 the Wi-Fi search needs location access. Under Settings › Privacy & security › Location, turn on “Location services” and “Let desktop apps access your location”, then search again.",
+        "failed": "The Wi-Fi search did not work. Please try again."
+      }
+    }
   }
 }

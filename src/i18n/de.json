@@ -811,6 +811,28 @@
       "noAccount": "Richte Vault zuerst in GateControl ein.",
       "nothing": "Dafür hat dieser Eintrag nichts."
     },
-    "inboxOpen": "In Vault öffnen"
+    "inboxOpen": "In Vault öffnen",
+    "wifi": {
+      "scan": "WLAN in der Nähe suchen",
+      "title": "WLAN in der Nähe",
+      "sub": "Wähle ein Netzwerk – Name und Sicherheit werden übernommen.",
+      "list": "Gefundene WLANs",
+      "searching": "Suche …",
+      "again": "Erneut suchen",
+      "empty": "Keine WLANs gefunden",
+      "connected": "Verbunden",
+      "open": "Offen",
+      "unknown": "Sicherheit unbekannt",
+      "signal": "Signal {{ percent }} %",
+      "openSettings": "Standorteinstellungen öffnen",
+      "err": {
+        "noAdapter": "Kein WLAN-Adapter gefunden. Die Suche funktioniert nur auf einem Windows-PC mit WLAN.",
+        "serviceOff": "Der WLAN-Dienst von Windows (WLAN AutoConfig) läuft nicht. Schalte WLAN ein und versuche es noch einmal.",
+        "radioOff": "WLAN ist ausgeschaltet. Schalte es in den Schnelleinstellungen von Windows ein und versuche es noch einmal.",
+        "locationTitle": "Windows gibt die WLAN-Liste nicht frei",
+        "location": "Seit Windows 11 24H2 braucht die WLAN-Suche den Standortzugriff. Schalte unter Einstellungen › Datenschutz und Sicherheit › Standort die „Standortdienste“ und „Desktop-Apps Zugriff auf Ihren Standort erlauben“ ein und suche dann erneut.",
+        "failed": "Die WLAN-Suche hat nicht geklappt. Versuche es noch einmal."
+      }
+    }
   }
 }

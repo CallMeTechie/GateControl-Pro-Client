@@ -1383,6 +1383,12 @@
 					form.appendChild(field(id, label, p.box, extra));
 				} else if (f.multiline) {
 					form.appendChild(field(id, label, el('textarea', { class: 'inp', id, rows: '3', spellcheck: 'false', value, on: { input: (e) => set(e.target.value) } })));
+				} else if (f.key === 'ssid' && typeof api.wifiScan === 'function') {
+					// Wi-Fi networks nearby: pick one instead of typing its name
+					form.appendChild(field(id, label, el('div', { class: 'vt-ssid' }, [
+						text(id, value, set),
+						btn('btn-sec btn-sm', [icon('wifi', 15), el('span', { text: t('vault.wifi.scan') })], () => wifiDialog(), { id: 'vault-wifi-scan', 'aria-haspopup': 'dialog' }),
+					])));
 				} else {
 					form.appendChild(field(id, label, text(id, value, set)));
 				}
@@ -1509,6 +1515,94 @@
 					}, { id: 'vault-gen-use' }),
 				]),
 			]);
+		}
+
+		// ── Wi-Fi networks nearby (Wi-Fi entries) ───────────
+		/** Wi-Fi icon whose arcs show the signal (0–3). */
+		function wifiIcon(bars) {
+			const s = icon('wifi', 18, '2');
+			const arcs = s.querySelectorAll('path');   // large, middle, small arc, dot
+			[3, 2, 1].forEach((need, i) => { if (bars < need && arcs[i]) arcs[i].setAttribute('opacity', '.3'); });
+			s.setAttribute('data-bars', String(bars));
+			return s;
+		}
+
+		/** "WLAN in der Nähe": scan (≈ 4 s), list, pick → name, security (and title) of the draft. SSIDs only via textContent. */
+		function wifiDialog() {
+			if (!S.draft || S.mode !== 'edit') return;
+			const draft = S.draft;
+			let seq = 0;
+			const list = el('div', { class: 'vt-people vt-wifi-list', role: 'listbox', 'aria-label': t('vault.wifi.list'), id: 'vault-wifi-list' });
+			const d = dialog({
+				title: t('vault.wifi.title'),
+				sub: t('vault.wifi.sub'),
+				body: [list],
+				actions: [
+					{ id: 'again', label: [icon('refresh', 14), el('span', { text: t('vault.wifi.again') })], cls: 'btn-ghost', run: () => scan() },
+					{ label: t('vault.cancel'), cls: 'btn-sec', run: () => closeDialog() },
+				],
+			});
+			if (d.buttons.again) d.buttons.again.id = 'vault-wifi-again';
+
+			const pick = (net) => {
+				if (S.draft !== draft || S.mode !== 'edit') { closeDialog(); return; }
+				VS.applyWifi(draft, net);
+				closeDialog();
+				buildEdit();
+				const pw = refs.detail && refs.detail.querySelector('#vault-edit-password');
+				if (pw) pw.focus();
+			};
+
+			const show = (v) => {
+				clear(list);
+				list.removeAttribute('aria-busy');
+				if (v.kind === 'error') {
+					const note = el('div', { class: 'vt-note vt-note-warn vt-wifi-msg', role: 'alert', id: 'vault-wifi-error', 'data-code': v.code }, [
+						v.title ? el('b', { text: v.title }) : null,
+						el('span', { text: v.text }),
+					]);
+					if (v.settings && typeof o.openExternal === 'function') {
+						note.appendChild(el('div', { class: 'vt-wifi-acts' }, [
+							btn('btn-sec btn-sm', [icon('external', 14), el('span', { text: t('vault.wifi.openSettings') })], () => {
+								Promise.resolve(o.openExternal('ms-settings:privacy-location')).catch(() => {});
+							}, { id: 'vault-wifi-settings' }),
+						]));
+					}
+					list.appendChild(note);
+					return;
+				}
+				if (v.kind === 'empty') {
+					list.appendChild(el('div', { class: 'vt-empty', id: 'vault-wifi-empty', text: t('vault.wifi.empty') }));
+					return;
+				}
+				for (const net of v.networks) {
+					const bars = VS.wifiBars(net.signal);
+					const row = el('button', { type: 'button', role: 'option', class: 'vt-person vt-wifi-row', 'aria-selected': 'false' }, [
+						el('span', { class: `vt-av vt-av-round ${net.connected ? 'vt-t2' : 'vt-tn'}`, 'aria-hidden': 'true' }, [wifiIcon(bars)]),
+						el('span', { class: 'vt-person-tx' }, [el('b', { class: 'vt-ellipsis', text: net.ssid }), el('span', { text: VS.wifiRowSub(net, t) })]),
+						net.connected ? el('span', { class: 'vt-person-state is-ok', text: t('vault.wifi.connected') }) : null,
+					]);
+					row.addEventListener('click', () => pick(net));
+					list.appendChild(row);
+				}
+			};
+
+			async function scan() {
+				const mine = ++seq;
+				if (d.buttons.again) d.buttons.again.disabled = true;
+				clear(list);
+				list.setAttribute('aria-busy', 'true');
+				const spin = icon('refresh', 16);
+				spin.classList.add('vt-spin');
+				list.appendChild(el('div', { class: 'vt-empty vt-wifi-wait', role: 'status', id: 'vault-wifi-wait' }, [spin, el('span', { text: t('vault.wifi.searching') })]));
+				const r = await call(api.wifiScan);
+				if (mine !== seq || !list.isConnected) return;
+				if (d.buttons.again) d.buttons.again.disabled = false;
+				show(VS.wifiScanView(r, t));
+				const first = list.querySelector('.vt-wifi-row, #vault-wifi-settings');
+				if (first) first.focus();
+			}
+			scan();
 		}
 
 		// ── Trash ────────────────────────────────────────────

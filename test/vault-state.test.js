@@ -320,6 +320,66 @@ describe('screens and push targets', () => {
   });
 });
 
+describe('Wi-Fi networks nearby (Wi-Fi entries)', () => {
+  it('answer of vault.wifiScan → list / empty / error', () => {
+    const v = VS.wifiScanView({ ok: true, networks: [
+      { ssid: 'Heim', security: 'WPA2/WPA3', signal: 81.6, connected: true },
+      { ssid: '', security: 'WPA2', signal: 90 },
+      { ssid: 'Gast', security: 'Offen', signal: 140 },
+      { ssid: 'Alt', security: 'TKIP-irgendwas', signal: -5 },
+      null, 'x', { ssid: 42 },
+    ] }, t);
+    assert.equal(v.kind, 'list');
+    assert.deepEqual(v.networks, [
+      { ssid: 'Heim', security: 'WPA2/WPA3', signal: 82, connected: true },
+      { ssid: 'Gast', security: 'Offen', signal: 100, connected: false },
+      { ssid: 'Alt', security: '', signal: 0, connected: false },
+    ]);
+    assert.deepEqual(VS.wifiScanView({ ok: true, networks: [] }, t), { kind: 'empty' });
+    assert.deepEqual(VS.wifiScanView({ ok: true }, t), { kind: 'empty' });
+  });
+
+  it('errors: helpful texts, location settings only for location_denied', () => {
+    const loc = VS.wifiScanView({ ok: false, code: 'location_denied' }, t);
+    assert.deepEqual(loc, { kind: 'error', code: 'location_denied', title: 'vault.wifi.err.locationTitle', text: 'vault.wifi.err.location', settings: true });
+    for (const [code, key] of [['no_adapter', 'noAdapter'], ['service_off', 'serviceOff'], ['radio_off', 'radioOff'], ['failed', 'failed']]) {
+      const e = VS.wifiScanView({ ok: false, code }, t);
+      assert.deepEqual([e.kind, e.text, e.settings, e.title], ['error', `vault.wifi.err.${key}`, false, null], code);
+    }
+    assert.equal(VS.wifiScanView({ ok: false, code: 'locked' }, t).text, 'vault.err.locked');
+    assert.equal(VS.wifiScanView(null, t).text, 'vault.wifi.err.failed');
+  });
+
+  it('signal arcs and the second line of a row', () => {
+    assert.deepEqual([0, 10, 25, 49, 50, 74, 75, 100].map(VS.wifiBars), [0, 0, 1, 1, 2, 2, 3, 3]);
+    assert.equal(VS.wifiRowSub({ ssid: 'Heim', security: 'WPA2', signal: 78 }, t), 'WPA2 · vault.wifi.signal(percent=78)');
+    assert.equal(VS.wifiRowSub({ ssid: 'Gast', security: 'Offen', signal: 40 }, t), 'vault.wifi.open · vault.wifi.signal(percent=40)');
+    assert.equal(VS.wifiSecurityLabel('', t), 'vault.wifi.unknown');
+  });
+
+  it('a picked network fills name and security, the title only while empty', () => {
+    const d = VS.emptyDraft('wifi', 'v'.repeat(20));
+    d.fields.password = 'geheim';
+    VS.applyWifi(d, { ssid: 'FRITZ!Box 7590', security: 'WPA2/WPA3', signal: 70, connected: true });
+    assert.deepEqual([d.title, d.fields.ssid, d.fields.security, d.fields.password], ['FRITZ!Box 7590', 'FRITZ!Box 7590', 'WPA2/WPA3', 'geheim']);
+    d.title = 'Zuhause';
+    VS.applyWifi(d, { ssid: 'Nachbar', security: '', signal: 20 });
+    assert.deepEqual([d.title, d.fields.ssid, d.fields.security], ['Zuhause', 'Nachbar', 'WPA2/WPA3'], 'unknown security keeps the old value');
+    assert.equal(VS.draftToData(d).fields.ssid, 'Nachbar');
+    assert.equal(VS.applyWifi(d, { ssid: '' }), d);
+  });
+
+  it('the view puts SSIDs in the DOM only as text and opens only the location settings page', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'vault-view.js'), 'utf8');
+    const dlg = src.slice(src.indexOf('function wifiDialog'), src.indexOf('// ── Trash'));
+    assert.ok(dlg.length > 500);
+    assert.match(dlg, /text: net\.ssid/);
+    assert.doesNotMatch(dlg, /innerHTML|insertAdjacentHTML|outerHTML/);
+    assert.deepEqual([...dlg.matchAll(/openExternal\(([^)]*)\)/g)].map((m) => m[1]), ['\'ms-settings:privacy-location\'']);
+    assert.match(src, /typeof api\.wifiScan === 'function'/, 'the button needs a core with vault:wifi-scan');
+  });
+});
+
 describe('page wiring', () => {
   const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 

@@ -125,6 +125,17 @@
 .vt-err { font-size: 13px; color: var(--err); }
 .vt-hint-ok { color: var(--acc-t); }
 
+/* Wi-Fi name with "WLAN in der Nähe suchen", the scan dialog */
+.vt-ssid { display: flex; gap: 6px; align-items: center; }
+.vt-ssid .inp { flex: 1; min-width: 0; }
+.vt-ssid .btn { flex-shrink: 0; }
+.vt-wifi-list { max-height: 320px; min-height: 120px; }
+.vt-wifi-list .vt-av svg { display: block; }
+.vt-wifi-wait { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.vt-spin { animation: gcspin 1s linear infinite; }
+.vt-wifi-msg { margin: 12px; display: flex; flex-direction: column; gap: 4px; }
+.vt-wifi-acts { margin-top: 8px; }
+
 /* Strength meter */
 .vt-meter { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); min-height: 18px; }
 .vt-meter-bars { display: flex; gap: 4px; }
@@ -271,4 +282,4 @@ body.vq { background: var(--panel); }
 	.vt-gen-opts { grid-template-columns: 1fr; }
 	.vt-custom { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
-@media (prefers-reduced-motion: reduce) { .vt-ib.is-busy svg { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .vt-ib.is-busy svg, .vt-spin { animation: none; } }
