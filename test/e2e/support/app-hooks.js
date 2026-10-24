@@ -19,9 +19,11 @@
  *   - keeps the real Windows Hello provider (availability is checked on the
  *     runner) but lets a test switch to a fake one (useFakeHello(), see
  *     hello-fake.js) for the UI flow,
- *   - records shell.openPath (the installer launch) instead of starting the
- *     file, plus quit and service calls, in GC_E2E_DIR/events.jsonl and on
- *     globalThis.__gcE2E (reachable via electronApp.evaluate()).
+ *   - records the installer launch (the updater's spawn, and shell.openPath
+ *     as its fallback) instead of starting the file, plus quit and service
+ *     calls, in GC_E2E_DIR/events.jsonl and on globalThis.__gcE2E (reachable
+ *     via electronApp.evaluate()). state.installerLaunch = 'fail' makes both
+ *     refuse, so a test can check the error shown in the update card.
  */
 
 const fs = require('fs');
@@ -29,6 +31,7 @@ const path = require('path');
 const crypto = require('crypto');
 const tls = require('tls');
 const Module = require('module');
+const EventEmitter = require('events');
 
 const APP_ROOT = path.join(__dirname, '..', '..', '..');
 
@@ -60,7 +63,7 @@ function install({ app, env }) {
   fs.mkdirSync(dir, { recursive: true });
 
   const eventsFile = path.join(dir, 'events.jsonl');
-  const state = { dir, events: [], trayMenu: null, updater: null };
+  const state = { dir, events: [], trayMenu: null, updater: null, installerLaunch: 'ok' };
 
   function record(type, data = {}) {
     const event = { type, t: Date.now(), ...data };
@@ -156,9 +159,23 @@ function install({ app, env }) {
   // ── Real updater, isolated download dir, instance exposed ──
   const updaterFile = coreFile('src/services/updater');
   const RealUpdater = require(updaterFile);
+  // The updater starts the installer with child_process.spawn (detached,
+  // --updated): recorded, and a child that keeps running (or refuses).
+  const spawnInstaller = (file, args, opts) => {
+    const child = new EventEmitter();
+    child.pid = 99999;
+    child.unref = () => {};
+    const fail = state.installerLaunch === 'fail';
+    record('installer.spawn', { path: file, args, detached: !!(opts && opts.detached), failed: fail, ...sha256File(file) });
+    setImmediate(() => {
+      if (fail) child.emit('error', Object.assign(new Error('spawn UNKNOWN'), { code: 'UNKNOWN' }));
+      else child.emit('spawn');
+    });
+    return child;
+  };
   class E2EUpdater extends RealUpdater {
     constructor(opts) {
-      super({ ...opts, downloadDir: path.join(dir, 'updates') });
+      super({ ...opts, downloadDir: path.join(dir, 'updates'), spawn: spawnInstaller });
       state.updater = this;
     }
   }
@@ -189,7 +206,7 @@ function install({ app, env }) {
   const { shell, Tray } = require('electron');
   shell.openPath = async (target) => {
     record('shell.openPath', { path: target, ...sha256File(target) });
-    return '';
+    return state.installerLaunch === 'fail' ? 'Failed to open path' : '';
   };
   shell.openExternal = async (url) => { record('shell.openExternal', { url }); };
 

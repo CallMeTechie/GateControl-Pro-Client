@@ -34,11 +34,12 @@ let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPo
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
+let createUpdateInstaller, installErrorText;
 let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema, setupNotifications;
 let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
 let VaultService, windowsHello, setupVaultQuick;
-let GateDropService, gatedropShell, setupGateDrop;
+let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
 
 try {
@@ -76,6 +77,7 @@ try {
   ({ recoverKillSwitch } = require('@gatecontrol/client-core/src/lifecycle/killswitch-startup'));
   ({ createTrayIcon } = require('@gatecontrol/client-core/src/utils/tray-icon'));
   ({ updateMenuItems, mandatoryNotice } = require('@gatecontrol/client-core/src/utils/update-notice'));
+  ({ createUpdateInstaller, installErrorText } = require('@gatecontrol/client-core/src/utils/update-install'));
   ConnectionMonitor = require('@gatecontrol/client-core/src/services/connection-monitor');
   DnsPolicy = require('@gatecontrol/client-core/src/services/dns-policy');
   // Client policies from the server (kill switch / auto-connect / autostart /
@@ -99,7 +101,7 @@ try {
   ({ setupVaultQuick } = require('./vault-quick'));
   // GateDrop (plugin gatecontrol-gatedrop): send / receive files, LAN listener,
   // "Senden an" in the Explorer (core services/gatedrop.js).
-  ({ GateDropService, gatedropShell } = require('@gatecontrol/client-core'));
+  ({ GateDropService, GateDropFirewall, gatedropShell } = require('@gatecontrol/client-core'));
   ({ setupGateDrop } = require('./gatedrop'));
   RdpManager = require('../services/rdp/rdp-manager');
   ({ runRdpTrustMigration } = require('../services/rdp/rdp-trust-migration'));
@@ -383,7 +385,7 @@ function updateTray(connState) {
     update: pendingUpdate,
     mandatory: !!updater?.isMandatory(),
     t,
-    install: () => installUpdate(),
+    install: () => installUpdateFromTray(),
   });
 
   const contextMenu = Menu.buildFromTemplate([
@@ -812,36 +814,41 @@ function notifyMandatoryUpdate(info) {
 // updater's state, not on pendingUpdate: a manual "check for updates" stores
 // the release info without an installer path, so "Neustart" in the toast and
 // the tray entry used to do nothing.
+// Core utils/update-install.js: the installer is re-hashed BEFORE the tunnel
+// goes down (failure → the VPN stays), then the tunnel is disconnected and
+// the kill switch lifted (the kill-switch preference stays and applies again
+// on the next connect), then the installer starts and is watched for a
+// moment; a failed start reconnects the tunnel and returns the reason
+// ({ ok:false, code, message, vpnRestored }) for the update card. Only a
+// running installer ends the app.
+let runUpdateInstall = null;
 async function installUpdate() {
-  if (!updater?.isUpdateReady()) {
-    log.warn('Update-Installation angefordert, aber kein geprüftes Update bereit');
-    return false;
+  if (!runUpdateInstall) {
+    runUpdateInstall = createUpdateInstaller({
+      getUpdater: () => updater,
+      log,
+      isConnected: () => tunnelState.connected,
+      disconnect: () => disconnectTunnel(),
+      reconnect: async () => {
+        await connectTunnel();
+        if (!tunnelState.connected) throw new Error('Tunnel nicht verbunden');
+      },
+      liftFirewall: async () => {
+        if (killSwitchSvc?.enabled) await killSwitchSvc.disable();
+      },
+      quit: () => quitApp(),
+    });
   }
+  return runUpdateInstall();
+}
 
-  log.info('Update-Installation gestartet...');
-
-  // Tunnel down and firewall lifted so the installer can replace the files;
-  // the kill-switch preference stays and applies again on the next connect.
-  if (tunnelState.connected) {
-    try {
-      await disconnectTunnel();
-    } catch (err) {
-      log.error('Tunnel konnte vor dem Update nicht getrennt werden:', err.message);
-    }
-  }
-  if (killSwitchSvc?.enabled) {
-    try {
-      await killSwitchSvc.disable();
-    } catch (err) {
-      log.error('Kill-Switch konnte vor dem Update nicht deaktiviert werden:', err.message);
-    }
-  }
-
-  // Re-hashes the installer before starting it.
-  if (!updater.install()) return false;
-
-  setTimeout(() => quitApp(), 1500);
-  return true;
+// Tray entry: no window shows the result, a failure becomes a notification.
+function installUpdateFromTray() {
+  installUpdate().then((result) => {
+    const text = installErrorText(result, t);
+    if (!text) return;
+    notify(text, { title: `GateControl Pro - ${t('update.installFailed')}`, collapseKey: 'update', force: true, onClick: () => showWindow() });
+  }).catch((err) => log.error('Update-Installation fehlgeschlagen:', err.message));
 }
 
 // ── Services initialisieren ──────────────────────────────────
@@ -940,6 +947,10 @@ function initializeServices() {
   gatedrop = GateDropService && setupGateDrop ? setupGateDrop({
     app, store, log, apiClient, notifications,
     GateDropService, gatedropShell,
+    // Windows Firewall check / repair of the inbound rule (not in e2e runs:
+    // they must not touch the firewall of the test machine).
+    GateDropFirewall: e2e ? null : GateDropFirewall,
+    edition: 'pro',
     shell, clipboard, dialog, t,
     protocol: 'gatecontrol-pro',
     toastImagePath: path.join(RESOURCES_PATH, 'icons', 'app-icon.png'),

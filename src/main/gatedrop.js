@@ -29,6 +29,10 @@ const path = require('path');
  * @param {object} o.apiClient
  * @param {object} o.notifications - result of setupNotifications() (pushClient, notificationCenter)
  * @param {Function} o.GateDropService - core class
+ * @param {Function} [o.GateDropFirewall] - core class: checks / repairs the Windows
+ *   Firewall rule of the LAN listener (block rules of the security prompt, missing
+ *   allow rule); null: not checked (e2e runs, tests)
+ * @param {'pro'|'community'} [o.edition='pro'] - name of the firewall rule (core editions.js)
  * @param {object} o.gatedropShell - core utils/gatedrop-shell.js
  * @param {object} [o.shell] - Electron shell
  * @param {object} [o.clipboard] - Electron clipboard
@@ -46,6 +50,7 @@ const path = require('path');
  */
 function setupGateDrop({
   app, store, log, apiClient, notifications, GateDropService, gatedropShell,
+  GateDropFirewall = null, edition = 'pro',
   shell = null, clipboard = null, dialog = null, protocol, toastImagePath = null,
   showWindow, getMainWindow, t = (k) => k, manageShortcut = true,
   platform = process.platform, execPath = process.execPath, fs = require('fs'),
@@ -55,7 +60,10 @@ function setupGateDrop({
     try { return path.join(app.getPath('downloads'), 'GateControl'); } catch { return path.join(require('os').homedir(), 'Downloads', 'GateControl'); }
   };
 
+  const firewall = !service && GateDropFirewall && platform === 'win32' ? new GateDropFirewall({ log, edition, exePath: execPath }) : null;
+
   const gatedrop = service || new GateDropService({
+    firewall,
     apiClient,
     log,
     store,
