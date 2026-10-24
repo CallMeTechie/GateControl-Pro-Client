@@ -30,7 +30,7 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut;
-let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, mandatoryNotice;
+let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, updateToast;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
@@ -76,7 +76,7 @@ try {
   ({ createPortalOpener } = require('@gatecontrol/client-core/src/utils/portal'));
   ({ recoverKillSwitch } = require('@gatecontrol/client-core/src/lifecycle/killswitch-startup'));
   ({ createTrayIcon } = require('@gatecontrol/client-core/src/utils/tray-icon'));
-  ({ updateMenuItems, mandatoryNotice } = require('@gatecontrol/client-core/src/utils/update-notice'));
+  ({ updateMenuItems, updateToast } = require('@gatecontrol/client-core/src/utils/update-notice'));
   ({ createUpdateInstaller, installErrorText } = require('@gatecontrol/client-core/src/utils/update-install'));
   ConnectionMonitor = require('@gatecontrol/client-core/src/services/connection-monitor');
   DnsPolicy = require('@gatecontrol/client-core/src/services/dns-policy');
@@ -321,14 +321,14 @@ async function applyServerConfigChange() {
 // The app's own notifications go through the notification center: same toast
 // code as push messages, respects "Nicht stören" and "Windows-Benachrichtigung
 // anzeigen" unless `force` (messages the user must see).
-function notify(body, { title = 'GateControl Pro', priority = 'normal', collapseKey = null, force = false, onClick = null } = {}) {
+function notify(body, { title = 'GateControl Pro', priority = 'normal', collapseKey = null, force = false, onClick = null, actions = null } = {}) {
   if (!body) return null;
   if (!notifications) {
     // Before the services exist (should not happen) fall back to a plain toast.
     try { new Notification({ title, body }).show(); } catch { /* not supported */ }
     return null;
   }
-  return notifications.notify({ title, body, priority, collapseKey, force, onClick });
+  return notifications.notify({ title, body, priority, collapseKey, force, onClick, actions });
 }
 
 // ── Tray Icon (Sun/Star design, drawn by core) ──────────────
@@ -798,16 +798,19 @@ async function toggleRdpAllow(enabled) {
   broadcastState(tunnelState.connected ? 'connected' : 'disconnected');
 }
 
+// Toast of a ready update. A click on it (or "Jetzt installieren") runs the
+// same install as the tray entry; the notification center keeps the
+// Notification referenced, so the click still arrives later.
+function notifyUpdate(info) {
+  const o = updateToast(info, { t, install: () => installUpdateFromToast(), productName: 'GateControl Pro' });
+  notify(o.body, o);
+}
+
 // "Update erforderlich" notification, once per version and app session.
 function notifyMandatoryUpdate(info) {
   if (!info?.version || mandatoryNotifiedVersion === info.version) return;
   mandatoryNotifiedVersion = info.version;
-  const notice = mandatoryNotice(info, t);
-  // Must be seen: shown during "Nicht stören" and with toasts switched off.
-  notify(notice.body, {
-    title: `GateControl Pro - ${notice.title}`, collapseKey: 'update', force: true,
-    onClick: () => showWindow(),
-  });
+  notifyUpdate({ ...info, mandatory: true });
 }
 
 // Installs the update the updater has downloaded and verified. Relies on the
@@ -837,18 +840,31 @@ async function installUpdate() {
         if (killSwitchSvc?.enabled) await killSwitchSvc.disable();
       },
       quit: () => quitApp(),
+      // Not downloaded / verified yet: it is fetched first — say so.
+      onStatus: (state, info) => {
+        if (state !== 'downloading') return;
+        notify(t('update.downloading', { version: info.version || '' }), { collapseKey: 'update', force: true });
+      },
     });
   }
   return runUpdateInstall();
 }
 
 // Tray entry: no window shows the result, a failure becomes a notification.
-function installUpdateFromTray() {
+function installUpdateFromTray({ ignoreBusy = false } = {}) {
   installUpdate().then((result) => {
+    if (ignoreBusy && result?.code === 'busy') return;
     const text = installErrorText(result, t);
     if (!text) return;
     notify(text, { title: `GateControl Pro - ${t('update.installFailed')}`, collapseKey: 'update', force: true, onClick: () => showWindow() });
   }).catch((err) => log.error('Update-Installation fehlgeschlagen:', err.message));
+}
+
+// Update toast (click / button): same as the tray; a second click while it
+// runs (e.g. still downloading) is no error.
+function installUpdateFromToast() {
+  log.info('Update-Toast angeklickt – starte Installation');
+  installUpdateFromTray({ ignoreBusy: true });
 }
 
 // ── Services initialisieren ──────────────────────────────────
@@ -1348,7 +1364,7 @@ app.on('ready', () => {
       if (release.mandatory) {
         notifyMandatoryUpdate(release);
       } else {
-        notify(t('update.available', { version: release.version }), { collapseKey: 'update' });
+        notifyUpdate(release);
       }
     }, {
       onPolicyChange: (policy) => {

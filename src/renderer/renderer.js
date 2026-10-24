@@ -221,7 +221,7 @@ let updateInstallError = null;    // why the installer did not start (shown in t
 let updatePolicy = null;
 let expiryInfo = null;
 let expiryHidden = false;
-let logText = '';
+let logEntries = []; // logs.get({ format: 'entries' }), newest first
 let logLevel = 'all';
 let logPeriod = 'all';
 let splitSaved = { enabled: false, routes: [] };
@@ -1700,59 +1700,39 @@ async function scanQR() {
 // ══════════════════════════════════════════════════════════
 //  LOGS
 // ══════════════════════════════════════════════════════════
-const LOG_LINE = /^\[(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.\d+)?\]\s*(?:\[([^\]]+)\]\s*)?(?:\[(\w+)\]\s*)?(.*)$/;
+// Entries come parsed from the main process (core utils/log-parse.js);
+// GCLogView (log-view.js) formats the time and filters.
 const LOG_LEVELS = {
-	error: { key: 'ui.logs.error', cls: 'c-err', group: 'error' },
-	warn: { key: 'ui.logs.warn', cls: 'c-warn', group: 'warn' },
-	warning: { key: 'ui.logs.warn', cls: 'c-warn', group: 'warn' },
-	info: { key: 'ui.logs.info', cls: 'c-info', group: 'info' },
-	debug: { key: 'ui.logs.debug', cls: '', group: 'info' },
-	verbose: { key: 'ui.logs.debug', cls: '', group: 'info' },
-	silly: { key: 'ui.logs.debug', cls: '', group: 'info' },
+	error: { key: 'ui.logs.error', cls: 'c-err' },
+	warn: { key: 'ui.logs.warn', cls: 'c-warn' },
+	info: { key: 'ui.logs.info', cls: 'c-info' },
+	debug: { key: 'ui.logs.debug', cls: '' },
 };
 const MAX_LOG_ROWS = 1500;
-
-function parseLogLine(line) {
-	const m = line.match(LOG_LINE);
-	if (!m) return { time: '', level: null, msg: line };
-	// electron-log: "[date time] [level] msg" – the optional scope comes first in some formats
-	let level = (m[4] || m[3] || '').toLowerCase();
-	let msg = m[5];
-	if (!LOG_LEVELS[level]) {
-		if (m[3] && !m[4]) msg = `[${m[3]}] ${msg}`;
-		level = null;
-	}
-	return { time: `${m[1]} ${m[2]}`, level, msg };
-}
 
 async function refreshLogs() {
 	el.logRows.textContent = '';
 	el.logEmpty.hidden = false;
 	el.logEmpty.textContent = t('logs.loading');
-	logText = (await logs.get({ period: logPeriod })) || '';
+	logEntries = GCLogView.toEntries(await logs.get({ period: logPeriod, format: 'entries' }));
 	renderLogs();
 	$('#log-output').scrollTop = 0; // newest on top
 }
 
 function renderLogs() {
 	if (!el.logRows) return;
-	const query = ($('#log-search').value || '').toLowerCase();
-	const entries = logText.split('\n').filter((l) => l.trim()).map(parseLogLine);
-	const filtered = entries.filter((e) => {
-		if (logLevel !== 'all') {
-			if (!e.level || LOG_LEVELS[e.level].group !== logLevel) return false;
-		}
-		if (query && !`${e.msg} ${e.time}`.toLowerCase().includes(query)) return false;
-		return true;
-	});
+	const locale = window.gatecontrol.i18n.getLocale();
+	const filtered = GCLogView.filterLogEntries(logEntries, { level: logLevel, query: $('#log-search').value || '', locale });
 
 	el.logRows.textContent = '';
 	const frag = document.createDocumentFragment();
 	filtered.slice(0, MAX_LOG_ROWS).forEach((e) => {
-		const row = h('div', 'log-row');
+		const row = h('div', `log-row${e.level ? ` lvl-${e.level}` : ''}`);
 		row.setAttribute('role', 'row');
-		const time = h('span', 'log-time', e.time);
+		const time = h('span', 'log-time', GCLogView.formatLogTime(e, locale));
 		time.setAttribute('role', 'cell');
+		const full = GCLogView.fullLogTime(e);
+		if (full) time.title = full;
 		row.appendChild(time);
 		const lvl = h('span', 'log-level');
 		lvl.setAttribute('role', 'cell');
@@ -1767,7 +1747,7 @@ function renderLogs() {
 
 	$('#log-count').textContent = t('ui.logs.count', { count: filtered.length });
 	el.logEmpty.hidden = filtered.length > 0;
-	el.logEmpty.textContent = entries.length === 0 ? t('logs.empty') : t('ui.logs.noMatch');
+	el.logEmpty.textContent = logEntries.length === 0 ? t('logs.empty') : t('ui.logs.noMatch');
 }
 
 $('#btn-refresh-logs').addEventListener('click', refreshLogs);

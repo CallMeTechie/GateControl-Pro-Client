@@ -91,10 +91,19 @@ describe('wiring', () => {
 
   it('main: the tray entry reports a failed install as a notification', () => {
     assert.match(main, /install: \(\) => installUpdateFromTray\(\)/);
-    const fn = main.match(/function installUpdateFromTray\(\) \{([\s\S]*?)\n\}/);
+    const fn = main.match(/function installUpdateFromTray\(.*\) \{([\s\S]*?)\n\}/);
     assert.ok(fn);
     assert.match(fn[1], /installErrorText\(result, t\)/);
     assert.match(fn[1], /notify\(text/);
+  });
+
+  it('main: a click on the update toast installs like the tray entry', () => {
+    const fn = main.match(/function installUpdateFromToast\(\) \{([\s\S]*?)\n\}/);
+    assert.ok(fn, 'installUpdateFromToast');
+    assert.match(fn[1], /installUpdateFromTray\(\{ ignoreBusy: true \}\)/);
+    assert.match(main, /if \(release\.mandatory\) \{\n\s*notifyMandatoryUpdate\(release\);\n\s*\} else \{\n\s*notifyUpdate\(release\);/);
+    // not downloaded yet: the install flow fetches it first and says so
+    assert.match(main, /onStatus: \(state, info\) => \{[\s\S]*?t\('update\.downloading'/);
   });
 
   it('main: product for the server, mandatory tray entry, no silent install', () => {

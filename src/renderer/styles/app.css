@@ -404,10 +404,13 @@ body:not([data-conn="connected"]) .show-connected { display: none !important; }
 .log-tools .search { width: 280px; }
 .log-card { flex-grow: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .log-body { flex-grow: 1; min-height: 0; overflow: auto; padding: 0 0 6px; font-family: var(--font-mono); font-size: 12.5px; user-select: text; }
-.log-row { display: flex; gap: 8px; align-items: center; padding: 7px 16px; border-top: 1px solid var(--line); }
+.log-row { display: flex; gap: 12px; align-items: baseline; padding: 7px 16px; border-top: 1px solid var(--line); }
 .log-row.head { color: var(--faint); border-top: 0; padding-top: 12px; padding-bottom: 8px; position: sticky; top: 0; background: var(--panel); z-index: 1; }
-.log-time { width: 160px; flex-shrink: 0; color: var(--muted); white-space: nowrap; }
-.log-level { width: 88px; flex-shrink: 0; }
+/* "24.10. 20:58:32" in the mono font of .log-body */
+.log-time { width: 15.5ch; flex-shrink: 0; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.log-level { width: 84px; flex-shrink: 0; }
+.log-row.lvl-error .log-msg { color: var(--err); }
+.log-row.lvl-debug .log-msg { color: var(--muted); }
 .log-msg { flex-grow: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .log-empty { padding: 32px; text-align: center; color: var(--muted); font-family: var(--font-ui); }
 

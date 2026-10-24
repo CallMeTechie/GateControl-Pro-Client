@@ -450,9 +450,12 @@ describe('main.js notification wiring', () => {
 
   it('local notifications go through the center (only the fallback creates one directly)', () => {
     assert.equal((MAIN_JS.match(/new Notification\(/g) || []).length, 1);
-    assert.match(MAIN_JS, /notifications\.notify\(\{ title, body, priority, collapseKey, force, onClick \}\)/);
-    // the mandatory update must always be shown and opens the window
-    assert.match(MAIN_JS, /collapseKey: 'update', force: true,\s*onClick: \(\) => showWindow\(\)/);
+    assert.match(MAIN_JS, /notifications\.notify\(\{ title, body, priority, collapseKey, force, onClick, actions \}\)/);
+    // update toasts (core updateToast: mandatory ones forced): a click or
+    // "Jetzt installieren" installs like the tray entry
+    assert.match(MAIN_JS, /updateToast\(info, \{ t, install: \(\) => installUpdateFromToast\(\), productName: 'GateControl Pro' \}\)/);
+    assert.match(MAIN_JS, /notify\(o\.body, o\)/);
+    assert.match(MAIN_JS, /notifyUpdate\(\{ \.\.\.info, mandatory: true \}\)/);
   });
 
   it('sets the AppUserModelID of the installed shortcut (build.appId)', () => {
