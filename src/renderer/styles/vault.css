@@ -129,11 +129,11 @@
 .vt-ssid { display: flex; gap: 6px; align-items: center; }
 .vt-ssid .inp { flex: 1; min-width: 0; }
 .vt-ssid .btn { flex-shrink: 0; }
-.vt-wifi-list { max-height: 320px; min-height: 120px; }
+.vt-wifi-list, .vt-qr-list { max-height: 320px; min-height: 120px; }
 .vt-wifi-list .vt-av svg { display: block; }
-.vt-wifi-wait { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.vt-wifi-wait, .vt-qr-wait { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .vt-spin { animation: gcspin 1s linear infinite; }
-.vt-wifi-msg { margin: 12px; display: flex; flex-direction: column; gap: 4px; }
+.vt-wifi-msg, .vt-qr-msg { margin: 12px; display: flex; flex-direction: column; gap: 4px; }
 .vt-wifi-acts { margin-top: 8px; }
 
 /* Strength meter */

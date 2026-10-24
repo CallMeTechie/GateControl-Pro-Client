@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { test, expect } = require('./support/fixtures');
 const { setupWithApiKey } = require('./support/ui');
 
@@ -149,5 +151,129 @@ test.describe('vault', () => {
     await page.keyboard.press('Escape');
     await expect(page.locator('#vault-wifi-list')).toHaveCount(0);
     await expect(page.locator('#vault-edit-ssid')).toHaveValue('FRITZ!Box 7590 XY');
+  });
+
+  test('2FA from a QR code: real clipboard / screen / file, then the dialog with fixed answers', async ({ launchApp, mock }) => {
+    mock.setVault();
+    const { app, page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setupVault(page);
+    // fixtures/totp-qr.png holds exactly this text
+    const URI = 'otpauth://totp/Example:anna%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example';
+    const fixture = path.join(__dirname, 'fixtures', 'totp-qr.png');
+    const png = fs.readFileSync(fixture).toString('base64');
+    const qr = (source) => page.evaluate((s) => window.gatecontrol.vault.totpQr(s), source);
+
+    // the real thing in the main process: clipboard image (Electron 44: ClipboardItem image/png) …
+    await app.evaluate(async ({ clipboard, ClipboardItem, nativeImage }, b64) => {
+      const buf = Buffer.from(b64, 'base64');
+      if (typeof clipboard.writeImage === 'function') clipboard.writeImage(nativeImage.createFromBuffer(buf));
+      else await clipboard.write([new ClipboardItem({ 'image/png': new Blob([buf], { type: 'image/png' }) })]);
+    }, png);
+    expect(await qr('clipboard')).toEqual({ ok: true, uris: [URI] });
+    await app.evaluate(({ clipboard }) => clipboard.clear());
+    expect((await qr('clipboard')).code).toBe('no_image');
+
+    // … an image file (the open dialog answered) …
+    await app.evaluate(({ dialog }, file) => {
+      globalThis.__qrOpen = dialog.showOpenDialog;
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+    }, fixture);
+    expect(await qr('file')).toEqual({ ok: true, uris: [URI] });
+    await app.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] }); });
+    expect((await qr('file')).code).toBe('cancelled');
+    await app.evaluate(({ dialog }) => { dialog.showOpenDialog = globalThis.__qrOpen; });
+
+    // … and the screen: the QR code in another window, on top
+    await app.evaluate(async ({ BrowserWindow }, b64) => {
+      const w = new BrowserWindow({ x: 40, y: 40, width: 320, height: 320, frame: false, alwaysOnTop: true, show: true, webPreferences: { sandbox: true } });
+      globalThis.__qrWin = w;
+      const html = `<body style="margin:0;background:#fff;display:grid;place-items:center;height:100vh"><img src="data:image/png;base64,${b64}"></body>`;
+      await w.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    }, png);
+    await expect.poll(() => qr('screen'), { timeout: 30000 }).toEqual({ ok: true, uris: [URI] });
+    if (process.platform === 'win32') {
+      // covered by the GateControl window: one more capture with the window transparent, then restored
+      const covered = await app.evaluate(({ BrowserWindow }) => {
+        const qrWin = globalThis.__qrWin;
+        const main = BrowserWindow.getAllWindows().find((w) => w !== qrWin && w.isVisible() && /index\.html/.test(w.webContents.getURL()));
+        if (!main) return false;
+        const b = main.getContentBounds();
+        qrWin.setAlwaysOnTop(false);
+        qrWin.setBounds({ x: b.x + Math.round(b.width / 2) - 160, y: b.y + Math.round(b.height / 2) - 160, width: 320, height: 320 });
+        main.moveTop();
+        main.focus();
+        return b.width >= 360 && b.height >= 360;
+      });
+      if (covered) {
+        await expect.poll(() => qr('screen'), { timeout: 30000 }).toEqual({ ok: true, uris: [URI] });
+        expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter((w) => w !== globalThis.__qrWin).map((w) => w.getOpacity()))).not.toContain(0);
+      }
+    }
+    await app.evaluate(() => { globalThis.__qrWin.destroy(); });
+
+    // the dialog with fixed answers (labels with markup stay text)
+    const answer = async (res) => app.evaluate(({ ipcMain }, r) => {
+      ipcMain.removeHandler('vault:totp-qr');
+      ipcMain.handle('vault:totp-qr', async (_e, arg) => ({ ...r, source: arg && arg.source }));
+    }, res);
+    const B = 'otpauth://totp/%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E:bob?secret=GEZDGNBVGY3TQOJQ&digits=8&period=60';
+    await answer({ ok: true, uris: [URI, B] });
+
+    await page.locator('#vault-new').click();
+    await page.locator('.vt-menu .vt-mi').first().click();   // login
+    await expect(page.locator('#vault-edit-totp')).toBeVisible();
+    await page.locator('#vault-qr-scan').click();
+    await expect(page.locator('#vault-qr-screen')).toBeVisible();
+    await expect(page.locator('#vault-qr-clipboard')).toBeVisible();
+    await expect(page.locator('#vault-qr-file')).toBeVisible();
+    await page.locator('#vault-qr-screen').click();
+    const rows = page.locator('#vault-qr-list .vt-qr-row');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.first()).toContainText('Example');
+    await expect(rows.first()).toContainText('anna@example.com');
+    await expect(rows.nth(1)).toContainText('<img src=x onerror=alert(1)>');
+    await expect(page.locator('#vault-qr-list img')).toHaveCount(0);
+    await rows.first().click();
+    await expect(page.locator('#vault-qr-list')).toHaveCount(0);
+    await expect(page.locator('#vault-edit-totp')).toHaveValue(URI);
+    await expect(page.locator('#vault-edit-title')).toHaveValue('Example');
+    await expect(page.locator('#vault-edit-username')).toHaveValue('anna@example.com');
+
+    // errors: nothing on the screen, HOTP; a cancelled file dialog closes quietly
+    await answer({ ok: false, code: 'none_found' });
+    await page.locator('#vault-qr-scan').click();
+    await page.locator('#vault-qr-screen').click();
+    await expect(page.locator('#vault-qr-error')).toHaveAttribute('data-code', 'none_found');
+    await expect(page.locator('#vault-qr-error')).toContainText(/Kein 2FA-QR-Code auf dem Bildschirm gefunden|No 2FA QR code found on the screen/);
+    await answer({ ok: false, code: 'hotp' });
+    await page.locator('#vault-qr-again').click();
+    await expect(page.locator('#vault-qr-error')).toHaveAttribute('data-code', 'hotp');
+    await expect(page.locator('#vault-qr-error')).toContainText(/HOTP wird nicht unterstützt|HOTP is not supported/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#vault-qr-list')).toHaveCount(0);
+    await answer({ ok: false, code: 'cancelled' });
+    await page.locator('#vault-qr-scan').click();
+    await page.locator('#vault-qr-file').click();
+    await expect(page.locator('#vault-qr-list')).toHaveCount(0);
+
+    // one code (clipboard): taken over at once; own title and user name stay
+    await page.locator('#vault-edit-title').fill('Mein Konto');
+    await answer({ ok: true, uris: [B] });
+    await page.locator('#vault-qr-scan').click();
+    await page.locator('#vault-qr-clipboard').click();
+    await expect(page.locator('#vault-edit-totp')).toHaveValue(B);
+    await expect(page.locator('#vault-qr-list')).toHaveCount(0);
+    await expect(page.locator('#vault-edit-title')).toHaveValue('Mein Konto');
+    await expect(page.locator('#vault-edit-username')).toHaveValue('anna@example.com');
+
+    // saved: the detail shows the live 2FA code (8 digits from the URI)
+    await page.locator('#vault-edit-save').click();
+    await expect(page.locator('#vault-totp-code')).toHaveText(/^\d{4} \d{4}$/);
+
+    // a 2FA-code entry has the button too
+    await page.locator('#vault-new').click();
+    await page.locator('.vt-menu .vt-mi').nth(1).click();   // login, 2FA, note, card, Wi-Fi, identity
+    await expect(page.locator('#vault-qr-scan')).toBeVisible();
   });
 });

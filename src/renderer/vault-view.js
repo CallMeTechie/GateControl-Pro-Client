@@ -61,6 +61,10 @@
 		card: 'M3 6h18v12H3z|M3 10h18|M7 15h4',
 		wifi: 'M2 9a15 15 0 0 1 20 0|M5 12.5a10 10 0 0 1 14 0|M8.5 16a5 5 0 0 1 7 0|M12 19.5h.01',
 		identity: 'M4 5h16v14H4z|M9 10a2 2 0 1 0 0 .01|M6.5 16a3 3 0 0 1 5 0|M14 10h4M14 14h3',
+		qr: 'M3 3h6v6H3z|M15 3h6v6h-6z|M3 15h6v6H3z|M21 15h-3a2 2 0 0 0-2 2v4|M21 21v.01|M12 7v3a2 2 0 0 1-2 2H7|M3 12h.01|M12 3h.01|M12 16v.01|M16 12h1|M21 12v.01|M12 21v-1',
+		monitor: 'M3 4h18v12H3z|M8 20h8|M12 16v4',
+		clipboard: 'M9 3h6v3H9z|M9 4.5H6V21h12V4.5h-3',
+		image: 'M3 5h18v14H3z|M8.5 9.5a1.5 1.5 0 1 0 0 .01|M21 15l-5-5L5 19',
 	};
 
 	function icon(name, size = 16, stroke = '1.8') {
@@ -251,7 +255,7 @@
 			if (again) return;
 			const m = el('div', { class: 'card vt-menu', role: 'menu' });
 			for (const it of items) {
-				m.appendChild(el('button', { type: 'button', role: 'menuitem', class: `vt-mi${it.danger ? ' is-danger' : ''}`, on: { click: () => { closeMenu(); it.run(); } } }, [it.icon ? icon(it.icon, 16) : null, el('span', { text: it.label })]));
+				m.appendChild(el('button', { type: 'button', role: 'menuitem', id: it.id || null, class: `vt-mi${it.danger ? ' is-danger' : ''}`, on: { click: () => { closeMenu(); it.run(); } } }, [it.icon ? icon(it.icon, 16) : null, el('span', { text: it.label })]));
 			}
 			rootEl.appendChild(m);
 			const a = anchor.getBoundingClientRect();
@@ -1380,6 +1384,10 @@
 						p.box.appendChild(btn('btn-sec btn-sm', [icon('wand', 15), el('span', { text: t('vault.gen.title') })], () => toggleGen(f.key, p.input), { id: 'vault-gen-toggle', 'aria-expanded': S.gen && S.gen.field === f.key ? 'true' : 'false' }));
 						if (S.gen && S.gen.field === f.key) extra.push(genPanel(p.input));
 					}
+					if (f.totp && typeof api.totpQr === 'function') {
+						// 2FA from a QR code (screen, clipboard, image file) instead of typing the key
+						p.box.appendChild(btn('btn-sec btn-sm', [icon('qr', 15), el('span', { text: t('vault.qr.scan') })], (e) => qrMenu(e.currentTarget), { id: 'vault-qr-scan', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }));
+					}
 					form.appendChild(field(id, label, p.box, extra));
 				} else if (f.multiline) {
 					form.appendChild(field(id, label, el('textarea', { class: 'inp', id, rows: '3', spellcheck: 'false', value, on: { input: (e) => set(e.target.value) } })));
@@ -1600,6 +1608,80 @@
 				if (d.buttons.again) d.buttons.again.disabled = false;
 				show(VS.wifiScanView(r, t));
 				const first = list.querySelector('.vt-wifi-row, #vault-wifi-settings');
+				if (first) first.focus();
+			}
+			scan();
+		}
+
+		// ── 2FA key from a QR code ("QR-Code scannen") ──────
+		function qrMenu(anchor) {
+			menu(anchor, [
+				{ id: 'vault-qr-screen', icon: 'monitor', label: t('vault.qr.screen'), run: () => qrDialog('screen') },
+				{ id: 'vault-qr-clipboard', icon: 'clipboard', label: t('vault.qr.clipboard'), run: () => qrDialog('clipboard') },
+				{ id: 'vault-qr-file', icon: 'image', label: t('vault.qr.file'), run: () => qrDialog('file') },
+			]);
+		}
+
+		/** Scan (main process: screen / clipboard / image file), pick one of several codes → 2FA key, title, user name. Labels only via textContent. */
+		function qrDialog(source) {
+			if (!S.draft || S.mode !== 'edit' || !VS.QR_SOURCES.includes(source)) return;
+			const draft = S.draft;
+			let seq = 0;
+			const list = el('div', { class: 'vt-people vt-qr-list', role: 'listbox', 'aria-label': t('vault.qr.list'), id: 'vault-qr-list' });
+			const d = dialog({
+				title: t('vault.qr.title'),
+				sub: t('vault.qr.sub'),
+				body: [list],
+				actions: [
+					{ id: 'again', label: [icon('refresh', 14), el('span', { text: t('vault.qr.again') })], cls: 'btn-ghost', run: () => scan() },
+					{ label: t('vault.cancel'), cls: 'btn-sec', run: () => closeDialog() },
+				],
+			});
+			if (d.buttons.again) d.buttons.again.id = 'vault-qr-again';
+
+			const pick = (code) => {
+				if (S.draft !== draft || S.mode !== 'edit') { closeDialog(); return; }
+				VS.applyTotpQr(draft, code.uri);
+				closeDialog();
+				buildEdit();
+				toast(t('vault.qr.applied'), 'success');
+				const f = refs.detail && refs.detail.querySelector('#vault-edit-totp');
+				if (f) f.focus();
+			};
+
+			const show = (v) => {
+				clear(list);
+				list.removeAttribute('aria-busy');
+				if (v.kind === 'error') {
+					list.appendChild(el('div', { class: 'vt-note vt-note-warn vt-qr-msg', role: 'alert', id: 'vault-qr-error', 'data-code': v.code }, [el('span', { text: v.text })]));
+					return;
+				}
+				for (const c of v.codes) {
+					const row = el('button', { type: 'button', role: 'option', class: 'vt-person vt-qr-row', 'aria-selected': 'false' }, [
+						avatar(c.title),
+						el('span', { class: 'vt-person-tx' }, [el('b', { class: 'vt-ellipsis', text: c.title }), c.sub ? el('span', { class: 'vt-ellipsis', text: c.sub }) : null]),
+					]);
+					row.addEventListener('click', () => pick(c));
+					list.appendChild(row);
+				}
+			};
+
+			async function scan() {
+				const mine = ++seq;
+				if (d.buttons.again) d.buttons.again.disabled = true;
+				clear(list);
+				list.setAttribute('aria-busy', 'true');
+				const spin = icon('refresh', 16);
+				spin.classList.add('vt-spin');
+				list.appendChild(el('div', { class: 'vt-empty vt-qr-wait', role: 'status', id: 'vault-qr-wait' }, [spin, el('span', { text: VS.totpQrBusy(source, t) })]));
+				const r = await call(api.totpQr, source);
+				if (mine !== seq || !list.isConnected) return;
+				if (d.buttons.again) d.buttons.again.disabled = false;
+				const v = VS.totpQrView(r, source, t);
+				if (v.kind === 'cancelled') { closeDialog(); return; }
+				if (v.kind === 'list' && v.codes.length === 1) { pick(v.codes[0]); return; }
+				show(v);
+				const first = list.querySelector('.vt-qr-row') || d.buttons.again;
 				if (first) first.focus();
 			}
 			scan();

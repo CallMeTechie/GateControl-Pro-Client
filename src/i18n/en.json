@@ -833,6 +833,32 @@
         "location": "Since Windows 11 24H2 the Wi-Fi search needs location access. Under Settings › Privacy & security › Location, turn on “Location services” and “Let desktop apps access your location”, then search again.",
         "failed": "The Wi-Fi search did not work. Please try again."
       }
+    },
+    "qr": {
+      "scan": "Scan QR code",
+      "screen": "From screen",
+      "clipboard": "From clipboard",
+      "file": "Choose image file…",
+      "title": "2FA QR code",
+      "sub": "Pick the account – its 2FA key is filled in.",
+      "list": "2FA codes found",
+      "busyScreen": "Searching the screen …",
+      "busyClipboard": "Reading the image in the clipboard …",
+      "busyFile": "Choose an image with the QR code …",
+      "again": "Try again",
+      "applied": "2FA key filled in",
+      "unnamed": "No name",
+      "err": {
+        "noneScreen": "No 2FA QR code found on the screen. Show the website's QR code and try again.",
+        "noneClipboard": "The image in the clipboard has no 2FA QR code.",
+        "noneFile": "This image has no 2FA QR code.",
+        "hotp": "HOTP is not supported. Vault only makes time-based 2FA codes (TOTP).",
+        "invalid": "The QR code has no valid 2FA key.",
+        "noImage": "There is no image in the clipboard. Copy the QR code (e.g. with Windows + Shift + S) and try again.",
+        "unsupportedFile": "This image cannot be read. Try a PNG or JPG file.",
+        "unsupportedScreen": "The screen cannot be captured. Copy the QR code to the clipboard or save it as an image.",
+        "failed": "Scanning did not work. Please try again."
+      }
     }
   }
 }

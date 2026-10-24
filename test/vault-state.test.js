@@ -4,9 +4,9 @@
 // no DOM): fields per type, list filter / sections / chips, quick search ranking
 // and its keys (Enter, Strg+B / T / O, ↑ ↓, Esc), the edit draft ↔ entry JSON v1,
 // header / footer texts, strength and master password rule, errors, emergency
-// texts, import summary, push targets; that the page loads the Vault scripts,
-// that the views never use innerHTML, and that every vault.* key they use
-// exists in both app locales.
+// texts, import summary, push targets, Wi-Fi scan, 2FA from a QR code; that the
+// page loads the Vault scripts, that the views never use innerHTML, and that
+// every vault.* key they use exists in both app locales.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -377,6 +377,90 @@ describe('Wi-Fi networks nearby (Wi-Fi entries)', () => {
     assert.doesNotMatch(dlg, /innerHTML|insertAdjacentHTML|outerHTML/);
     assert.deepEqual([...dlg.matchAll(/openExternal\(([^)]*)\)/g)].map((m) => m[1]), ['\'ms-settings:privacy-location\'']);
     assert.match(src, /typeof api\.wifiScan === 'function'/, 'the button needs a core with vault:wifi-scan');
+  });
+});
+
+describe('2FA key from a QR code ("QR-Code scannen")', () => {
+  const A = 'otpauth://totp/Example:anna%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example';
+  const B = 'otpauth://totp/ACME%20Co:john.doe?secret=GEZDGNBVGY3TQOJQ&issuer=ACME+Co&digits=8&period=60&algorithm=SHA256';
+
+  it('issuer and account of an otpauth URI', () => {
+    assert.deepEqual(VS.totpQrInfo(A), { issuer: 'Example', account: 'anna@example.com' });
+    assert.deepEqual(VS.totpQrInfo(B), { issuer: 'ACME Co', account: 'john.doe' });
+    assert.deepEqual(VS.totpQrInfo('otpauth://totp/GitHub:octo?secret=JBSWY3DPEHPK3PXP'), { issuer: 'GitHub', account: 'octo' }, 'issuer from the label');
+    assert.deepEqual(VS.totpQrInfo('otpauth://totp/alice%40google.com?secret=JBSWY3DPEHPK3PXP&issuer=Google'), { issuer: 'Google', account: 'alice@google.com' });
+    assert.deepEqual(VS.totpQrInfo('OTPAUTH://TOTP?secret=JBSWY3DPEHPK3PXP'), { issuer: '', account: '' });
+    assert.deepEqual(VS.totpQrInfo('otpauth://totp/%E0%A4%A?secret=x'), { issuer: '', account: '%E0%A4%A' }, 'broken escapes stay text');
+    assert.deepEqual(VS.totpQrInfo('otpauth://hotp/X:y?secret=x'), { issuer: '', account: '' });
+    assert.deepEqual(VS.totpQrInfo(null), { issuer: '', account: '' });
+  });
+
+  it('answer of vault.totpQr → list / error / cancelled', () => {
+    const v = VS.totpQrView({ ok: true, uris: [A, A, B, 'otpauth://hotp/x?secret=A', 'https://x', 42, 'otpauth://totp/?secret=JBSWY3DPEHPK3PXP'] }, 'screen', t);
+    assert.equal(v.kind, 'list');
+    assert.deepEqual(v.codes.map((c) => [c.title, c.sub]), [['Example', 'anna@example.com'], ['ACME Co', 'john.doe'], ['vault.qr.unnamed', '']]);
+    assert.equal(v.codes[1].uri, B);
+    assert.deepEqual(VS.totpQrView({ ok: true, uris: [] }, 'file', t), { kind: 'error', code: 'none_found', text: 'vault.qr.err.noneFile' });
+    assert.deepEqual(VS.totpQrView({ ok: false, code: 'none_found' }, 'screen', t).text, 'vault.qr.err.noneScreen');
+    assert.deepEqual(VS.totpQrView({ ok: false, code: 'none_found' }, 'clipboard', t).text, 'vault.qr.err.noneClipboard');
+    assert.deepEqual(VS.totpQrView({ ok: false, code: 'cancelled' }, 'file', t), { kind: 'cancelled' });
+    for (const [code, key] of [['hotp', 'hotp'], ['invalid_code', 'invalid'], ['no_image', 'noImage'], ['failed', 'failed']]) {
+      assert.deepEqual(VS.totpQrView({ ok: false, code }, 'clipboard', t), { kind: 'error', code, text: `vault.qr.err.${key}` }, code);
+    }
+    assert.equal(VS.totpQrView({ ok: false, code: 'unsupported' }, 'file', t).text, 'vault.qr.err.unsupportedFile');
+    assert.equal(VS.totpQrView({ ok: false, code: 'unsupported' }, 'screen', t).text, 'vault.qr.err.unsupportedScreen');
+    assert.equal(VS.totpQrView({ ok: false, code: 'locked' }, 'screen', t).text, 'vault.err.locked');
+    assert.equal(VS.totpQrView(null, 'screen', t).text, 'vault.qr.err.failed');
+    assert.equal(VS.totpQrBusy('clipboard', t), 'vault.qr.busyClipboard');
+    assert.equal(VS.totpQrBusy('nope', t), 'vault.qr.busyScreen');
+    assert.deepEqual(VS.QR_SOURCES, ['screen', 'clipboard', 'file']);
+  });
+
+  it('a picked code fills the 2FA field, the title and (login) the user name only while empty', () => {
+    const d = VS.emptyDraft('login', 'v'.repeat(20));
+    VS.applyTotpQr(d, ` ${A} `);
+    assert.deepEqual([d.title, d.fields.username, d.fields.totp], ['Example', 'anna@example.com', A]);
+    d.title = 'Mein Konto';
+    d.fields.username = 'anna';
+    VS.applyTotpQr(d, B);
+    assert.deepEqual([d.title, d.fields.username, d.fields.totp], ['Mein Konto', 'anna', B], 'own title / user name stay');
+    assert.equal(VS.draftToData(d).fields.totp, B);
+    // a 2FA entry has no user name field
+    const totp = VS.emptyDraft('totp', 'v'.repeat(20));
+    VS.applyTotpQr(totp, A);
+    assert.deepEqual([totp.title, totp.fields.username, totp.fields.totp], ['Example', undefined, A]);
+    // the account is no user name: the issuer again, blanks
+    const l2 = VS.emptyDraft('login', 'v'.repeat(20));
+    VS.applyTotpQr(l2, 'otpauth://totp/GitHub?secret=JBSWY3DPEHPK3PXP&issuer=GitHub');
+    assert.deepEqual([l2.title, l2.fields.username], ['GitHub', undefined]);
+    const l3 = VS.emptyDraft('login', 'v'.repeat(20));
+    VS.applyTotpQr(l3, 'otpauth://totp/Bank:Max%20Mustermann?secret=JBSWY3DPEHPK3PXP');
+    assert.deepEqual([l3.title, l3.fields.username], ['Bank', undefined]);
+    const l4 = VS.emptyDraft('login', 'v'.repeat(20));
+    VS.applyTotpQr(l4, 'otpauth://totp/octo?secret=JBSWY3DPEHPK3PXP');
+    assert.deepEqual([l4.title, l4.fields.username], ['octo', 'octo'], 'only an account: title and user name');
+    // not a TOTP URI: nothing changes
+    const same = VS.emptyDraft('login', 'v'.repeat(20));
+    VS.applyTotpQr(same, 'otpauth://hotp/x?secret=JBSWY3DPEHPK3PXP');
+    VS.applyTotpQr(same, 'JBSWY3DPEHPK3PXP');
+    assert.deepEqual([same.title, same.fields], ['', {}]);
+    assert.equal(VS.applyTotpQr(null, A), null);
+  });
+
+  it('e-mail addresses and user names, not names with blanks', () => {
+    for (const ok of ['anna@example.com', 'octo', 'john.doe', 'max_m-1', 'a+b@c.de']) assert.equal(VS.looksLikeUser(ok), true, ok);
+    for (const no of ['', 'x', 'Max Mustermann', 'a:b', '+49 170 1234', 'anna@', '@x.de', 'x'.repeat(70)]) assert.equal(VS.looksLikeUser(no), false, no);
+  });
+
+  it('the view: a button next to the 2FA key, labels only as text, the core call', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'vault-view.js'), 'utf8');
+    const dlg = src.slice(src.indexOf('function qrMenu'), src.indexOf('// ── Trash'));
+    assert.ok(dlg.length > 500);
+    assert.match(dlg, /text: c\.title/);
+    assert.match(dlg, /text: c\.sub/);
+    assert.doesNotMatch(dlg, /innerHTML|insertAdjacentHTML|outerHTML/);
+    assert.match(dlg, /call\(api\.totpQr, source\)/);
+    assert.match(src, /f\.totp && typeof api\.totpQr === 'function'/, 'the button needs a core with vault:totp-qr');
   });
 });
 
