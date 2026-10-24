@@ -99,4 +99,55 @@ test.describe('vault', () => {
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('marc');
     await expect.poll(() => app.evaluate(() => globalThis.__gcE2E.vaultQuick.window().isVisible())).toBe(false);
   });
+
+  test('Wi-Fi entry: nearby networks, pick fills name / security / title, location hint', async ({ launchApp, mock }) => {
+    mock.setVault();
+    const { app, page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setupVault(page);
+
+    // the real Native Wifi API of this machine (koffi → wlanapi.dll): a known answer, never a crash
+    // (CI runners have no Wi-Fi: no_adapter / service_off)
+    const real = await page.evaluate(() => window.gatecontrol.vault.wifiScan());
+    expect(real.ok === true || ['no_adapter', 'service_off', 'radio_off', 'location_denied'].includes(real.code), JSON.stringify(real)).toBe(true);
+
+    // a fixed answer for the dialog (an SSID with markup must stay text)
+    const answer = async (res) => app.evaluate(({ ipcMain }, r) => {
+      ipcMain.removeHandler('vault:wifi-scan');
+      ipcMain.handle('vault:wifi-scan', async () => r);
+    }, res);
+    await answer({ ok: true, networks: [
+      { ssid: 'FRITZ!Box 7590 XY', security: 'WPA2/WPA3', signal: 82, connected: true },
+      { ssid: '<img src=x onerror=alert(1)>', security: 'Offen', signal: 30, connected: false },
+    ] });
+
+    await page.locator('#vault-new').click();
+    await page.locator('.vt-menu .vt-mi').nth(4).click();   // login, 2FA, note, card, Wi-Fi, identity
+    await expect(page.locator('#vault-edit-ssid')).toBeVisible();
+    await page.locator('#vault-wifi-scan').click();
+    const rows = page.locator('#vault-wifi-list .vt-wifi-row');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.first()).toContainText('FRITZ!Box 7590 XY');
+    await expect(rows.first().locator('.vt-person-state')).toBeVisible();
+    await expect(rows.nth(1)).toContainText('<img src=x onerror=alert(1)>');
+    await expect(page.locator('#vault-wifi-list img')).toHaveCount(0);
+    await rows.first().click();
+    await expect(page.locator('#vault-wifi-list')).toHaveCount(0);
+    await expect(page.locator('#vault-edit-ssid')).toHaveValue('FRITZ!Box 7590 XY');
+    await expect(page.locator('#vault-edit-security')).toHaveValue('WPA2/WPA3');
+    await expect(page.locator('#vault-edit-title')).toHaveValue('FRITZ!Box 7590 XY');
+    await expect(page.locator('#vault-edit-password')).toBeFocused();
+
+    // empty, then Windows without location access: hint + settings button
+    await answer({ ok: true, networks: [] });
+    await page.locator('#vault-wifi-scan').click();
+    await expect(page.locator('#vault-wifi-empty')).toBeVisible();
+    await answer({ ok: false, code: 'location_denied' });
+    await page.locator('#vault-wifi-again').click();
+    await expect(page.locator('#vault-wifi-error')).toHaveAttribute('data-code', 'location_denied');
+    await expect(page.locator('#vault-wifi-settings')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#vault-wifi-list')).toHaveCount(0);
+    await expect(page.locator('#vault-edit-ssid')).toHaveValue('FRITZ!Box 7590 XY');
+  });
 });

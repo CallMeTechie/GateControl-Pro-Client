@@ -464,6 +464,68 @@
 		return key ? t(key) : t('vault.err.generic', { code });
 	}
 
+	// ── Wi-Fi networks nearby (Wi-Fi entries) ────────────────
+
+	const WIFI_SECURITY = ['WPA3', 'WPA2/WPA3', 'WPA2', 'WPA', 'WEP', 'Offen'];
+	const WIFI_ERRORS = {
+		no_adapter: 'vault.wifi.err.noAdapter', service_off: 'vault.wifi.err.serviceOff', radio_off: 'vault.wifi.err.radioOff',
+		location_denied: 'vault.wifi.err.location', failed: 'vault.wifi.err.failed',
+	};
+
+	/**
+	 * Answer of vault.wifiScan() → what the panel shows:
+	 * { kind: 'list', networks } | { kind: 'empty' } | { kind: 'error', code, title, text, settings }
+	 * (settings: offer Windows' location settings). Networks keep only well-formed rows.
+	 */
+	function wifiScanView(res, t) {
+		if (!res || res.ok !== true) {
+			const code = str(res && res.code) || 'failed';
+			const key = WIFI_ERRORS[code];
+			return {
+				kind: 'error',
+				code,
+				title: code === 'location_denied' ? t('vault.wifi.err.locationTitle') : null,
+				text: key ? t(key) : errorText(res, t),
+				settings: code === 'location_denied',
+			};
+		}
+		const networks = (Array.isArray(res.networks) ? res.networks : [])
+			.filter((n) => isObj(n) && typeof n.ssid === 'string' && n.ssid !== '')
+			.map((n) => ({
+				ssid: n.ssid,
+				security: WIFI_SECURITY.includes(n.security) ? n.security : '',
+				signal: Math.max(0, Math.min(100, Math.round(Number(n.signal) || 0))),
+				connected: n.connected === true,
+			}));
+		return networks.length ? { kind: 'list', networks } : { kind: 'empty' };
+	}
+
+	/** Signal 0–100 → arcs of the Wi-Fi icon (0–3). */
+	function wifiBars(signal) {
+		const s = Number(signal) || 0;
+		return s >= 75 ? 3 : s >= 50 ? 2 : s >= 25 ? 1 : 0;
+	}
+
+	/** Security for display: 'Offen' in the locale, '' → 'Sicherheit unbekannt'. */
+	function wifiSecurityLabel(security, t) {
+		if (security === 'Offen') return t('vault.wifi.open');
+		return security || t('vault.wifi.unknown');
+	}
+
+	/** Second line of a row: 'WPA2 · Signal 78 %'. */
+	function wifiRowSub(net, t) {
+		return `${wifiSecurityLabel(net && net.security, t)} · ${t('vault.wifi.signal', { percent: (net && net.signal) || 0 })}`;
+	}
+
+	/** A picked network → the draft: name, security (when known), title while still empty. */
+	function applyWifi(draft, net) {
+		if (!draft || !net || !net.ssid) return draft;
+		draft.fields = { ...(draft.fields || {}), ssid: net.ssid };
+		if (net.security) draft.fields.security = net.security;
+		if (!str(draft.title).trim()) draft.title = net.ssid;
+		return draft;
+	}
+
 	// ── Vaults, roles, people ────────────────────────────────
 
 	const roleLabel = (role) => `vault.role.${ROLES.includes(role) ? role : 'read'}`;
@@ -582,7 +644,8 @@
 		fieldLabel, detailRows, mask, maskedNumber, changedText,
 		emptyDraft, draftFrom, draftToData, draftError, draftChanged, openableUrl,
 		strengthView, masterCheck, recoveryGroups, recoveryComplete,
-		errorText, roleLabel, roleHint, writableVaults, candidates, initial,
+		errorText, wifiScanView, wifiBars, wifiSecurityLabel, wifiRowSub, applyWifi,
+		roleLabel, roleHint, writableVaults, candidates, initial,
 		waitText, remainingText, emStatusKey, importChips, importCount, autoLockChoices,
 		pushTarget, entryContext, gate,
 	};
