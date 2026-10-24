@@ -65,6 +65,8 @@
 		monitor: 'M3 4h18v12H3z|M8 20h8|M12 16v4',
 		clipboard: 'M9 3h6v3H9z|M9 4.5H6V21h12V4.5h-3',
 		image: 'M3 5h18v14H3z|M8.5 9.5a1.5 1.5 0 1 0 0 .01|M21 15l-5-5L5 19',
+		tablet: 'M6 3h12v18H6z|M11 18h2',
+		globe: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M3 12h18|M12 3c2.5 2.5 3.8 5.5 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.5-3.8-9s1.3-6.5 3.8-9',
 		hello: 'M4 8V6a2 2 0 0 1 2-2h2|M16 4h2a2 2 0 0 1 2 2v2|M20 16v2a2 2 0 0 1-2 2h-2|M8 20H6a2 2 0 0 1-2-2v-2|M9 9.5v1M15 9.5v1|M12 9.5v3.5h-1|M9.5 15.5a3.5 3.5 0 0 0 5 0',
 	};
 
@@ -182,6 +184,7 @@
 			imp: null,            // { text, name, res, vaultId, busy }
 			settings: null,
 			totp: null,           // { key, code, left, period }
+			shares: null,         // Wi-Fi shares of the shown entry: { id, rev, view, err, at } (plugin 1.4.0)
 			pending: null,        // push target waiting for unlock
 			lastActivity: null,
 			lastTouch: 0,
@@ -193,7 +196,7 @@
 
 		// ── Calls ────────────────────────────────────────────
 		// Calls the core does not count as activity (list refreshes, 2FA countdown, …): they do not restart the auto-lock.
-		const PASSIVE = new Set(['check', 'sync', 'entries', 'vaults', 'totp', 'settings', 'emergency', 'people', 'status', 'helloCheck'].map((k) => api[k]).filter(Boolean));
+		const PASSIVE = new Set(['check', 'sync', 'entries', 'vaults', 'totp', 'settings', 'emergency', 'people', 'status', 'helloCheck', 'wifiShares'].map((k) => api[k]).filter(Boolean));
 		async function call(fn, ...args) {
 			if (!PASSIVE.has(fn)) S.lastActivity = now();
 			let r;
@@ -356,6 +359,7 @@
 			S.emView = null;
 			S.imp = null;
 			S.totp = null;
+			S.shares = null;
 			S.loaded = false;
 			S.dataRev = null;
 			if (S.sub === 'emView' || S.sub === 'import') S.sub = 'list';
@@ -555,6 +559,7 @@
 		let ticker = null;
 		function tick() {
 			renderFoot();
+			tickShares();
 			const tp = S.totp;
 			if (tp && refs.totpCode && refs.totpCode.isConnected) {
 				tp.left -= 1;
@@ -1183,6 +1188,7 @@
 			S.detail = null;
 			S.detailErr = null;
 			S.totp = null;
+			S.shares = null;
 			renderList();
 			renderDetail(true);
 			loadDetail(id, false);
@@ -1239,6 +1245,102 @@
 					writable ? null : el('span', { class: 'chip vt-chip-sm', text: t('vault.readOnly') }),
 				],
 			}));
+			if (VS.wifiShareable(d.data) && !d.trashed) {
+				if (!S.shares || S.shares.id !== d.id || S.shares.rev !== d.rev) loadShares(d.id, d.rev);
+				refs.detail.appendChild(shareBlock(d, writable));
+			}
+		}
+
+		// ── Wi-Fi shares (plugin 1.4.0): „Freigabe auf Wandtablet“ / „Freigabe auf Portalseite“ ──
+		// Main builds the copy from the decrypted entry (core VaultService.wifiShare); this page never sees it.
+		async function loadShares(id, rev) {
+			S.shares = { id, rev, view: null, err: null, at: now() };
+			const r = await call(api.wifiShares, id);
+			if (!S.shares || S.shares.id !== id) return;
+			if (r.ok) S.shares.view = VS.shareView(r);
+			else S.shares.err = r;
+			if (S.selId === id && S.mode === 'view') renderDetail(true);
+		}
+
+		function shareBlock(d, writable) {
+			const sh = S.shares && S.shares.id === d.id ? S.shares : null;
+			const rows = el('div', { class: 'vt-shares' });
+			if (!sh || (!sh.view && !sh.err)) rows.appendChild(el('span', { class: 'vt-note-line', text: t('vault.wifiShare.loading') }));
+			else if (sh.err) rows.appendChild(el('div', { class: 'vt-note vt-note-err', text: VS.shareErrorText(sh.err, t) }));
+			else {
+				for (const x of sh.view.shares) {
+					rows.appendChild(el('div', { class: 'vt-share', 'data-share': x.target }, [
+						icon(x.target === 'wall' ? 'tablet' : 'globe', 18),
+						el('div', { class: 'vt-share-tx' }, [
+							el('b', { text: t(x.target === 'wall' ? 'vault.wifiShare.onWall' : 'vault.wifiShare.onPortal') }),
+							el('span', { class: 'vt-note-line vt-share-left', 'data-until': x.expiresAt || '', text: VS.shareLeftText(t, x.expiresAt, now()) }),
+							x.createdBy ? el('span', { class: 'vt-note-line', text: t('vault.wifiShare.by', { name: x.createdBy }) }) : null,
+							x.current ? null : el('span', { class: 'vt-note-line vt-share-stale', text: t('vault.wifiShare.stale') }),
+						]),
+						x.canEnd && !x.current ? btn('btn-sec btn-xs', t('vault.wifiShare.update'), () => runShare(d, x.target, 'keep', 'vault.wifiShare.updated')) : null,
+						x.canEnd ? btn('btn-danger btn-xs', t('vault.wifiShare.end'), () => endShare(d, x)) : null,
+					]));
+				}
+				if (!sh.view.shares.length) rows.appendChild(el('span', { class: 'vt-note-line', text: t('vault.wifiShare.none') }));
+			}
+			const starts = sh && sh.view ? VS.shareStarts(sh.view, writable) : [];
+			const acts = starts.map((tg) => btn('btn-sec btn-sm', [icon(tg === 'wall' ? 'tablet' : 'globe', 15), el('span', { text: t(tg === 'wall' ? 'vault.wifiShare.toWall' : 'vault.wifiShare.toPortal') })], () => shareDialog2(d, tg), { 'data-share-start': tg }));
+			return el('div', { class: 'vt-block vt-share-block', id: 'vault-shares' }, [
+				el('div', { class: 'vt-page-head' }, [el('span', { class: 'lbl', style: 'flex-grow:1', text: t('vault.wifiShare.title') })]),
+				rows,
+				acts.length ? el('div', { class: 'vt-share-acts' }, acts) : null,
+				writable && sh && sh.view && !sh.view.targets.wall && !sh.view.shares.some((x) => x.target === 'wall') ? el('span', { class: 'vt-note-line', text: t('vault.wifiShare.noWall') }) : null,
+			]);
+		}
+
+		/** The dialog: how long, and that everyone there sees the password. */
+		function shareDialog2(d, target) {
+			let choice = '1h';
+			const opts = el('div', { class: 'vt-share-durations', role: 'radiogroup', 'aria-label': t('vault.wifiShare.duration') }, VS.SHARE_DURATIONS.map((k) => el('label', { class: 'vt-share-dur' }, [
+				el('input', { type: 'radio', name: 'vt-share-dur', value: k, checked: k === choice, on: { change: () => { choice = k; } } }),
+				el('span', { text: t(`vault.wifiShare.d.${k}`) }),
+			])));
+			const ssid = String((d.data.fields || {}).ssid || '');
+			dialog({
+				title: t(target === 'wall' ? 'vault.wifiShare.toWall' : 'vault.wifiShare.toPortal'),
+				sub: t('vault.wifiShare.ask', { name: ssid }),
+				body: [
+					opts,
+					el('div', { class: 'vt-note vt-note-warn', text: t(target === 'wall' ? 'vault.wifiShare.warnWall' : 'vault.wifiShare.warnPortal') }),
+					el('span', { class: 'vt-note-line', text: t('vault.wifiShare.copyHint') }),
+				],
+				actions: [
+					{ label: t('vault.cancel'), cls: 'btn-ghost', run: () => closeDialog() },
+					{ id: 'go', label: t('vault.wifiShare.start'), cls: 'btn-pri', run: () => { closeDialog(); runShare(d, target, choice, target === 'wall' ? 'vault.wifiShare.startedWall' : 'vault.wifiShare.startedPortal'); } },
+				],
+			});
+		}
+
+		async function runShare(d, target, duration, okKey) {
+			const r = await call(api.wifiShare, d.id, target, duration);
+			if (r.ok) toast(t(okKey), 'success');
+			else toast(VS.shareErrorText(r, t), 'error');
+			if (S.selId === d.id) loadShares(d.id, d.rev);
+		}
+
+		async function endShare(d, x) {
+			const r = await call(api.wifiShareEnd, x.id);
+			if (r.ok) toast(t('vault.wifiShare.ended'), 'success');
+			else toast(VS.shareErrorText(r, t), 'error');
+			if (S.selId === d.id) loadShares(d.id, d.rev);
+		}
+
+		/** Every second: the time left of the shares on screen; one that is over → the list again (at most every 15 s). */
+		function tickShares() {
+			if (!refs.detail || !refs.detail.isConnected) return;
+			let over = false;
+			for (const n of refs.detail.querySelectorAll('.vt-share-left')) {
+				const until = n.getAttribute('data-until');
+				if (!until) continue;
+				if (!(Date.parse(until) > now())) over = true;
+				n.textContent = VS.shareLeftText(t, until, now());
+			}
+			if (over && S.shares && S.shares.view && S.selId === S.shares.id && now() - S.shares.at > 15000) loadShares(S.shares.id, S.shares.rev);
 		}
 
 		/**

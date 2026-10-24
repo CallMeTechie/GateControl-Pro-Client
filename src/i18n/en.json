@@ -902,6 +902,48 @@
         "unsupportedScreen": "The screen cannot be captured. Copy the QR code to the clipboard or save it as an image.",
         "failed": "Scanning did not work. Please try again."
       }
+    },
+    "wifiShare": {
+      "title": "Shares",
+      "loading": "Loading shares …",
+      "none": "This Wi-Fi is not shown anywhere right now.",
+      "toWall": "Share on the wall tablet",
+      "toPortal": "Share on the portal page",
+      "onWall": "On the wall tablet",
+      "onPortal": "On the portal’s start page",
+      "ask": "How long should “{{ name }}” be shown?",
+      "duration": "Duration",
+      "d": {
+        "5m": "5 minutes",
+        "1h": "1 hour",
+        "24h": "24 hours",
+        "forever": "Until ended"
+      },
+      "start": "Share",
+      "warnWall": "While the share runs, everyone in front of the wall tablet sees this Wi-Fi with its QR code and can show the password.",
+      "warnPortal": "While the share runs, everyone signed in to this GateControl’s portal sees this Wi-Fi with its QR code and can show the password.",
+      "copyHint": "For this, a copy of the network name and password is kept readable on the server. It ends with the share; trashing, deleting or moving the entry ends it at once. If you change the entry, the share keeps the old state until you update it.",
+      "startedWall": "Now shown on the wall tablet.",
+      "startedPortal": "Now shown on the portal’s start page.",
+      "end": "End",
+      "ended": "Share ended.",
+      "update": "Update",
+      "updated": "Share updated.",
+      "stale": "Shows an older state of this entry.",
+      "forever": "until it is ended",
+      "expired": "expired",
+      "leftMin": "{{ time }} left",
+      "leftHours": "{{ n }} h left",
+      "leftDays": "{{ n }} days left",
+      "by": "shared by {{ name }}",
+      "noWall": "Showing it on the wall tablet works once the Family plugin with a wall tablet is installed.",
+      "err": {
+        "noWall": "No wall tablet: this needs the Family plugin with the wall tablet switched on.",
+        "unavailable": "The wall tablet cannot be reached right now. Try again in a moment.",
+        "rateLimited": "Too many shares in a short time. Try again later.",
+        "limit": "4 shares are already running on this target. End one first.",
+        "trashed": "The entry is in the trash."
+      }
     }
   }
 }

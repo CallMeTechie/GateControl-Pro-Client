@@ -746,6 +746,56 @@
 		};
 	}
 
+	// ── Wi-Fi shares (plugin gatecontrol-vault 1.4.0) ───────
+	// A Wi-Fi entry shown on the wall tablet or the portal's start page for a while. Main (core VaultService.wifiShare)
+	// builds the copy from the decrypted entry; the page only names the entry, the target and the duration, and gets
+	// back where, how long, who and whether a share still shows what the entry holds (`current`).
+
+	const SHARE_TARGETS = ['wall', 'portal'];
+	const SHARE_DURATIONS = ['5m', '1h', '24h', 'forever'];
+	const SHARE_ERRORS = {
+		no_wall: 'vault.wifiShare.err.noWall', unavailable: 'vault.wifiShare.err.unavailable', rate_limited: 'vault.wifiShare.err.rateLimited',
+		limit: 'vault.wifiShare.err.limit', conflict: 'vault.wifiShare.err.trashed',
+	};
+
+	/** A failed share call → one line (the share's own codes first). */
+	function shareErrorText(res, t) {
+		const key = SHARE_ERRORS[str(res && res.code)];
+		return key ? t(key) : errorText(res, t);
+	}
+
+	/** Time left of a share: "noch 4:59", "noch 5 Std.", "noch 3 Tage", "bis sie beendet wird", "abgelaufen". */
+	function shareLeftText(t, expiresAt, nowMs) {
+		if (!expiresAt) return t('vault.wifiShare.forever');
+		const ms = Date.parse(expiresAt) - nowMs;
+		if (!(ms > 0)) return t('vault.wifiShare.expired');
+		const sec = Math.floor(ms / 1000);
+		if (sec < 3600) return t('vault.wifiShare.leftMin', { time: `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` });
+		if (sec < 2 * 86400) return t('vault.wifiShare.leftHours', { n: Math.ceil(sec / 3600) });
+		return t('vault.wifiShare.leftDays', { n: Math.ceil(sec / 86400) });
+	}
+
+	/** vault:wifi-shares → { shares: [{ id, target, expiresAt, createdBy, canEnd, current }], targets: { wall, portal } }. */
+	function shareView(res) {
+		const r = isObj(res) ? res : {};
+		const shares = (Array.isArray(r.shares) ? r.shares : [])
+			.filter((x) => isObj(x) && EMERGENCY_ID_RE.test(str(x.id)) && SHARE_TARGETS.includes(x.target))
+			.map((x) => ({ id: x.id, target: x.target, expiresAt: typeof x.expiresAt === 'string' ? x.expiresAt : null, createdBy: str(x.createdBy), canEnd: x.canEnd === true, current: x.current !== false }));
+		const tg = isObj(r.targets) ? r.targets : {};
+		return { shares, targets: { wall: tg.wall === true, portal: tg.portal !== false } };
+	}
+
+	/** The targets a writer may still start (one share per target; the wall only with the Familie plugin). */
+	function shareStarts(view, writable) {
+		if (!writable || !view) return [];
+		return SHARE_TARGETS.filter((tg) => !view.shares.some((x) => x.target === tg) && (tg !== 'wall' || view.targets.wall));
+	}
+
+	/** Can this entry be shared at all? A Wi-Fi entry with a network name. */
+	function wifiShareable(data) {
+		return isObj(data) && data.type === 'wifi' && isObj(data.fields) && typeof data.fields.ssid === 'string' && data.fields.ssid !== '';
+	}
+
 	/** Screen of the page from status(): what the person sees first. */
 	function gate(status) {
 		const st = status || {};
@@ -772,5 +822,6 @@
 		roleLabel, roleHint, writableVaults, candidates, initial,
 		waitText, remainingText, emStatusKey, importChips, importCount, autoLockChoices,
 		pushTarget, entryContext, gate,
+		SHARE_TARGETS, SHARE_DURATIONS, shareErrorText, shareLeftText, shareView, shareStarts, wifiShareable,
 	};
 });

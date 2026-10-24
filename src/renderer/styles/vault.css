@@ -289,3 +289,14 @@ body.vq { background: var(--panel); }
 	.vt-custom { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) { .vt-ib.is-busy svg, .vt-spin { animation: none; } }
+/* Wi-Fi shares (plugin 1.4.0): "Freigabe auf Wandtablet" / "Freigabe auf Portalseite" */
+.vt-shares { display: flex; flex-direction: column; gap: 8px; }
+.vt-share { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; flex-wrap: wrap; }
+.vt-share > svg { flex: none; color: var(--acc); }
+.vt-share-tx { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 2px; }
+.vt-share-left { font-variant-numeric: tabular-nums; }
+.vt-share-stale { color: var(--warn); }
+.vt-share-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.vt-share-durations { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 4px 0 12px; }
+.vt-share-dur { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.vt-share-dur:has(input:checked) { border-color: var(--acc); }

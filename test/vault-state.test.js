@@ -548,3 +548,41 @@ describe('page wiring', () => {
     }
   });
 });
+
+describe('Wi-Fi shares (plugin 1.4.0)', () => {
+  const S1 = { id: 'a'.repeat(24), target: 'wall', expiresAt: new Date(NOW + 299000).toISOString(), createdBy: 'Anna', canEnd: true, current: true };
+  it('shareView: checked records, targets', () => {
+    const v = VS.shareView({ ok: true, shares: [S1, { ...S1, id: 'x' }, { ...S1, target: 'tv' }, { ...S1, id: 'b'.repeat(24), target: 'portal', expiresAt: null, current: false, canEnd: false }], targets: { wall: true } });
+    assert.deepEqual(v.shares.map((x) => [x.target, x.canEnd, x.current, x.expiresAt === null]), [['wall', true, true, false], ['portal', false, false, true]]);
+    assert.deepEqual(v.targets, { wall: true, portal: true });
+    assert.deepEqual(VS.shareView(null), { shares: [], targets: { wall: false, portal: true } });
+  });
+  it('shareStarts: one per target, the wall only with the Familie plugin, writers only', () => {
+    const v = VS.shareView({ shares: [S1], targets: { wall: true } });
+    assert.deepEqual(VS.shareStarts(v, true), ['portal']);
+    assert.deepEqual(VS.shareStarts(VS.shareView({ shares: [], targets: { wall: false } }), true), ['portal']);
+    assert.deepEqual(VS.shareStarts(VS.shareView({ shares: [], targets: { wall: true } }), true), ['wall', 'portal']);
+    assert.deepEqual(VS.shareStarts(v, false), []);
+  });
+  it('shareLeftText and shareErrorText', () => {
+    assert.equal(VS.shareLeftText(t, S1.expiresAt, NOW), 'vault.wifiShare.leftMin(time=4:59)');
+    assert.equal(VS.shareLeftText(t, new Date(NOW + 5 * 3600000).toISOString(), NOW), 'vault.wifiShare.leftHours(n=5)');
+    assert.equal(VS.shareLeftText(t, new Date(NOW + 3 * 86400000).toISOString(), NOW), 'vault.wifiShare.leftDays(n=3)');
+    assert.equal(VS.shareLeftText(t, null, NOW), 'vault.wifiShare.forever');
+    assert.equal(VS.shareLeftText(t, new Date(NOW - 1).toISOString(), NOW), 'vault.wifiShare.expired');
+    assert.equal(VS.shareErrorText({ ok: false, code: 'no_wall' }, t), 'vault.wifiShare.err.noWall');
+    assert.equal(VS.shareErrorText({ ok: false, code: 'limit' }, t), 'vault.wifiShare.err.limit', 'not "the vault is full"');
+    assert.equal(VS.shareErrorText({ ok: false, code: 'forbidden' }, t), 'vault.err.forbidden');
+  });
+  it('wifiShareable: a Wi-Fi entry with a network name; the texts exist in both locales', () => {
+    assert.equal(VS.wifiShareable({ type: 'wifi', fields: { ssid: 'Gäste' } }), true);
+    assert.equal(VS.wifiShareable({ type: 'wifi', fields: {} }), false);
+    assert.equal(VS.wifiShareable({ type: 'login', fields: { ssid: 'x' } }), false);
+    const de = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'i18n', 'de.json'), 'utf8')).vault.wifiShare;
+    const en = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'i18n', 'en.json'), 'utf8')).vault.wifiShare;
+    for (const k of VS.SHARE_DURATIONS) assert.ok(de.d[k] && en.d[k], k);
+    assert.deepEqual(Object.keys(de).sort(), Object.keys(en).sort());
+    assert.match(de.warnWall, /Passwort/);
+    assert.match(de.warnPortal, /alle angemeldeten Portal-Nutzer/);
+  });
+});
