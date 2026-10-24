@@ -84,11 +84,16 @@ describe('update public key', () => {
     const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.js'), 'utf8');
     const fn = main.match(/async function installUpdate\(\) \{([\s\S]*?)\n\}/);
     assert.ok(fn, 'async installUpdate() not found');
-    // Ready check and start both come from the updater (re-hash before start),
-    // never from a cached installer path that a manual check does not carry.
-    assert.match(fn[1], /updater\?\.isUpdateReady\(\)/);
-    assert.match(fn[1], /updater\.install\(\)/);
-    assert.ok(!/installerPath|shell\.openPath|pendingUpdate/.test(fn[1]));
+    // Ready check, re-hash and start come from the updater (core
+    // utils/update-install.js: verify before the tunnel goes down, reconnect
+    // on a failed start), never from a cached installer path that a manual
+    // check does not carry.
+    assert.match(fn[1], /createUpdateInstaller\(\{/);
+    assert.match(fn[1], /getUpdater: \(\) => updater/);
+    assert.match(fn[1], /disconnect: \(\) => disconnectTunnel\(\)/);
+    assert.match(fn[1], /reconnect: async \(\) => \{/);
+    assert.match(fn[1], /quit: \(\) => quitApp\(\)/);
+    assert.ok(!/installerPath|shell\.openPath|pendingUpdate|setTimeout/.test(fn[1]));
   });
 
   it('the release workflow signs, gates on the key and uploads manifest + signature', () => {

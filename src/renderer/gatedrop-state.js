@@ -369,6 +369,30 @@
 		return { files: out, dropped };
 	}
 
+	// Why direct receiving is off / at risk (core GateDropService status().direct).
+	const DIRECT_REASONS = ['starting', 'no_lan', 'bind_failed', 'firewall_shields_up', 'firewall_blocked', 'firewall_rule', 'firewall_unknown'];
+	const DIRECT_DETAIL = ['no_lan', 'bind_failed', 'firewall_shields_up', 'firewall_blocked'];
+
+	/**
+	 * The "Direkt im WLAN" line of the side card → { on, warn, title, sub }:
+	 * the title says whether files can come directly, `sub` why not (adapter,
+	 * port, Windows Firewall) — '' when there is nothing to say. Without
+	 * `direct` (older core) only `listening` counts.
+	 */
+	function directLine(status, t) {
+		const st = status && typeof status === 'object' ? status : {};
+		const d = st.direct && typeof st.direct === 'object' ? st.direct : null;
+		const state = d && ['on', 'warn', 'off'].includes(d.state) ? d.state : (st.listening ? 'on' : 'off');
+		const title = state === 'on' ? t('gatedrop.listening') : (state === 'warn' ? t('gatedrop.listeningWarn') : t('gatedrop.notListening'));
+		let sub = '';
+		if (d && DIRECT_REASONS.includes(d.reason)) {
+			sub = t(`gatedrop.directWhy.${d.reason}`);
+			const detail = str(d.detail).trim().slice(0, 200);
+			if (detail && DIRECT_DETAIL.includes(d.reason)) sub += ` (${detail})`;
+		}
+		return { on: state === 'on', warn: state === 'warn', title, sub };
+	}
+
 	/** notify:navigate / gatedrop:navigate context → { tab, sendId } */
 	function navContext(ctx) {
 		const c = ctx && typeof ctx === 'object' ? ctx : {};
@@ -409,5 +433,6 @@
 		errorText,
 		mergeFiles,
 		navContext,
+		directLine,
 	};
 });
