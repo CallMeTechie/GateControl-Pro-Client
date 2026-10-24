@@ -902,6 +902,48 @@
         "unsupportedScreen": "Der Bildschirm lässt sich nicht aufnehmen. Kopiere den QR-Code in die Zwischenablage oder speichere ihn als Bild.",
         "failed": "Das Scannen hat nicht geklappt. Versuche es noch einmal."
       }
+    },
+    "wifiShare": {
+      "title": "Freigaben",
+      "loading": "Freigaben werden geladen …",
+      "none": "Dieses WLAN wird gerade nirgends gezeigt.",
+      "toWall": "Freigabe auf Wandtablet",
+      "toPortal": "Freigabe auf Portalseite",
+      "onWall": "Auf dem Wandtablet",
+      "onPortal": "Auf der Portal-Startseite",
+      "ask": "Wie lange soll „{{ name }}“ gezeigt werden?",
+      "duration": "Dauer",
+      "d": {
+        "5m": "5 Minuten",
+        "1h": "1 Stunde",
+        "24h": "24 Stunden",
+        "forever": "Dauerhaft"
+      },
+      "start": "Freigeben",
+      "warnWall": "Solange die Freigabe läuft, sieht jeder vor dem Wandtablet dieses WLAN mit QR-Code und kann das Passwort einblenden.",
+      "warnPortal": "Solange die Freigabe läuft, sehen alle angemeldeten Portal-Nutzer dieses GateControl das WLAN mit QR-Code und können das Passwort einblenden.",
+      "copyHint": "Dafür liegt eine Kopie von Netzname und Passwort lesbar auf dem Server. Sie endet mit der Freigabe; Papierkorb, Löschen oder Verschieben des Eintrags beenden sie sofort. Änderst du den Eintrag, bleibt die Freigabe beim alten Stand, bis du sie aktualisierst.",
+      "startedWall": "Wird jetzt auf dem Wandtablet gezeigt.",
+      "startedPortal": "Wird jetzt auf der Portal-Startseite gezeigt.",
+      "end": "Beenden",
+      "ended": "Freigabe beendet.",
+      "update": "Aktualisieren",
+      "updated": "Freigabe aktualisiert.",
+      "stale": "Zeigt einen älteren Stand dieses Eintrags.",
+      "forever": "bis sie beendet wird",
+      "expired": "abgelaufen",
+      "leftMin": "noch {{ time }}",
+      "leftHours": "noch {{ n }} Std.",
+      "leftDays": "noch {{ n }} Tage",
+      "by": "freigegeben von {{ name }}",
+      "noWall": "Auf dem Wandtablet zeigen geht, sobald das Familie-Plugin mit Wand-Tablet installiert ist.",
+      "err": {
+        "noWall": "Kein Wandtablet da: Dafür braucht es das Familie-Plugin mit eingeschaltetem Wand-Tablet.",
+        "unavailable": "Das Wandtablet ist gerade nicht erreichbar. Versuche es gleich noch einmal.",
+        "rateLimited": "Zu viele Freigaben in kurzer Zeit. Versuche es später noch einmal.",
+        "limit": "Es laufen schon 4 Freigaben auf diesem Ziel. Beende zuerst eine.",
+        "trashed": "Der Eintrag liegt im Papierkorb."
+      }
     }
   }
 }

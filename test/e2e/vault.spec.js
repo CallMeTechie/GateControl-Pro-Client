@@ -248,6 +248,40 @@ test.describe('vault', () => {
     await expect(page.locator('#vault-edit-ssid')).toHaveValue('FRITZ!Box 7590 XY');
   });
 
+  test('Wi-Fi entry: „Freigabe auf Wandtablet“ with a duration and the warning, the running share, „Beenden“ (plugin 1.4.0)', async ({ launchApp, mock }) => {
+    const v = mock.setVault();
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setupVault(page);
+    await page.locator('#vault-new').click();
+    await page.locator('.vt-menu .vt-mi').nth(4).click();   // Wi-Fi
+    await page.locator('#vault-edit-title').fill('Gäste');
+    await page.locator('#vault-edit-ssid').fill('Gäste;WLAN');
+    await page.locator('#vault-edit-password').fill('Korrekt:Pferd');
+    await page.locator('#vault-edit-save').click();
+    const block = page.locator('#vault-shares');
+    await expect(block).toBeVisible();
+    await expect(block.locator('[data-share-start="wall"]')).toBeVisible();
+    await expect(block.locator('[data-share-start="portal"]')).toBeVisible();
+    await block.locator('[data-share-start="wall"]').click();
+    const dlg = page.locator('.vt-dialog');
+    await expect(dlg.locator('input[type="radio"]')).toHaveCount(4);
+    await expect(dlg.locator('input[value="1h"]')).toBeChecked();
+    await expect(dlg.locator('.vt-note-warn')).toBeVisible();
+    await dlg.locator('input[value="5m"]').check();
+    await dlg.locator('.vt-dlg-actions .btn-pri').click();
+    const row = block.locator('.vt-share[data-share="wall"]');
+    await expect(row).toBeVisible();
+    await expect(row.locator('.vt-share-left')).toHaveText(/\d:\d\d/);
+    await expect(block.locator('[data-share-start="wall"]')).toHaveCount(0);
+    // main sent the copy (the page never had the password)
+    const share = [...v.srv.shares.values()][0];
+    expect([share.target, share.ssid, share.security, share.password]).toEqual(['wall', 'Gäste;WLAN', 'WPA', 'Korrekt:Pferd']);
+    await row.locator('.btn-danger').click();
+    await expect(block.locator('.vt-share')).toHaveCount(0);
+    expect(v.srv.shares.size).toBe(0);
+  });
+
   test('2FA from a QR code: real clipboard / screen / file, then the dialog with fixed answers', async ({ launchApp, mock }) => {
     mock.setVault();
     const { app, page } = await launchApp();
