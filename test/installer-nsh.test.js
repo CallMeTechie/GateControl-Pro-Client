@@ -346,6 +346,11 @@ describe('NSIS installer script (build/installer.nsh)', () => {
     assert.match(macroBody('customInstall'), /!insertmacro GC_GATEDROP_FIREWALL_ADD/);
     assert.match(macroBody('customUnInstall'), /!insertmacro GC_GATEDROP_FIREWALL_REMOVE/);
     assert.match(resolveDefines(macroBody('GC_GATEDROP_FIREWALL_REMOVE')), /delete rule name="GateControl Pro GateDrop"/);
+    // the app recreates / repairs the same rule at runtime (core services/gatedrop-firewall.js)
+    const editionsFile = coreModule('src/services/editions.js');
+    if (editionsFile && typeof require(editionsFile).gatedropRuleName === 'function') {
+      assert.equal(require(editionsFile).gatedropRuleName(EDITION), defines.GC_GATEDROP_RULE);
+    }
   });
 
   it('GateDrop: the SendTo shortcut goes only on a real uninstall without the other edition', () => {

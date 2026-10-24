@@ -221,10 +221,13 @@
 		function renderSide() {
 			if (!refs.listen) return;
 			clear(refs.listen);
-			const on = !!(S.status && S.status.listening);
+			// Direct receiving and, when it is off or blocked, why (core status().direct).
+			const line = GS.directLine(S.status, t);
+			const tx = [el('b', { text: line.title })];
+			if (line.sub) tx.push(el('span', { class: 'gd-side-sub', text: line.sub }));
 			refs.listen.append(
-				el('span', { class: `gd-side-ic${on ? ' is-on' : ''}` }, [icon('wifi', 16)]),
-				el('div', { class: 'gd-side-tx' }, [el('b', { text: on ? t('gatedrop.listening') : t('gatedrop.notListening') })]),
+				el('span', { class: `gd-side-ic${line.on ? ' is-on' : ''}` }, [icon('wifi', 16)]),
+				el('div', { class: 'gd-side-tx' }, tx),
 			);
 			refs.folderPath.textContent = (S.status && S.status.folder) || '';
 			const ex = S.explorer;

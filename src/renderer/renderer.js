@@ -214,6 +214,8 @@ let trafficData = null;
 let usagePeriod = 'last7d';
 let pendingUpdate = null;
 let updateCardHidden = false;
+let updateInstalling = false;     // "installieren" clicked, waiting for the installer
+let updateInstallError = null;    // why the installer did not start (shown in the card)
 // Server policy (channel / minimum version / mandatory) from the core updater.
 // Channel and minimum version are assigned by the server, read-only here.
 let updatePolicy = null;
@@ -1787,6 +1789,7 @@ $('#btn-export-logs-adv').addEventListener('click', exportLogs);
 function showUpdateBanner(info) {
 	pendingUpdate = info;
 	updateCardHidden = false;
+	updateInstallError = null;
 	renderUpdateCard();
 }
 
@@ -1812,7 +1815,17 @@ function renderUpdateCard() {
 		$('#update-status-title').textContent = state.mandatory ? t('update.required') : t('update.available', { version: state.version });
 		$('#update-status-desc').textContent = state.mandatory ? requiredDesc : t('update.readyToInstall');
 		$('#update-required-text').textContent = `${requiredDesc} ${t('update.requiredTunnelHint')}`;
+		// "installieren" did not start the installer: say why (VPN stays / is back).
+		const status = updateInstalling ? t('update.installStarting') : updateInstallError;
+		if (status) {
+			$('#update-desc').textContent = status;
+			$('#update-required-text').textContent = status;
+		}
+		$('#update-desc').classList.toggle('update-error', !!updateInstallError && !updateInstalling);
+		$('#update-required-text').classList.toggle('update-error', !!updateInstallError && !updateInstalling);
 	}
+	$('#update-install').disabled = updateInstalling;
+	$('#update-required-install').disabled = updateInstalling;
 
 	const channel = $('#update-channel');
 	if (channel) {
@@ -1827,8 +1840,29 @@ function applyUpdatePolicy(policy) {
 	renderUpdateCard();
 }
 
-$('#update-install').addEventListener('click', () => update.install());
-$('#update-required-install').addEventListener('click', () => update.install());
+// Starts the installer (main: re-hash, then VPN down, then start). A failure
+// comes back with the reason and stays in the card instead of nothing happening.
+async function installUpdateNow() {
+	if (updateInstalling) return;
+	updateInstalling = true;
+	updateInstallError = null;
+	renderUpdateCard();
+	let result;
+	try {
+		result = await update.install();
+	} catch (err) {
+		result = { ok: false, code: 'launch_failed', message: err && err.message };
+	}
+	const text = window.GCUpdateState.installErrorText(result, t);
+	if (!text) return; // the installer runs, the app ends in a moment
+	updateInstalling = false;
+	updateInstallError = text;
+	renderUpdateCard();
+	showToast(text, 'error', 10000);
+}
+
+$('#update-install').addEventListener('click', () => installUpdateNow());
+$('#update-required-install').addEventListener('click', () => installUpdateNow());
 $('#update-later').addEventListener('click', () => { updateCardHidden = true; renderUpdateCard(); });
 
 update.onReady((info) => showUpdateBanner(info));

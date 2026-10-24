@@ -204,6 +204,21 @@ describe('gatedrop-state', () => {
     assert.deepEqual(GS.navContext({ tab: 'links', sendId: 7 }), { tab: 'links', sendId: '7' });
     assert.deepEqual(GS.navContext(null), { tab: 'received', sendId: null });
   });
+
+  it('directLine: says why direct receiving is off or blocked', () => {
+    assert.deepEqual(GS.directLine({ listening: true, direct: { state: 'on', reason: null, detail: null } }, t),
+      { on: true, warn: false, title: 'gatedrop.listening', sub: '' });
+    assert.deepEqual(GS.directLine({ listening: false, direct: { state: 'off', reason: 'no_lan', detail: 'vEthernet (Default Switch) (172.26.80.1)' } }, t),
+      { on: false, warn: false, title: 'gatedrop.notListening', sub: 'gatedrop.directWhy.no_lan (vEthernet (Default Switch) (172.26.80.1))' });
+    assert.deepEqual(GS.directLine({ listening: true, direct: { state: 'warn', reason: 'firewall_blocked', detail: 'GateControl Pro Client' } }, t),
+      { on: false, warn: true, title: 'gatedrop.listeningWarn', sub: 'gatedrop.directWhy.firewall_blocked (GateControl Pro Client)' });
+    assert.equal(GS.directLine({ direct: { state: 'off', reason: 'firewall_rule', detail: 'GateControl Pro GateDrop' } }, t).sub, 'gatedrop.directWhy.firewall_rule');
+    // GateDrop not there: the banner says it, no extra line
+    assert.equal(GS.directLine({ direct: { state: 'off', reason: 'unavailable' } }, t).sub, '');
+    // older core: only `listening`
+    assert.deepEqual(GS.directLine({ listening: true }, t), { on: true, warn: false, title: 'gatedrop.listening', sub: '' });
+    assert.equal(GS.directLine(null, t).title, 'gatedrop.notListening');
+  });
 });
 
 describe('main/gatedrop.js', () => {
@@ -260,6 +275,32 @@ describe('main/gatedrop.js', () => {
     const b = setup({ manageShortcut: false });
     b.svc.emit('state');
     assert.equal(b.syncs.length, 0);
+  });
+
+  it('Windows: the service gets the firewall check of this edition (not in e2e runs / elsewhere)', () => {
+    const made = [];
+    class FakeFirewall { constructor(o) { this.o = o; made.push(o); } ensure() {} }
+    class FakeService extends EventEmitter {
+      constructor(o) { super(); this.o = o; }
+      status() { return { state: 'unknown' }; }
+      available() { return false; }
+    }
+    const base = {
+      app: { isPackaged: true, getPath: () => 'C:\\x' }, store: { get: (k, d) => d, set() {} }, log: { info() {}, warn() {}, debug() {}, error() {} },
+      GateDropService: FakeService, gatedropShell: {}, showWindow() {}, getMainWindow: () => null, execPath: 'C:\\GC\\app.exe',
+    };
+    const g = setupGateDrop({ ...base, GateDropFirewall: FakeFirewall, edition: 'pro', platform: 'win32' });
+    assert.ok(g.service.o.firewall instanceof FakeFirewall);
+    assert.equal(made[0].edition, 'pro');
+    assert.equal(made[0].exePath, 'C:\\GC\\app.exe');
+    assert.equal(setupGateDrop({ ...base, GateDropFirewall: null, platform: 'win32' }).service.o.firewall, null);
+    assert.equal(setupGateDrop({ ...base, GateDropFirewall: FakeFirewall, platform: 'linux' }).service.o.firewall, null);
+  });
+
+  it('main.js hands the firewall class to GateDrop except in e2e runs', () => {
+    const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.js'), 'utf8');
+    assert.match(main, /GateDropFirewall: e2e \? null : GateDropFirewall,/);
+    assert.match(main, /edition: 'pro',/);
   });
 
   it('argv, tray entry, compose shows the window, stop once', async () => {

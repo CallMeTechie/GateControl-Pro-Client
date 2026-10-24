@@ -12,7 +12,7 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
-const { updateCardState, channelLabelKey } = require('../src/renderer/update-state');
+const { updateCardState, channelLabelKey, installErrorText } = require('../src/renderer/update-state');
 
 describe('updateCardState', () => {
   it('hidden without a ready update', () => {
@@ -33,6 +33,18 @@ describe('updateCardState', () => {
   it('the newest policy wins over the flag of the ready event', () => {
     assert.equal(updateCardState({ version: '1.2.0', mandatory: true }, { mandatory: false }, false).mandatory, false);
     assert.equal(updateCardState({ version: '1.2.0', mandatory: true, minVersion: '1.1.0' }, null, false).mandatory, true);
+  });
+
+  it('install failures get a text (no silent nothing), success none', () => {
+    const t = (k) => k;
+    assert.equal(installErrorText({ ok: true, via: 'spawn' }, t), null);
+    assert.equal(installErrorText({ ok: false, code: 'verify_failed', message: 'x' }, t), 'update.installFailed: update.installError.verify_failed');
+    assert.equal(installErrorText({ ok: false, code: 'launch_failed', message: 'UNKNOWN: spawn UNKNOWN', vpnRestored: true }, t),
+      'update.installFailed: update.installError.launch_failed (UNKNOWN: spawn UNKNOWN) update.installVpnRestored');
+    assert.equal(installErrorText({ ok: false, code: 'exited', message: 'Exit-Code 2' }, t), 'update.installFailed: update.installError.exited (Exit-Code 2)');
+    // older main (boolean false) or a rejected IPC call
+    assert.equal(installErrorText(false, t), 'update.installFailed: update.installError.launch_failed');
+    assert.equal(installErrorText(undefined, t), 'update.installFailed: update.installError.launch_failed');
   });
 
   it('channel labels', () => {
@@ -58,13 +70,31 @@ describe('wiring', () => {
     assert.ok(m, 'banner markup');
     assert.match(m[0], /id="update-required-install"/);
     assert.doesNotMatch(m[0], /dismiss/);
-    assert.match(renderer, /\$\('#update-required-install'\)\.addEventListener\('click', \(\) => update\.install\(\)\)/);
+    assert.match(renderer, /\$\('#update-required-install'\)\.addEventListener\('click', \(\) => installUpdateNow\(\)\)/);
+    assert.match(renderer, /\$\('#update-install'\)\.addEventListener\('click', \(\) => installUpdateNow\(\)\)/);
   });
 
   it('shows the channel read-only in Settings → About', () => {
     assert.match(html, /id="update-channel"/);
     assert.doesNotMatch(html, /<select[^>]*id="update-channel"/);
     assert.match(renderer, /update\.onPolicy\(/);
+  });
+
+  it('renderer: a failed install shows its reason in the card and as a toast', () => {
+    const fn = renderer.match(/async function installUpdateNow\(\) \{([\s\S]*?)\n\}/);
+    assert.ok(fn, 'installUpdateNow');
+    assert.match(fn[1], /await update\.install\(\)/);
+    assert.match(fn[1], /installErrorText\(result, t\)/);
+    assert.match(fn[1], /showToast\(text, 'error'/);
+    assert.match(renderer, /updateInstallError/);
+  });
+
+  it('main: the tray entry reports a failed install as a notification', () => {
+    assert.match(main, /install: \(\) => installUpdateFromTray\(\)/);
+    const fn = main.match(/function installUpdateFromTray\(\) \{([\s\S]*?)\n\}/);
+    assert.ok(fn);
+    assert.match(fn[1], /installErrorText\(result, t\)/);
+    assert.match(fn[1], /notify\(text/);
   });
 
   it('main: product for the server, mandatory tray entry, no silent install', () => {
@@ -83,8 +113,11 @@ describe('wiring', () => {
     for (const lang of ['de', 'en']) {
       const loc = JSON.parse(fs.readFileSync(path.join(core, 'src', 'i18n', 'locales', `${lang}.json`), 'utf8'));
       for (const k of ['required', 'requiredDesc', 'requiredDescNoMin', 'requiredTunnelHint', 'channel', 'channelHint',
-        'channelStable', 'channelBeta', 'channelUnknown', 'installRequired', 'install']) {
+        'channelStable', 'channelBeta', 'channelUnknown', 'installRequired', 'install', 'installStarting', 'installFailed', 'installVpnRestored']) {
         assert.equal(typeof loc.update[k], 'string', `${lang}: update.${k}`);
+      }
+      for (const k of ['not_ready', 'busy', 'verify_failed', 'launch_failed', 'exited']) {
+        assert.equal(typeof loc.update.installError[k], 'string', `${lang}: update.installError.${k}`);
       }
     }
   });
