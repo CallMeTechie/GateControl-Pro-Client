@@ -344,5 +344,473 @@
       "killSwitchNote": "Kill switch note",
       "saveFailed": "Setting could not be saved: {{ error }}"
     }
+  },
+  "vault": {
+    "title": "Vault",
+    "loading": "Loading Vault …",
+    "back": "Back",
+    "cancel": "Cancel",
+    "save": "Save",
+    "next": "Next",
+    "close": "Close",
+    "copy": "Copy",
+    "open": "Open",
+    "create": "Create",
+    "rename": "Rename",
+    "remove": "Remove",
+    "retry": "Try again",
+    "reveal": "Show",
+    "conceal": "Hide",
+    "copied": "{{ label }} copied",
+    "copiedSecret": "{{ label }} copied · cleared in {{ seconds }} s",
+    "pending": "Not yet synced",
+    "unavailable": {
+      "title": "Vault cannot be reached",
+      "hint": "Vault cannot be reached. Check the connection to your server."
+    },
+    "err": {
+      "offline": "No connection to the server.",
+      "generic": "That did not work ({{ code }}).",
+      "locked": "Vault was locked meanwhile.",
+      "wrongPassword": "Wrong master password.",
+      "recoveryKey": "This recovery key is not right.",
+      "weakPassword": "At least 12 characters and not weak – a few random words work well.",
+      "readOnly": "You may only read this vault.",
+      "forbidden": "You are not allowed to do that.",
+      "tooLarge": "The entry is too large (32 KB at most, encrypted).",
+      "lastManager": "A vault needs someone who manages it. Make someone else manager first.",
+      "rekeying": "The vault is getting a new key right now. Try again in a moment.",
+      "limit": "The vault is full – the change was not kept.",
+      "exists": "That exists already.",
+      "notFound": "That is gone.",
+      "noAccount": "This person has not set up Vault yet.",
+      "empty": "Nothing to copy.",
+      "unsupported": "Not available on this device.",
+      "rememberFailed": "The kept sign-in is no longer valid. Unlock with your master password.",
+      "conflict": "Changed on another device at the same time. Try again.",
+      "invalid": "The input is not valid.",
+      "setupGone": "The setup was cancelled because Vault was locked. Please enter your master password again."
+    },
+    "notice": {
+      "conflict": "Changed on two devices at once – both versions are kept (the copy is marked “conflict”).",
+      "limit": "The vault is full – a change was not kept.",
+      "refused": "A change was refused (no right, or the vault is gone).",
+      "dismiss": "Dismiss"
+    },
+    "unreadable": {
+      "one": "{{ count }} entry could not be opened.",
+      "other": "{{ count }} entries could not be opened."
+    },
+    "head": {
+      "entries": {
+        "one": "{{ count }} entry",
+        "other": "{{ count }} entries"
+      },
+      "vaults": {
+        "one": "{{ count }} vault",
+        "other": "{{ count }} vaults"
+      },
+      "synced": "synced {{ time }}",
+      "syncing": "syncing …",
+      "offline": "offline",
+      "syncError": "sync failed",
+      "pending": {
+        "one": "{{ count }} not yet synced",
+        "other": "{{ count }} not yet synced"
+      }
+    },
+    "time": {
+      "today": "today {{ time }}",
+      "yesterday": "yesterday {{ time }}"
+    },
+    "search": "Search",
+    "shortcut": "Ctrl+Alt+P",
+    "new": "New",
+    "lock": "Lock vault",
+    "more": "More",
+    "menu": {
+      "vaults": "Vaults & sharing",
+      "emergency": "Emergency access",
+      "import": "Import",
+      "trash": "Trash",
+      "settings": "Settings",
+      "sync": "Sync now"
+    },
+    "filter": {
+      "label": "Vault",
+      "all": "All",
+      "count": "{{ name }} · {{ count }}"
+    },
+    "section": {
+      "favorites": "Favorites",
+      "all": "All · A–Z"
+    },
+    "list": "Entries",
+    "entry": "Entry",
+    "empty": "No entries yet. Add one with “New” or import them.",
+    "noResults": "Nothing found.",
+    "noSelection": "Choose an entry on the left.",
+    "type": {
+      "login": "Login",
+      "totp": "2FA code",
+      "note": "Note",
+      "card": "Card",
+      "wifi": "Wi-Fi",
+      "identity": "Identity"
+    },
+    "newType": {
+      "login": "New login",
+      "totp": "New 2FA code",
+      "note": "New note",
+      "card": "New card",
+      "wifi": "New Wi-Fi",
+      "identity": "New identity"
+    },
+    "field": {
+      "title": "Title",
+      "vault": "Vault",
+      "username": "User name",
+      "password": "Password",
+      "totp": "2FA code",
+      "totpSecret": "2FA key (otpauth link or base32)",
+      "urls": "Website",
+      "url": "Website",
+      "apps": "Programs",
+      "app": "Program (e.g. putty.exe)",
+      "notes": "Note",
+      "holder": "Card holder",
+      "number": "Card number",
+      "expiry": "Valid until (MM/YY)",
+      "cvc": "Security code",
+      "pin": "PIN",
+      "ssid": "Network name",
+      "security": "Security",
+      "name": "Name",
+      "email": "E-mail",
+      "phone": "Phone",
+      "address": "Address",
+      "birthday": "Birthday"
+    },
+    "custom": {
+      "title": "More fields",
+      "add": "Add field",
+      "name": "Field name",
+      "value": "Value",
+      "secret": "Hidden",
+      "remove": "Remove field",
+      "unnamed": "Field"
+    },
+    "addUrl": "Add website",
+    "addApp": "Add program",
+    "removeUrl": "Remove",
+    "totp": {
+      "left": "Valid for {{ seconds }} s",
+      "invalid": "This 2FA key cannot be read."
+    },
+    "openWebsite": "Open website",
+    "fav": {
+      "add": "Add to favorites",
+      "remove": "Remove from favorites"
+    },
+    "changed": "{{ vault }} · changed {{ when }} on “{{ device }}”",
+    "changedShort": "{{ vault }} · changed {{ when }}",
+    "history": {
+      "link": "View history",
+      "title": "History",
+      "restore": "Restore this version",
+      "empty": "No earlier versions.",
+      "version": "Version {{ rev }}",
+      "restored": "Version restored."
+    },
+    "trash": {
+      "title": "Trash",
+      "action": "Move to trash",
+      "moved": "“{{ title }}” is in the trash.",
+      "empty": "The trash is empty.",
+      "info": "In the trash – deleted for good after 30 days."
+    },
+    "restore": "Restore",
+    "purge": "Delete for good",
+    "purgeConfirm": "Delete “{{ title }}” for good? This cannot be undone.",
+    "readOnly": "Read only",
+    "gen": {
+      "title": "Generate password",
+      "random": "Random",
+      "words": "Words",
+      "length": "Length",
+      "wordCount": "Words",
+      "upper": "Upper case (A–Z)",
+      "digits": "Digits (0–9)",
+      "symbols": "Symbols (!#$…)",
+      "ambiguous": "Avoid look-alikes (l, 1, O, 0)",
+      "again": "Generate again",
+      "use": "Use"
+    },
+    "edit": {
+      "title": "Edit",
+      "titleRequired": "A title is needed.",
+      "saved": "Saved.",
+      "type": "Kind"
+    },
+    "discard": {
+      "title": "Discard your changes?",
+      "yes": "Discard",
+      "keep": "Keep editing"
+    },
+    "strength": {
+      "weak": "Weak",
+      "fair": "Fair",
+      "strong": "Strong",
+      "very_strong": "Very strong",
+      "detail": "{{ chars }} characters · {{ words }} words",
+      "chars": "{{ chars }} characters"
+    },
+    "intro": {
+      "title": "Your passwords, on your server",
+      "text": "End-to-end encrypted: only your devices can read them – not the server, not an administrator. Works offline and syncs without the VPN.",
+      "start": "Set up Vault"
+    },
+    "setup": {
+      "title": "Set up Vault",
+      "step": "Step {{ n }} of {{ total }}",
+      "pwTitle": "Your master password",
+      "pwText": "It opens your vault on all devices. It never leaves this device – not even the GateControl server knows it.",
+      "pwLabel": "Master password",
+      "pwRepeat": "Repeat",
+      "pwMatch": "Matches",
+      "pwRule": "At least 12 characters and not weak – a few random words work well.",
+      "pwMismatch": "The passwords differ.",
+      "warnTitle": "Nobody can reset it",
+      "warnText": "Not even an administrator. In the next step you get a recovery key – without it, your data is lost if you forget the password.",
+      "creating": "Creating your keys …",
+      "saving": "Creating your vault …",
+      "doneTitle": "Almost done",
+      "doneText": "Choose how you open Vault on this PC.",
+      "finish": "Open Vault"
+    },
+    "recovery": {
+      "title": "Your recovery key",
+      "text": "With it you get into your vault if you forget the master password. It is shown only this once.",
+      "print": "Print / PDF",
+      "tip1": "Print it and keep it with your important papers.",
+      "tip2": "Do not keep it as a photo or file in the cloud.",
+      "tip3": "You can also name trusted people for emergency access later.",
+      "confirm": "I have kept the key safe",
+      "printTitle": "GateControl Vault – recovery key",
+      "printNote": "Keep this page safe. Anyone who has this key and your vault can read it. Created {{ date }}.",
+      "label": "Recovery key"
+    },
+    "remember": {
+      "title": "Stay signed in",
+      "text": "Vault opens under your Windows account without the master password (protected by Windows). The master password is not stored.",
+      "unavailable": "Not available on this PC."
+    },
+    "quickInfo": {
+      "title": "Quick search",
+      "text": "Press Ctrl+Alt+P to find passwords from any program."
+    },
+    "locked": {
+      "title": "Vault is locked",
+      "lastSync": "Last synced {{ when }}"
+    },
+    "unlock": {
+      "password": "Master password",
+      "button": "Unlock",
+      "busy": "Unlocking …",
+      "remembered": "Unlock with kept sign-in",
+      "forgot": "Forgot password?"
+    },
+    "recover": {
+      "title": "Recover access",
+      "text": "Enter your recovery key. Then choose a new master password – you also get a new recovery key.",
+      "key": "Recovery key",
+      "typo": "Typo? The key has 56 characters in 14 groups – check them once more.",
+      "newPw": "New master password",
+      "newPwText": "Choose a new master password. The old recovery key no longer works afterwards.",
+      "newKeyTitle": "Your new recovery key"
+    },
+    "vaults": {
+      "title": "Vaults",
+      "personal": "Personal",
+      "shared": "Shared",
+      "newVault": "New shared vault",
+      "name": "Name",
+      "nameHint": "e.g. Family, Streaming, Team",
+      "renameTitle": "Rename vault",
+      "members": {
+        "one": "{{ count }} member",
+        "other": "{{ count }} members"
+      },
+      "rekeyNeeded": "Gets a new key at the next sync"
+    },
+    "share": {
+      "title": "Vault “{{ name }}”",
+      "members": "Members · {{ count }}",
+      "you": "{{ name }} (you)",
+      "addPerson": "Add person",
+      "addTitle": "Add a person to “{{ vault }}”",
+      "addSub": "Only people who have set up Vault can be added.",
+      "person": "Person",
+      "people": "People",
+      "hasVault": "Vault ready",
+      "noVault": "No Vault yet",
+      "role": "Role",
+      "safetyOf": "Safety number of {{ name }}",
+      "safetyText": "Compare this number with the one on the device of {{ name }} (Vault › Settings). If it matches, nobody sits in between.",
+      "compared": "Compared with the device of {{ name }} – it matches",
+      "add": "Add",
+      "leave": "Leave vault",
+      "deleteVault": "Delete vault",
+      "removeInfo": "If you remove someone, the vault gets a new key. Change the passwords that person saw afterwards.",
+      "noPeople": "Nobody else has set up Vault yet.",
+      "deleteConfirm": "Delete “{{ name }}” with all its entries – for everyone?",
+      "leaveConfirm": "Leave “{{ name }}”? You lose access to its entries.",
+      "removeConfirm": "Remove {{ person }} from “{{ name }}”?",
+      "personalHint": "Your personal vault is yours alone. Create a shared vault to share entries with others."
+    },
+    "role": {
+      "read": "View",
+      "write": "Edit",
+      "manage": "Manage"
+    },
+    "roleHint": {
+      "read": "Can view and copy entries and use them to fill in.",
+      "write": "Can create, change and delete entries.",
+      "manage": "Can also add and remove people."
+    },
+    "em": {
+      "title": "Emergency access",
+      "requested": "{{ name }} requested access",
+      "requestedText": "Unless you refuse, {{ name }} can open your vault in {{ time }}.",
+      "deny": "Refuse",
+      "approve": "Allow now",
+      "mine": "My trusted people",
+      "wait": "Waiting time {{ time }} · read",
+      "status": {
+        "ready": "Ready",
+        "requested": "Requested",
+        "granted": "Granted"
+      },
+      "add": "Add trusted person",
+      "addTitle": "{{ name }} as trusted person",
+      "for": "I am trusted person for",
+      "request": "Request",
+      "requestConfirm": "Request access to the vault of {{ name }}? {{ name }} is told and can refuse within {{ time }}.",
+      "open": "Open",
+      "waitingUntil": "Released in {{ time }} unless {{ name }} refuses",
+      "info": "The server releases access only after the waiting time. It can never read it – only the trusted person’s device.",
+      "waitLabel": "Waiting time",
+      "remove": "Remove",
+      "decline": "Decline",
+      "takeBack": "Take back",
+      "none": "Nobody yet.",
+      "viewTitle": "Vault of {{ name }}",
+      "readOnly": "Read only – emergency access",
+      "hours": {
+        "one": "{{ count }} hour",
+        "other": "{{ count }} hours"
+      },
+      "days": {
+        "one": "{{ count }} day",
+        "other": "{{ count }} days"
+      },
+      "remaining": "{{ hours }} h {{ minutes }} min",
+      "pick": "Choose a person"
+    },
+    "import": {
+      "title": "Import",
+      "from": "From where?",
+      "sources": "Bitwarden (JSON or CSV), Chrome / Edge, 1Password, KeePass / KeePassXC and Firefox (CSV).",
+      "pick": "Choose file",
+      "other": "Other file",
+      "found": {
+        "one": "{{ count }} entry found",
+        "other": "{{ count }} entries found"
+      },
+      "logins": {
+        "one": "{{ count }} login",
+        "other": "{{ count }} logins"
+      },
+      "totp": {
+        "one": "{{ count }} with 2FA",
+        "other": "{{ count }} with 2FA"
+      },
+      "notes": {
+        "one": "{{ count }} note",
+        "other": "{{ count }} notes"
+      },
+      "cards": {
+        "one": "{{ count }} card",
+        "other": "{{ count }} cards"
+      },
+      "dupes": {
+        "one": "{{ count }} entry exists already – it is skipped",
+        "other": "{{ count }} entries exist already – they are skipped"
+      },
+      "into": "Into vault",
+      "info": "The file is read and encrypted on this device only. Delete it afterwards – it contains everything in plain text.",
+      "button": {
+        "one": "Import {{ count }} entry",
+        "other": "Import {{ count }} entries"
+      },
+      "encrypted": "This export is password-protected. Export again without a password (JSON or CSV).",
+      "unknown": "This file is not an export Vault knows.",
+      "tooLarge": "The file is too large (20 MB at most).",
+      "done": {
+        "one": "{{ count }} entry imported.",
+        "other": "{{ count }} entries imported."
+      },
+      "preview": "Preview",
+      "more": "… and {{ count }} more",
+      "duplicate": "Exists already",
+      "reading": "Reading the file …",
+      "saving": "Importing …"
+    },
+    "settings": {
+      "title": "Vault settings",
+      "autoLock": "Lock automatically",
+      "autoLockNow": "When hidden",
+      "autoLockAfter": {
+        "one": "After {{ count }} minute",
+        "other": "After {{ count }} minutes"
+      },
+      "autoLockHint": "Vault always locks when the screen is locked or the PC sleeps.",
+      "changePw": "Change master password",
+      "currentPw": "Current master password",
+      "changePwDone": "Master password changed.",
+      "mySafety": "My safety number",
+      "mySafetyText": "Others compare it when they share a vault with you or name you as trusted person.",
+      "deleteAccount": "Delete Vault account",
+      "deleteAccountConfirm": "Delete your Vault account? Your personal vault and every vault only you are in are deleted for good, on all devices.",
+      "deleteAccountCheck": "Yes, delete everything for good",
+      "deleted": "Vault account deleted."
+    },
+    "foot": {
+      "locked": "Vault locked",
+      "unlocked": "Vault unlocked",
+      "unlockedIn": "Vault unlocked · locks in {{ time }} min",
+      "unlockedHidden": "Vault unlocked · locks when the window is hidden",
+      "clipboard": "Clipboard is cleared after 30 s"
+    },
+    "quick": {
+      "title": "Vault quick search",
+      "search": "Search in Vault",
+      "hits": "Results",
+      "password": "Copy password",
+      "username": "User name",
+      "totp": "2FA code",
+      "url": "Open website",
+      "kbdEnter": "Enter",
+      "kbdB": "Ctrl+B",
+      "kbdT": "Ctrl+T",
+      "kbdO": "Ctrl+O",
+      "kbdEsc": "Esc",
+      "lockedHint": "Vault is locked – enter your master password and press Enter.",
+      "hint": "Type to search.",
+      "unavailable": "Vault is not available on this server.",
+      "noAccount": "Set up Vault in GateControl first.",
+      "nothing": "This entry has nothing for that."
+    },
+    "inboxOpen": "Open in Vault"
   }
 }

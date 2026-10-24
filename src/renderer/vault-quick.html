@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; script-src 'self';">
+	<title>GateControl Vault</title>
+	<link rel="stylesheet" href="styles/app.css">
+	<link rel="stylesheet" href="styles/vault.css">
+</head>
+<body class="gc vq">
+	<section class="vq-box" id="vq" role="dialog" aria-label="Vault-Schnellsuche">
+		<div class="vq-top">
+			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+			<input id="vq-input" type="search" autocomplete="off" spellcheck="false" aria-controls="vq-hits">
+			<span class="vt-kbd" id="vq-esc">Esc</span>
+		</div>
+		<div class="vq-status" id="vq-status" role="status" hidden></div>
+		<div class="vq-hits scroll" id="vq-hits" role="listbox"></div>
+		<div class="vq-foot" id="vq-foot"></div>
+	</section>
+	<script src="vault-state.js"></script>
+	<script src="vault-quick.js"></script>
+</body>
+</html>

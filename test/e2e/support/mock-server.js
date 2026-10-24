@@ -41,6 +41,7 @@ const crypto = require('crypto');
 const selfsigned = require('selfsigned');
 const { createMessenger } = require('./messenger-mock');
 const { createSchool } = require('./school-mock');
+const { createVault } = require('./vault-mock');
 
 const API_TOKEN = 'gc_e2e_test_token';
 // 1 × 1 PNG, served for every map tile
@@ -103,6 +104,7 @@ async function startMockServer() {
   const streams = new Set();
   let messenger = null; // support/messenger-mock.js, null = no Messenger plugin
   let school = null; // support/school-mock.js, null = no Schule plugin
+  let vault = null; // support/vault-mock.js, null = no Vault plugin
   const acks = [];
   const prefs = [];
   let geocode = {
@@ -221,6 +223,15 @@ async function startMockServer() {
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
 
+      if (vault) {
+        // The plugin list names the other plugins too when they are set.
+        if (route === 'plugins') {
+          const list = messenger ? [{ id: 'gatecontrol-messenger', name: 'Messenger', version: '1.0.0', tab: { label: 'Chats', icon: 'M0 0' } }] : [];
+          return json(200, { ok: true, plugins: [...list, ...(school ? [school.entry()] : []), vault.entry()] });
+        }
+        if (vault.handle({ method: req.method, route, query: Object.fromEntries(url.searchParams), raw }, json)) return undefined;
+      }
+
       if (school) {
         const ctx = { method: req.method, route, query: Object.fromEntries(url.searchParams) };
         // The plugin list names both plugins when both are set.
@@ -304,6 +315,11 @@ async function startMockServer() {
     setSchool(opts = {}) {
       school = createSchool(opts);
       return school;
+    },
+    /** Enables the Vault plugin (support/vault-mock.js, the core's fake server); returns its state. */
+    setVault(opts = {}) {
+      vault = createVault(opts);
+      return vault;
     },
     /** A chat notification (kind "message") to the open streams — not stored in the inbox. */
     pushChat(n) {
