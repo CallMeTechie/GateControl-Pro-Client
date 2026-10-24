@@ -2,7 +2,7 @@
  * GateControl -- preload of the Vault quick search window (Strg+Alt+P)
  *
  * Exposes only what the window needs (window.gcQuick): Vault status, unlock
- * (master password or the kept sign-in), the list of entries (titles, user
+ * (master password, Windows Hello or the kept sign-in), the list of entries (titles, user
  * names, web addresses — no secrets), copy through main (cleared after 30 s),
  * 2FA codes, opening a website (http/https, checked in main), activity and
  * hiding the window. Texts: the app's vault.* strings (core i18n).
@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('gcQuick', {
   status: () => invoke('vault:status'),
   unlock: (password) => invoke('vault:unlock', { password }),
   unlockRemembered: () => invoke('vault:unlockRemembered'),
+  // Windows Hello through the quick search's main side (the window steps back for the dialog)
+  unlockHello: () => invoke('vault-quick:hello'),
   entries: () => invoke('vault:entries', {}),
   copy: (id, field) => invoke('vault:copy', { id, field }),
   totp: (id) => invoke('vault:totp', { id }),

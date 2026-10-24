@@ -8,8 +8,9 @@ const { setupWithApiKey } = require('./support/ui');
 // Vault (plugin gatecontrol-vault, end-to-end encrypted passwords): shown only
 // when the server lists the plugin; setup with master password and recovery
 // key (confirmed before the account is sent), a new login, the detail with a
-// masked password that is revealed / copied on request, lock and unlock, and
-// the quick search window (Strg+Alt+P). The server is the core's in-memory
+// masked password that is revealed / copied on request, lock and unlock, the
+// quick search window (Strg+Alt+P) and Windows Hello unlock (real detection,
+// then a fake provider, support/hello-fake.js). The server is the core's in-memory
 // Vault fake (support/vault-mock.js). Selectors by id/class.
 
 const MASTER = 'Sonnenblume-Kanu-Turm-47';
@@ -100,6 +101,100 @@ test.describe('vault', () => {
     await quick.locator('#vq-input').press('Control+b');
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('marc');
     await expect.poll(() => app.evaluate(() => globalThis.__gcE2E.vaultQuick.window().isVisible())).toBe(false);
+  });
+
+  test('Windows Hello: real detection answers; on with the master password, unlock, too many tries → password, quick search, off', async ({ launchApp, mock }) => {
+    mock.setVault();
+    const { app, page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setupVault(page);
+
+    // the real provider of this machine (koffi → WinRT; CI runners have no Hello, Linux has none): a known answer, no crash
+    const real = await page.evaluate(() => window.gatecontrol.vault.helloCheck());
+    expect(real.ok, JSON.stringify(real)).toBe(true);
+    expect(real.available === true || ['unsupported_os', 'remote_session', 'not_set_up', 'error'].includes(real.reason), JSON.stringify(real)).toBe(true);
+
+    // from here a fake Windows Hello (support/hello-fake.js); the core's wrapping and DPAPI run for real
+    await app.evaluate(() => globalThis.__gcE2E.useFakeHello());
+    const prompts = () => app.evaluate(() => globalThis.__gcE2E.hello.fake.prompts.length);
+    const answer = (list) => app.evaluate((_e, l) => { globalThis.__gcE2E.hello.fake.answers.push(...l); }, list);
+    const openSettings = async () => {
+      await page.locator('#vault-more').click();
+      await page.locator('.vt-menu .vt-mi').nth(4).click(); // Einstellungen / Settings
+      await expect(page.locator('#vault-settings')).toBeVisible();
+    };
+
+    // not set up in Windows: the switch is off and disabled, with the reason and the way to the sign-in options
+    await app.evaluate(() => { globalThis.__gcE2E.hello.fake.avail = { available: false, reason: 'not_set_up' }; });
+    await openSettings();
+    await expect(page.locator('#vault-hello')).toBeDisabled();
+    await expect(page.locator('#vault-hello-setup')).toBeVisible();
+    await page.locator('#vault-hello-setup').click();
+    await expect.poll(() => app.evaluate(() => globalThis.__gcE2E.events.filter((e) => e.type === 'shell.openExternal').map((e) => e.url))).toContain('ms-settings:signinoptions');
+
+    // set up: on with the master password (a wrong one asks Windows nothing), then Windows Hello
+    await app.evaluate(() => { globalThis.__gcE2E.hello.fake.avail = { available: true, reason: null }; });
+    await openSettings();
+    await expect(page.locator('#vault-hello')).toBeEnabled();
+    await expect(page.locator('#vault-hello')).toHaveAttribute('aria-checked', 'false');
+    await page.locator('#vault-hello').click();
+    await page.locator('#vault-hello-pw').fill('falsch-falsch-falsch');
+    await page.locator('#vault-hello-confirm').click();
+    await expect(page.locator('.vt-dialog .vt-err')).not.toBeEmpty();
+    expect(await prompts()).toBe(0);
+    await page.locator('#vault-hello-pw').fill(MASTER);
+    await page.locator('#vault-hello-confirm').click();
+    await expect(page.locator('#vault-hello')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('#vault-remember')).toBeDisabled();
+    expect(await prompts()).toBe(1);
+    const status = await page.evaluate(() => window.gatecontrol.vault.status());
+    expect([status.hello, status.helloAvailable, status.remember]).toEqual([true, true, false]);
+
+    // locked on the page: Windows Hello is offered first (it does not ask by itself right after a lock)
+    await page.locator('#vault-lock').click();
+    await expect(page.locator('#vault-unlock-hello')).toBeVisible();
+    await expect(page.locator('#vault-unlock-pw')).toBeVisible();
+    await expect(page.locator('#vault-unlock-remember')).toHaveCount(0);
+    expect(await prompts()).toBe(1);
+    await page.locator('#vault-unlock-hello').click();
+    await expect(page.locator('#vault-unlock-pw')).toBeHidden();
+    await expect(page.locator('#vault-lock')).toBeVisible();
+    expect(await prompts()).toBe(2);
+
+    // three cancelled tries → only the master password
+    await page.locator('#vault-lock').click();
+    await answer(['cancelled', 'cancelled', 'cancelled']);
+    for (let i = 1; i <= 3; i++) {
+      await page.locator('#vault-unlock-hello').click();
+      await expect.poll(prompts).toBe(2 + i);
+    }
+    await expect(page.locator('#vault-unlock-hello')).toHaveCount(0);
+    await expect(page.locator('#vault-hello-hint')).toBeVisible();
+    expect(await page.evaluate(() => window.gatecontrol.vault.status().then((s) => s.helloBlocked))).toBe(true);
+    await page.locator('#vault-unlock-pw').fill(MASTER);
+    await page.locator('#vault-unlock').click();
+    await expect(page.locator('#vault-lock')).toBeVisible();
+
+    // quick search while locked: Windows Hello asks right away, then the search works
+    await page.locator('#vault-lock').click();
+    await expect(page.locator('#vault-unlock-hello')).toBeVisible();
+    const quickOpened = app.waitForEvent('window');
+    await app.evaluate(() => globalThis.__gcE2E.vaultQuick.show());
+    const quick = await quickOpened;
+    await quick.waitForLoadState('domcontentloaded');
+    await expect.poll(() => page.evaluate(() => window.gatecontrol.vault.status().then((s) => s.unlocked))).toBe(true);
+    await expect(quick.locator('#vq-input')).toHaveAttribute('type', 'search');
+    expect(await prompts()).toBe(6);
+    await quick.locator('#vq-input').press('Escape');
+
+    // off: record and Hello key go, "Angemeldet bleiben" is possible again
+    await openSettings();
+    await page.locator('#vault-hello').click();
+    await expect(page.locator('#vault-hello')).toHaveAttribute('aria-checked', 'false');
+    await expect(page.locator('#vault-remember')).toBeEnabled();
+    expect(await app.evaluate(() => globalThis.__gcE2E.hello.fake.keys.size)).toBe(0);
+    await page.locator('#vault-lock').click();
+    await expect(page.locator('#vault-unlock-hello')).toHaveCount(0);
   });
 
   test('Wi-Fi entry: nearby networks, pick fills name / security / title, location hint', async ({ launchApp, mock }) => {

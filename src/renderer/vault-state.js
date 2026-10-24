@@ -455,6 +455,9 @@
 		empty: 'vault.err.empty', unsupported: 'vault.err.unsupported', remember_failed: 'vault.err.rememberFailed',
 		not_remembered: 'vault.err.rememberFailed', import_encrypted: 'vault.import.encrypted', import_unknown: 'vault.import.unknown',
 		no_import: 'vault.import.unknown', no_setup: 'vault.err.setupGone', conflict: 'vault.err.conflict', invalid: 'vault.err.invalid',
+		hello_cancelled: 'vault.err.helloCancelled', hello_locked: 'vault.err.helloLocked', hello_failed: 'vault.err.helloFailed',
+		hello_invalid: 'vault.err.helloInvalid', hello_blocked: 'vault.hello.blocked', hello_unavailable: 'vault.err.helloUnavailable',
+		hello_off: 'vault.err.helloOff', hello_on: 'vault.err.helloOn',
 	};
 
 	/** A failed answer ({ ok: false, code }) → one line for the page. */
@@ -462,6 +465,46 @@
 		const code = str(res && res.code) || 'failed';
 		const key = ERROR_KEYS[code];
 		return key ? t(key) : t('vault.err.generic', { code });
+	}
+
+	// ── Windows Hello ────────────────────────────────────────
+
+	const HELLO_REASONS = {
+		unsupported_os: 'vault.hello.reason.unsupported', remote_session: 'vault.hello.reason.remote',
+		not_set_up: 'vault.hello.reason.notSetUp', no_protect: 'vault.hello.reason.noProtect',
+		error: 'vault.hello.reason.error', unknown: 'vault.hello.reason.unknown',
+	};
+
+	/** Why Windows Hello cannot be used here (status().helloReason) → one line. */
+	function helloReasonText(reason, t) {
+		return t(HELLO_REASONS[str(reason)] || HELLO_REASONS.error);
+	}
+
+	/**
+	 * Unlock screen / quick search: { primary (offer "Mit Windows Hello entsperren" first), hint (why not, or null),
+	 * key (changes when the screen must be built again) }. Not known yet ('unknown') counts as usable: the prompt
+	 * itself says when it is not.
+	 */
+	function helloView(status, t) {
+		const st = status || {};
+		if (st.hello !== true) return { primary: false, hint: null, key: 'off' };
+		if (st.helloBlocked === true) return { primary: false, hint: t('vault.hello.blocked'), key: 'blocked' };
+		if (st.helloAvailable === true || st.helloReason === 'unknown') return { primary: true, hint: null, key: 'on' };
+		return { primary: false, hint: helloReasonText(st.helloReason, t), key: `na:${str(st.helloReason)}` };
+	}
+
+	/**
+	 * The settings switch: { on, disabled, text, setup } — on may always be turned off; off only while Hello is
+	 * usable here. setup: offer Windows' sign-in options (Hello not set up yet).
+	 */
+	function helloSetting(status, t) {
+		const st = status || {};
+		const on = st.hello === true;
+		const usable = st.helloAvailable === true;
+		const reason = usable ? null : str(st.helloReason) || 'error';
+		let text = t('vault.hello.text');
+		if (!usable) text = on ? `${t('vault.hello.text')} ${helloReasonText(reason, t)}` : helloReasonText(reason, t);
+		return { on, disabled: !on && !usable, text, setup: !on && reason === 'not_set_up' };
 	}
 
 	// ── Wi-Fi networks nearby (Wi-Fi entries) ────────────────
@@ -724,7 +767,7 @@
 		fieldLabel, detailRows, mask, maskedNumber, changedText,
 		emptyDraft, draftFrom, draftToData, draftError, draftChanged, openableUrl,
 		strengthView, masterCheck, recoveryGroups, recoveryComplete,
-		errorText, wifiScanView, wifiBars, wifiSecurityLabel, wifiRowSub, applyWifi,
+		errorText, helloReasonText, helloView, helloSetting, wifiScanView, wifiBars, wifiSecurityLabel, wifiRowSub, applyWifi,
 		QR_SOURCES, totpQrInfo, looksLikeUser, totpQrBusy, totpQrView, applyTotpQr,
 		roleLabel, roleHint, writableVaults, candidates, initial,
 		waitText, remainingText, emStatusKey, importChips, importCount, autoLockChoices,

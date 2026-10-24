@@ -400,7 +400,14 @@
       "rememberFailed": "The kept sign-in is no longer valid. Unlock with your master password.",
       "conflict": "Changed on another device at the same time. Try again.",
       "invalid": "The input is not valid.",
-      "setupGone": "The setup was cancelled because Vault was locked. Please enter your master password again."
+      "setupGone": "The setup was cancelled because Vault was locked. Please enter your master password again.",
+      "helloCancelled": "Windows Hello was cancelled.",
+      "helloLocked": "Windows Hello is locked (too many attempts). Unlock with your master password.",
+      "helloFailed": "Windows Hello did not work.",
+      "helloInvalid": "The Windows Hello key is no longer valid (e.g. because Windows Hello was set up again). Windows Hello is now off – unlock with your master password.",
+      "helloUnavailable": "Windows Hello is not available right now. Unlock with your master password.",
+      "helloOff": "Windows Hello is not turned on.",
+      "helloOn": "“Stay signed in” does not work together with Windows Hello."
     },
     "notice": {
       "conflict": "Changed on two devices at once – both versions are kept (the copy is marked “conflict”).",
@@ -616,6 +623,30 @@
       "text": "Vault opens under your Windows account without the master password (protected by Windows). The master password is not stored.",
       "unavailable": "Not available on this PC."
     },
+    "hello": {
+      "title": "Unlock with Windows Hello",
+      "text": "Vault opens with your face, fingerprint or PIN through Windows Hello. The key stays with Windows (in the security chip when the PC has one); the master password is not stored. Anyone who knows your Windows PIN can then open Vault on this PC as well.",
+      "replaces": "Replaces “Stay signed in”.",
+      "rememberOff": "Not together with Windows Hello – Windows Hello asks for you every time.",
+      "button": "Unlock with Windows Hello",
+      "busy": "Waiting for Windows Hello …",
+      "orPassword": "or with your master password",
+      "blocked": "Too many Windows Hello attempts. Unlock with your master password this time.",
+      "confirmTitle": "Turn on Windows Hello",
+      "confirmText": "Confirm with your master password. Windows then asks for your face, fingerprint or PIN – possibly twice.",
+      "confirmButton": "Turn on",
+      "turnedOn": "Windows Hello is on.",
+      "turnedOff": "Windows Hello is off.",
+      "openSettings": "Set up Windows Hello",
+      "reason": {
+        "unsupported": "Windows Hello is not available on this PC.",
+        "remote": "Windows Hello is not available in a Remote Desktop session.",
+        "notSetUp": "Set up Windows Hello (face, fingerprint or PIN) in the Windows sign-in options first.",
+        "noProtect": "Windows cannot protect sign-in data on this PC.",
+        "error": "Windows Hello is not responding right now.",
+        "unknown": "Checking Windows Hello …"
+      }
+    },
     "quickInfo": {
       "title": "Quick search",
       "text": "Press Ctrl+Alt+P to find passwords from any program."
@@ -820,7 +851,8 @@
       "hint": "Type to search.",
       "unavailable": "Vault is not available on this server.",
       "noAccount": "Set up Vault in GateControl first.",
-      "nothing": "This entry has nothing for that."
+      "nothing": "This entry has nothing for that.",
+      "helloHint": "Vault is locked – press Enter for Windows Hello or enter your master password and press Enter."
     },
     "inboxOpen": "Open in Vault",
     "wifi": {

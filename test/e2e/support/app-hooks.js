@@ -16,6 +16,9 @@
  *     unchanged) but downloads into GC_E2E_DIR and exposes the instance,
  *   - points the map of "Standort senden" (core MapService) at the mock
  *     server (GC_E2E_MAP_URL) instead of OpenStreetMap,
+ *   - keeps the real Windows Hello provider (availability is checked on the
+ *     runner) but lets a test switch to a fake one (useFakeHello(), see
+ *     hello-fake.js) for the UI flow,
  *   - records the installer launch (the updater's spawn, and shell.openPath
  *     as its fallback) instead of starting the file, plus quit and service
  *     calls, in GC_E2E_DIR/events.jsonl and on globalThis.__gcE2E (reachable
@@ -177,6 +180,27 @@ function install({ app, env }) {
     }
   }
   stubModule(updaterFile, E2EUpdater);
+
+  // ── Windows Hello: the real provider (availability on this machine) until a test switches to the fake ──
+  const helloFile = coreFile('src/services/windows-hello');
+  const realHello = require(helloFile);
+  const { createFakeHello } = require('./hello-fake');
+  state.hello = { fake: null };
+  state.useFakeHello = () => { state.hello.fake = createFakeHello(); return true; };
+  stubModule(helloFile, {
+    ...realHello,
+    createWindowsHello(opts) {
+      const real = realHello.createWindowsHello(opts);
+      const pick = () => (state.hello.fake ? state.hello.fake.provider : real);
+      return {
+        kind: 'e2e-switch',
+        available: () => pick().available(),
+        create: (...a) => pick().create(...a),
+        sign: (...a) => pick().sign(...a),
+        remove: (...a) => pick().remove(...a),
+      };
+    },
+  });
 
   // ── Electron side effects → recorder ──
   const { shell, Tray } = require('electron');

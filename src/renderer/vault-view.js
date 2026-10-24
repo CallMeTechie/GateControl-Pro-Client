@@ -3,8 +3,8 @@
  *
  * The end-to-end encrypted password manager (mockups W1 / W3, Android A2–A10):
  * intro and setup (master password with strength, recovery key shown — print,
- * copy, "gesichert" — before the account is sent), unlock (master password,
- * "Angemeldet bleiben", recovery key → new password), the list of entries
+ * copy, "gesichert" — before the account is sent), unlock (Windows Hello,
+ * master password, "Angemeldet bleiben", recovery key → new password), the list of entries
  * with vault chips and search beside the detail (fields with Kopieren /
  * Öffnen, secrets masked until revealed, 2FA codes with countdown), edit of
  * all six types with custom fields and the password generator, history,
@@ -65,6 +65,7 @@
 		monitor: 'M3 4h18v12H3z|M8 20h8|M12 16v4',
 		clipboard: 'M9 3h6v3H9z|M9 4.5H6V21h12V4.5h-3',
 		image: 'M3 5h18v14H3z|M8.5 9.5a1.5 1.5 0 1 0 0 .01|M21 15l-5-5L5 19',
+		hello: 'M4 8V6a2 2 0 0 1 2-2h2|M16 4h2a2 2 0 0 1 2 2v2|M20 16v2a2 2 0 0 1-2 2h-2|M8 20H6a2 2 0 0 1-2-2v-2|M9 9.5v1M15 9.5v1|M12 9.5v3.5h-1|M9.5 15.5a3.5 3.5 0 0 0 5 0',
 	};
 
 	function icon(name, size = 16, stroke = '1.8') {
@@ -185,11 +186,14 @@
 			lastActivity: null,
 			lastTouch: 0,
 			autoTried: false,     // "Angemeldet bleiben" tried once while shown
+			helloTried: false,    // Windows Hello asked once while shown (not again after a lock on the page)
+			helloBusy: false,     // a Windows Hello prompt of this page is open
+			unlockErr: null,      // error line of the unlock screen (kept when the screen is built again)
 		};
 
 		// ── Calls ────────────────────────────────────────────
 		// Calls the core does not count as activity (list refreshes, 2FA countdown, …): they do not restart the auto-lock.
-		const PASSIVE = new Set(['check', 'sync', 'entries', 'vaults', 'totp', 'settings', 'emergency', 'people', 'status'].map((k) => api[k]).filter(Boolean));
+		const PASSIVE = new Set(['check', 'sync', 'entries', 'vaults', 'totp', 'settings', 'emergency', 'people', 'status', 'helloCheck'].map((k) => api[k]).filter(Boolean));
 		async function call(fn, ...args) {
 			if (!PASSIVE.has(fn)) S.lastActivity = now();
 			let r;
@@ -377,13 +381,14 @@
 				if (S.flow === 'setup') toast(t('vault.err.setupGone'), 'error');
 			} else if (!st.setupPending && S.setupKey) S.setupKey = null;
 			if (st.account === 'ready' && S.flow === 'setup' && !st.setupPending) S.flow = st.unlocked ? 'setupDone' : null;
-			if (st.unlocked) S.autoTried = true;
+			if (st.unlocked) { S.autoTried = true; S.helloTried = true; S.unlockErr = null; }
 			if (st.unlocked && S.dataRev !== st.dataRev) {
 				S.dataRev = st.dataRev;
 				loadData();
 			}
 			render();
 			maybeAutoUnlock();
+			maybeAutoHello();
 		}
 
 		async function loadData() {
@@ -427,6 +432,42 @@
 			unlockRemembered(true);
 		}
 
+		// Windows Hello: asked once when the page shows while locked (not after a lock on the page, not while blocked).
+		function maybeAutoHello() {
+			const st = S.status;
+			if (!S.shown || S.helloTried || S.helloBusy || !st || VS.gate(st) !== 'unlock' || S.flow || st.helloBusy) return;
+			if (!VS.helloView(st, t).primary) return;
+			S.helloTried = true;
+			unlockHello(true);
+		}
+
+		function showUnlockErr(text) {
+			S.unlockErr = text || null;
+			if (refs.unlockErr && refs.unlockErr.isConnected) refs.unlockErr.textContent = text || '';
+		}
+
+		function paintHelloBusy() {
+			const b = refs.helloBtn;
+			if (!b || !b.isConnected) return;
+			b.disabled = S.helloBusy;
+			const label = b.querySelector('span');
+			if (label) label.textContent = t(S.helloBusy ? 'vault.hello.busy' : 'vault.hello.button');
+		}
+
+		async function unlockHello(quiet) {
+			if (S.helloBusy) return;
+			S.helloBusy = true;
+			showUnlockErr(null);
+			paintHelloBusy();
+			const r = await call(api.unlockHello);
+			S.helloBusy = false;
+			paintHelloBusy();
+			if (r.ok) { if (r.status) setStatus(r.status); return; }
+			// an automatic prompt the person closed: no error, the button stays
+			if (!(quiet && r.code === 'hello_cancelled')) showUnlockErr(VS.errorText(r, t));
+			refreshStatus();
+		}
+
 		async function unlockRemembered(quiet) {
 			const r = await call(api.unlockRemembered);
 			if (r.ok) { if (r.status) setStatus(r.status); return; }
@@ -448,7 +489,9 @@
 		}
 
 		function render() {
-			const key = screen();
+			let key = screen();
+			// the unlock screen changes with Windows Hello (on, blocked, not available here)
+			if (key === 'unlock') key = `unlock|${VS.helloView(S.status, t).key}`;
 			if (key !== S.built) {
 				closeMenu();
 				if (!key.startsWith('home')) closeDialog();
@@ -466,7 +509,7 @@
 			if (key.startsWith('home:')) return buildHome(key.slice(5));
 			const box = el('div', { class: 'vt-gate' });
 			rootEl.appendChild(box);
-			switch (key) {
+			switch (key.split('|')[0]) {
 				case 'loading': return box.appendChild(stateCard('lock', t('vault.loading'), null));
 				case 'unavailable':
 				case 'error': return box.appendChild(stateCard('cloudOff', t('vault.unavailable.title'), t('vault.unavailable.hint'), { label: t('vault.retry'), run: () => call(api.check).then((r) => { if (r.status) setStatus(r.status); else refreshStatus(); }) }));
@@ -734,7 +777,9 @@
 
 		function rememberRow() {
 			const st = S.status || {};
-			const sw = el('button', { type: 'button', class: `sw${st.remember ? ' on' : ''}`, role: 'switch', 'aria-checked': st.remember ? 'true' : 'false', 'aria-label': t('vault.remember.title'), id: 'vault-remember', disabled: st.rememberAvailable ? null : true }, [el('span')]);
+			// Windows Hello asks for the person every time: "Angemeldet bleiben" would open without them
+			const usable = st.rememberAvailable && !st.hello;
+			const sw = el('button', { type: 'button', class: `sw${st.remember ? ' on' : ''}`, role: 'switch', 'aria-checked': st.remember ? 'true' : 'false', 'aria-label': t('vault.remember.title'), id: 'vault-remember', disabled: usable ? null : true }, [el('span')]);
 			sw.addEventListener('click', async () => {
 				const on = !sw.classList.contains('on');
 				sw.disabled = true;
@@ -746,9 +791,79 @@
 				refreshStatus();
 			});
 			return el('div', { class: 'vt-set-row' }, [
-				el('div', null, [el('b', { text: t('vault.remember.title') }), el('span', { text: st.rememberAvailable ? t('vault.remember.text') : t('vault.remember.unavailable') })]),
+				el('div', null, [el('b', { text: t('vault.remember.title') }), el('span', { text: st.hello ? t('vault.hello.rememberOff') : st.rememberAvailable ? t('vault.remember.text') : t('vault.remember.unavailable') })]),
 				sw,
 			]);
+		}
+
+		/** "Mit Windows Hello entsperren": on → the master password (dialog), then Windows asks; off at once. */
+		function helloRow() {
+			const st = S.status || {};
+			const v = VS.helloSetting(st, t);
+			const sw = el('button', { type: 'button', class: `sw${v.on ? ' on' : ''}`, role: 'switch', 'aria-checked': v.on ? 'true' : 'false', 'aria-label': t('vault.hello.title'), id: 'vault-hello', disabled: v.disabled ? true : null }, [el('span')]);
+			sw.addEventListener('click', async () => {
+				if (!v.on) { helloDialog(); return; }
+				sw.disabled = true;
+				const r = await call(api.setHello, false);
+				sw.disabled = false;
+				if (!r.ok) { fail(r); return; }
+				toast(t('vault.hello.turnedOff'), 'info');
+				await refreshStatus();
+				renderSettings();
+			});
+			const texts = [el('b', { text: t('vault.hello.title') }), el('span', { text: v.text })];
+			if (!v.on && !v.disabled && st.remember) texts.push(el('span', { text: t('vault.hello.replaces') }));
+			const kids = [el('div', null, texts)];
+			if (v.setup && typeof o.openExternal === 'function') {
+				kids.push(btn('btn-sec btn-sm', [icon('external', 14), el('span', { text: t('vault.hello.openSettings') })], () => {
+					Promise.resolve(o.openExternal('ms-settings:signinoptions')).catch(() => {});
+				}, { id: 'vault-hello-setup' }));
+			}
+			kids.push(sw);
+			return el('div', { class: 'vt-set-row', id: 'vault-hello-row' }, kids);
+		}
+
+		function helloDialog() {
+			const pw = pwInput({ id: 'vault-hello-pw', 'aria-label': t('vault.unlock.password') });
+			const err = el('div', { class: 'vt-err', role: 'alert' });
+			let busy = false;
+			const go = async () => {
+				const b = d.buttons.go;
+				if (busy || !pw.input.value) return;
+				busy = true;
+				b.disabled = true;
+				b.textContent = t('vault.hello.busy');
+				err.textContent = '';
+				const r = await call(api.setHello, true, pw.input.value);
+				busy = false;
+				b.disabled = false;
+				b.textContent = t('vault.hello.confirmButton');
+				if (!r.ok) {
+					err.textContent = VS.errorText(r, t);
+					if (r.code === 'wrong_password') pw.input.select();
+					return;
+				}
+				pw.input.value = '';
+				closeDialog();
+				toast(t('vault.hello.turnedOn'), 'success');
+				await refreshStatus();
+				renderSettings();
+			};
+			const d = dialog({
+				title: t('vault.hello.confirmTitle'),
+				body: [
+					el('p', { class: 'vt-desc', text: t('vault.hello.confirmText') }),
+					el('div', { class: 'field' }, [el('label', { for: 'vault-hello-pw', text: t('vault.unlock.password') }), pw.box]),
+					err,
+				],
+				actions: [
+					{ label: t('vault.cancel'), cls: 'btn-ghost', run: () => { if (!busy) closeDialog(); } },
+					{ id: 'go', label: t('vault.hello.confirmButton'), cls: 'btn-pri', run: () => go() },
+				],
+				onClose: () => { pw.input.value = ''; },
+			});
+			d.buttons.go.id = 'vault-hello-confirm';
+			pw.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
 		}
 
 		function buildSetupDone() {
@@ -768,15 +883,21 @@
 		// ── Unlock, recovery ─────────────────────────────────
 		function buildUnlock() {
 			const st = S.status || {};
-			const err = el('div', { class: 'vt-err', role: 'alert' });
-			const pw = pwInput({ id: 'vault-unlock-pw', 'aria-label': t('vault.unlock.password'), autofocus: true });
+			const hv = VS.helloView(st, t);
+			const err = el('div', { class: 'vt-err', role: 'alert', text: S.unlockErr || '' });
+			refs.unlockErr = err;
+			const pw = pwInput({ id: 'vault-unlock-pw', 'aria-label': t('vault.unlock.password'), autofocus: hv.primary ? null : true });
 			const remember = el('input', { type: 'checkbox', id: 'vault-unlock-remember', checked: !!st.remember });
-			const go = btn('btn-pri', t('vault.unlock.button'), () => submit(), { id: 'vault-unlock' });
+			const go = btn(hv.primary ? 'btn-sec' : 'btn-pri', t('vault.unlock.button'), () => submit(), { id: 'vault-unlock' });
+			// Windows Hello first when it is on; the master password stays below
+			refs.helloBtn = hv.primary
+				? btn('btn-pri btn-lg', [icon('hello', 20), el('span', { text: t(S.helloBusy ? 'vault.hello.busy' : 'vault.hello.button') })], () => unlockHello(false), { id: 'vault-unlock-hello', disabled: S.helloBusy ? true : null })
+				: null;
 			const submit = async () => {
 				const v = pw.input.value;
 				if (!v || go.disabled) return;
 				go.disabled = true;
-				err.textContent = '';
+				showUnlockErr(null);
 				go.textContent = t('vault.unlock.busy');
 				const r = await call(api.unlock, v);
 				go.textContent = t('vault.unlock.button');
@@ -787,7 +908,7 @@
 					return;
 				}
 				pw.input.value = '';
-				if (st.rememberAvailable && remember.checked !== !!st.remember) {
+				if (st.rememberAvailable && !st.hello && remember.checked !== !!st.remember) {
 					const s = await call(api.setSettings, { remember: remember.checked });
 					if (!s.ok) fail(s);
 				}
@@ -800,8 +921,11 @@
 				el('h2', { class: 'disp', text: t('vault.locked.title') }),
 				last ? el('p', { class: 'vt-desc', text: last }) : null,
 				st.remember && st.rememberAvailable ? btn('btn-sec', [icon('unlock', 16), el('span', { text: t('vault.unlock.remembered') })], () => unlockRemembered(false), { id: 'vault-unlock-remembered' }) : null,
+				refs.helloBtn,
+				refs.helloBtn ? el('div', { class: 'vt-or', text: t('vault.hello.orPassword') }) : null,
+				hv.hint ? el('div', { class: 'vt-hello-hint', id: 'vault-hello-hint' }, [icon('hello', 16), el('span', { text: hv.hint })]) : null,
 				el('div', { class: 'field' }, [el('label', { for: 'vault-unlock-pw', text: t('vault.unlock.password') }), pw.box]),
-				st.rememberAvailable ? el('label', { class: 'vt-check' }, [remember, el('span', { text: t('vault.remember.title') })]) : null,
+				st.rememberAvailable && !st.hello ? el('label', { class: 'vt-check' }, [remember, el('span', { text: t('vault.remember.title') })]) : null,
 				err,
 				el('div', { class: 'vt-form-acts' }, [
 					el('button', { type: 'button', class: 'vt-link', id: 'vault-forgot', text: t('vault.unlock.forgot'), on: { click: () => { S.flow = 'recover'; render(); } } }),
@@ -949,6 +1073,8 @@
 			}
 			if (sub !== 'import') S.imp = null;
 			if (sub !== 'emView') S.emView = null;
+			// settings chosen again: built again (asks Windows Hello's availability again)
+			if (sub === 'settings' && S.sub === 'settings') S.built = null;
 			S.sub = sub;
 			render();
 		}
@@ -2195,6 +2321,8 @@
 			refs.setBox = el('div', { class: 'vt-stack', id: 'vault-settings' });
 			refs.page.appendChild(refs.setBox);
 			call(api.settings).then((r) => { S.settings = r.ok ? r : null; renderSettings(); });
+			// Windows Hello set up / removed meanwhile: ask Windows again
+			if (typeof api.helloCheck === 'function') call(api.helloCheck).then(() => refreshStatus()).then(() => renderSettings());
 			renderSettings();
 		}
 
@@ -2215,7 +2343,7 @@
 					refreshStatus();
 				} } }));
 			}
-			box.appendChild(el('div', { class: 'card vt-card' }, [el('h3', { text: t('vault.settings.autoLock') }), seg, el('span', { class: 'vt-hint', text: t('vault.settings.autoLockHint') }), rememberRow()]));
+			box.appendChild(el('div', { class: 'card vt-card' }, [el('h3', { text: t('vault.settings.autoLock') }), seg, el('span', { class: 'vt-hint', text: t('vault.settings.autoLockHint') }), helloRow(), rememberRow()]));
 
 			// change the master password
 			const cur = pwInput({ id: 'vault-pw-current', 'aria-label': t('vault.settings.currentPw') });
@@ -2312,6 +2440,11 @@
 				ticker = setInterval(tick, 1000);
 				render();
 				maybeAutoUnlock();
+				// Windows Hello set up / a remote session meanwhile: ask Windows again before offering it
+				if (S.status && !S.status.unlocked && S.status.hello && typeof api.helloCheck === 'function') {
+					call(api.helloCheck).then(() => refreshStatus());
+				}
+				maybeAutoHello();
 				if (S.status && S.status.unlocked && !S.loaded) loadData();
 			},
 			hide() {
@@ -2324,6 +2457,7 @@
 				if (S.revealed.size) { S.revealed.clear(); if (S.mode !== 'edit') rerenderDetail(); }
 				if (S.gen && refs.genOut) { S.gen = null; if (S.mode === 'edit') buildEdit(); }
 				S.autoTried = false;
+				S.helloTried = false;
 			},
 			/** Open on a push target (context of a toast click or vault:push). */
 			open(ctx) {

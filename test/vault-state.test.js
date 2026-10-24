@@ -4,7 +4,7 @@
 // no DOM): fields per type, list filter / sections / chips, quick search ranking
 // and its keys (Enter, Strg+B / T / O, ↑ ↓, Esc), the edit draft ↔ entry JSON v1,
 // header / footer texts, strength and master password rule, errors, emergency
-// texts, import summary, push targets, Wi-Fi scan, 2FA from a QR code; that the
+// texts, import summary, push targets, Wi-Fi scan, 2FA from a QR code, Windows Hello; that the
 // page loads the Vault scripts, that the views never use innerHTML, and that
 // every vault.* key they use exists in both app locales.
 
@@ -464,6 +464,37 @@ describe('2FA key from a QR code ("QR-Code scannen")', () => {
   });
 });
 
+describe('Windows Hello (unlock screen, quick search, settings)', () => {
+  const st = (o = {}) => ({ state: 'available', account: 'ready', unlocked: false, hello: true, helloAvailable: true, helloReason: null, helloBlocked: false, ...o });
+
+  it('unlock: Windows Hello first while on and usable; why not otherwise; the key changes with it', () => {
+    assert.deepEqual(VS.helloView(st(), t), { primary: true, hint: null, key: 'on' });
+    assert.deepEqual(VS.helloView(st({ helloAvailable: false, helloReason: 'unknown' }), t).primary, true, 'not checked yet: the prompt itself tells');
+    assert.deepEqual(VS.helloView(st({ hello: false }), t), { primary: false, hint: null, key: 'off' });
+    assert.deepEqual(VS.helloView(null, t), { primary: false, hint: null, key: 'off' });
+    assert.deepEqual(VS.helloView(st({ helloBlocked: true }), t), { primary: false, hint: 'vault.hello.blocked', key: 'blocked' });
+    assert.deepEqual(VS.helloView(st({ helloAvailable: false, helloReason: 'remote_session' }), t), { primary: false, hint: 'vault.hello.reason.remote', key: 'na:remote_session' });
+    assert.equal(VS.helloView(st({ helloAvailable: false, helloReason: 'weird' }), t).hint, 'vault.hello.reason.error');
+  });
+
+  it('settings: off only while usable, on can always be turned off; the way to Windows sign-in options', () => {
+    assert.deepEqual(VS.helloSetting(st({ hello: false }), t), { on: false, disabled: false, text: 'vault.hello.text', setup: false });
+    assert.deepEqual(VS.helloSetting(st({ hello: false, helloAvailable: false, helloReason: 'not_set_up' }), t),
+      { on: false, disabled: true, text: 'vault.hello.reason.notSetUp', setup: true });
+    assert.deepEqual(VS.helloSetting(st({ hello: false, helloAvailable: false, helloReason: 'unsupported_os' }), t).setup, false);
+    assert.deepEqual(VS.helloSetting(st({ helloAvailable: false, helloReason: 'remote_session' }), t),
+      { on: true, disabled: false, text: 'vault.hello.text vault.hello.reason.remote', setup: false });
+  });
+
+  it('errors of Windows Hello have their own lines', () => {
+    for (const [code, k] of [['hello_cancelled', 'vault.err.helloCancelled'], ['hello_locked', 'vault.err.helloLocked'], ['hello_failed', 'vault.err.helloFailed'],
+      ['hello_invalid', 'vault.err.helloInvalid'], ['hello_blocked', 'vault.hello.blocked'], ['hello_unavailable', 'vault.err.helloUnavailable'],
+      ['hello_off', 'vault.err.helloOff'], ['hello_on', 'vault.err.helloOn']]) {
+      assert.equal(VS.errorText({ ok: false, code }, t), k);
+    }
+  });
+});
+
 describe('page wiring', () => {
   const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 
@@ -507,7 +538,7 @@ describe('page wiring', () => {
     for (const k of ['kbdEnter', 'kbdB', 'kbdT', 'kbdO', 'password', 'username', 'totp', 'url']) keys.add(`vault.quick.${k}`);
     // errorText table
     const state = read('src', 'renderer', 'vault-state.js');
-    for (const m of state.matchAll(/'(vault\.(?:err|import)\.[A-Za-z]+)'/g)) keys.add(m[1]);
+    for (const m of state.matchAll(/'(vault\.(?:err|import|hello(?:\.reason)?)\.[A-Za-z]+)'/g)) keys.add(m[1]);
     const plurals = new Set(['vault.head.entries', 'vault.head.vaults', 'vault.head.pending', 'vault.unreadable', 'vault.em.hours', 'vault.em.days', 'vault.import.found', 'vault.import.logins', 'vault.import.totp', 'vault.import.notes', 'vault.import.cards', 'vault.import.dupes', 'vault.import.button', 'vault.import.done', 'vault.settings.autoLockAfter', 'vault.vaults.members']);
     assert.ok(keys.size > 200, `only ${keys.size} keys found`);
     for (const k of keys) {

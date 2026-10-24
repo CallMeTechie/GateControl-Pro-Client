@@ -4,8 +4,13 @@
  * A small frameless, always-on-top window over every program: type to find
  * an entry, Enter copies its password, Strg+B the user name, Strg+T the 2FA
  * code, Strg+O opens its website, Esc closes. While Vault is locked it asks
- * for the master password. The global shortcut is registered only while the
- * server offers Vault (VaultService status().state === 'available').
+ * Windows Hello (when on) or for the master password. The global shortcut is
+ * registered only while the server offers Vault (VaultService
+ * status().state === 'available').
+ *
+ * Windows Hello (vault-quick:hello): while its dialog is open the window is
+ * not always-on-top (it would cover the dialog) and does not hide on blur
+ * (the dialog takes the focus); afterwards it comes back to the front.
  *
  * The window has its own preload (vault-quick-preload.js) that exposes only
  * what it needs (status, unlock, the list, copy, 2FA code, open a website);
@@ -49,6 +54,7 @@ function setupVaultQuick({
   let registered = false;
   let started = false;
   let quitting = false;
+  let prompting = false;
 
   const bg = () => (getTheme() === 'light' ? '#FFFFFF' : '#161B22');
 
@@ -81,7 +87,7 @@ function setupVaultQuick({
       if (typeof wc.setWindowOpenHandler === 'function') wc.setWindowOpenHandler(() => ({ action: 'deny' }));
       wc.on('will-navigate', (e) => e.preventDefault());
     }
-    win.on('blur', () => hide());
+    win.on('blur', () => { if (!prompting) hide(); });
     win.on('close', (e) => {
       if (quitting) return;
       e.preventDefault();
@@ -169,6 +175,28 @@ function setupVaultQuick({
 
   const onState = (st) => sync(st);
   const onHide = (e) => { if (win && e && e.sender === win.webContents) hide(); };
+  const alive = () => win && !(typeof win.isDestroyed === 'function' && win.isDestroyed());
+
+  /** Windows Hello from the quick search (its own page only) → { ok, status } | { ok: false, code }. */
+  async function onHello(e) {
+    if (!alive() || !e || e.sender !== win.webContents) return { ok: false, code: 'invalid' };
+    if (typeof vault.unlockHello !== 'function') return { ok: false, code: 'hello_off' };
+    if (prompting) return { ok: false, code: 'busy' };
+    prompting = true;
+    cancelLock();
+    try { win.setAlwaysOnTop(false); } catch { /* closed */ }
+    try {
+      return { ok: true, status: await vault.unlockHello() };
+    } catch (err) {
+      return { ok: false, code: (err && err.code) || 'failed' };
+    } finally {
+      prompting = false;
+      if (alive()) {
+        try { win.setAlwaysOnTop(true, 'pop-up-menu'); } catch { /* closed */ }
+        if (win.isVisible()) { win.show(); win.focus(); }
+      }
+    }
+  }
 
   return {
     start() {
@@ -176,6 +204,7 @@ function setupVaultQuick({
       started = true;
       vault.on('state', onState);
       ipcMain.on('vault-quick:hide', onHide);
+      if (typeof ipcMain.handle === 'function') ipcMain.handle('vault-quick:hello', onHello);
       sync(vault.status());
     },
     stop() {
@@ -184,6 +213,7 @@ function setupVaultQuick({
       quitting = true;
       vault.removeListener('state', onState);
       ipcMain.removeListener('vault-quick:hide', onHide);
+      if (typeof ipcMain.removeHandler === 'function') ipcMain.removeHandler('vault-quick:hello');
       sync(null);
       if (win && !(typeof win.isDestroyed === 'function' && win.isDestroyed())) win.destroy();
       win = null;
@@ -192,6 +222,7 @@ function setupVaultQuick({
     show,
     hide,
     isRegistered: () => registered,
+    helloPrompting: () => prompting,
     window: () => win,
   };
 }
