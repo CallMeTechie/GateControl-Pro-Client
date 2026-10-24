@@ -112,6 +112,9 @@ const test = base.test.extend({
         dialogs: () => app.evaluate(() => globalThis.__gcE2E.dialogs),
         trayLabels: () => app.evaluate(() => globalThis.__gcE2E.trayLabels()),
         clickTrayItem: (pattern) => app.evaluate((_e, p) => globalThis.__gcE2E.clickTrayItem(p), pattern),
+        /** Click on the last notification whose title/body/toast XML matches (see app-hooks). */
+        clickToast: (pattern) => app.evaluate((_e, p) => globalThis.__gcE2E.clickToast(p), pattern),
+        dropDownloadedUpdate: () => app.evaluate(() => globalThis.__gcE2E.dropDownloadedUpdate()),
       };
     });
 

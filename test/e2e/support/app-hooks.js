@@ -23,7 +23,9 @@
  *     as its fallback) instead of starting the file, plus quit and service
  *     calls, in GC_E2E_DIR/events.jsonl and on globalThis.__gcE2E (reachable
  *     via electronApp.evaluate()). state.installerLaunch = 'fail' makes both
- *     refuse, so a test can check the error shown in the update card.
+ *     refuse, so a test can check the error shown in the update card,
+ *   - records shown notifications (state.toasts; clickToast(pattern) fires
+ *     the 'click' Windows would deliver for a click on the toast).
  */
 
 const fs = require('fs');
@@ -229,6 +231,33 @@ function install({ app, env }) {
     state.dialogs.push({ message: opts.message, detail: opts.detail, buttons: opts.buttons });
     record('dialog.messageBox', { message: opts.message });
     return { response: state.dialogAnswers.shift(), checkboxChecked: false };
+  };
+
+  // Notifications: recorded (still shown); a test "clicks" one by emitting
+  // the event Electron emits for a click on the toast.
+  const { Notification } = require('electron');
+  const realShow = Notification.prototype.show;
+  state.toasts = [];
+  Notification.prototype.show = function e2eShow(...args) {
+    const text = `${this.title || ''}\n${this.body || ''}\n${this.toastXml || ''}`;
+    state.toasts.push({ n: this, text });
+    record('toast.show', { text: text.slice(0, 500) });
+    return realShow.apply(this, args);
+  };
+  state.clickToast = (pattern) => {
+    const re = new RegExp(pattern);
+    const hit = [...state.toasts].reverse().find((x) => re.test(x.text));
+    if (!hit) return false;
+    record('toast.click', { text: hit.text.slice(0, 200) });
+    hit.n.emit('click', {});
+    return true;
+  };
+  // Drops the downloaded installer (as if it was never fetched / cleaned up).
+  state.dropDownloadedUpdate = () => {
+    const file = state.updater && state.updater.downloadPath;
+    if (!file) return false;
+    fs.rmSync(file, { force: true });
+    return true;
   };
 
   app.on('before-quit', () => record('app.before-quit'));

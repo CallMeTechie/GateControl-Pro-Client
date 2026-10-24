@@ -61,6 +61,55 @@ test.describe('signed auto-update', () => {
     expectInstallerLaunched(events(), offer);
   });
 
+  // A click on the "Update verfügbar" toast installs it. Before, the toast
+  // only went away and installing needed the tray menu.
+  test('scheduled check → click on the update toast starts the verified installer and quits', async ({ launchApp, mock, offerUpdate }) => {
+    const offer = offerUpdate('valid');
+    const { page, exited, events, runScheduledUpdateCheck, clickToast } = await launchApp();
+    await setupWithApiKey(page, mock);
+
+    await runScheduledUpdateCheck();
+    await expect(updateBanner(page)).toBeVisible();
+    expect(await clickToast(escapeRegExp(OFFERED_VERSION))).toBe(true);
+    await expectQuit(exited);
+    expectInstallerLaunched(events(), offer);
+  });
+
+  // No verified file (gone, or not downloaded yet): the click fetches the
+  // update first and then installs, instead of "kein geprüftes Update bereit".
+  test('toast click without a verified installer downloads it again, then installs', async ({ launchApp, mock, offerUpdate }) => {
+    const offer = offerUpdate('valid');
+    const { page, exited, events, runScheduledUpdateCheck, clickToast, dropDownloadedUpdate } = await launchApp();
+    await setupWithApiKey(page, mock);
+
+    await runScheduledUpdateCheck();
+    await expect(updateBanner(page)).toBeVisible();
+    expect(mock.count(DOWNLOAD(offer))).toBe(1);
+    expect(await dropDownloadedUpdate()).toBe(true);
+
+    expect(await clickToast(escapeRegExp(OFFERED_VERSION))).toBe(true);
+    await expectQuit(exited);
+    expect(mock.count(DOWNLOAD(offer))).toBe(2);
+    expectInstallerLaunched(events(), offer);
+  });
+
+  // Regression (log 1.43.1): two checks at once started two downloads into
+  // the same file; the second overwrote the verified installer, the install
+  // was rejected ("nach dem Download verändert"), then ENOENT on rename.
+  test('two update checks at once download once and the install works', async ({ launchApp, mock, offerUpdate }) => {
+    const offer = offerUpdate('valid');
+    const { app, page, exited, events } = await launchApp();
+    await setupWithApiKey(page, mock);
+
+    await app.evaluate(() => Promise.all([globalThis.__gcE2E.updater._check(), globalThis.__gcE2E.updater.check()]));
+    expect(mock.count(DOWNLOAD(offer))).toBe(1);
+    await expect(updateBanner(page)).toBeVisible();
+
+    await updateInstallButton(page).click();
+    await expectQuit(exited);
+    expectInstallerLaunched(events(), offer);
+  });
+
   // Regression (fixed in 1.22.11): the tray "check for updates" replaced the
   // pending update with release info without an installer path, after which
   // "Neustart" and the tray install entry silently did nothing.
