@@ -33,6 +33,15 @@ function entry(o = {}) {
   };
 }
 
+const PTOPICS = [
+  ...TOPICS,
+  { id: 'plugin:gatecontrol-skoda:trip', label: 'Fahrzeuge · Fahrt erfasst (Fahrtenbuch)' },
+  { id: 'plugin:gatecontrol-gatedrop:received', label: 'GateDrop · Empfangen' },
+  { id: 'plugin:gatecontrol-gatedrop:link', label: 'GateDrop · Link geladen' },
+  { id: 'plugin:gatecontrol-synology:storage', label: 'NAS (Synology) · NAS-Speicher (beeinträchtigt, fast voll)' },
+  { id: 'plugin:gatecontrol-door:default', label: 'Tür & Kamera' },
+];
+
 describe('inbox list', () => {
   const items = [
     entry(),
@@ -40,34 +49,129 @@ describe('inbox list', () => {
     entry({ id: 47, seq: 125, topic: 'devices', priority: 'info', state: 'read' }),
   ];
 
-  it('filters: all, unread, topic', () => {
+  it('filters: read state × source (and the older single values)', () => {
+    const mixed = [
+      ...items,
+      entry({ id: 48, topic: 'plugin:gatecontrol-skoda:trip', state: 'delivered' }),
+      entry({ id: 49, topic: 'plugin:gatecontrol-gatedrop:received', state: 'read' }),
+      entry({ id: 50, topic: 'plugin:gatecontrol-gatedrop:link', state: 'delivered' }),
+      entry({ id: 51, topic: null, state: 'read' }),
+    ];
+    const ids = (f) => NS.filterItems(mixed, f).map((e) => e.id);
+    assert.equal(NS.filterItems(mixed, { read: 'all', source: '' }).length, 7);
+    assert.deepEqual(ids({ read: 'unread', source: '' }), [45, 48, 50]);
+    assert.deepEqual(ids({ read: 'all', source: 'src:system' }), [45, 46, 47, 51]);
+    assert.deepEqual(ids({ read: 'all', source: 'src:plugin:gatecontrol-gatedrop' }), [49, 50]);
+    assert.deepEqual(ids({ read: 'unread', source: 'src:plugin:gatecontrol-gatedrop' }), [50]);
+    assert.deepEqual(ids({ read: 'all', source: 'topic:security' }), [46]);
+    // 'system' the core topic is not "System" the source
+    assert.deepEqual(ids({ read: 'all', source: 'topic:system' }), []);
     assert.equal(NS.filterItems(items, 'all').length, 3);
     assert.deepEqual(NS.filterItems(items, 'unread').map((e) => e.id), [45]);
     assert.deepEqual(NS.filterItems(items, 'security').map((e) => e.id), [46]);
-    assert.deepEqual(NS.filterItems(null, 'all'), []);
+    assert.deepEqual(NS.filterItems(null, { read: 'all' }), []);
   });
 
-  it('filter chips: Alle, Ungelesen, then topics with entries in server order', () => {
-    const opts = NS.filterOptions(items, TOPICS, 'all', t);
-    assert.deepEqual(opts.map((o) => o.id), ['all', 'unread', 'security', 'devices']);
-    assert.deepEqual(opts.map((o) => o.count), [3, 1, 1, 2]);
-    assert.equal(opts[2].label, 'Sicherheit');
-    // the active topic stays even when it has no entries any more
-    assert.deepEqual(NS.filterOptions([], TOPICS, 'admin_notice', t).map((o) => o.id), ['all', 'unread', 'admin_notice']);
+  it('a saved filter is cleaned: broken values become the default', () => {
+    assert.deepEqual(NS.normalizeFilter(null), { read: 'all', source: '' });
+    assert.deepEqual(NS.normalizeFilter({ read: 'unread', source: 'src:plugin:gatecontrol-skoda' }), { read: 'unread', source: 'src:plugin:gatecontrol-skoda' });
+    assert.deepEqual(NS.normalizeFilter({ read: 'x', source: 'security' }), { read: 'all', source: '' });
+    assert.deepEqual(NS.normalizeFilter({ source: 'src:evil' }), { read: 'all', source: '' });
+    assert.equal(NS.isDefaultFilter({ read: 'all', source: '' }), true);
+    assert.equal(NS.isDefaultFilter({ read: 'unread', source: '' }), false);
   });
 
-  it('topic labels: from the server, readable fallback for plugin topics', () => {
+  it('sources: System first, then plugins in server order, topics indented when there are several', () => {
+    const list = [
+      entry({ id: 1, topic: 'plugin:gatecontrol-synology:storage', state: 'read' }),
+      entry({ id: 2, topic: 'plugin:gatecontrol-skoda:trip' }),
+      entry({ id: 3, topic: 'plugin:gatecontrol-skoda:trip' }),
+      entry({ id: 4, topic: 'plugin:gatecontrol-gatedrop:received', state: 'read' }),
+      entry({ id: 5, topic: 'plugin:gatecontrol-gatedrop:link' }),
+      entry({ id: 6, topic: 'security', state: 'read' }),
+      entry({ id: 7, topic: 'plugin:gatecontrol-door:default', state: 'read' }),
+      entry({ id: 8, topic: 'plugin:unknown-plugin:alert', state: 'read' }),
+    ];
+    const opts = NS.sourceOptions(list, PTOPICS, '', t);
+    assert.deepEqual(opts.map((o) => [o.value, o.label, o.depth, o.unread]), [
+      ['', 'ui.inbox.sourceAll', 0, 3],
+      ['src:system', 'ui.inbox.system', 0, 0],
+      ['src:plugin:gatecontrol-skoda', 'Fahrzeuge', 0, 2],
+      ['src:plugin:gatecontrol-gatedrop', 'GateDrop', 0, 1],
+      ['topic:plugin:gatecontrol-gatedrop:received', 'Empfangen', 1, 0],
+      ['topic:plugin:gatecontrol-gatedrop:link', 'Link geladen', 1, 1],
+      ['src:plugin:gatecontrol-synology', 'NAS (Synology)', 0, 0],
+      ['src:plugin:gatecontrol-door', 'Tür & Kamera', 0, 0],
+      ['src:plugin:unknown-plugin', 'unknown-plugin', 0, 0],
+    ]);
+    assert.equal(NS.optionText(opts[2], t), 'Fahrzeuge · ui.inbox.newCount(2)');
+    assert.equal(NS.optionText(opts[4], t), '    Empfangen');
+    // the active choice stays even without entries; a single active topic shows under its source
+    const act = NS.sourceOptions([], PTOPICS, 'topic:plugin:gatecontrol-skoda:trip', t);
+    assert.deepEqual(act.map((o) => o.value), ['', 'src:plugin:gatecontrol-skoda', 'topic:plugin:gatecontrol-skoda:trip']);
+    assert.deepEqual(NS.sourceOptions([], PTOPICS, 'src:system', t).map((o) => o.value), ['', 'src:system']);
+  });
+
+  it('topic labels: from the server, readable fallback; split into source and topic', () => {
     assert.equal(NS.topicLabel(TOPICS, 'devices'), 'Geräte & Gateways');
     assert.equal(NS.topicLabel([], 'plugin:skoda:charging'), 'skoda · charging');
     assert.equal(NS.topicLabel(TOPICS, null), '');
+    assert.deepEqual(NS.topicParts(PTOPICS, 'plugin:gatecontrol-skoda:trip', t), { source: 'Fahrzeuge', topic: 'Fahrt erfasst (Fahrtenbuch)' });
+    assert.deepEqual(NS.topicParts(PTOPICS, 'plugin:gatecontrol-door:default', t), { source: 'Tür & Kamera', topic: '' });
+    assert.deepEqual(NS.topicParts(PTOPICS, 'devices', t), { source: 'ui.inbox.system', topic: 'Geräte & Gateways' });
+    assert.equal(NS.sourceKey('plugin:a-b:c'), 'plugin:a-b');
+    assert.equal(NS.sourceKey('security'), 'system');
+    assert.equal(NS.sourceKey(null), 'system');
   });
 
-  it('row meta: coloured priority only for high/critical, topic and time', () => {
-    const meta = NS.rowMeta(entry(), TOPICS, t, { now: NOW });
-    assert.deepEqual(meta.priority, { label: 'push.priority.critical', cls: 'c-err' });
-    assert.equal(meta.text, 'Geräte & Gateways · 21:42');
-    assert.equal(NS.rowMeta(entry({ priority: 'normal' }), TOPICS, t, { now: NOW }).priority, null);
-    assert.equal(NS.rowMeta(entry({ priority: 'high' }), TOPICS, t, { now: NOW }).priority.cls, 'c-warn');
+  it('source badges: known icons, else the initial', () => {
+    assert.ok(NS.sourceBadge('security', 'System').paths.length);
+    assert.ok(NS.sourceBadge('plugin:gatecontrol-skoda:trip', 'Fahrzeuge').paths.length);
+    assert.deepEqual(NS.sourceBadge('plugin:other:x', 'Übersicht'), { paths: null, initial: 'Ü' });
+    assert.deepEqual(NS.sourceBadge('plugin:other:x', '  (Synology)'), { paths: null, initial: 'S' });
+    assert.deepEqual(NS.sourceBadge('plugin:other:x', '·'), { paths: null, initial: '?' });
+  });
+
+  it('rows: source label, time, title and the message text as preview', () => {
+    const trip = entry({
+      topic: 'plugin:gatecontrol-skoda:trip', priority: 'info', title: 'Elroq: Fahrt erfasst',
+      body: '7 km, 07:12–07:23 → Am Grenzgraben 8\n– privat oder geschäftlich?', created_at: at(9, 27),
+    });
+    const v = NS.rowView(trip, PTOPICS, t);
+    assert.equal(v.label, 'Fahrzeuge');
+    assert.equal(v.labelTitle, 'Fahrzeuge › Fahrt erfasst (Fahrtenbuch)');
+    assert.equal(v.time, '09:27');
+    assert.equal(v.title, 'Elroq: Fahrt erfasst');
+    assert.equal(v.preview, '7 km, 07:12–07:23 → Am Grenzgraben 8 – privat oder geschäftlich?');
+    assert.equal(v.unread, true);
+    assert.equal(v.priority, null);
+    // System: the topic is the label; no body → the topic as preview; priority pill for high/critical
+    const sys = NS.rowView(entry({ body: '', state: 'read' }), PTOPICS, t);
+    assert.equal(sys.label, 'Geräte & Gateways');
+    assert.equal(sys.preview, 'Geräte & Gateways');
+    assert.equal(sys.unread, false);
+    assert.deepEqual(sys.priority, { label: 'push.priority.critical', cls: 'c-err' });
+    assert.equal(NS.rowView(entry({ priority: 'high' }), TOPICS, t).priority.cls, 'c-warn');
+    assert.equal(NS.rowView(entry({ title: '' }), TOPICS, t).title, '—');
+  });
+
+  it('days: Heute, Gestern, weekday, date; groups keep the list order', () => {
+    const o = { now: NOW, locale: 'de' };
+    assert.equal(NS.dayLabel(at(9, 5), t, o), 'ui.inbox.today');
+    assert.equal(NS.dayLabel(at(23, 59, -1), t, o), 'ui.inbox.yesterdayDay');
+    assert.equal(NS.dayLabel(at(9, 5, -3), t, o), 'Mittwoch');
+    assert.equal(NS.dayLabel(at(9, 5, -30), t, o), '10. September');
+    assert.equal(NS.dayLabel(new Date(2025, 11, 24, 9).toISOString(), t, o), '24. Dezember 2025');
+    assert.equal(NS.dayLabel('kaputt', t, o), 'ui.inbox.earlier');
+    const groups = NS.groupByDay([
+      entry({ id: 1, created_at: at(21, 0) }), entry({ id: 2, created_at: at(8, 0) }),
+      entry({ id: 3, created_at: at(20, 0, -1) }), entry({ id: 4, created_at: null, received_at: at(7, 0, -1) }),
+      entry({ id: 5, created_at: at(9, 0, -8) }),
+    ], t, o);
+    assert.deepEqual(groups.map((g) => [g.label, g.items.map((e) => e.id)]), [
+      ['ui.inbox.today', [1, 2]], ['ui.inbox.yesterdayDay', [3, 4]], ['2. Oktober', [5]],
+    ]);
+    assert.deepEqual(NS.groupByDay(null, t, o), []);
   });
 
   it('time: clock today, "gestern", weekday, date', () => {
@@ -78,6 +182,19 @@ describe('inbox list', () => {
     assert.equal(NS.formatTime('kaputt', t, { now: NOW }), '');
   });
 
+  it('keyboard: up / down step through the list, Home / End jump', () => {
+    const ids = [5, 9, 12];
+    assert.equal(NS.stepSelection(ids, 9, 'ArrowDown'), 12);
+    assert.equal(NS.stepSelection(ids, 12, 'ArrowDown'), 12);
+    assert.equal(NS.stepSelection(ids, 9, 'ArrowUp'), 5);
+    assert.equal(NS.stepSelection(ids, 5, 'ArrowUp'), 5);
+    assert.equal(NS.stepSelection(ids, null, 'ArrowDown'), 5);
+    assert.equal(NS.stepSelection(ids, 9, 'Home'), 5);
+    assert.equal(NS.stepSelection(ids, 9, 'End'), 12);
+    assert.equal(NS.stepSelection(ids, 9, 'a'), null);
+    assert.equal(NS.stepSelection([], 9, 'ArrowDown'), null);
+  });
+
   it('nav badge text', () => {
     assert.equal(NS.badgeText(0), '');
     assert.equal(NS.badgeText(2), '2');
@@ -86,27 +203,54 @@ describe('inbox list', () => {
 });
 
 describe('inbox detail', () => {
-  it('pill: priority · topic', () => {
-    assert.deepEqual(NS.detailPill(entry(), TOPICS, t), { label: 'push.priority.critical · Geräte & Gateways', cls: 'c-err' });
-    assert.deepEqual(NS.detailPill(entry({ priority: 'info', topic: null }), TOPICS, t), { label: 'push.priority.info', cls: '' });
+  it('breadcrumb: source › topic', () => {
+    const c = NS.breadcrumb(entry({ topic: 'plugin:gatecontrol-skoda:trip' }), PTOPICS, t);
+    assert.equal(c.source, 'Fahrzeuge');
+    assert.equal(c.topic, 'Fahrt erfasst (Fahrtenbuch)');
+    assert.ok(c.badge.paths);
+    assert.deepEqual(NS.breadcrumb(entry({ topic: null }), PTOPICS, t).topic, '');
   });
 
-  it('facts: data.facts from the server plus when and how it arrived', () => {
+  it('received line: day, clock and the path', () => {
+    assert.equal(NS.receivedLine(entry(), t, { now: NOW }), 'ui.inbox.receivedAt(ui.inbox.today, 21:42 · push.via.tunnel)');
+    assert.equal(NS.receivedLine(entry({ via: null, received_at: at(8, 15, -1) }), t, { now: NOW }), 'ui.inbox.receivedAt(ui.inbox.yesterdayDay, 08:15)');
+    assert.equal(NS.receivedLine(entry({ received_at: null, created_at: null }), t, { now: NOW }), '');
+  });
+
+  it('facts: data.facts from the server, cleaned and capped at 6', () => {
     const e = entry({
       data: { facts: [{ label: 'Letztes Lebenszeichen', value: '21:40' }, { label: 'Betroffene Routen', value: 6 }, { label: '', value: 'x' }, 'junk'] },
     });
-    assert.deepEqual(NS.entryFacts(e, t, { now: NOW }), [
+    assert.deepEqual(NS.entryFacts(e), [
       { label: 'Letztes Lebenszeichen', value: '21:40' },
       { label: 'Betroffene Routen', value: '6' },
-      { label: 'ui.inbox.received', value: '21:42 · push.via.tunnel' },
     ]);
-    const old = NS.entryFacts(entry({ via: null, received_at: at(8, 15, -1) }), t, { now: NOW });
-    assert.deepEqual(old, [{ label: 'ui.inbox.received', value: 'ui.inbox.yesterday 08:15' }]);
+    const facts = Array.from({ length: 10 }, (_, i) => ({ label: `L${i}`, value: `V${i}` }));
+    assert.equal(NS.entryFacts(entry({ data: { facts } })).length, 6);
+    assert.deepEqual(NS.entryFacts(entry()), []);
   });
 
-  it('facts are capped (at most 6 from the server)', () => {
-    const facts = Array.from({ length: 10 }, (_, i) => ({ label: `L${i}`, value: `V${i}` }));
-    assert.equal(NS.entryFacts(entry({ data: { facts } }), t, { now: NOW }).length, 7);
+  it('buttons: answer buttons are equal and the given answer is marked; else the first is primary', () => {
+    const answers = [
+      { id: 'private', label: 'Privat', type: 'callback' },
+      { id: 'business', label: 'Geschäftlich', type: 'callback' },
+    ];
+    assert.deepEqual(NS.actionButtons(entry({ actions: answers })), {
+      buttons: [
+        { id: 'private', label: 'Privat', cls: 'btn-sec', chosen: false },
+        { id: 'business', label: 'Geschäftlich', cls: 'btn-sec', chosen: false },
+      ],
+      answered: '',
+    });
+    const done = NS.actionButtons(entry({ actions: answers, acted: 'business' }));
+    assert.deepEqual(done.buttons.map((b) => [b.cls, b.chosen]), [['btn-sec', false], ['btn-pri', true]]);
+    assert.equal(done.answered, 'Geschäftlich');
+    const plain = NS.actionButtons(entry({ acted: 'mute_1h', actions: [
+      { id: 'details', label: 'Details', type: 'open_app_route' }, { id: 'mute_1h', label: '1 h stumm', type: 'mute_1h' },
+    ] }));
+    assert.deepEqual(plain.buttons.map((b) => [b.cls, b.chosen]), [['btn-pri', false], ['btn-sec', false]]);
+    assert.equal(plain.answered, '');
+    assert.deepEqual(NS.actionButtons(entry({ actions: null })), { buttons: [], answered: '' });
   });
 });
 
@@ -120,6 +264,9 @@ describe('inbox empty states and hints', () => {
     assert.equal(NS.emptyState({ ...base, status: { state: 'disabled', reason: 'not_configured' } }), 'notConfigured');
     assert.equal(NS.emptyState({ ...base, status: { state: 'connected' }, error: true }), 'error');
     assert.equal(NS.emptyState({ ...base, status: { state: 'connected' }, total: 3, filter: 'unread' }), 'filtered');
+    assert.equal(NS.emptyState({ ...base, status: { state: 'connected' }, total: 3, filter: { read: 'unread', source: '' } }), 'filtered');
+    assert.equal(NS.emptyState({ ...base, status: { state: 'connected' }, total: 3, filter: { read: 'all', source: 'src:system' } }), 'filtered');
+    assert.equal(NS.emptyState({ ...base, status: { state: 'connected' }, total: 0, filter: { read: 'all', source: '' } }), 'empty');
     assert.equal(NS.emptyState({ ...base, status: { state: 'connected' } }), 'empty');
     assert.equal(NS.emptyState({ ...base, status: { state: 'connected' }, total: 3, shown: 3 }), null);
   });
@@ -233,6 +380,18 @@ describe('renderer wiring', () => {
     for (const fn of ['list(', 'read(', 'action(', 'getPrefs(', 'setPrefs(', 'test(', 'status(', 'dnd(', 'onNew(', 'onUpdate(', 'onStatus(', 'onNavigate(']) {
       assert.ok(renderer.includes(`notifyApi.${fn}`), fn);
     }
+  });
+
+  it('one compact filter row (Alle | Ungelesen + Quelle) and a keyboard list', () => {
+    assert.match(html, /id="inbox-read-seg"/);
+    assert.match(html, /data-read="all"/);
+    assert.match(html, /data-read="unread"/);
+    assert.match(html, /<select[^>]*id="inbox-source"/);
+    assert.match(html, /id="inbox-list"[^>]*role="listbox"/);
+    assert.doesNotMatch(html, /fchip/);
+    assert.match(renderer, /sessionStorage/);
+    assert.match(renderer, /NS\.stepSelection\(/);
+    assert.match(renderer, /NS\.groupByDay\(/);
   });
 
   it('builds entries with textContent only (server text is never HTML)', () => {

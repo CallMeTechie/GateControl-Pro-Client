@@ -2014,7 +2014,7 @@ const inbox = {
 	items: [],
 	topics: [],
 	unread: 0,
-	filter: 'all',
+	filter: { read: 'all', source: '' }, // see loadInboxFilter()
 	selectedId: null,
 	error: false,
 	loaded: false,
@@ -2067,46 +2067,92 @@ async function loadNotifyStatus() {
 	if (currentPage === 'inbox') renderInbox();
 }
 
-function renderInboxFilters() {
-	const host = $('#inbox-filters');
-	if (!host) return;
-	host.textContent = '';
-	for (const opt of NS.filterOptions(inbox.items, inbox.topics, inbox.filter, t)) {
-		const on = opt.id === inbox.filter;
-		const btn = h('button', `fchip${on ? ' on' : ''}`, opt.label);
-		btn.type = 'button';
-		btn.setAttribute('role', 'tab');
-		btn.setAttribute('aria-selected', on ? 'true' : 'false');
-		btn.dataset.filter = opt.id;
-		btn.addEventListener('click', () => {
-			inbox.filter = opt.id;
-			renderInbox();
-		});
-		host.appendChild(btn);
-	}
+// Filter of the list (read state × source), kept for this app session.
+const INBOX_FILTER_KEY = 'gc.inbox.filter';
+
+function loadInboxFilter() {
+	try { return NS.normalizeFilter(JSON.parse(window.sessionStorage.getItem(INBOX_FILTER_KEY) || 'null')); } catch { return NS.normalizeFilter(null); }
 }
 
-function createInboxRow(entry) {
+function setInboxFilter(next) {
+	inbox.filter = NS.normalizeFilter({ ...inbox.filter, ...next });
+	try { window.sessionStorage.setItem(INBOX_FILTER_KEY, JSON.stringify(inbox.filter)); } catch { /* not kept */ }
+	renderInbox();
+}
+
+const inboxLocale = () => ({ locale: window.gatecontrol.i18n.getLocale() });
+
+/** Source badge: the plugin's icon, else its initial (text only). */
+function inboxBadge(badge, cls) {
+	const box = h('span', cls);
+	if (badge.paths) {
+		const NSVG = 'http://www.w3.org/2000/svg';
+		const svg = document.createElementNS(NSVG, 'svg');
+		for (const [k, v] of [['viewBox', '0 0 24 24'], ['width', '17'], ['height', '17'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '1.8'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) svg.setAttribute(k, v);
+		for (const d of badge.paths) {
+			const p = document.createElementNS(NSVG, 'path');
+			p.setAttribute('d', d);
+			svg.appendChild(p);
+		}
+		box.appendChild(svg);
+	} else {
+		box.appendChild(h('span', 'inbox-ini', badge.initial));
+	}
+	return box;
+}
+
+function renderInboxFilters() {
+	const seg = $('#inbox-read-seg');
+	if (seg) {
+		for (const btn of seg.querySelectorAll('button')) {
+			const on = btn.dataset.read === inbox.filter.read;
+			btn.classList.toggle('on', on);
+			btn.setAttribute('aria-selected', on ? 'true' : 'false');
+		}
+	}
+	const sel = $('#inbox-source');
+	if (!sel) return;
+	sel.textContent = '';
+	for (const opt of NS.sourceOptions(inbox.items, inbox.topics, inbox.filter.source, t)) {
+		const o = h('option', null, NS.optionText(opt, t));
+		o.value = opt.value;
+		sel.appendChild(o);
+	}
+	sel.value = inbox.filter.source;
+	sel.title = sel.selectedOptions[0] ? sel.selectedOptions[0].textContent.trim() : '';
+}
+
+function createInboxRow(entry, tabbable) {
+	const v = NS.rowView(entry, inbox.topics, t);
 	const selected = entry.id === inbox.selectedId;
-	const unread = entry.state === 'delivered';
-	const row = h('button', `row inbox-row${selected ? ' sel' : ''}${unread ? ' unread' : ''}`);
+	const row = h('button', `row inbox-row${selected ? ' sel' : ''}${v.unread ? ' unread' : ''}`);
 	row.type = 'button';
-	row.setAttribute('role', 'listitem');
+	row.setAttribute('role', 'option');
+	row.setAttribute('aria-selected', selected ? 'true' : 'false');
+	row.tabIndex = tabbable ? 0 : -1;
 	row.dataset.id = String(entry.id);
-	if (selected) row.setAttribute('aria-current', 'true');
+	row.setAttribute('aria-label', [v.unread ? t('ui.inbox.unreadMark') : '', v.priority ? v.priority.label : '', v.label, v.title, v.preview, v.time].filter(Boolean).join(', '));
 	row.addEventListener('click', () => selectInboxEntry(entry.id));
 
-	row.appendChild(h('span', 'unread-dot'));
+	const tone = entry.priority === 'critical' ? ' crit' : entry.priority === 'high' ? ' high' : '';
+	const icon = inboxBadge(v.badge, `inbox-ico${tone}`);
+	if (v.labelTitle) icon.title = v.labelTitle;
+	icon.appendChild(h('span', 'inbox-udot'));
+	row.appendChild(icon);
+
 	const text = h('span', 'inbox-row-text');
-	text.appendChild(h('span', 'inbox-row-title', entry.title || '—'));
-	const meta = NS.rowMeta(entry, inbox.topics, t, { locale: window.gatecontrol.i18n.getLocale() });
-	const metaEl = h('span', 'inbox-row-meta');
-	if (meta.priority) {
-		metaEl.appendChild(h('span', `prio-${entry.priority}`, meta.priority.label));
-		if (meta.text) metaEl.appendChild(document.createTextNode(' · '));
+	const top = h('span', 'inbox-row-top');
+	const src = h('span', 'inbox-row-src');
+	if (v.priority) {
+		src.appendChild(h('span', `prio-${entry.priority}`, v.priority.label));
+		src.appendChild(document.createTextNode(' · '));
 	}
-	metaEl.appendChild(document.createTextNode(meta.text));
-	text.appendChild(metaEl);
+	src.appendChild(document.createTextNode(v.label));
+	top.appendChild(src);
+	if (v.time) top.appendChild(h('span', 'inbox-row-time', v.time));
+	text.appendChild(top);
+	text.appendChild(h('span', 'inbox-row-title', v.title));
+	if (v.preview) text.appendChild(h('span', 'inbox-row-body', v.preview));
 	row.appendChild(text);
 	return row;
 }
@@ -2120,8 +2166,20 @@ function renderInbox() {
 	if (inbox.selectedId !== null && !inbox.items.some((e) => e.id === inbox.selectedId)) inbox.selectedId = null;
 
 	const list = $('#inbox-list');
+	const hadFocus = list.contains(document.activeElement);
 	list.textContent = '';
-	shown.forEach((entry) => list.appendChild(createInboxRow(entry)));
+	const focusId = shown.some((e) => e.id === inbox.selectedId) ? inbox.selectedId : shown[0]?.id;
+	NS.groupByDay(shown, t, inboxLocale()).forEach((g, i) => {
+		const group = h('div', 'inbox-day');
+		group.setAttribute('role', 'group');
+		const head = h('div', 'inbox-day-label', g.label);
+		head.id = `inbox-day-${i}`;
+		group.setAttribute('aria-labelledby', head.id);
+		group.appendChild(head);
+		g.items.forEach((entry) => group.appendChild(createInboxRow(entry, entry.id === focusId)));
+		list.appendChild(group);
+	});
+	if (hadFocus) list.querySelector('.inbox-row[tabindex="0"]')?.focus();
 
 	const empty = inbox.loaded ? NS.emptyState({
 		status: inbox.status, prefs: inbox.prefs, total: inbox.items.length, shown: shown.length,
@@ -2135,7 +2193,7 @@ function renderInbox() {
 		$('#inbox-empty-hint').textContent = hint;
 		const action = $('#inbox-empty-action');
 		action.hidden = !(empty === 'off' || empty === 'error' || empty === 'filtered');
-		action.textContent = empty === 'filtered' ? t('ui.inbox.filterAll') : t(`ui.inbox.${empty}.action`);
+		action.textContent = empty === 'filtered' ? t('ui.inbox.resetFilter') : t(`ui.inbox.${empty}.action`);
 		action.dataset.kind = empty;
 	}
 
@@ -2155,19 +2213,34 @@ function renderInboxDetail() {
 	$('#inbox-detail-empty').hidden = !!entry || inbox.items.length === 0;
 	if (!entry) return;
 
-	const pill = NS.detailPill(entry, inbox.topics, t);
-	detail.appendChild(h('span', `chip ${pill.cls}`, pill.label));
+	// Quelle › Thema (+ priority when it matters)
+	const crumb = NS.breadcrumb(entry, inbox.topics, t);
+	const head = h('div', 'inbox-crumb');
+	head.appendChild(inboxBadge(crumb.badge, 'inbox-ico sm'));
+	const path = h('span', 'inbox-crumb-text');
+	path.appendChild(h('b', null, crumb.source));
+	if (crumb.topic) {
+		path.appendChild(h('span', 'inbox-crumb-sep', '›'));
+		path.appendChild(h('span', null, crumb.topic));
+	}
+	path.title = [crumb.source, crumb.topic].filter(Boolean).join(' › ');
+	head.appendChild(path);
+	const pill = NS.priorityPill(entry.priority, t);
+	if (pill) head.appendChild(h('span', `chip ${pill.cls}`, pill.label));
+	detail.appendChild(head);
+
 	detail.appendChild(h('h2', 'disp inbox-detail-title', entry.title || '—'));
+	const when = NS.receivedLine(entry, t, inboxLocale());
+	if (when) detail.appendChild(h('p', 'inbox-when', when));
 	if (entry.body) detail.appendChild(h('p', 'inbox-body', entry.body));
 
-	const facts = NS.entryFacts(entry, t, { locale: window.gatecontrol.i18n.getLocale() });
+	const facts = NS.entryFacts(entry);
 	if (facts.length) {
 		const grid = h('div', 'info-grid');
 		facts.forEach((f) => grid.appendChild(infoCard(f.label, f.value)));
 		detail.appendChild(grid);
 	}
 
-	const actions = Array.isArray(entry.actions) ? entry.actions : [];
 	// Schule message: open the timetable on its child / day (or the message) here in the app.
 	const schoolCtx = window.GCSchoolState && shownPages().includes('schule') ? window.GCSchoolState.entryContext(entry) : null;
 	if (schoolCtx) {
@@ -2188,12 +2261,14 @@ function renderInboxDetail() {
 		row.appendChild(btn);
 		detail.appendChild(row);
 	}
-	if (actions.length) {
+	const acts = NS.actionButtons(entry);
+	if (acts.buttons.length) {
 		const row = h('div', 'inbox-actions');
-		actions.forEach((a, i) => {
-			const btn = h('button', `btn ${i === 0 ? 'btn-pri' : 'btn-sec'}`, a.label);
+		acts.buttons.forEach((a) => {
+			const btn = h('button', `btn ${a.cls}`, a.label);
 			btn.type = 'button';
 			btn.dataset.action = a.id;
+			if (a.chosen) btn.setAttribute('aria-pressed', 'true');
 			btn.addEventListener('click', async () => {
 				btn.disabled = true;
 				const res = await notifyApi.action(entry.id, a.id).catch((err) => ({ ok: false, error: err?.message }));
@@ -2209,6 +2284,7 @@ function renderInboxDetail() {
 			row.appendChild(btn);
 		});
 		detail.appendChild(row);
+		if (acts.answered) detail.appendChild(h('p', 'inbox-answered', t('ui.inbox.answered', { label: acts.answered })));
 	}
 }
 
@@ -2226,6 +2302,19 @@ function selectInboxEntry(id) {
 			renderInboxBadge();
 		}).catch(() => {});
 	}
+}
+
+/** ↑ / ↓ / Pos1 / Ende in the list: the next entry is shown (and focused). */
+function onInboxListKey(e) {
+	if (e.altKey || e.ctrlKey || e.metaKey) return;
+	const ids = NS.filterItems(inbox.items, inbox.filter).map((x) => x.id);
+	const current = Number(document.activeElement?.closest?.('.inbox-row')?.dataset.id) || inbox.selectedId;
+	const next = NS.stepSelection(ids, current, e.key);
+	if (next === null) return;
+	e.preventDefault();
+	if (next !== inbox.selectedId) selectInboxEntry(next);
+	const row = $(`#inbox-list .inbox-row[data-id="${next}"]`);
+	if (row) { row.focus(); row.scrollIntoView({ block: 'nearest' }); }
 }
 
 /** Pages that exist right now (Chats / Schule / GateDrop / Vault only while the server offers them). */
@@ -2260,12 +2349,15 @@ function openSchool(context) {
 function openInbox(id = null) {
 	if (Number.isSafeInteger(id)) {
 		inbox.selectedId = id;
-		inbox.filter = 'all';
+		// the entry must be in the list: back to all when the filter hides it
+		const entry = inbox.items.find((e) => e.id === id);
+		if (!entry || !NS.filterItems([entry], inbox.filter).length) setInboxFilter({ read: 'all', source: '' });
 	}
 	navigateTo('inbox');
 }
 
 if (notifyAvailable()) {
+	inbox.filter = loadInboxFilter();
 	$('#inbox-read-all').addEventListener('click', async () => {
 		inbox.items.forEach((e) => { if (e.state === 'delivered') e.state = 'read'; });
 		inbox.unread = 0;
@@ -2275,10 +2367,14 @@ if (notifyAvailable()) {
 		loadInbox();
 	});
 
+	for (const btn of document.querySelectorAll('#inbox-read-seg button')) btn.addEventListener('click', () => setInboxFilter({ read: btn.dataset.read }));
+	$('#inbox-source').addEventListener('change', (e) => setInboxFilter({ source: e.currentTarget.value }));
+	$('#inbox-list').addEventListener('keydown', onInboxListKey);
+
 	$('#inbox-empty-action').addEventListener('click', (e) => {
 		const kind = e.currentTarget.dataset.kind;
 		if (kind === 'off') navigateTo('settings', { tab: 'notify' });
-		else if (kind === 'filtered') { inbox.filter = 'all'; renderInbox(); }
+		else if (kind === 'filtered') setInboxFilter({ read: 'all', source: '' });
 		else loadInbox({ refresh: true });
 	});
 
