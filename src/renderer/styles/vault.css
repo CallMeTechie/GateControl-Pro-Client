@@ -174,6 +174,12 @@
 .vt-set-row > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .vt-set-row b { font-weight: 600; }
 .vt-set-row span { font-size: 12.5px; color: var(--muted); }
+.vt-set-row .btn span { font-size: inherit; color: inherit; }
+/* Unlock with Windows Hello: the button first, "oder mit Hauptpasswort" between, why not when it cannot be used */
+.vt-or { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--faint); }
+.vt-or::before, .vt-or::after { content: ''; flex: 1; height: 1px; background: var(--line2); }
+.vt-hello-hint { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--panel2); font-size: 13px; color: var(--muted); }
+.vt-hello-hint svg { flex-shrink: 0; margin-top: 1px; color: var(--faint); }
 
 /* Sub pages (trash, vaults, emergency, import, settings) */
 .vt-page { flex-grow: 1; min-height: 0; overflow: auto; padding-bottom: 24px; display: flex; flex-direction: column; gap: 14px; }

@@ -389,7 +389,14 @@
       "rememberFailed": "Die gespeicherte Anmeldung gilt nicht mehr. Entsperre mit deinem Hauptpasswort.",
       "conflict": "Gleichzeitig auf einem anderen Gerät geändert. Versuche es noch einmal.",
       "invalid": "Die Eingabe ist nicht gültig.",
-      "setupGone": "Die Einrichtung wurde abgebrochen, weil Vault gesperrt wurde. Bitte gib dein Hauptpasswort noch einmal ein."
+      "setupGone": "Die Einrichtung wurde abgebrochen, weil Vault gesperrt wurde. Bitte gib dein Hauptpasswort noch einmal ein.",
+      "helloCancelled": "Windows Hello wurde abgebrochen.",
+      "helloLocked": "Windows Hello ist gesperrt (zu viele Versuche). Entsperre mit deinem Hauptpasswort.",
+      "helloFailed": "Windows Hello hat nicht geklappt.",
+      "helloInvalid": "Der Windows-Hello-Schlüssel gilt nicht mehr (z. B. weil Windows Hello neu eingerichtet wurde). Windows Hello ist jetzt aus – entsperre mit deinem Hauptpasswort.",
+      "helloUnavailable": "Windows Hello ist gerade nicht verfügbar. Entsperre mit deinem Hauptpasswort.",
+      "helloOff": "Windows Hello ist nicht eingeschaltet.",
+      "helloOn": "„Angemeldet bleiben“ geht nicht zusammen mit Windows Hello."
     },
     "notice": {
       "conflict": "Auf zwei Geräten gleichzeitig geändert – beide Fassungen bleiben erhalten (die Kopie ist als „Konflikt“ markiert).",
@@ -605,6 +612,30 @@
       "text": "Vault öffnet sich unter deinem Windows-Konto ohne Hauptpasswort (geschützt durch Windows). Das Hauptpasswort wird nicht gespeichert.",
       "unavailable": "Auf diesem PC nicht verfügbar."
     },
+    "hello": {
+      "title": "Mit Windows Hello entsperren",
+      "text": "Vault öffnet sich mit Gesicht, Fingerabdruck oder PIN von Windows Hello. Der Schlüssel bleibt bei Windows (im Sicherheitschip, wenn der PC einen hat), das Hauptpasswort wird nicht gespeichert. Wer deine Windows-PIN kennt, kann Vault an diesem PC dann ebenfalls öffnen.",
+      "replaces": "Ersetzt „Angemeldet bleiben“.",
+      "rememberOff": "Nicht zusammen mit Windows Hello – Windows Hello fragt jedes Mal nach dir.",
+      "button": "Mit Windows Hello entsperren",
+      "busy": "Warte auf Windows Hello …",
+      "orPassword": "oder mit Hauptpasswort",
+      "blocked": "Zu viele Versuche mit Windows Hello. Entsperre diesmal mit deinem Hauptpasswort.",
+      "confirmTitle": "Windows Hello einschalten",
+      "confirmText": "Bestätige mit deinem Hauptpasswort. Danach fragt Windows nach Gesicht, Fingerabdruck oder PIN – eventuell zweimal.",
+      "confirmButton": "Einschalten",
+      "turnedOn": "Windows Hello ist eingeschaltet.",
+      "turnedOff": "Windows Hello ist ausgeschaltet.",
+      "openSettings": "Windows Hello einrichten",
+      "reason": {
+        "unsupported": "Windows Hello ist auf diesem PC nicht verfügbar.",
+        "remote": "In einer Remotedesktop-Sitzung steht Windows Hello nicht zur Verfügung.",
+        "notSetUp": "Richte zuerst Windows Hello (Gesicht, Fingerabdruck oder PIN) in den Windows-Anmeldeoptionen ein.",
+        "noProtect": "Windows kann die Anmeldedaten auf diesem PC nicht schützen.",
+        "error": "Windows Hello antwortet gerade nicht.",
+        "unknown": "Windows Hello wird geprüft …"
+      }
+    },
     "quickInfo": {
       "title": "Schnellsuche",
       "text": "Mit Strg+Alt+P findest du Passwörter aus jedem Programm heraus."
@@ -809,7 +840,8 @@
       "hint": "Tippe, um zu suchen.",
       "unavailable": "Vault ist auf diesem Server nicht verfügbar.",
       "noAccount": "Richte Vault zuerst in GateControl ein.",
-      "nothing": "Dafür hat dieser Eintrag nichts."
+      "nothing": "Dafür hat dieser Eintrag nichts.",
+      "helloHint": "Vault ist gesperrt – Enter für Windows Hello oder Hauptpasswort eingeben und Enter drücken."
     },
     "inboxOpen": "In Vault öffnen",
     "wifi": {

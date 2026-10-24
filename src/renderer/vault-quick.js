@@ -3,8 +3,9 @@
  *
  * Type to search; Enter copies the password (a 2FA-only entry: its code),
  * Strg+B the user name, Strg+T the 2FA code, Strg+O opens the website,
- * ↑ / ↓ move, Esc closes. While Vault is locked the field takes the master
- * password (or the kept sign-in opens it right away). Copies go through main
+ * ↑ / ↓ move, Esc closes. While Vault is locked Windows Hello is asked
+ * right away when it is on (Enter on the empty field asks again), the field
+ * takes the master password (or the kept sign-in opens it right away). Copies go through main
  * (vault:copy, cleared after 30 s); the list carries no secrets — only the
  * current 2FA codes of the hits are shown, as in the mockup.
  *
@@ -25,7 +26,9 @@
 	const statusEl = $('vq-status');
 	const foot = $('vq-foot');
 
-	const S = { status: null, entries: [], names: new Map(), hits: [], sel: 0, codes: new Map(), busy: false, lastTouch: 0, hideTimer: null, gen: 0, shown: false };
+	const S = { status: null, entries: [], names: new Map(), hits: [], sel: 0, codes: new Map(), busy: false, helloBusy: false, lastTouch: 0, hideTimer: null, gen: 0, shown: false };
+
+	const helloPrimary = () => mode() === 'locked' && typeof Q.unlockHello === 'function' && VS.helloView(S.status, t).primary;
 
 	function el(tag, cls, text) {
 		const n = document.createElement(tag);
@@ -85,7 +88,9 @@
 			return;
 		}
 		if (m === 'locked') {
-			hitsEl.appendChild(el('div', 'vq-msg', S.busy ? t('vault.unlock.busy') : t('vault.quick.lockedHint')));
+			let msg = helloPrimary() ? t('vault.quick.helloHint') : t('vault.quick.lockedHint');
+			if (S.busy) msg = S.helloBusy ? t('vault.hello.busy') : t('vault.unlock.busy');
+			hitsEl.appendChild(el('div', 'vq-msg', msg));
 			return;
 		}
 		if (!input.value.trim()) { hitsEl.appendChild(el('div', 'vq-msg', t('vault.quick.hint'))); return; }
@@ -181,6 +186,25 @@
 		input.focus();
 	}
 
+	/** Windows Hello (main steps the window back for the dialog). quiet: the automatic ask — a cancel says nothing. */
+	async function unlockHello(quiet) {
+		if (S.busy) return;
+		S.busy = true;
+		S.helloBusy = true;
+		say('');
+		render();
+		const r = await Promise.resolve(Q.unlockHello()).catch(() => ({ ok: false, code: 'failed' }));
+		S.busy = false;
+		S.helloBusy = false;
+		if (r && r.ok) {
+			await refresh();
+		} else {
+			if (!(quiet && r && r.code === 'hello_cancelled')) say(VS.errorText(r, t), true);
+			await refresh();
+		}
+		input.focus();
+	}
+
 	function hideSoon(ms) {
 		clearTimeout(S.hideTimer);
 		S.hideTimer = setTimeout(() => Q.hide(), ms);
@@ -210,7 +234,10 @@
 		touch();
 		const m = mode();
 		if (m !== 'search') {
-			if (e.key === 'Escape') { e.preventDefault(); Q.hide(); } else if (e.key === 'Enter' && m === 'locked') { e.preventDefault(); unlock(); }
+			if (e.key === 'Escape') { e.preventDefault(); Q.hide(); } else if (e.key === 'Enter' && m === 'locked') {
+				e.preventDefault();
+				if (!input.value && helloPrimary()) unlockHello(false); else unlock();
+			}
 			return;
 		}
 		const action = VS.quickKey(e);
@@ -245,6 +272,11 @@
 		S.codes.clear();
 		await refresh();
 		const st = S.status;
+		if (helloPrimary() && !st.helloBusy) {
+			input.focus();
+			await unlockHello(true);
+			return;
+		}
 		if (mode() === 'locked' && st.remember && st.rememberAvailable && !(st.lastLock && st.lastLock.reason === 'manual')) {
 			S.busy = true;
 			render();

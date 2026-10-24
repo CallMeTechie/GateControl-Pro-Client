@@ -37,7 +37,7 @@ let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
 let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema, setupNotifications;
 let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
-let VaultService, setupVaultQuick;
+let VaultService, windowsHello, setupVaultQuick;
 let GateDropService, gatedropShell, setupGateDrop;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
 
@@ -95,7 +95,7 @@ try {
   ({ SchoolService } = require('@gatecontrol/client-core'));
   // Vault (plugin gatecontrol-vault): end-to-end encrypted password manager
   // (core docs/vault.md); quick search window on Strg+Alt+P.
-  ({ VaultService } = require('@gatecontrol/client-core'));
+  ({ VaultService, windowsHello } = require('@gatecontrol/client-core'));
   ({ setupVaultQuick } = require('./vault-quick'));
   // GateDrop (plugin gatecontrol-gatedrop): send / receive files, LAN listener,
   // "Senden an" in the Explorer (core services/gatedrop.js).
@@ -909,7 +909,9 @@ function initializeServices() {
 
   // Vault: shown while the server lists the plugin. Keys and decrypted entries
   // stay in this process while unlocked; the offline copy is ciphertext only;
-  // "Angemeldet bleiben" keeps the user key under DPAPI (safeStorage).
+  // "Angemeldet bleiben" keeps the user key under DPAPI (safeStorage);
+  // "Mit Windows Hello entsperren" wraps it under a Windows Hello signature
+  // (core services/windows-hello.js, WinRT via koffi; core docs/vault.md).
   vault = VaultService ? new VaultService({
     apiClient,
     dir: path.join(app.getPath('userData'), 'vault'),
@@ -918,6 +920,8 @@ function initializeServices() {
     notificationCenter: notifications?.notificationCenter,
     pushClient: notifications?.pushClient,
     powerMonitor,
+    hello: windowsHello ? windowsHello.createWindowsHello({ log }) : null,
+    helloName: 'GateControl Pro Vault',
     log,
   }) : null;
   vaultQuick = vault && setupVaultQuick ? setupVaultQuick({

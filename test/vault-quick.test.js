@@ -46,6 +46,9 @@ function fakes() {
     destroy() { this.destroyed = true; }
   }
   const vault = Object.assign(new EventEmitter(), { st: { state: 'unknown' }, status() { return this.st; } });
+  ipc.handlers = new Map();
+  ipc.handle = (ch, fn) => { if (ipc.handlers.has(ch)) throw new Error(`second handler for ${ch}`); ipc.handlers.set(ch, fn); };
+  ipc.removeHandler = (ch) => ipc.handlers.delete(ch);
   const o = {
     BrowserWindow: FakeWindow,
     globalShortcut: {
@@ -172,5 +175,38 @@ describe('Vault quick search window', () => {
     q.stop();
     assert.ok(w.destroyed);
     assert.equal(ipc.listenerCount('vault-quick:hide'), 0);
+  });
+
+  it('Windows Hello from its own page: steps back for the dialog (not on top, no hide on blur), then to the front', async () => {
+    const { o, ipc, windows, vault } = fakes();
+    const q = setupVaultQuick(o);
+    q.start();
+    vault.st = { state: 'available' };
+    vault.emit('state', vault.st);
+    q.show();
+    const w = windows[0];
+    const seen = [];
+    let release;
+    vault.unlockHello = () => {
+      seen.push([w.onTop[0], q.helloPrompting()]);
+      w.emit('blur');
+      return new Promise((r) => { release = r; });
+    };
+    const handler = ipc.handlers.get('vault-quick:hello');
+    assert.deepEqual(await handler({ sender: {} }), { ok: false, code: 'invalid' }, 'only the quick window itself');
+    const p = handler({ sender: w.webContents });
+    assert.deepEqual(seen, [[false, true]]);
+    assert.equal(w.visible, true, 'the Hello dialog taking the focus does not hide the window');
+    assert.deepEqual(await handler({ sender: w.webContents }), { ok: false, code: 'busy' });
+    release({ unlocked: true });
+    assert.deepEqual(await p, { ok: true, status: { unlocked: true } });
+    assert.deepEqual(w.onTop, [true, 'pop-up-menu']);
+    assert.equal(q.helloPrompting(), false);
+    vault.unlockHello = async () => { throw Object.assign(new Error('x'), { code: 'hello_cancelled' }); };
+    assert.deepEqual(await handler({ sender: w.webContents }), { ok: false, code: 'hello_cancelled' });
+    w.emit('blur');
+    assert.equal(w.visible, false, 'blur hides again afterwards');
+    q.stop();
+    assert.equal(ipc.handlers.has('vault-quick:hello'), false);
   });
 });
