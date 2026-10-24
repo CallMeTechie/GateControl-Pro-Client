@@ -526,6 +526,86 @@
 		return draft;
 	}
 
+	// ── 2FA key from a QR code ("QR-Code scannen") ───────────
+
+	const QR_SOURCES = ['screen', 'clipboard', 'file'];
+	const QR_BUSY = { screen: 'vault.qr.busyScreen', clipboard: 'vault.qr.busyClipboard', file: 'vault.qr.busyFile' };
+	const QR_NONE = { screen: 'vault.qr.err.noneScreen', clipboard: 'vault.qr.err.noneClipboard', file: 'vault.qr.err.noneFile' };
+	const QR_ERRORS = {
+		hotp: 'vault.qr.err.hotp', invalid_code: 'vault.qr.err.invalid', no_image: 'vault.qr.err.noImage', failed: 'vault.qr.err.failed',
+	};
+
+	const uriPart = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
+
+	/** An otpauth://totp URI → { issuer, account } (issuer parameter, else the label's "Issuer:" prefix). */
+	function totpQrInfo(uri) {
+		const m = /^otpauth:\/\/totp\/?([^?#]*)(?:\?([^#]*))?/i.exec(str(uri).trim());
+		if (!m) return { issuer: '', account: '' };
+		const label = uriPart(m[1]);
+		let issuer = '';
+		for (const kv of str(m[2]).split('&')) {
+			const i = kv.indexOf('=');
+			if (i > 0 && kv.slice(0, i).toLowerCase() === 'issuer') { issuer = uriPart(kv.slice(i + 1).replace(/\+/g, ' ')).trim(); break; }
+		}
+		const c = label.indexOf(':');
+		return { issuer: issuer || (c >= 0 ? label.slice(0, c).trim() : ''), account: (c >= 0 ? label.slice(c + 1) : label).trim() };
+	}
+
+	/** An e-mail address or a user name (no blanks, no ':'), worth putting into an empty user name field. */
+	function looksLikeUser(account) {
+		const a = str(account).trim();
+		return /^[^\s@:]+@[^\s@:]+\.[^\s@:]+$/.test(a) || /^[A-Za-z0-9][\w.+-]{1,63}$/.test(a);
+	}
+
+	/** Busy text of a scan. */
+	function totpQrBusy(source, t) {
+		return t(QR_BUSY[source] || QR_BUSY.screen);
+	}
+
+	/**
+	 * Answer of vault.totpQr(source) → what the dialog shows:
+	 * { kind: 'list', codes: [{ uri, issuer, account, title, sub }] } | { kind: 'error', code, text } | { kind: 'cancelled' }.
+	 * Only otpauth://totp URIs are kept (deduplicated); title / sub are for display (textContent only).
+	 */
+	function totpQrView(res, source, t) {
+		const none = () => ({ kind: 'error', code: 'none_found', text: t(QR_NONE[source] || QR_NONE.screen) });
+		if (!res || res.ok !== true) {
+			const code = str(res && res.code) || 'failed';
+			if (code === 'cancelled') return { kind: 'cancelled' };
+			if (code === 'none_found') return none();
+			if (code === 'unsupported') return { kind: 'error', code, text: t(source === 'file' ? 'vault.qr.err.unsupportedFile' : 'vault.qr.err.unsupportedScreen') };
+			const key = QR_ERRORS[code];
+			return { kind: 'error', code, text: key ? t(key) : errorText(res, t) };
+		}
+		const seen = new Set();
+		const codes = [];
+		for (const u of Array.isArray(res.uris) ? res.uris : []) {
+			const uri = str(u).trim();
+			if (!/^otpauth:\/\/totp[/?]/i.test(uri) || uri.length > 2048 || seen.has(uri)) continue;
+			seen.add(uri);
+			const { issuer, account } = totpQrInfo(uri);
+			codes.push({ uri, issuer, account, title: issuer || account || t('vault.qr.unnamed'), sub: issuer && account !== issuer ? account : '' });
+		}
+		return codes.length ? { kind: 'list', codes } : none();
+	}
+
+	/**
+	 * A picked code → the draft: the whole URI into the 2FA field (digits, period and algorithm stay in it), the
+	 * title from issuer / account while empty, for logins the user name from the account while empty (when it looks
+	 * like an e-mail address or user name).
+	 */
+	function applyTotpQr(draft, uri) {
+		const u = str(uri).trim();
+		if (!draft || !/^otpauth:\/\/totp[/?]/i.test(u)) return draft;
+		const { issuer, account } = totpQrInfo(u);
+		draft.fields = { ...(draft.fields || {}), totp: u };
+		if (!str(draft.title).trim()) draft.title = issuer || account;
+		if (draft.type === 'login' && !str(draft.fields.username).trim() && account && account.toLowerCase() !== issuer.toLowerCase() && looksLikeUser(account)) {
+			draft.fields.username = account;
+		}
+		return draft;
+	}
+
 	// ── Vaults, roles, people ────────────────────────────────
 
 	const roleLabel = (role) => `vault.role.${ROLES.includes(role) ? role : 'read'}`;
@@ -645,6 +725,7 @@
 		emptyDraft, draftFrom, draftToData, draftError, draftChanged, openableUrl,
 		strengthView, masterCheck, recoveryGroups, recoveryComplete,
 		errorText, wifiScanView, wifiBars, wifiSecurityLabel, wifiRowSub, applyWifi,
+		QR_SOURCES, totpQrInfo, looksLikeUser, totpQrBusy, totpQrView, applyTotpQr,
 		roleLabel, roleHint, writableVaults, candidates, initial,
 		waitText, remainingText, emStatusKey, importChips, importCount, autoLockChoices,
 		pushTarget, entryContext, gate,

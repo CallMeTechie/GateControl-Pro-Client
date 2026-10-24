@@ -833,6 +833,32 @@
         "location": "Seit Windows 11 24H2 braucht die WLAN-Suche den Standortzugriff. Schalte unter Einstellungen › Datenschutz und Sicherheit › Standort die „Standortdienste“ und „Desktop-Apps Zugriff auf Ihren Standort erlauben“ ein und suche dann erneut.",
         "failed": "Die WLAN-Suche hat nicht geklappt. Versuche es noch einmal."
       }
+    },
+    "qr": {
+      "scan": "QR-Code scannen",
+      "screen": "Vom Bildschirm",
+      "clipboard": "Aus Zwischenablage",
+      "file": "Bilddatei wählen…",
+      "title": "2FA-QR-Code",
+      "sub": "Wähle das Konto – der 2FA-Schlüssel wird übernommen.",
+      "list": "Gefundene 2FA-Codes",
+      "busyScreen": "Bildschirm wird durchsucht …",
+      "busyClipboard": "Bild aus der Zwischenablage wird gelesen …",
+      "busyFile": "Wähle ein Bild mit dem QR-Code …",
+      "again": "Erneut versuchen",
+      "applied": "2FA-Schlüssel übernommen",
+      "unnamed": "Ohne Namen",
+      "err": {
+        "noneScreen": "Kein 2FA-QR-Code auf dem Bildschirm gefunden. Zeige den QR-Code der Website an und versuche es erneut.",
+        "noneClipboard": "Im Bild in der Zwischenablage ist kein 2FA-QR-Code.",
+        "noneFile": "In diesem Bild ist kein 2FA-QR-Code.",
+        "hotp": "HOTP wird nicht unterstützt. Vault erzeugt nur zeitbasierte 2FA-Codes (TOTP).",
+        "invalid": "Der QR-Code enthält keinen gültigen 2FA-Schlüssel.",
+        "noImage": "In der Zwischenablage ist kein Bild. Kopiere den QR-Code (z. B. mit Windows + Umschalt + S) und versuche es erneut.",
+        "unsupportedFile": "Dieses Bild lässt sich nicht lesen. Versuche es mit einer PNG- oder JPG-Datei.",
+        "unsupportedScreen": "Der Bildschirm lässt sich nicht aufnehmen. Kopiere den QR-Code in die Zwischenablage oder speichere ihn als Bild.",
+        "failed": "Das Scannen hat nicht geklappt. Versuche es noch einmal."
+      }
     }
   }
 }
