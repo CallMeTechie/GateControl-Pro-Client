@@ -45,7 +45,7 @@
 		totp: [{ key: 'totp', secret: true, totp: true }],
 		note: [],
 		card: [{ key: 'holder' }, { key: 'number', secret: true }, { key: 'expiry' }, { key: 'cvc', secret: true }, { key: 'pin', secret: true }],
-		wifi: [{ key: 'ssid' }, { key: 'password', secret: true }, { key: 'security' }],
+		wifi: [{ key: 'ssid' }, { key: 'password', secret: true }, { key: 'security' }, { key: 'hidden', check: true }],
 		identity: [{ key: 'name' }, { key: 'email' }, { key: 'phone' }, { key: 'address', multiline: true }, { key: 'birthday' }],
 	};
 
@@ -304,11 +304,15 @@
 		const rows = [];
 		for (const f of FIELDS[type]) {
 			if (!str(fields[f.key])) continue;
+			if (f.check) { if (fieldOn(fields[f.key])) rows.push({ key: f.key, label: fieldLabel(f.key), check: true }); continue; }
 			rows.push({ key: f.key, label: fieldLabel(f.key), secret: !!f.secret, totp: !!f.totp, multiline: !!f.multiline, copy: f.key });
 		}
 		// identity: e-mail as user name of the type 'login' is not repeated
 		return rows;
 	}
+
+	/** A check field (the Wi-Fi's `hidden`) is on: true / 1 / ja / yes (the rule of core utils/vault.js wifiOf). */
+	const fieldOn = (v) => /^(true|1|ja|yes)$/i.test(str(v).trim());
 
 	/** Masked text of a secret: dots, at most 14. */
 	const mask = (value) => '•'.repeat(Math.min(Math.max(str(value).length, 8), 14));
@@ -814,7 +818,7 @@
 		plural, letter, tone, hashCode, when, clockOf, minSec, headerText, lockText,
 		vaultNames, rowSub, matches, filterEntries, sections, filterChips,
 		quickSearch, quickKey, quickCommand, moveSelection, prettyCode,
-		fieldLabel, detailRows, mask, maskedNumber, changedText,
+		fieldLabel, fieldOn, detailRows, mask, maskedNumber, changedText,
 		emptyDraft, draftFrom, draftToData, draftError, draftChanged, openableUrl,
 		strengthView, masterCheck, recoveryGroups, recoveryComplete,
 		errorText, helloReasonText, helloView, helloSetting, wifiScanView, wifiBars, wifiSecurityLabel, wifiRowSub, applyWifi,

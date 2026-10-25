@@ -282,6 +282,54 @@ test.describe('vault', () => {
     expect(v.srv.shares.size).toBe(0);
   });
 
+  test('Wi-Fi entry: the QR code built in main (big, full view), „Verstecktes Netz“ saved as hidden', async ({ launchApp, mock }) => {
+    mock.setVault();
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setupVault(page);
+    await page.locator('#vault-new').click();
+    await page.locator('.vt-menu .vt-mi').nth(4).click();   // Wi-Fi
+    await page.locator('#vault-edit-title').fill('Keller');
+    await page.locator('#vault-edit-ssid').fill('Keller-AP');
+    await page.locator('#vault-edit-password').fill('Korrekt:Pferd');
+    await expect(page.locator('#vault-edit-hidden')).not.toBeChecked();
+    await page.locator('#vault-edit-hidden').check();
+    await page.locator('#vault-edit-save').click();
+    const qr = page.locator('#vault-wifi-qr');
+    await expect(qr).toBeVisible();
+    expect(await qr.getAttribute('src')).toMatch(/^data:image\/svg\+xml;base64,/);
+    expect(await qr.evaluate((img) => img.naturalWidth)).toBeGreaterThan(0);
+    expect((await qr.boundingBox()).width).toBeGreaterThanOrEqual(200);
+    // white behind the code in every theme
+    expect(await page.locator('.vt-wqr').first().evaluate((n) => getComputedStyle(n).backgroundColor)).toBe('rgb(255, 255, 255)');
+    await expect(page.locator('#vault-detail [data-field="hidden"]')).toBeVisible();
+    // the page never gets the code's text (it holds the password)
+    const answer = await page.evaluate(async () => {
+      const list = await window.gatecontrol.vault.entries();
+      const e = list.entries.find((x) => x.title === 'Keller');
+      const q = await window.gatecontrol.vault.wifiQr({ id: e.id });
+      const full = await window.gatecontrol.vault.entry(e.id);
+      return { q: JSON.stringify(q), hidden: full.entry.data.fields.hidden };
+    });
+    expect(answer.q).not.toContain('Korrekt');
+    expect(answer.q).not.toContain('WIFI:');
+    expect(answer.hidden).toBe('true');
+    // full view: as big as the window allows
+    await page.locator('#vault-wifi-qr-full').click();
+    const big = page.locator('#vault-wifi-qr-big');
+    await expect(big).toBeVisible();
+    expect((await big.boundingBox()).width).toBeGreaterThanOrEqual(380);
+    await page.keyboard.press('Escape');
+    await expect(big).toHaveCount(0);
+    // off again → the field goes
+    await page.locator('#vault-edit').click();
+    await expect(page.locator('#vault-edit-hidden')).toBeChecked();
+    await page.locator('#vault-edit-hidden').uncheck();
+    await page.locator('#vault-edit-save').click();
+    await expect(page.locator('#vault-wifi-qr')).toBeVisible();
+    await expect(page.locator('#vault-detail [data-field="hidden"]')).toHaveCount(0);
+  });
+
   test('2FA from a QR code: real clipboard / screen / file, then the dialog with fixed answers', async ({ launchApp, mock }) => {
     mock.setVault();
     const { app, page } = await launchApp();

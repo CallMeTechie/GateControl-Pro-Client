@@ -507,7 +507,10 @@
       "email": "E-Mail",
       "phone": "Telefon",
       "address": "Adresse",
-      "birthday": "Geburtstag"
+      "birthday": "Geburtstag",
+      "hidden": "Verstecktes Netz",
+      "hiddenHint": "der Netzname wird nicht ausgestrahlt; der QR-Code sagt es dem Handy (H:true)",
+      "on": "Ja"
     },
     "custom": {
       "title": "Weitere Felder",
@@ -944,6 +947,12 @@
         "limit": "Es laufen schon 4 Freigaben auf diesem Ziel. Beende zuerst eine.",
         "trashed": "Der Eintrag liegt im Papierkorb."
       }
+    },
+    "wifiQr": {
+      "title": "WLAN-QR-Code",
+      "full": "Vollansicht",
+      "hint": "Mit der Handy-Kamera scannen, um sich mit dem WLAN zu verbinden.",
+      "label": "QR-Code für das WLAN {{ name }}"
     }
   }
 }

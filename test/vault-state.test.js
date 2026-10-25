@@ -197,6 +197,17 @@ describe('detail and edit draft', () => {
     assert.deepEqual(rows('login', { username: 'a' }), ['username']);
     assert.deepEqual(rows('card', { holder: 'M', number: '4111111111111111', expiry: '12/29', cvc: '123', pin: '0000' }), ['holder', 'number*', 'expiry', 'cvc*', 'pin*']);
     assert.deepEqual(rows('wifi', { ssid: 'Home', password: 'x', security: 'WPA2' }), ['ssid', 'password*', 'security']);
+    // „Verstecktes Netz“ (fields.hidden): a row only when on, no copy, no secret
+    assert.deepEqual(rows('wifi', { ssid: 'Home', hidden: 'true' }), ['ssid', 'hidden']);
+    assert.deepEqual(rows('wifi', { ssid: 'Home', hidden: 'nein' }), ['ssid']);
+    assert.equal(VS.detailRows({ data: { type: 'wifi', fields: { ssid: 'H', hidden: 'ja' } } })[1].check, true);
+    assert.deepEqual(['true', 'TRUE', '1', 'ja', 'yes', ' yes '].map(VS.fieldOn), [true, true, true, true, true, true]);
+    assert.deepEqual(['', 'false', '0', 'nein', null].map(VS.fieldOn), [false, false, false, false, false]);
+    assert.ok(VS.FIELDS.wifi.some((f) => f.key === 'hidden' && f.check));
+    // the draft keeps it as 'true', off removes it
+    const on = VS.draftToData({ ...VS.emptyDraft('wifi'), fields: { ssid: 'H', hidden: 'true' } });
+    assert.equal(on.fields.hidden, 'true');
+    assert.equal(VS.draftToData({ ...VS.emptyDraft('wifi'), fields: { ssid: 'H', hidden: '' } }).fields.hidden, undefined);
     assert.deepEqual(rows('identity', { name: 'M', email: 'm@x', phone: '1', address: 'A\nB', birthday: '1.1.' }), ['name', 'email', 'phone', 'address', 'birthday']);
     assert.deepEqual(rows('note', { password: 'stray' }), []);
     assert.deepEqual(rows('unknown', {}), []);
