@@ -196,7 +196,7 @@
 
 		// ── Calls ────────────────────────────────────────────
 		// Calls the core does not count as activity (list refreshes, 2FA countdown, …): they do not restart the auto-lock.
-		const PASSIVE = new Set(['check', 'sync', 'entries', 'vaults', 'totp', 'settings', 'emergency', 'people', 'status', 'helloCheck', 'wifiShares'].map((k) => api[k]).filter(Boolean));
+		const PASSIVE = new Set(['check', 'sync', 'entries', 'vaults', 'totp', 'settings', 'emergency', 'people', 'status', 'helloCheck', 'wifiShares', 'wifiQr'].map((k) => api[k]).filter(Boolean));
 		async function call(fn, ...args) {
 			if (!PASSIVE.has(fn)) S.lastActivity = now();
 			let r;
@@ -369,6 +369,7 @@
 			for (const k of ['detail', 'emDetail', 'page']) if (refs[k]) clear(refs[k]);
 			refs.detailKey = null;
 			refs.totpCode = null;
+			refs.wifiQr = null;   // the picture holds the password
 			refs.genOut = null;
 		}
 
@@ -1368,6 +1369,7 @@
 			const add = (label, value, acts) => grid.append(el('span', { class: 'vt-grid-l', text: label }), value, el('div', { class: 'vt-grid-a' }, acts));
 			for (const row of VS.detailRows(d)) {
 				const label = t(row.label);
+				if (row.check) { add(label, el('span', { class: 'vt-grid-v', 'data-field': row.key, text: t('vault.field.on') }), []); continue; }
 				if (row.totp) {
 					const box = el('span', { class: 'vt-totp' });
 					refs.totpCode = el('span', { class: 'vt-totp-code', id: 'vault-totp-code', text: '··· ···' });
@@ -1411,6 +1413,8 @@
 				]);
 			});
 			if (grid.childNodes.length) out.push(grid);
+			// the Wi-Fi QR code (core vault.wifiQr builds the picture in main — the page never gets its text)
+			if (data.type === 'wifi' && VS.wifiShareable(data) && typeof api.wifiQr === 'function') out.push(wifiQrBlock(d, emergencyId));
 			if (data.notes) {
 				out.push(el('div', { class: 'vt-block' }, [
 					el('div', { class: 'vt-page-head' }, [el('span', { class: 'lbl', style: 'flex-grow:1', text: t('vault.field.notes') }), btn('btn-ghost btn-xs', t('vault.copy'), () => copy(copyArg('notes'), t('vault.field.notes')))]),
@@ -1420,6 +1424,48 @@
 			if (d.trashed) out.push(el('div', { class: 'vt-note vt-note-neutral', text: t('vault.trash.info') }));
 			if (foot && foot.some(Boolean)) out.push(el('div', { class: 'vt-d-foot' }, foot));
 			return out;
+		}
+
+		/** The Wi-Fi QR code: large, dark on white in every theme; „Vollansicht“ shows it as big as the window allows. */
+		function wifiQrBlock(d, emergencyId) {
+			const key = `${emergencyId || ''}:${d.id}:${d.rev}`;
+			const img = el('img', { class: 'vt-wqr-img', id: 'vault-wifi-qr', alt: t('vault.wifiQr.label', { name: String((d.data.fields || {}).ssid || '') }), width: '240', height: '240' });
+			const box = el('div', { class: 'vt-wqr' }, [img]);
+			const err = el('span', { class: 'vt-note-line', hidden: true });
+			const show = (q) => {
+				if (q && q.ok && typeof q.image === 'string' && /^data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+$/.test(q.image)) { img.src = q.image; img.hidden = false; err.hidden = true; }
+				else { img.hidden = true; err.textContent = VS.errorText(q, t); err.hidden = false; }
+			};
+			if (refs.wifiQr && refs.wifiQr.key === key) show(refs.wifiQr.res);
+			else {
+				img.hidden = true;
+				call(api.wifiQr, emergencyId ? { id: d.id, emergencyId } : { id: d.id }).then((r) => { refs.wifiQr = { key, res: r }; if (img.isConnected) show(r); });
+			}
+			return el('div', { class: 'vt-block vt-wqr-block' }, [
+				el('div', { class: 'vt-page-head' }, [
+					el('span', { class: 'lbl', style: 'flex-grow:1', text: t('vault.wifiQr.title') }),
+					btn('btn-ghost btn-xs', [icon('qr', 14), el('span', { text: t('vault.wifiQr.full') })], () => wifiQrFull(d), { id: 'vault-wifi-qr-full' }),
+				]),
+				el('div', { class: 'vt-wqr-row' }, [
+					el('button', { type: 'button', class: 'vt-wqr-btn', title: t('vault.wifiQr.full'), 'aria-label': t('vault.wifiQr.full'), on: { click: () => wifiQrFull(d) } }, [box]),
+					el('span', { class: 'vt-note-line', text: t('vault.wifiQr.hint') }),
+				]),
+				err,
+			]);
+		}
+
+		/** The QR code as big as the window allows (white, the network name above it). */
+		function wifiQrFull(d) {
+			const res = refs.wifiQr && refs.wifiQr.res;
+			if (!res || !res.ok) return;
+			dialog({
+				title: String((d.data.fields || {}).ssid || t('vault.wifiQr.title')),
+				sub: t('vault.wifiQr.hint'),
+				body: [el('div', { class: 'vt-wqr vt-wqr-full' }, [el('img', { class: 'vt-wqr-img', id: 'vault-wifi-qr-big', alt: t('vault.wifiQr.label', { name: res.ssid || '' }), src: res.image })])],
+				actions: [{ label: t('vault.close'), cls: 'btn-pri', run: () => closeDialog() }],
+			});
+			const box = rootEl.querySelector('.vt-dialog');
+			if (box) box.classList.add('vt-dialog-qr');
 		}
 
 		function rerenderDetail() {
@@ -1605,6 +1651,14 @@
 				const label = t(f.totp ? 'vault.field.totpSecret' : `vault.field.${f.key}`);
 				const value = dr.fields[f.key] || '';
 				const set = (v) => { dr.fields[f.key] = v; };
+				if (f.check) {
+					// „Verstecktes Netz“: fields.hidden 'true' (gone when off) — the QR code and a share get H:true
+					form.appendChild(el('label', { class: 'vt-check' }, [
+						el('input', { type: 'checkbox', id, checked: VS.fieldOn(value), on: { change: (e) => set(e.target.checked ? 'true' : '') } }),
+						el('span', null, [t(`vault.field.${f.key}`), el('span', { class: 'vt-note-line', text: ` · ${t('vault.field.hiddenHint')}` })]),
+					]));
+					continue;
+				}
 				if (f.secret) {
 					const p = secret(id, value, set, label);
 					const extra = [];

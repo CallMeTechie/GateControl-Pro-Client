@@ -507,7 +507,10 @@
       "email": "E-mail",
       "phone": "Phone",
       "address": "Address",
-      "birthday": "Birthday"
+      "birthday": "Birthday",
+      "hidden": "Hidden network",
+      "hiddenHint": "the network name is not broadcast; the QR code tells the phone (H:true)",
+      "on": "Yes"
     },
     "custom": {
       "title": "More fields",
@@ -944,6 +947,12 @@
         "limit": "4 shares are already running on this target. End one first.",
         "trashed": "The entry is in the trash."
       }
+    },
+    "wifiQr": {
+      "title": "Wi-Fi QR code",
+      "full": "Full view",
+      "hint": "Scan it with a phone camera to join the Wi-Fi.",
+      "label": "QR code for the Wi-Fi {{ name }}"
     }
   }
 }
