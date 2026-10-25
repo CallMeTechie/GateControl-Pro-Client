@@ -170,10 +170,25 @@ Check (-not (Test-Path (Join-Path $e2eDir 'userData'))) "packaged app ignored GC
 $ksRules = @(GcRules | Where-Object { $_.DisplayName -like "$($cfg.RulePrefix)_*" })
 Check ($ksRules.Count -eq 0) "no kill-switch/RDP-allow rules after app start"
 
-# Pro: the app registers this task when "start with Windows" is enabled
-# (schtasks, because the app needs admin rights). Make sure it exists so the
-# uninstall check below is meaningful.
+# Pro: the app registers this task on every start while "start with Windows"
+# is on (default), from a task XML (src/main/autostart.js): no 3-day execution
+# time limit, starts and keeps running on battery, normal priority. The two
+# launches above have registered it.
 if ($Edition -eq 'pro') {
+  $taskXml = (schtasks /Query /TN GateControlProAutostart /XML 2>$null) -join "`n"
+  Check ($LASTEXITCODE -eq 0 -and $taskXml) "autostart task GateControlProAutostart registered by the app"
+  if ($taskXml) {
+    Check ($taskXml -match '<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>') "autostart task: no execution time limit (PT0S)"
+    Check ($taskXml -match '<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>') "autostart task: starts on battery"
+    Check ($taskXml -match '<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>') "autostart task: keeps running on battery"
+    Check ($taskXml -match '<Priority>4</Priority>') "autostart task: normal priority (4)"
+    Check ($taskXml -match '<RunLevel>HighestAvailable</RunLevel>') "autostart task: elevated (HighestAvailable)"
+    Check ($taskXml -match ('<Command>"?' + [regex]::Escape($exe) + '"?</Command>')) "autostart task starts the installed exe"
+  }
+  $mainLog = Join-Path $userData 'logs\main.log'
+  if (Test-Path $mainLog) { Select-String -Path $mainLog -Pattern 'Autostart' | Select-Object -Last 4 | ForEach-Object { Write-Host "  log: $($_.Line)" } }
+
+  # Make sure it exists so the uninstall check below is meaningful.
   schtasks /Query /TN GateControlProAutostart *> $null
   if ($LASTEXITCODE -ne 0) {
     schtasks /Create /F /TN GateControlProAutostart /TR "`"$exe`" --hidden" /SC ONLOGON /RL HIGHEST *> $null

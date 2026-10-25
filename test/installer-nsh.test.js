@@ -316,9 +316,10 @@ describe('NSIS installer script (build/installer.nsh)', () => {
   });
 
   it('removes the autostart task the app registers, only on a real uninstall', () => {
-    const main = fs.readFileSync(path.join(ROOT, MAIN_JS), 'utf8');
-    const task = main.match(/const AUTOSTART_TASK = '([^']+)'/);
-    assert.ok(task, 'AUTOSTART_TASK in main.js nicht gefunden');
+    // src/main/autostart.js registers it (task from a task XML, see there)
+    const { AUTOSTART_TASK } = require(path.join(ROOT, 'src', 'main', 'autostart.js'));
+    const task = [null, AUTOSTART_TASK];
+    assert.ok(/^[A-Za-z]+$/.test(task[1] || ''), 'AUTOSTART_TASK in src/main/autostart.js nicht gefunden');
     const body = macroBody('customUnInstall');
     const del = body.indexOf('schtasks /Delete /F /TN "' + task[1] + '"');
     assert.ok(del > 0, 'customUnInstall loescht die Autostart-Aufgabe ' + task[1] + ' nicht');

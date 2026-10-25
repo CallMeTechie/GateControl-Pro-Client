@@ -41,6 +41,7 @@ let SchoolService;
 let VaultService, windowsHello, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
+let installWindowGuard, autostartTask, createAutostart;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
@@ -111,6 +112,9 @@ try {
   ({ collectSupportBundle } = require('@gatecontrol/client-core/src/support/collector'));
   ({ getMachineFingerprint } = require('@gatecontrol/client-core/src/utils/machine-id'));
   ({ shortDeviceId, withDeviceId } = require('./device-id'));
+  ({ installWindowGuard } = require('@gatecontrol/client-core/src/utils/window-guard'));
+  autostartTask = require('@gatecontrol/client-core/src/utils/autostart-task');
+  ({ createAutostart } = require('./autostart'));
 
   writeCrashLog('IMPORT', 'All imports successful');
 
@@ -144,6 +148,17 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.exit(0);
 }
+
+// ── Fenster-Schutz ───────────────────────────────────────────
+// Every window (main window, Vault quick search, …): only the app's own
+// pages, http(s) links in the system browser, no new windows, no <webview>
+// (core utils/window-guard). Links of the renderer go through
+// shell:open-external and are not affected.
+installWindowGuard(app, {
+  appRoots: [path.join(__dirname, '..', 'renderer')],
+  getShell: () => shell,
+  log,
+});
 
 // ── Konfiguration ────────────────────────────────────────────
 const crypto = require('crypto');
@@ -1115,27 +1130,16 @@ function initializeServices() {
 }
 
 // ── IPC Handlers ─────────────────────────────────────────────
-const AUTOSTART_TASK = 'GateControlProAutostart';
-
 // Autostart via Task Scheduler (requireAdministrator: login items would not
-// start the app elevated).
-async function setAutostartTask(enabled) {
-  if (enabled) {
-    const exePath = app.getPath('exe');
-    await execFileAsync('schtasks', [
-      '/Create', '/F',
-      '/TN', AUTOSTART_TASK,
-      '/TR', `"${exePath}"`,
-      '/SC', 'ONLOGON',
-      '/RL', 'HIGHEST',
-      '/DELAY', '0000:10',
-    ]);
-    log.info(`Autostart enabled: ${exePath}`);
-  } else {
-    await execFileAsync('schtasks', ['/Delete', '/F', '/TN', AUTOSTART_TASK]);
-    log.info('Autostart disabled');
-  }
-}
+// start the app elevated). Task from a task XML: no 3-day limit, runs on
+// battery, normal priority (src/main/autostart.js).
+const setAutostartTask = createAutostart({
+  autostartTask,
+  execFile: execFileAsync,
+  getExePath: () => app.getPath('exe'),
+  getTempPath: () => app.getPath('temp'),
+  log,
+});
 
 // Which DNS server does the system use right now?
 async function checkSystemDns() {
