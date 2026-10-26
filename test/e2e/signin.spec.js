@@ -27,14 +27,34 @@ function enrollCodes(mock) {
   return mock.requests.filter((r) => r.path === '/api/v1/client/enroll').map((r) => JSON.parse(r.raw.toString('utf8')).code);
 }
 
-/** No file the app wrote (logs, events, store) contains the secret. */
+/**
+ * None of the files the app writes itself (its logs, the e2e events, the
+ * stores in userData, its console output) contains the secrets. Chromium's
+ * own profile files stay out: Windows keeps them locked while the app runs.
+ */
 function assertNotWritten(dir, secrets) {
-  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
-    const p = path.join(d, e.name);
-    if (e.isDirectory()) return walk(p);
-    return e.isFile() ? [p] : []; // skips Chromium's Singleton* symlinks
-  });
-  for (const file of walk(dir)) {
+  const files = [];
+  const walk = (d) => {
+    if (!fs.existsSync(d)) return;
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.isFile()) files.push(p);
+    }
+  };
+  walk(path.join(dir, 'logs'));
+  walk(path.join(dir, 'userData', 'logs')); // electron-log (main.log)
+  for (const name of ['events.jsonl', 'main-process.log']) {
+    if (fs.existsSync(path.join(dir, name))) files.push(path.join(dir, name));
+  }
+  const userData = path.join(dir, 'userData');
+  if (fs.existsSync(userData)) {
+    for (const e of fs.readdirSync(userData, { withFileTypes: true })) {
+      if (e.isFile() && e.name.endsWith('.json')) files.push(path.join(userData, e.name));
+    }
+  }
+  expect(files.some((f) => f.endsWith('.log') && fs.readFileSync(f, 'utf8').includes('Company sign-in')), 'the app log was checked').toBe(true);
+  for (const file of files) {
     const text = fs.readFileSync(file).toString('latin1');
     for (const s of secrets) expect(text.includes(s), `${s} in ${file}`).toBe(false);
   }
