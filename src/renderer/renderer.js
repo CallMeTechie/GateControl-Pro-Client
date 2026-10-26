@@ -11,6 +11,7 @@ const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
 	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, gatedrop: gatedropApi, vault: vaultApi,
+	signin: signinApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
 
@@ -68,6 +69,7 @@ const SVG_ICONS = {
 	external: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
 	trash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>',
 	close: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+	signinMs: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5M15 12H3"/></svg>',
 	stepIcons: '<svg class="si-done" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
 		+ '<svg class="si-active spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9"/></svg>'
 		+ '<svg class="si-error" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
@@ -401,7 +403,10 @@ function navigateTo(page, opts = {}) {
 	else if (prev === 'vault' && page !== 'vault') vaultView?.hide();
 	if (page === 'settings' && opts.tab) showSettingsTab(opts.tab);
 	if (page === 'setup' && prev !== 'setup') resetSetup();
-	if (prev === 'setup' && page !== 'setup') stopQRScan();
+	if (prev === 'setup' && page !== 'setup') {
+		stopQRScan();
+		cancelSignin();
+	}
 }
 
 $$('.nav[data-page]').forEach((btn) => {
@@ -1525,7 +1530,7 @@ function showSplitStatus(msg, type) {
 // ══════════════════════════════════════════════════════════
 //  SETUP ASSISTANT
 // ══════════════════════════════════════════════════════════
-const SETUP_ORDER = { choose: 1, code: 2, qr: 2, done: 3 };
+const SETUP_ORDER = { choose: 1, code: 2, signin: 2, qr: 2, done: 3 };
 
 function showSetupStep(step) {
 	setupStep = step;
@@ -1544,6 +1549,7 @@ function resetSetup() {
 	setupDone = null;
 	$('#setup-choose-status').hidden = true;
 	$('#setup-status').hidden = true;
+	cancelSignin();
 	showSetupStep('choose');
 }
 
@@ -1566,13 +1572,17 @@ $('#setup-opt-code').addEventListener('click', () => {
 	if (!urlInput.value) urlInput.value = el.serverUrl.value || '';
 	updateSetupSubmit();
 	showSetupStep('code');
+	lookupSignin();
 	(urlInput.value ? $('#setup-key') : urlInput).focus();
 });
 
 function updateSetupSubmit() {
 	$('#setup-submit').disabled = !$('#setup-url').value.trim() || $('#setup-key').value.trim().length < 4;
 }
-$('#setup-url').addEventListener('input', updateSetupSubmit);
+$('#setup-url').addEventListener('input', () => {
+	updateSetupSubmit();
+	lookupSignin();
+});
 $('#setup-key').addEventListener('input', updateSetupSubmit);
 $('#setup-key').addEventListener('keydown', (e) => {
 	if (e.key === 'Enter' && !$('#setup-submit').disabled) $('#setup-submit').click();
@@ -1606,6 +1616,178 @@ $('#setup-submit').addEventListener('click', async () => {
 		showStatus(statusEl, t('server.testError', { error: err.message }), 'error');
 	}
 	updateSetupSubmit();
+});
+
+// ── Company sign-in ("Mit Firmenkonto anmelden", GateControl ≥ 1.201.0) ──
+// After the server address: ask the server which sign-in methods it offers.
+// Older servers (404) or no answer → the entry stays hidden. Password and
+// Microsoft sign-in end with a setup code that the main process redeems
+// through the normal setup-code path; the page never sees the code.
+const SIGNIN_LOOKUP_DELAY_MS = 500;
+let signinOffer = null; // { url, methods } of the server in #setup-url
+let signinLookupId = 0;
+let signinLookupTimer = null;
+let signinBusy = null; // null | 'password' | 'browser'
+
+function setupServerUrl() {
+	const url = $('#setup-url').value.trim();
+	if (!url) return '';
+	return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+function lookupSignin() {
+	clearTimeout(signinLookupTimer);
+	const id = ++signinLookupId;
+	signinOffer = null;
+	$('#setup-signin-entry').hidden = true;
+	const url = setupServerUrl();
+	if (!url || !signinApi) return;
+	signinLookupTimer = setTimeout(async () => {
+		let methods = null;
+		try { methods = await signinApi.methods(url); } catch { methods = null; }
+		if (id !== signinLookupId) return; // the address changed meanwhile
+		if (methods && methods.available) {
+			signinOffer = { url, methods };
+			$('#setup-signin-entry').hidden = false;
+		}
+	}, SIGNIN_LOOKUP_DELAY_MS);
+}
+
+function cancelSignin() {
+	if (signinBusy === 'browser' && signinApi) signinApi.cancel().catch(() => {});
+}
+
+function renderSignin() {
+	const { url, methods } = signinOffer;
+	$('#setup-signin-host').textContent = hostOf(url);
+
+	const ms = $('#setup-signin-ms');
+	ms.textContent = '';
+	methods.microsoft.forEach((m) => {
+		const btn = h('button', 'opt');
+		btn.type = 'button';
+		btn.dataset.id = String(m.id);
+		setStaticIcon(btn, 'signinMs');
+		const grow = h('span', 'grow');
+		const title = h('span', 'opt-title', t('ui.setup.signinMicrosoft'));
+		title.dataset.i18n = 'ui.setup.signinMicrosoft';
+		grow.appendChild(title);
+		if (m.label) grow.appendChild(h('span', 'opt-desc', m.label));
+		btn.appendChild(grow);
+		btn.addEventListener('click', () => signinMicrosoft(m.id));
+		ms.appendChild(btn);
+	});
+	ms.hidden = methods.microsoft.length === 0;
+
+	const pw = methods.password.enabled;
+	$('#setup-signin-sep').hidden = !(pw && methods.microsoft.length > 0);
+	$('#setup-signin-user-field').hidden = !pw;
+	$('#setup-signin-pass-field').hidden = !pw;
+	$('#setup-signin-submit').hidden = !pw;
+	const hint = $('#setup-signin-hint');
+	hint.textContent = methods.password.hint || '';
+	hint.hidden = !methods.password.hint;
+
+	$('#setup-signin-pass').value = '';
+	$('#setup-signin-totp').value = '';
+	$('#setup-signin-totp-field').hidden = true;
+	$('#setup-signin-status').hidden = true;
+	setSigninBusy(null);
+}
+
+function updateSigninSubmit() {
+	const totpOn = !$('#setup-signin-totp-field').hidden;
+	const ok = $('#setup-signin-user').value.trim() && $('#setup-signin-pass').value
+		&& (!totpOn || /^\d{6}$/.test($('#setup-signin-totp').value.replace(/\s/g, '')));
+	$('#setup-signin-submit').disabled = !!signinBusy || !ok;
+}
+
+function setSigninBusy(mode) {
+	signinBusy = mode;
+	$$('#setup-signin-ms .opt').forEach((b) => { b.disabled = !!mode; });
+	['#setup-signin-user', '#setup-signin-pass', '#setup-signin-totp'].forEach((sel) => { $(sel).disabled = !!mode; });
+	$('#setup-signin-cancel').hidden = mode !== 'browser';
+	$('#setup-signin-back').disabled = mode === 'password';
+	updateSigninSubmit();
+}
+
+function signinDone(result) {
+	const statusEl = $('#setup-signin-status');
+	if (result.success) {
+		serverUrl = signinOffer.url;
+		statusEl.hidden = true;
+		$('#setup-signin-pass').value = '';
+		$('#setup-signin-totp').value = '';
+		finishSetup('server.enrolled', { peerId: result.peerId });
+		return;
+	}
+	if (result.cancelled) {
+		statusEl.hidden = true;
+		return;
+	}
+	if (result.totpRequired) {
+		const field = $('#setup-signin-totp-field');
+		const first = field.hidden;
+		field.hidden = false;
+		$('#setup-signin-totp').value = '';
+		updateSigninSubmit();
+		$('#setup-signin-totp').focus();
+		showStatus(statusEl, result.error, first && result.code === 'totp_required' ? 'info' : 'error');
+		return;
+	}
+	showStatus(statusEl, result.error || t('server.signin.failedCode', { error: 'unknown' }), 'error');
+}
+
+async function signinPassword() {
+	if (signinBusy || !signinOffer || $('#setup-signin-submit').disabled) return;
+	const totpOn = !$('#setup-signin-totp-field').hidden;
+	showStatus($('#setup-signin-status'), t('ui.setup.signinRunning'), 'info');
+	setSigninBusy('password');
+	let result;
+	try {
+		result = await signinApi.password({
+			url: signinOffer.url,
+			username: $('#setup-signin-user').value.trim(),
+			password: $('#setup-signin-pass').value,
+			totp: totpOn ? $('#setup-signin-totp').value.replace(/\s/g, '') : undefined,
+		});
+	} catch (err) {
+		result = { success: false, error: err.message };
+	}
+	setSigninBusy(null);
+	signinDone(result);
+}
+
+async function signinMicrosoft(id) {
+	if (signinBusy || !signinOffer) return;
+	showStatus($('#setup-signin-status'), t('ui.setup.signinBrowser'), 'info');
+	setSigninBusy('browser');
+	let result;
+	try {
+		result = await signinApi.microsoft({ url: signinOffer.url, id });
+	} catch (err) {
+		result = { success: false, error: err.message };
+	}
+	setSigninBusy(null);
+	signinDone(result);
+}
+
+$('#setup-opt-signin').addEventListener('click', () => {
+	if (!signinOffer) return;
+	renderSignin();
+	showSetupStep('signin');
+	const first = signinOffer.methods.password.enabled ? $('#setup-signin-user') : $('#setup-signin-ms .opt');
+	if (first) first.focus();
+});
+$('#setup-signin-back').addEventListener('click', () => {
+	cancelSignin();
+	showSetupStep('code');
+});
+$('#setup-signin-cancel').addEventListener('click', cancelSignin);
+$('#setup-signin-submit').addEventListener('click', signinPassword);
+['#setup-signin-user', '#setup-signin-pass', '#setup-signin-totp'].forEach((sel) => {
+	$(sel).addEventListener('input', updateSigninSubmit);
+	$(sel).addEventListener('keydown', (e) => { if (e.key === 'Enter') signinPassword(); });
 });
 
 // Config import (.conf)

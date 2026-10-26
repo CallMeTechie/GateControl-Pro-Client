@@ -271,7 +271,18 @@
       "codeHint": "Alternativ kannst du einen API-Schlüssel (gc_…) einfügen.",
       "back": "Zurück",
       "submit": "Gerät einrichten",
-      "doneTitle": "Gerät eingerichtet"
+      "doneTitle": "Gerät eingerichtet",
+      "signin": "Mit Firmenkonto anmelden",
+      "signinDesc": "Ohne Code: mit deinem Benutzerkonto bei diesem Server",
+      "signinServer": "Server:",
+      "signinMicrosoft": "Mit Microsoft anmelden",
+      "signinUser": "E-Mail oder Benutzername",
+      "signinPassword": "Passwort",
+      "signinTotp": "Bestätigungscode",
+      "signinTotpHint": "6 Ziffern aus deiner Authenticator-App",
+      "signinSubmit": "Anmelden",
+      "signinRunning": "Anmeldung läuft …",
+      "signinBrowser": "Bitte melde dich im Browser an. Danach geht es hier von selbst weiter."
     },
     "inbox": {
       "title": "Mitteilungen",

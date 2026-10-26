@@ -271,7 +271,18 @@
       "codeHint": "You can also paste an API key (gc_…).",
       "back": "Back",
       "submit": "Set up device",
-      "doneTitle": "Device set up"
+      "doneTitle": "Device set up",
+      "signin": "Sign in with company account",
+      "signinDesc": "No code needed: use your account on this server",
+      "signinServer": "Server:",
+      "signinMicrosoft": "Sign in with Microsoft",
+      "signinUser": "Email or username",
+      "signinPassword": "Password",
+      "signinTotp": "Verification code",
+      "signinTotpHint": "6 digits from your authenticator app",
+      "signinSubmit": "Sign in",
+      "signinRunning": "Signing in …",
+      "signinBrowser": "Please sign in in your browser. The app continues on its own afterwards."
     },
     "inbox": {
       "title": "Notifications",
