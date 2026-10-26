@@ -32,6 +32,11 @@
  * /nominatim/search, /nominatim/reverse canned addresses (`setGeocode()`)
  * — the app's MapService points there in e2e mode (GC_E2E_MAP_URL).
  *
+ * Company sign-in: without `server.setSignin()` /api/v1/client/signin*
+ * answers 404 like a server before GateControl 1.201.0. With it,
+ * support/signin-mock.js answers (methods, password with optional 2FA,
+ * handoff with PKCE check).
+ *
  * The update offer is configurable per test (`server.setUpdate(...)`), all
  * requests are recorded (`server.requests`).
  */
@@ -42,6 +47,7 @@ const selfsigned = require('selfsigned');
 const { createMessenger } = require('./messenger-mock');
 const { createSchool } = require('./school-mock');
 const { createVault } = require('./vault-mock');
+const { createSignin } = require('./signin-mock');
 
 const API_TOKEN = 'gc_e2e_test_token';
 // 1 × 1 PNG, served for every map tile
@@ -105,6 +111,7 @@ async function startMockServer() {
   let messenger = null; // support/messenger-mock.js, null = no Messenger plugin
   let school = null; // support/school-mock.js, null = no Schule plugin
   let vault = null; // support/vault-mock.js, null = no Vault plugin
+  let signin = null; // support/signin-mock.js, null = server before company sign-in (404)
   const acks = [];
   const prefs = [];
   let geocode = {
@@ -215,6 +222,12 @@ async function startMockServer() {
           const n = addNotification({ topic: 'system', priority: 'info', title: 'Testnachricht', body: 'Benachrichtigungen kommen auf diesem Gerät an.' });
           return json(200, { ok: true, seq: n.seq });
         }
+        return json(404, { ok: false, error: 'not_found' });
+      }
+
+      // Company sign-in: public like enroll, 404 on servers without it.
+      if (route === 'signin' || route.startsWith('signin/')) {
+        if (signin && signin.handle({ method: req.method, route, raw }, json)) return undefined;
         return json(404, { ok: false, error: 'not_found' });
       }
 
@@ -337,6 +350,11 @@ async function startMockServer() {
     /** Canned Nominatim answers: { search: [results], reverse: result }. */
     setGeocode(g) { geocode = { ...geocode, ...g }; },
     pushPrefs: () => prefs.slice(),
+    /** Enables company sign-in (support/signin-mock.js); returns its state (issued codes, issueHandoff). */
+    setSignin(opts = {}) {
+      signin = createSignin(opts);
+      return signin;
+    },
     count(pathname) { return requests.filter((r) => r.path === pathname).length; },
     close: () => new Promise((resolve) => {
       for (const res of streams) res.end();

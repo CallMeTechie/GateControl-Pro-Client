@@ -721,7 +721,26 @@
 							<div class="field"><label for="setup-url" data-i18n="ui.setup.serverLabel">Server-Adresse</label><input class="inp mono" id="setup-url" type="url" placeholder="https://gate.example.com"></div>
 							<div class="field"><label for="setup-key" data-i18n="ui.setup.code">Einrichtungscode</label><input class="inp mono" id="setup-key" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" spellcheck="false" autocomplete="off"><span class="hint" data-i18n="ui.setup.codeHint">Alternativ kannst du einen API-Schlüssel (gc_…) einfügen.</span></div>
 							<span class="field-status" id="setup-status" aria-live="polite" hidden></span>
+							<!-- Company sign-in: only when the server offers it (GET /api/v1/client/signin) -->
+							<div class="setup-opts" id="setup-signin-entry" hidden>
+								<button class="opt" type="button" id="setup-opt-signin">
+									<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--acc-t)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/><path d="M15 9h4a2 2 0 0 1 2 2v10M3 21h18M7 7h4M7 11h4M7 15h4"/></svg>
+									<span class="grow"><span class="opt-title" data-i18n="ui.setup.signin">Mit Firmenkonto anmelden</span><span class="opt-desc" data-i18n="ui.setup.signinDesc">Ohne Code: mit deinem Benutzerkonto bei diesem Server</span></span>
+								</button>
+							</div>
 							<div class="setup-foot"><button class="btn btn-ghost setup-back" type="button" data-i18n="ui.setup.back">Zurück</button><span class="grow"></span><button class="btn btn-pri" id="setup-submit" type="button" disabled data-i18n="ui.setup.submit">Gerät einrichten</button></div>
+						</div>
+
+						<div class="setup-step" id="setup-signin">
+							<h1 class="disp setup-title sm" data-i18n="ui.setup.signin">Mit Firmenkonto anmelden</h1>
+							<p class="muted"><span data-i18n="ui.setup.signinServer">Server:</span> <span class="mono" id="setup-signin-host"></span></p>
+							<div class="setup-opts" id="setup-signin-ms" hidden></div>
+							<div class="divider" id="setup-signin-sep" hidden></div>
+							<div class="field" id="setup-signin-user-field"><label for="setup-signin-user" data-i18n="ui.setup.signinUser">E-Mail oder Benutzername</label><input class="inp" id="setup-signin-user" type="text" spellcheck="false" autocomplete="username" maxlength="256"></div>
+							<div class="field" id="setup-signin-pass-field"><label for="setup-signin-pass" data-i18n="ui.setup.signinPassword">Passwort</label><input class="inp" id="setup-signin-pass" type="password" autocomplete="current-password" maxlength="1024"><span class="hint" id="setup-signin-hint" hidden></span></div>
+							<div class="field" id="setup-signin-totp-field" hidden><label for="setup-signin-totp" data-i18n="ui.setup.signinTotp">Bestätigungscode</label><input class="inp mono" id="setup-signin-totp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123456" spellcheck="false"><span class="hint" data-i18n="ui.setup.signinTotpHint">6 Ziffern aus deiner Authenticator-App</span></div>
+							<span class="field-status" id="setup-signin-status" aria-live="polite" hidden></span>
+							<div class="setup-foot"><button class="btn btn-ghost" id="setup-signin-back" type="button" data-i18n="ui.setup.back">Zurück</button><span class="grow"></span><button class="btn btn-ghost" id="setup-signin-cancel" type="button" hidden data-i18n="action.cancel">Abbrechen</button><button class="btn btn-pri" id="setup-signin-submit" type="button" disabled data-i18n="ui.setup.signinSubmit">Anmelden</button></div>
 						</div>
 
 						<div class="setup-step" id="setup-qr">
