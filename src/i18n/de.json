@@ -1206,6 +1206,184 @@
       "schoolOffline": "WebUntis ist gerade nicht erreichbar – der Anhang konnte nicht geladen werden.",
       "copy": "Kopieren hat nicht geklappt.",
       "generic": "Das hat nicht geklappt ({{code}})."
+    },
+    "sync": {
+      "title": "Ordner sichern",
+      "intro": "Ordner dieses PCs liegen im Drive: nur gesichert oder mit deinen anderen Geräten abgeglichen. Das läuft auch weiter, wenn das Fenster geschlossen ist.",
+      "pauseAll": "Alle pausieren",
+      "resumeAll": "Fortsetzen",
+      "runAll": "Jetzt abgleichen",
+      "run": "Jetzt abgleichen",
+      "pause": "Pausieren",
+      "resume": "Fortsetzen",
+      "openLocal": "Im Explorer öffnen",
+      "remove": "Entfernen",
+      "removeTitle": "„{{name}}“ nicht mehr sichern?",
+      "removeText": "Der Ordner wird nicht mehr gesichert. Es wird nichts gelöscht – weder auf diesem PC noch im Drive ({{target}}).",
+      "removeTextSync": "Der Ordner wird nicht mehr abgeglichen. Es wird nichts gelöscht – weder auf diesem PC noch im Drive ({{target}}).",
+      "unlimited": "Unbegrenzt",
+      "noLimit": "Keine Grenze",
+      "ago": {
+        "now": "gerade eben",
+        "min": "vor {{n}} Min.",
+        "hour": "vor {{n}} Std.",
+        "date": "am {{date}}"
+      },
+      "reason": {
+        "all": "alles pausiert",
+        "folder": "pausiert",
+        "offline": "Server nicht erreichbar",
+        "unavailable": "Drive ist nicht verfügbar",
+        "not_home": "nicht im Heimnetz",
+        "no_vpn": "VPN nicht verbunden",
+        "other_server": "gehört zu einem anderen Server",
+        "folder_missing": "Ordner auf dem PC nicht gefunden",
+        "target_gone": "Drive-Ordner gibt es nicht mehr",
+        "no_seat": "Drive ist für dich nicht freigeschaltet",
+        "not_licensed": "keine gültige Drive-Lizenz",
+        "forbidden": "keine Schreibrechte im Drive-Ordner",
+        "quota": "kein Platz mehr im Drive",
+        "some_failed": "einige Dateien fehlgeschlagen",
+        "no_area": "kein eigener Bereich im Drive",
+        "exists": "eine Datei steht im Weg",
+        "too_many_files": "zu viele Dateien",
+        "mass_delete": "viele Dateien gelöscht",
+        "generic": "Fehler ({{code}})"
+      },
+      "mode": {
+        "backup": "Nur sichern",
+        "sync": "Abgleichen",
+        "backupDesc": "Nur von diesem PC ins Drive (Meine Dateien › Geräte › {{device}}). Der Ordner bleibt hier vollständig; hier gelöschte Dateien bleiben noch 30 Tage im Drive.",
+        "syncDesc": "In beide Richtungen mit einem Drive-Ordner deiner Wahl. Jede Datei liegt vollständig auf jedem Gerät; Konflikte bleiben als „(Konflikt …)“-Kopie daneben."
+      },
+      "state": {
+        "running": "Läuft · {{done}} von {{total}} Dateien",
+        "checking": "Wird geprüft …",
+        "paused": "Pausiert",
+        "pausedAll": "Pausiert (alle)",
+        "waiting": "Wartet: {{reason}}",
+        "confirm": "Viele Dateien gelöscht – bitte entscheiden",
+        "failed": {
+          "one": "1 Datei fehlgeschlagen",
+          "other": "{{count}} Dateien fehlgeschlagen"
+        },
+        "error": "Fehler: {{reason}}",
+        "idleSince": "Aktuell · {{when}}",
+        "idle": "Aktuell"
+      },
+      "failure": "„{{name}}“: {{code}}",
+      "last": "zuletzt gesichert {{when}}",
+      "files": {
+        "one": "1 Datei",
+        "other": "{{count}} Dateien"
+      },
+      "pendingDeletes": {
+        "one": "1 hier gelöschte Datei bleibt noch im Drive",
+        "other": "{{count}} hier gelöschte Dateien bleiben noch im Drive"
+      },
+      "conflicts": {
+        "one": "1 Konflikt-Kopie angelegt",
+        "other": "{{count}} Konflikt-Kopien angelegt"
+      },
+      "skipped": {
+        "one": "1 Eintrag ausgelassen",
+        "other": "{{count}} Einträge ausgelassen"
+      },
+      "sum": {
+        "none": "Noch kein Ordner",
+        "paused": "Pausiert",
+        "confirm": "Bitte entscheiden",
+        "running": "Läuft · {{done}} von {{total}}",
+        "checking": "Wird geprüft …",
+        "error": "Fehler",
+        "waiting": "Wartet: {{reason}}",
+        "okSince": "Alles aktuell · {{when}}",
+        "ok": "Alles aktuell"
+      },
+      "known": {
+        "title": "Windows-Ordner",
+        "text": "Nur sichern nach Meine Dateien › Geräte › {{device}}.",
+        "switch": "{{name}} sichern",
+        "off": "Nicht gesichert",
+        "desktop": "Desktop",
+        "documents": "Dokumente",
+        "pictures": "Bilder",
+        "videos": "Videos",
+        "music": "Musik"
+      },
+      "more": {
+        "title": "Weitere Ordner",
+        "text": "Beliebige Ordner nur sichern oder mit einem Drive-Ordner abgleichen.",
+        "empty": "Noch keine weiteren Ordner."
+      },
+      "add": {
+        "button": "Ordner hinzufügen",
+        "title": "Ordner hinzufügen",
+        "confirm": "Hinzufügen",
+        "local": "Ordner auf diesem PC",
+        "pickLocal": "Ordner wählen …",
+        "noLocal": "Noch kein Ordner gewählt",
+        "mode": "Art",
+        "target": "Drive-Ordner",
+        "pickTarget": "Drive-Ordner wählen …",
+        "noTarget": "Noch kein Drive-Ordner gewählt",
+        "pickTargetTitle": "Mit welchem Drive-Ordner abgleichen?",
+        "pickTargetHere": "Diesen Ordner nehmen"
+      },
+      "ask": {
+        "title": "In „{{name}}“ wurden {{count}} von {{total}} Dateien gelöscht.",
+        "textBackup": "Sollen sie auch im Drive als gelöscht gelten (sie bleiben dort noch 30 Tage)? Oder holst du sie aus dem Drive zurück?",
+        "textSync": "Sollen sie auch im Drive und auf deinen anderen Geräten gelöscht werden (Papierkorb)? Oder holst du sie aus dem Drive zurück?",
+        "titleDrive": "Im Drive wurden {{count}} von {{total}} Dateien aus „{{name}}“ gelöscht.",
+        "textDrive": "Sollen sie auch auf diesem PC gelöscht werden (Windows-Papierkorb)? Oder stellst du sie im Drive wieder her?",
+        "restore": "Wiederherstellen",
+        "apply": "Löschen übertragen"
+      },
+      "set": {
+        "title": "Einstellungen",
+        "device": "Dieser PC heißt im Drive „{{device}}“.",
+        "deviceKey": "Geräte-ID: {{key}}.",
+        "skipDev": "node_modules und .git auslassen",
+        "skipDevDesc": "Ordner von Entwicklungsprojekten, die sich neu erzeugen lassen",
+        "maxSize": "Größere Dateien auslassen",
+        "maxSizeDesc": "Dateien über dieser Größe werden nicht übertragen",
+        "up": "Upload begrenzen",
+        "down": "Download begrenzen",
+        "homeOnly": "Nur im Heimnetz",
+        "atHome": "Du bist gerade im Heimnetz ({{n}} gespeichert).",
+        "notHome": "Du bist gerade nicht im Heimnetz ({{n}} gespeichert).",
+        "noHome": "Noch kein Heimnetz festgelegt.",
+        "markHome": "Dieses Netz ist mein Heimnetz",
+        "forgetHome": "Heimnetze vergessen",
+        "vpnOnly": "Nur mit verbundenem VPN",
+        "vpnOnlyDesc": "Sonst auch, wann immer der Server erreichbar ist",
+        "always": "Immer ausgelassen: temporäre Dateien (~$…, *.tmp), Thumbs.db, desktop.ini, .DS_Store, leere Dateien und Namen, die Drive nicht annimmt."
+      },
+      "done": {
+        "run": "Abgleich gestartet.",
+        "add": "Ordner hinzugefügt – die Sicherung beginnt.",
+        "remove": "Ordner wird nicht mehr gesichert.",
+        "home": "Dieses Netz ist jetzt ein Heimnetz."
+      },
+      "err": {
+        "overlap": "Dieser Ordner liegt in einem gesicherten Ordner oder enthält einen.",
+        "folder_missing": "Diesen Ordner gibt es nicht.",
+        "not_a_folder": "Das ist kein Ordner.",
+        "drive_root": "Ein ganzes Laufwerk lässt sich nicht sichern – wähle einen Ordner darauf.",
+        "too_many": "Es sind schon zu viele Ordner.",
+        "target_taken": "Dieser Drive-Ordner wird schon abgeglichen.",
+        "forbidden": "In diesen Drive-Ordner darfst du nicht schreiben.",
+        "no_home": "Lege zuerst ein Heimnetz fest.",
+        "no_network": "Gerade ist kein Netzwerk verbunden.",
+        "invalid": "Das geht so nicht.",
+        "offline": "Der Server ist gerade nicht erreichbar.",
+        "not_found": "Das gibt es nicht mehr.",
+        "generic": "Das hat nicht geklappt ({{code}})."
+      },
+      "tray": {
+        "pause": "Drive-Sicherung pausieren",
+        "resume": "Drive-Sicherung fortsetzen"
+      }
     }
   }
 }

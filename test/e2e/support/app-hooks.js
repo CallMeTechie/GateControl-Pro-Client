@@ -233,6 +233,18 @@ function install({ app, env }) {
     return { response: state.dialogAnswers.shift(), checkboxChecked: false };
   };
 
+  // Folder / file pickers ("Ordner sichern" → "Ordner wählen …"): answered
+  // from a queue of paths the test fills (state.openDialogPaths); without a
+  // queued path the real dialog is shown.
+  const realShowOpenDialog = dialog.showOpenDialog.bind(dialog);
+  state.openDialogPaths = [];
+  dialog.showOpenDialog = async (...args) => {
+    if (!state.openDialogPaths.length) return realShowOpenDialog(...args);
+    const p = state.openDialogPaths.shift();
+    record('dialog.open', { path: p });
+    return { canceled: false, filePaths: [p] };
+  };
+
   // Notifications: recorded (still shown); a test "clicks" one by emitting
   // the event Electron emits for a click on the toast.
   const { Notification } = require('electron');

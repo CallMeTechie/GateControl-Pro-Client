@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const { test, expect } = require('./support/fixtures');
 const { setupWithApiKey } = require('./support/ui');
 
@@ -10,7 +11,9 @@ const { setupWithApiKey } = require('./support/ui');
 // the list of one's links, uploads with a taken name ("Neue Version"), the
 // page for a person without a seat, and "In Drive speichern" of a Schule
 // attachment through the folder picker (writable areas only, it remembers
-// the folder). The plugin is the core's fake Drive server
+// the folder); "Ordner sichern": a folder backed up into Geräte › <PC>, pause,
+// the settings, a folder synced with a Drive folder picked in the picker. The
+// plugin is the core's fake Drive server
 // (support/drive-mock.js). Selectors by id/class, texts in both languages.
 
 const rows = (root) => root.locator('.dv-row[data-id] .dv-name');
@@ -37,8 +40,8 @@ test.describe('drive', () => {
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
 
-    // 4 areas, "Geteilt", "Papierkorb"; Meine Dateien with a preview of the photo
-    await expect(root.locator('.dv-area')).toHaveCount(6);
+    // 4 areas, "Geteilt", "Papierkorb", "Ordner sichern"; Meine Dateien with a preview of the photo
+    await expect(root.locator('.dv-area')).toHaveCount(7);
     await expect(root.locator('.dv-area.is-on .dv-area-name')).toHaveText(/^(Meine Dateien|My files)$/);
     await expect(rows(root)).toHaveText(['Dokumente', 'Foto.jpg', 'setup.exe']);
     await expect(root.locator('.dv-row[data-id="11"] .dv-thumb img')).toHaveCount(1);
@@ -132,6 +135,89 @@ test.describe('drive', () => {
     await expect(root.locator('.dv-tr.is-ok')).toHaveCount(2);
     await expect(rows(root)).toHaveText(['Dokumente', 'Foto.jpg', 'Neu.txt', 'setup.exe']);
     expect(d.srv.state.nodes.get(11).rev).toBe(3);
+  });
+
+  test('Ordner sichern: back up a folder, pause it, settings, sync a folder with a Drive folder', async ({ launchApp, mock }, testInfo) => {
+    const d = await mock.setDrive();
+    const { page, answerOpenDialogs, trayLabels } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openDrive(page);
+    await root.locator('.dv-area').nth(6).click();
+    const sv = root.locator('.dsv');
+    await expect(sv).toBeVisible();
+    await expect(sv.locator('.dsv-pill')).toHaveText(/Noch kein Ordner|No folder yet/);
+    await expect(root.locator('.dv-list-wrap')).toBeHidden();
+
+    // "Nur sichern": into Meine Dateien › Geräte › <PC> › Projekte, temporary files left out
+    const projekte = testInfo.outputPath('Projekte');
+    fs.mkdirSync(path.join(projekte, 'Plan'), { recursive: true });
+    fs.writeFileSync(path.join(projekte, 'Angebot.txt'), 'Angebot');
+    fs.writeFileSync(path.join(projekte, 'Plan', 'Skizze.txt'), 'Skizze');
+    fs.writeFileSync(path.join(projekte, '~$Angebot.docx'), 'lock');
+    const r = await page.evaluate((p) => window.gatecontrol.drive.sync.add({ path: p, mode: 'backup' }), projekte);
+    expect(r.ok).toBe(true);
+    const row = sv.locator('.dsv-row[data-folder]', { hasText: 'Projekte' });
+    await expect(row.locator('.dsv-state-tx')).toHaveText(/^(Aktuell|Up to date)/, { timeout: 30000 });
+    await expect(row.locator('.dsv-target-tx')).toHaveText(/Geräte › .+ › Projekte$/);
+    const named = (name, parent) => [...d.srv.state.nodes.values()].find((n) => n.name === name && !n.deleted && (!parent || (n && n.parentId === parent.id)));
+    const geraete = named('Geräte');
+    expect(geraete && geraete.parentId).toBe(1);
+    const top = named('Projekte');
+    expect(top && d.srv.state.nodes.get(top.parentId).parentId).toBe(geraete.id);
+    expect(named('Angebot.txt', top)).toBeTruthy();
+    expect(named('Skizze.txt', named('Plan', top))).toBeTruthy();
+    expect(named('~$Angebot.docx')).toBeFalsy();
+    await expect(sv.locator('.dsv-pill')).toHaveText(/Alles aktuell|All up to date/);
+    await expect.poll(async () => (await trayLabels()).join('|')).toMatch(/Drive-Sicherung pausieren|Pause Drive backup/);
+    await page.screenshot({ path: test.info().outputPath('drive-sync.png') });
+
+    // pause the folder, go on
+    await row.locator('.dsv-act').first().click();
+    await expect(row.locator('.dsv-state-tx')).toHaveText(/Pausiert|Paused/);
+    await row.locator('.dsv-act').first().click();
+    await expect(row.locator('.dsv-state-tx')).toHaveText(/^(Aktuell|Up to date)/);
+
+    // settings: an upload limit
+    await sv.locator('.dsv-set select').nth(1).selectOption('512');
+    await expect.poll(() => page.evaluate(() => window.gatecontrol.drive.sync.status().then((s) => s.settings.upKBs))).toBe(512);
+
+    // "Abgleichen" with Meine Dateien › Dokumente, picked in Drive's folder picker
+    const laptop = testInfo.outputPath('Laptop');
+    fs.mkdirSync(laptop, { recursive: true });
+    fs.writeFileSync(path.join(laptop, 'Notiz.txt'), 'vom PC');
+    await answerOpenDialogs([laptop]);
+    await sv.locator('.dsv-card-head .btn-pri').click();
+    const dlg = page.locator('.dv-dlg').first();
+    await expect(dlg.locator('.dv-dlg-foot .btn-pri')).toBeDisabled();
+    await dlg.locator('.dsv-pick .btn').first().click();
+    await expect(dlg.locator('.dsv-pick-val').first()).toHaveText(laptop);
+    await dlg.locator('.dv-seg button').nth(1).click();
+    await expect(dlg.locator('.dv-dlg-foot .btn-pri')).toBeDisabled();
+    await dlg.locator('.dsv-pick .btn').nth(1).click();
+    const picker = page.locator('.dv-dlg').last();
+    await picker.locator('.dv-pick-row').first().click();
+    await picker.locator('.dv-pick-row', { hasText: 'Dokumente' }).click();
+    await expect(picker.locator('.dv-pick-path')).toHaveText(/Dokumente$/);
+    await picker.locator('.dv-dlg-foot .btn-pri').click();
+    await expect(dlg.locator('.dsv-pick-val').nth(1)).toHaveText(/Dokumente$/);
+    await dlg.locator('.dv-dlg-foot .btn-pri').click();
+    await expect(page.locator('.dv-dlg')).toHaveCount(0);
+    const synced = sv.locator('.dsv-row[data-folder]', { hasText: 'Laptop' });
+    await expect(synced.locator('.dsv-mode')).toHaveText(/Abgleichen|Sync/);
+    await expect(synced.locator('.dsv-state-tx')).toHaveText(/^(Aktuell|Up to date)/, { timeout: 30000 });
+    await expect.poll(() => fs.existsSync(path.join(laptop, 'Brief.pdf'))).toBe(true);
+    expect(named('Notiz.txt', d.srv.state.nodes.get(10))).toBeTruthy();
+    await synced.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath('drive-sync-more.png') });
+    await sv.locator('.dsv-set').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath('drive-sync-settings.png') });
+
+    // removing stops it, nothing is deleted
+    await synced.locator('.dsv-act.dv-danger').click();
+    await page.locator('.dv-dlg .btn-danger').click();
+    await expect(sv.locator('.dsv-row[data-folder]', { hasText: 'Laptop' })).toHaveCount(0);
+    expect(fs.existsSync(path.join(laptop, 'Notiz.txt'))).toBe(true);
+    expect(named('Notiz.txt', d.srv.state.nodes.get(10))).toBeTruthy();
   });
 
   test('a person without a seat sees why', async ({ launchApp, mock }) => {
