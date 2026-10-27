@@ -294,6 +294,10 @@ impl<P: Platform> Service<P> {
             Command::Relocate { folder, name } => self.relocate(folder, name),
             Command::Restore { folder } => self.restore(folder),
             Command::Usage => Ok(relocate::usage(self.platform.fs().as_ref(), &self.platform.sync_root())),
+            Command::Action { action, path } => {
+                self.handle_action(&action, Path::new(&path)).map_err(|e| ProtoError::new("invalid", e))?;
+                Ok(json!({ "queued": true }))
+            }
             Command::Shutdown => {
                 self.stop_runner();
                 self.quit.store(true, Ordering::SeqCst);

@@ -371,7 +371,7 @@ fn unregister_force_keeps_unsynced_files() {
 fn unregister_refuses_while_a_windows_folder_is_in_the_drive() {
     let c = started();
     let r = c.svc.handle(Command::Relocate { folder: KnownFolder::Music, name: Some("Musik".into()) }).unwrap();
-    assert_eq!(r["to"], "/sync/Meine Dateien/Musik");
+    assert_eq!(Path::new(r["to"].as_str().unwrap()), p(&c.plat.root, &["Meine Dateien", "Musik"]));
     let e = c.svc.handle(Command::Unregister { force: true }).unwrap_err();
     assert_eq!(e.code, "relocated");
     assert_eq!(e.data.unwrap()["folders"], json!(["music"]));

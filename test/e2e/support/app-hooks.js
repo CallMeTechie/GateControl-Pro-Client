@@ -284,6 +284,21 @@ function install({ app, env }) {
     return true;
   };
 
+  // Drive „Dateien bei Bedarf“: a fake gc-drive-sync in this process (a real
+  // named pipe, no sync root, no registry, no Known Folder; drive-sync-fake.js).
+  const { createDriveSyncFake } = require('./drive-sync-fake');
+  const dsf = createDriveSyncFake({ dir: env.GC_E2E_DIR || app.getPath('userData') });
+  state.driveSyncFake = dsf.fake;
+  state.openedPaths = [];
+  state.driveOnDemand = {
+    exePath: path.join(APP_ROOT, 'drive-sync', 'gc-drive-sync-e2e.exe'),
+    spawn: dsf.spawn,
+    exists: () => true,
+    platform: 'win32',
+    pipePattern: process.platform === 'win32' ? /^\\\\\.\\pipe\\gatecontrol-drive-sync-[A-Za-z0-9-]{8,200}$/ : /\.sock$/,
+    openPath: async (p) => { state.openedPaths.push(p); record('drive.openPath', { path: p }); return ''; },
+  };
+
   globalThis.__gcE2E = state;
   record('e2e.installed', { pid: process.pid });
   return state;

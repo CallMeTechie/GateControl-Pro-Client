@@ -326,7 +326,7 @@
 		refs.transfers = el('div', { class: 'dv-transfers card', hidden: true });
 		// "Ordner sichern" (drive-sync-view.js): only with the core's DriveSync
 		const syncView = root.GCDriveSyncView && api.sync ? root.GCDriveSyncView.mount({
-			api: api.sync, t, getLocale: o.getLocale, now, toast, host,
+			api: api.sync, t, getLocale: o.getLocale, now, toast, host, onDemandApi: o.onDemandApi || null,
 			ui: { el, icon, clear, openDialog },
 			pickDriveFolder: (opts) => pickFolder({ api, t, host, ...(opts || {}) }),
 			onSummary: (sum) => {
@@ -1050,6 +1050,15 @@
 			available: () => !!(S.status && S.status.state === 'available'),
 			relabel,
 			pickFolder: (opts) => pickFolder({ api, t, host, ...(opts || {}) }),
+			/**
+			 * Explorer-Kontextmenü (Dateien bei Bedarf): „Link teilen …“ / „Ältere
+			 * Versionen“ für einen Knoten. `code`: der Knoten ist nicht abrufbar.
+			 */
+			openAction(action, node, code) {
+				if (code || !node || !node.id) { toast(t(code === 'not_synced' ? 'drive.od.err.not_synced' : 'drive.od.err.node'), 'error'); return; }
+				if (action === 'share') shareDialog(node);
+				else if (action === 'versions' && !node.isDir) versionsDialog(node);
+			},
 		};
 	}
 

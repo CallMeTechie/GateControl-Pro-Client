@@ -41,7 +41,7 @@ let SchoolService;
 let DriveService, DriveSync;
 let VaultService, windowsHello, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
-let createDriveOnDemand, driveOnDemandExePath;
+let createDriveOnDemand, driveOnDemandExePath, parseDriveActionArgv, drivePathsOverlap;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
 let installWindowGuard, autostartTask, createAutostart;
 
@@ -110,7 +110,7 @@ try {
   ({ GateDropService, GateDropFirewall, gatedropShell } = require('@gatecontrol/client-core'));
   ({ setupGateDrop } = require('./gatedrop'));
   // Drive „Dateien bei Bedarf“: gc-drive-sync.exe (drive-sync/), standardmäßig aus.
-  ({ createDriveOnDemand, defaultExePath: driveOnDemandExePath } = require('./drive-ondemand'));
+  ({ createDriveOnDemand, defaultExePath: driveOnDemandExePath, parseActionArgv: parseDriveActionArgv, overlaps: drivePathsOverlap } = require('./drive-ondemand'));
   RdpManager = require('../services/rdp/rdp-manager');
   ({ runRdpTrustMigration } = require('../services/rdp/rdp-trust-migration'));
   RdpWolClient = require('../services/rdp/rdp-wol');
@@ -988,6 +988,8 @@ function initializeServices() {
     dir: path.join(app.getPath('userData'), 'drive-sync'),
     trashItem: (p) => shell.trashItem(p),
     getMainWindow: () => mainWindow,
+    // „GateControl Drive“ (Dateien bei Bedarf) lässt sich nicht zusätzlich sichern
+    blockedPaths: () => driveOnDemand?.blockedPaths() || [],
     isVpnUp: () => tunnelState.connected,
     // the PC's stable short id (Settings → About), shown on the page (read once)
     getDeviceKey: (() => { let key; return () => (key === undefined ? (key = shortDeviceId(getMachineFingerprint, log)) : key); })(),
@@ -1006,18 +1008,31 @@ function initializeServices() {
   });
 
   // Drive „Dateien bei Bedarf“: Explorer-Ordner „GateControl Drive“ über
-  // gc-drive-sync.exe (Cloud Files API). Aus, bis es jemand einschaltet; nie
-  // in E2E-Läufen (keine Sync-Root auf dem Testrechner).
-  driveOnDemand = e2e ? null : createDriveOnDemand({
+  // gc-drive-sync.exe (Cloud Files API), gestartet mit den Rechten des
+  // angemeldeten Benutzers. Aus, bis es jemand einschaltet. E2E-Läufe nehmen
+  // ein Fake-Programm (test/e2e/support/drive-sync-fake.js): keine Sync-Root
+  // auf dem Testrechner.
+  driveOnDemand = createDriveOnDemand({
     store, log,
     getServer: () => ({ url: store.get('server.url', ''), apiKey: store.get('server.apiKey', '') }),
     getHeaders: () => apiClient.buildHeaders(),
     exePath: driveOnDemandExePath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appRoot: path.join(__dirname, '..', '..') }),
     appVersion: require('../../package.json').version,
+    appExe: app.isPackaged ? process.execPath : null,
+    getLang: () => getLocale(),
+    openPath: (p) => shell.openPath(p),
+    // Ein Windows-Ordner, den „Ordner sichern“ (W2) sichert, wird nicht zusätzlich verlegt.
+    relocateBlocked: (p) => {
+      const st = driveSync ? driveSync.status() : null;
+      const folders = st && Array.isArray(st.folders) ? st.folders : [];
+      return folders.some((f) => f && f.path && drivePathsOverlap(f.path, p)) ? 'w2_active' : null;
+    },
+    onAction: (a) => handleDriveAction(a).catch((err) => log.warn(`Drive action failed: ${err.message}`)),
     onStatus: (st) => {
       const w = mainWindow;
       if (w && !w.isDestroyed()) w.webContents.send('drive-ondemand:status', st);
     },
+    ...(e2e && e2e.driveOnDemand ? e2e.driveOnDemand : {}),
   });
   driveOnDemand?.watchPush(notifications?.pushClient);
   store.onDidChange('server', () => { driveOnDemand?.serverChanged().catch(() => {}); });
@@ -1390,6 +1405,7 @@ app.on('ready', () => {
   driveSync?.start();
   // Drive „Dateien bei Bedarf“: startet gc-drive-sync.exe nur, wenn eingeschaltet.
   driveOnDemand?.start().catch((err) => log.warn(`Drive on demand start failed: ${err.message}`));
+  if (handleDriveActionArgv(process.argv)) log.info('Started from the Explorer menu "GateControl Drive"');
   // Vault: availability, sync, auto-lock; Strg+Alt+P while the server offers it.
   vault?.start();
   vaultQuick?.start();
@@ -1471,9 +1487,42 @@ app.on('ready', () => {
   }
 });
 
+// Explorer-Kontextmenü „GateControl Drive ›“ (gc-drive-sync → Ereignis action):
+// „Im Portal öffnen“ öffnet die Drive-Seite des Portals (angemeldet, ohne
+// Sprung zur Datei – das Portal kennt keinen), „Link teilen …“ und „Ältere
+// Versionen“ öffnen den Dialog der Drive-Seite.
+async function handleDriveAction(a) {
+  if (!a) return;
+  if (a.action === 'portal') {
+    await openPortalSafe({ next: '/portal#plg-gatecontrol-drive' });
+    return;
+  }
+  let node = null;
+  let code = null;
+  if (!a.node) code = 'not_synced';
+  else {
+    try { node = drive && drive.api ? await drive.api.node(a.node) : null; } catch (err) { code = err.code || 'failed'; }
+    if (!node && !code) code = 'failed';
+  }
+  showWindow();
+  const send = () => mainWindow?.webContents.send('drive-ondemand:action', { action: a.action, node, code, path: a.path });
+  if (mainWindow?.webContents.isLoading()) mainWindow.webContents.once('did-finish-load', send);
+  else send();
+}
+
+/** `--drive-action` aus den Argumenten (Kontextmenü, als gc-drive-sync nicht lief). */
+function handleDriveActionArgv(argv) {
+  const a = parseDriveActionArgv ? parseDriveActionArgv(argv) : null;
+  if (!a || !driveOnDemand) return false;
+  driveOnDemand.action(a).catch((err) => log.warn(`Drive action from argv: ${err.code || ''} ${err.message}`));
+  return true;
+}
+
 // A second start (shortcut, autostart, or a toast button: <protocol>://notify/…)
 // only brings this instance to the front or performs the toast action.
 app.on('second-instance', (_event, argv) => {
+  // Explorer-Kontextmenü „GateControl Drive ›“, als gc-drive-sync nicht lief.
+  if (handleDriveActionArgv(argv)) return;
   // "Senden an → GateDrop" (Explorer): open the send dialog with the files.
   if (gatedrop?.handleArgv(argv)) return;
   if (notifications?.handleArgv(argv)) return;

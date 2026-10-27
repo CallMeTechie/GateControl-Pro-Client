@@ -111,6 +111,12 @@ pub enum Command {
     },
     /// Belegter Platz auf diesem PC.
     Usage,
+    /// Kontextmenü-Aufruf, den der Pro-Client per Argument bekam
+    /// (`--drive-action`): wie über die Aktions-Pipe → Ereignis `action`.
+    Action {
+        action: String,
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -196,6 +202,11 @@ pub fn parse_request(line: &str) -> Result<Request, (Value, ProtoError)> {
             }
         }
         "usage" => Command::Usage,
+        "action" => {
+            let action = obj.get("action").and_then(Value::as_str).filter(|a| ACTIONS.contains(a)).ok_or_else(|| fail("invalid", "action"))?;
+            let path = obj.get("path").and_then(Value::as_str).filter(|p| !p.is_empty() && p.len() <= 4096).ok_or_else(|| fail("invalid", "path"))?;
+            Command::Action { action: action.to_string(), path: path.to_string() }
+        }
         "sync-now" => Command::SyncNow,
         "shutdown" => Command::Shutdown,
         _ => return Err(fail("unknown_command", "unknown cmd")),
@@ -362,6 +373,8 @@ mod tests {
         assert_eq!(parse(r#"{"cmd":"relocate","folder":"pictures","name":"a/b"}"#).unwrap_err().code, "invalid");
         assert_eq!(parse(r#"{"cmd":"relocate","folder":"windows"}"#).unwrap_err().code, "invalid");
         assert_eq!(parse(r#"{"cmd":"restore","folder":"music"}"#), Ok(Command::Restore { folder: KnownFolder::Music }));
+        assert_eq!(parse(r#"{"cmd":"action","action":"share","path":"C:\\x"}"#), Ok(Command::Action { action: "share".into(), path: "C:\\x".into() }));
+        assert_eq!(parse(r#"{"cmd":"action","action":"delete","path":"C:\\x"}"#).unwrap_err().code, "invalid");
     }
 
     #[test]

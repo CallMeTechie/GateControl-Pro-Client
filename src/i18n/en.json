@@ -1378,11 +1378,166 @@
         "invalid": "That does not work.",
         "offline": "The server cannot be reached right now.",
         "not_found": "That no longer exists.",
-        "generic": "That did not work ({{code}})."
+        "generic": "That did not work ({{code}}).",
+        "in_drive": "Lies in the folder “GateControl Drive” (files on demand) – no extra backup"
       },
       "tray": {
         "pause": "Pause Drive backup",
         "resume": "Resume Drive backup"
+      }
+    },
+    "od": {
+      "title": "GateControl Drive in the Explorer",
+      "intro": "Files on demand: Drive shows up in the Explorer as the folder “GateControl Drive”. Files only take space once you open them or pick “Always keep on this device”.",
+      "introOn": "The folder “GateControl Drive” in the Explorer shows all areas. Files load when opened; “Free up space” makes them online-only again.",
+      "open": "Open in Explorer",
+      "pause": "Pause",
+      "resume": "Resume",
+      "elevated": "Runs with administrator rights – new files belong to the Administrators group",
+      "fileError": "{{name}}: {{reason}}",
+      "pending": {
+        "one": "1 change waiting",
+        "other": "{{count}} changes waiting"
+      },
+      "state": {
+        "off": "Off",
+        "missing": "The sync program is missing in this installation",
+        "unsupported": "Windows 10 (1709) or newer only",
+        "starting": "Starting …",
+        "syncing": "Syncing …",
+        "idle": "Up to date",
+        "paused": "Paused",
+        "offline": "Server not reachable – trying again",
+        "unconfigured": "No server set up",
+        "error": "Error: {{reason}}",
+        "ask": "Waiting for your answer",
+        "loading": {
+          "one": "Loading 1 file",
+          "other": "Loading {{count}} files"
+        }
+      },
+      "busy": {
+        "relocate": "Moving {{name}} into Drive …",
+        "restore": "Putting {{name}} back …",
+        "restoreLoad": "{{name}}: loading files …",
+        "disable": "Switching off …",
+        "progress": "{{done}} of {{total}}"
+      },
+      "reason": {
+        "network": "network",
+        "timeout": "timeout",
+        "forbidden": "no permission",
+        "unauthorized": "sign-in refused",
+        "quota": "storage full",
+        "read_only": "read only",
+        "outside_area": "outside the areas",
+        "name_unsupported": "name not allowed",
+        "empty_file": "empty file",
+        "mass_delete": "many files deleted",
+        "local_io": "file not accessible",
+        "hydrate": "loading failed",
+        "dehydrate": "freeing up space failed",
+        "register_failed": "the folder could not be registered",
+        "connect_failed": "connecting to the Explorer failed",
+        "watch_failed": "the folder cannot be watched",
+        "exited": "sync program ended, restarting",
+        "launch": "the sync program does not start",
+        "wrong_user": "the Pro client runs under another account",
+        "http": "server error {{code}}",
+        "generic": "{{code}}"
+      },
+      "usage": {
+        "local": "On this PC",
+        "total": "In Drive",
+        "none": "Working out the space used …",
+        "refresh": "Work out the space used again",
+        "text": "On this PC {{local}} of {{total}} ({{files}} files)"
+      },
+      "ask": {
+        "title": "{{count}} files deleted in the Explorer",
+        "titleOffline": "{{count}} files deleted while GateControl was not running",
+        "text": "The deletion has not been passed to Drive yet.",
+        "restore": "Restore",
+        "apply": "Delete in Drive too"
+      },
+      "off": {
+        "title": "Switch off files on demand?",
+        "text": "The folder “GateControl Drive” is removed from the Explorer.",
+        "keep": "Pinned files and files already loaded stay in this folder as normal files.",
+        "online": "Online-only files disappear from the folder – they stay in Drive.",
+        "upload": "Changes not uploaded yet are uploaded first. If that does not work, nothing is switched off.",
+        "confirm": "Switch off",
+        "working": "Uploading what is left and signing off …",
+        "retry": "Try again",
+        "force": "Switch off anyway",
+        "forceText": "“Switch off anyway” leaves these files as normal files in the folder “GateControl Drive” – nothing is deleted, they just no longer go to Drive."
+      },
+      "known": {
+        "title": "Windows folders in Drive",
+        "text": "Like OneDrive: the folder then lies in My files and is the same on every device, with files on demand.",
+        "local": "On this PC",
+        "inDrive": "In Drive",
+        "move": "Move into Drive",
+        "restore": "Put back",
+        "target": "GateControl Drive › My files › {{name}}",
+        "lockedByW2": "Already backed up with “Back up only” – switch it off there first.",
+        "lockedForW2": "Lies in Drive (files on demand) – no extra backup."
+      },
+      "move": {
+        "title": "Move {{name}} into Drive?",
+        "text": "All files from {{from}} are moved to {{to}} and uploaded. Windows shows the folder there afterwards.",
+        "point1": "Nothing is overwritten: files with the same name in Drive get a conflict name.",
+        "point2": "If other PCs move this folder too, it is the same on all of them.",
+        "point3": "If a step fails (for example, a file is open), everything stays where it was.",
+        "agree": "Yes, move this folder into Drive",
+        "confirm": "Move"
+      },
+      "restore": {
+        "title": "Put {{name}} back?",
+        "text": "All files are loaded completely and moved back to {{to}}. Windows shows the folder there again afterwards.",
+        "point1": "The copy in Drive stays (online only) – nothing is deleted in Drive.",
+        "point2": "If a file cannot be loaded, putting back stops before anything changes.",
+        "defaultPlace": "the default place in the user folder",
+        "confirm": "Put back"
+      },
+      "done": {
+        "on": "Files on demand is on",
+        "off": "Files on demand is off",
+        "moved": "Folder moved into Drive",
+        "restoredFolder": "Folder put back",
+        "restored": "Deleted files restored",
+        "applied": "Deletion passed to Drive"
+      },
+      "err": {
+        "relocated": "First put back the Windows folders that lie in Drive:",
+        "unsynced": {
+          "one": "1 change is not uploaded yet:",
+          "other": "{{count}} changes are not uploaded yet:"
+        },
+        "not_running": "The sync program is not running",
+        "w2_active": "This folder is already backed up with “Back up only”",
+        "already_relocated": "The folder already lies in Drive",
+        "not_relocated": "The folder does not lie in Drive",
+        "move_failed": "A file could not be moved (open?) – everything is back where it was",
+        "set_failed": "Windows did not accept the new place – everything is back where it was",
+        "hydrate_failed": "A file could not be loaded – nothing was put back",
+        "revert_failed": "A file could not be converted – nothing was put back",
+        "target_taken": "A file with this name lies at the target",
+        "folder_missing": "The folder is missing",
+        "read_only": "“My files” is read only",
+        "no_area": "“My files” is not there yet – wait a moment",
+        "offline": "Server not reachable",
+        "busy": "Something is already running",
+        "disabled": "Files on demand is off",
+        "unsupported": "Only available on Windows",
+        "known_folder": "Windows folder not found",
+        "contains_root": "The folder contains the Drive folder",
+        "timeout": "No answer from the sync program",
+        "not_synced": "This file is not in Drive yet",
+        "node": "File not found in Drive",
+        "launch": "The sync program does not start",
+        "wrong_user": "The Pro client runs under another account than the signed-in user",
+        "generic": "Error ({{code}})"
       }
     }
   }

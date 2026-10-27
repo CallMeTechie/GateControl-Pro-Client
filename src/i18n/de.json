@@ -1378,11 +1378,166 @@
         "invalid": "Das geht so nicht.",
         "offline": "Der Server ist gerade nicht erreichbar.",
         "not_found": "Das gibt es nicht mehr.",
-        "generic": "Das hat nicht geklappt ({{code}})."
+        "generic": "Das hat nicht geklappt ({{code}}).",
+        "in_drive": "Liegt im Ordner „GateControl Drive“ (Dateien bei Bedarf) – nicht zusätzlich sichern"
       },
       "tray": {
         "pause": "Drive-Sicherung pausieren",
         "resume": "Drive-Sicherung fortsetzen"
+      }
+    },
+    "od": {
+      "title": "GateControl Drive im Explorer",
+      "intro": "Dateien bei Bedarf: Der Drive erscheint im Explorer als Ordner „GateControl Drive“. Dateien belegen erst Platz, wenn du sie öffnest oder „Immer auf diesem Gerät behalten“ wählst.",
+      "introOn": "Der Ordner „GateControl Drive“ im Explorer zeigt alle Bereiche. Dateien laden beim Öffnen; mit „Speicher freigeben“ werden sie wieder nur online.",
+      "open": "Im Explorer öffnen",
+      "pause": "Pausieren",
+      "resume": "Fortsetzen",
+      "elevated": "Läuft mit Administratorrechten – neue Dateien gehören der Gruppe Administratoren",
+      "fileError": "{{name}}: {{reason}}",
+      "pending": {
+        "one": "1 Änderung wartet",
+        "other": "{{count}} Änderungen warten"
+      },
+      "state": {
+        "off": "Aus",
+        "missing": "Das Sync-Programm fehlt in dieser Installation",
+        "unsupported": "Nur unter Windows 10 (1709) und neuer",
+        "starting": "Wird gestartet …",
+        "syncing": "Gleicht ab …",
+        "idle": "Aktuell",
+        "paused": "Pausiert",
+        "offline": "Server nicht erreichbar – neuer Versuch läuft",
+        "unconfigured": "Kein Server eingerichtet",
+        "error": "Fehler: {{reason}}",
+        "ask": "Wartet auf deine Antwort",
+        "loading": {
+          "one": "Lädt 1 Datei",
+          "other": "Lädt {{count}} Dateien"
+        }
+      },
+      "busy": {
+        "relocate": "{{name}} wird in den Drive verlegt …",
+        "restore": "{{name}} wird zurückgelegt …",
+        "restoreLoad": "{{name}}: Dateien werden geladen …",
+        "disable": "Wird ausgeschaltet …",
+        "progress": "{{done}} von {{total}}"
+      },
+      "reason": {
+        "network": "Netzwerk",
+        "timeout": "Zeitüberschreitung",
+        "forbidden": "keine Berechtigung",
+        "unauthorized": "Anmeldung abgelehnt",
+        "quota": "Speicher voll",
+        "read_only": "nur Lesen",
+        "outside_area": "liegt außerhalb der Bereiche",
+        "name_unsupported": "Name nicht erlaubt",
+        "empty_file": "leere Datei",
+        "mass_delete": "viele Dateien gelöscht",
+        "local_io": "Datei nicht zugreifbar",
+        "hydrate": "Laden fehlgeschlagen",
+        "dehydrate": "Speicher freigeben fehlgeschlagen",
+        "register_failed": "Ordner konnte nicht angemeldet werden",
+        "connect_failed": "Verbindung zum Explorer fehlgeschlagen",
+        "watch_failed": "Ordner kann nicht beobachtet werden",
+        "exited": "Sync-Programm beendet, startet neu",
+        "launch": "Sync-Programm startet nicht",
+        "wrong_user": "der Pro-Client läuft unter einem anderen Konto",
+        "http": "Server-Fehler {{code}}",
+        "generic": "{{code}}"
+      },
+      "usage": {
+        "local": "Auf diesem PC",
+        "total": "Im Drive",
+        "none": "Belegter Platz wird ermittelt …",
+        "refresh": "Belegten Platz neu ermitteln",
+        "text": "Auf diesem PC {{local}} von {{total}} ({{files}} Dateien)"
+      },
+      "ask": {
+        "title": "{{count}} Dateien im Explorer gelöscht",
+        "titleOffline": "{{count}} Dateien gelöscht, während GateControl nicht lief",
+        "text": "Das Löschen wurde noch nicht an den Drive übertragen.",
+        "restore": "Wiederherstellen",
+        "apply": "Löschen übertragen"
+      },
+      "off": {
+        "title": "Dateien bei Bedarf ausschalten?",
+        "text": "Der Ordner „GateControl Drive“ wird vom Explorer abgemeldet.",
+        "keep": "Angeheftete und schon geladene Dateien bleiben als normale Dateien in diesem Ordner.",
+        "online": "Dateien, die nur online sind, verschwinden aus dem Ordner – im Drive bleiben sie.",
+        "upload": "Noch nicht hochgeladene Änderungen werden zuerst hochgeladen. Geht das nicht, wird nichts ausgeschaltet.",
+        "confirm": "Ausschalten",
+        "working": "Lädt Ausstehendes hoch und meldet ab …",
+        "retry": "Erneut versuchen",
+        "force": "Trotzdem ausschalten",
+        "forceText": "„Trotzdem ausschalten“ lässt diese Dateien als normale Dateien im Ordner „GateControl Drive“ – nichts wird gelöscht, sie kommen nur nicht mehr in den Drive."
+      },
+      "known": {
+        "title": "Windows-Ordner im Drive",
+        "text": "Wie bei OneDrive: Der Ordner liegt dann in Meine Dateien und ist auf jedem Gerät derselbe, mit Dateien bei Bedarf.",
+        "local": "Auf diesem PC",
+        "inDrive": "Im Drive",
+        "move": "In den Drive verlegen",
+        "restore": "Zurücklegen",
+        "target": "GateControl Drive › Meine Dateien › {{name}}",
+        "lockedByW2": "Wird schon über „Nur sichern“ gesichert – erst dort ausschalten.",
+        "lockedForW2": "Liegt im Drive (Dateien bei Bedarf) – nicht zusätzlich sichern."
+      },
+      "move": {
+        "title": "{{name}} in den Drive verlegen?",
+        "text": "Alle Dateien aus {{from}} werden nach {{to}} verschoben und hochgeladen. Windows zeigt den Ordner danach dort.",
+        "point1": "Nichts wird überschrieben: gleichnamige Dateien im Drive bekommen einen Konfliktnamen.",
+        "point2": "Verlegen auch andere PCs diesen Ordner, ist er auf allen derselbe.",
+        "point3": "Klappt ein Schritt nicht (z. B. eine Datei ist geöffnet), bleibt alles am alten Ort.",
+        "agree": "Ja, diesen Ordner in den Drive verlegen",
+        "confirm": "Verlegen"
+      },
+      "restore": {
+        "title": "{{name}} zurücklegen?",
+        "text": "Alle Dateien werden vollständig geladen und wieder nach {{to}} verschoben. Windows zeigt den Ordner danach wieder dort.",
+        "point1": "Die Kopie im Drive bleibt (nur online) – im Drive wird nichts gelöscht.",
+        "point2": "Lässt sich eine Datei nicht laden, bricht das Zurücklegen ab, bevor sich etwas ändert.",
+        "defaultPlace": "den Standardort im Benutzerordner",
+        "confirm": "Zurücklegen"
+      },
+      "done": {
+        "on": "Dateien bei Bedarf ist eingeschaltet",
+        "off": "Dateien bei Bedarf ist ausgeschaltet",
+        "moved": "Ordner in den Drive verlegt",
+        "restoredFolder": "Ordner zurückgelegt",
+        "restored": "Gelöschte Dateien wiederhergestellt",
+        "applied": "Löschen an den Drive übertragen"
+      },
+      "err": {
+        "relocated": "Erst die Windows-Ordner zurücklegen, die im Drive liegen:",
+        "unsynced": {
+          "one": "1 Änderung ist noch nicht hochgeladen:",
+          "other": "{{count}} Änderungen sind noch nicht hochgeladen:"
+        },
+        "not_running": "Das Sync-Programm läuft nicht",
+        "w2_active": "Dieser Ordner wird schon über „Nur sichern“ gesichert",
+        "already_relocated": "Der Ordner liegt schon im Drive",
+        "not_relocated": "Der Ordner liegt nicht im Drive",
+        "move_failed": "Eine Datei ließ sich nicht verschieben (geöffnet?) – alles ist am alten Ort",
+        "set_failed": "Windows hat den neuen Ort nicht angenommen – alles ist am alten Ort",
+        "hydrate_failed": "Eine Datei ließ sich nicht laden – nichts wurde zurückgelegt",
+        "revert_failed": "Eine Datei ließ sich nicht umwandeln – nichts wurde zurückgelegt",
+        "target_taken": "Am Ziel liegt eine Datei mit diesem Namen",
+        "folder_missing": "Der Ordner fehlt",
+        "read_only": "„Meine Dateien“ ist nur lesbar",
+        "no_area": "„Meine Dateien“ ist noch nicht da – kurz warten",
+        "offline": "Server nicht erreichbar",
+        "busy": "Es läuft schon ein Vorgang",
+        "disabled": "Dateien bei Bedarf ist aus",
+        "unsupported": "Nur unter Windows verfügbar",
+        "known_folder": "Windows-Ordner nicht gefunden",
+        "contains_root": "Der Ordner enthält den Drive-Ordner",
+        "timeout": "Keine Antwort vom Sync-Programm",
+        "not_synced": "Diese Datei ist noch nicht im Drive",
+        "node": "Datei im Drive nicht gefunden",
+        "launch": "Das Sync-Programm startet nicht",
+        "wrong_user": "Der Pro-Client läuft unter einem anderen Konto als der angemeldete Benutzer",
+        "generic": "Fehler ({{code}})"
       }
     }
   }

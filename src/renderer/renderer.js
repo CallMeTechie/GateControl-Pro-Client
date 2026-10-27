@@ -2975,6 +2975,8 @@ driveView = driveApi && window.GCDriveView && $('#page-drive')
 		t,
 		getLocale: () => window.gatecontrol.i18n.getLocale(),
 		toast: (msg, type) => showToast(msg, type || 'info'),
+		// Dateien bei Bedarf (gc-drive-sync): Karte oben in „Ordner sichern“
+		onDemandApi: window.gatecontrol.driveOnDemand || null,
 		onStatus: (st) => {
 			const show = !!st && st.state === 'available';
 			$('#nav-drive').hidden = !show;
@@ -2982,6 +2984,14 @@ driveView = driveApi && window.GCDriveView && $('#page-drive')
 		},
 	})
 	: null;
+
+// Explorer-Kontextmenü „GateControl Drive ›“ (Dateien bei Bedarf): „Link
+// teilen …“ und „Ältere Versionen“ öffnen den Dialog der Drive-Seite.
+window.gatecontrol.driveOnDemand?.onAction?.((a) => {
+	if (!a || !driveView) return;
+	navigateTo('drive');
+	driveView.openAction(a.action, a.node, a.code);
+});
 
 // Initial paint (before the locale round-trip finishes)
 updateDOM();
