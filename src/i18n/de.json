@@ -1205,6 +1205,8 @@
       "needsFiles": "In Drive lassen sich nur Dateien ablegen.",
       "schoolOffline": "WebUntis ist gerade nicht erreichbar – der Anhang konnte nicht geladen werden.",
       "copy": "Kopieren hat nicht geklappt.",
+      "emptyFile": "Leere Dateien nimmt dieser Server erst ab Drive 1.5 an.",
+      "inDrive": "Liegt im Ordner „GateControl Drive“ (Dateien bei Bedarf).",
       "generic": "Das hat nicht geklappt ({{code}})."
     },
     "sync": {

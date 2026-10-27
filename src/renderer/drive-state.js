@@ -355,7 +355,7 @@
 		missing: 'missing', folder: 'folder', login_required: 'forbidden', drive_needs_files: 'needsFiles',
 		http_404: 'notFound', http_403: 'forbidden', http_507: 'quota', SCHULE_ATTACHMENT_NOT_FOUND: 'notFound',
 		SCHULE_MESSAGE_NOT_FOUND: 'notFound', SCHULE_ATTACHMENT_TOO_LARGE: 'tooLarge', SCHULE_UNTIS_UNAVAILABLE: 'schoolOffline',
-		SCHULE_ATTACHMENT_FAILED: 'schoolOffline',
+		SCHULE_ATTACHMENT_FAILED: 'schoolOffline', empty_file: 'emptyFile', in_drive: 'inDrive',
 	};
 
 	/** The text of a failed answer ({ ok: false, code }) — Drive's codes and those of the plugins passing them on. */

@@ -90,8 +90,8 @@ jobs:
       - name: Launcher (Start mit Benutzerrechten)
         run: |
           set -o pipefail
-          cargo test --locked --release --test launch_windows -- --nocapture 2>&1 | tee launch.log
-          grep -q 'LAUNCH-RESULT: ok' launch.log
+          cargo test --locked --release --test launch_windows -- --nocapture --test-threads=1 2>&1 | tee launch.log
+          test "$(grep -c "LAUNCH-RESULT: ok" launch.log)" -eq 3
           echo "### Starter (launch)" >> "$GITHUB_STEP_SUMMARY"
           grep 'LAUNCH-INFO' launch.log >> "$GITHUB_STEP_SUMMARY" || true
 

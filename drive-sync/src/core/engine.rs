@@ -116,6 +116,8 @@ pub struct Engine {
     recent_deletes: VecDeque<(std::time::Instant, usize)>,
     clock: Clock,
     log: Logger,
+    /// Drive 1.5: Fähigkeiten aus `me` (`emptyFiles` …).
+    features: Vec<String>,
 }
 
 fn io_err(e: io::Error) -> ApiError {
@@ -174,6 +176,7 @@ impl Engine {
             recent_deletes: VecDeque::new(),
             clock: Box::new(chrono::Local::now),
             log: Box::new(|_, _| {}),
+            features: Vec::new(),
         };
         e.publish_roles();
         e
@@ -185,6 +188,15 @@ impl Engine {
 
     pub fn set_logger(&mut self, f: impl Fn(&str, &str) + Send + 'static) {
         self.log = Box::new(f);
+    }
+
+    pub fn set_features(&mut self, f: Vec<String>) {
+        self.features = f;
+    }
+
+    /// Drive 1.5 `emptyFiles`: leere Dateien gehen ohne Medium hoch (`size: 0`).
+    fn empty_ok(&self) -> bool {
+        self.features.iter().any(|f| f == "emptyFiles")
     }
 
     pub fn errors(&self) -> Vec<StatusError> {
@@ -289,6 +301,7 @@ impl Engine {
         self.check_stop()?;
         let had_state = self.state.cursor > 0 && !self.state.is_empty();
         let me = self.remote.me()?;
+        self.features = me.features.clone();
         self.sync_areas()?;
         let roots: Vec<u64> = self.state.areas.iter().map(|a| a.root_id).collect();
         let mut offline_deletes: Vec<(u64, PathBuf)> = Vec::new();
@@ -1033,8 +1046,8 @@ impl Engine {
     }
 
     fn upload_new(&mut self, path: &Path, parent_id: u64, name: &str, l: &LocalEntry) -> Result<(), ApiError> {
-        if l.size == 0 {
-            // Der Server nimmt keine leeren Dateien an; sobald Inhalt da ist, geht sie hoch.
+        if l.size == 0 && !self.empty_ok() {
+            // Ältere Drives nehmen keine leeren Dateien an; sobald Inhalt da ist, geht sie hoch.
             return Ok(());
         }
         let (hex, sha, size) = self.hash_file(path)?;
@@ -1046,9 +1059,16 @@ impl Engine {
                 return Ok(());
             }
         }
-        let media = self.upload_media(path, &sha)?;
-        let req =
-            CommitRequest { media_id: media, parent_id, name: name.to_string(), base_rev: None, mtime: Some(l.mtime_ms).filter(|m| *m > 0), on_conflict: None };
+        let (media, empty) = if size == 0 { (None, Some(0)) } else { (Some(self.upload_media(path, &sha)?), None) };
+        let req = CommitRequest {
+            media_id: media,
+            size: empty,
+            parent_id,
+            name: name.to_string(),
+            base_rev: None,
+            mtime: Some(l.mtime_ms).filter(|m| *m > 0),
+            on_conflict: None,
+        };
         match self.remote.commit(&req) {
             Ok(node) => {
                 self.info(&format!("Hochgeladen: {}", path.display()));
@@ -1104,7 +1124,7 @@ impl Engine {
     fn upload_version(&mut self, path: &Path, l: &LocalEntry, id: &Identity) -> Result<(), ApiError> {
         let Some(e) = self.state.get(id.node).cloned() else { return Ok(()) };
         let (hex, sha, size) = self.hash_file(path)?;
-        if size == 0 {
+        if size == 0 && !self.empty_ok() {
             self.error("empty_file", "Leere Dateien werden nicht hochgeladen", Some(path));
             return Ok(());
         }
@@ -1112,11 +1132,12 @@ impl Engine {
             self.fs.update_placeholder(path, &meta(&e), false).map_err(io_err)?;
             return Ok(());
         }
-        let media = self.upload_media(path, &sha)?;
+        let (media, empty) = if size == 0 { (None, Some(0)) } else { (Some(self.upload_media(path, &sha)?), None) };
         // Konflikt nur, wenn sich der Inhalt auf dem Server seit unserer Fassung geändert hat.
         let base = if e.media == id.media { e.rev } else { id.rev };
         let req = CommitRequest {
             media_id: media,
+            size: empty,
             parent_id: e.parent,
             name: e.name.clone(),
             base_rev: Some(base),

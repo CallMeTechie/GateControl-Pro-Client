@@ -990,6 +990,8 @@ function initializeServices() {
     getMainWindow: () => mainWindow,
     // „GateControl Drive“ (Dateien bei Bedarf) lässt sich nicht zusätzlich sichern
     blockedPaths: () => driveOnDemand?.blockedPaths() || [],
+    // Drive 1.5: Version beim Anmelden des Geräts (PUT devices/<id>)
+    appVersion: require('../../package.json').version,
     isVpnUp: () => tunnelState.connected,
     // the PC's stable short id (Settings → About), shown on the page (read once)
     getDeviceKey: (() => { let key; return () => (key === undefined ? (key = shortDeviceId(getMachineFingerprint, log)) : key); })(),

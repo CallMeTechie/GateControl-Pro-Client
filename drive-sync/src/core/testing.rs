@@ -37,6 +37,8 @@ struct DriveInner {
     fail: HashMap<String, ApiError>,
     /// Testaufbau: Rechte ignorieren („jemand anderes“ ändert).
     bypass: bool,
+    /// Drive 1.5: `me.features`.
+    features: Vec<String>,
 }
 
 /// Ein Drive im Speicher.
@@ -141,7 +143,16 @@ impl FakeDrive {
     pub fn add_file(&self, parent: u64, name: &str, data: &[u8]) -> Node {
         let mid = self.inner.lock().unwrap().new_media(data.to_vec());
         self.as_admin(|| {
-            self.commit(&CommitRequest { media_id: mid, parent_id: parent, name: name.into(), base_rev: None, mtime: None, on_conflict: None }).unwrap()
+            self.commit(&CommitRequest {
+                media_id: Some(mid),
+                size: None,
+                parent_id: parent,
+                name: name.into(),
+                base_rev: None,
+                mtime: None,
+                on_conflict: None,
+            })
+            .unwrap()
         })
     }
 
@@ -150,9 +161,22 @@ impl FakeDrive {
         let n = self.get(id).unwrap();
         let mid = self.inner.lock().unwrap().new_media(data.to_vec());
         self.as_admin(|| {
-            self.commit(&CommitRequest { media_id: mid, parent_id: n.parent_id.unwrap(), name: n.name, base_rev: Some(n.rev), mtime: None, on_conflict: None })
-                .unwrap()
+            self.commit(&CommitRequest {
+                media_id: Some(mid),
+                size: None,
+                parent_id: n.parent_id.unwrap(),
+                name: n.name,
+                base_rev: Some(n.rev),
+                mtime: None,
+                on_conflict: None,
+            })
+            .unwrap()
         })
+    }
+
+    /// Drive 1.5: Fähigkeiten in `me` (z. B. `emptyFiles`).
+    pub fn set_features(&self, f: &[&str]) {
+        self.inner.lock().unwrap().features = f.iter().map(|s| s.to_string()).collect();
     }
 
     pub fn rename(&self, id: u64, name: &str) -> Node {
@@ -230,6 +254,7 @@ impl Remote for FakeDrive {
         Ok(MeAnswer {
             me: Me { id: Some(1), name: Some("Max".into()), seat: Some("family".into()), device_id: Some("dev1".into()) },
             latest: d.log.len() as u64,
+            features: d.features.clone(),
         })
     }
 
@@ -387,7 +412,8 @@ impl Remote for FakeDrive {
         let mut d = self.inner.lock().unwrap();
         d.hit("commit")?;
         d.writable(req.parent_id)?;
-        let data = d.media.get(&req.media_id).cloned().ok_or_else(|| err(400, "upload_invalid"))?;
+        let empty = req.media_id.is_none() && req.size == Some(0) && d.features.iter().any(|f| f == "emptyFiles");
+        let data = if empty { Vec::new() } else { req.media_id.as_ref().and_then(|m| d.media.get(m)).cloned().ok_or_else(|| err(400, "upload_invalid"))? };
         let mut name = req.name.clone();
         if !names::is_valid_name(&name) {
             return Err(err(400, "invalid"));
@@ -405,7 +431,7 @@ impl Remote for FakeDrive {
                 name = d.free_name(req.parent_id, &name);
             } else {
                 let n = d.nodes.get_mut(&ex.id).unwrap();
-                n.media_id = Some(req.media_id.clone());
+                n.media_id = req.media_id.clone();
                 n.size = Some(data.len() as u64);
                 n.sha256 = Some(sha_hex(&data));
                 n.rev += 1;
@@ -429,7 +455,7 @@ impl Remote for FakeDrive {
                 is_dir: false,
                 size: Some(data.len() as u64),
                 sha256: Some(sha_hex(&data)),
-                media_id: Some(req.media_id.clone()),
+                media_id: req.media_id.clone(),
                 mtime: req.mtime.and_then(chrono::DateTime::from_timestamp_millis).map(|t| t.to_rfc3339()),
                 rev: 1,
                 updated_at: Some(now.clone()),
@@ -445,7 +471,8 @@ impl Remote for FakeDrive {
         let mut d = self.inner.lock().unwrap();
         d.hit("content")?;
         let n = d.live(id)?.clone();
-        Ok(Content { media_id: n.media_id, size: n.size, name: Some(n.name) })
+        let empty = n.media_id.is_none() && n.size == Some(0) && !n.is_dir;
+        Ok(Content { media_id: n.media_id, empty, size: n.size, name: Some(n.name) })
     }
 
     fn download(&self, media_id: &str, start: u64, end: u64, sink: &mut dyn FnMut(&[u8]) -> Result<(), String>) -> Result<u64, ApiError> {

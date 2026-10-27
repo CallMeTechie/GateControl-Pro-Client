@@ -91,7 +91,13 @@ pub fn fetch(remote: &dyn Remote, req: &FetchRequest, sink: &mut dyn TransferSin
 
 fn fetch_inner(remote: &dyn Remote, req: &FetchRequest, start: u64, end: u64, sink: &mut dyn TransferSink) -> Result<u64, (u64, ApiError)> {
     let id = req.identity.as_ref().ok_or((start, ApiError::new(None, "not_in_sync", "placeholder without identity")))?;
+    if req.file_size == 0 || end <= start {
+        return Ok(0); // leere Datei: nichts zu laden
+    }
     let content = remote.content(id.node).map_err(|e| (start, e))?;
+    if content.empty {
+        return Ok(0); // Drive 1.5: leere Datei ohne Medium
+    }
     let media = content.media_id.ok_or((start, ApiError::new(None, "bad_response", "no media")))?;
     if id.media.as_deref().is_some_and(|m| m != media) || content.size.is_some_and(|s| s != req.file_size) {
         // Der Server hat inzwischen eine andere Fassung: der Abgleich ersetzt den Platzhalter.

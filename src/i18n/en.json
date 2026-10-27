@@ -1205,6 +1205,8 @@
       "needsFiles": "Only files can go into Drive.",
       "schoolOffline": "WebUntis cannot be reached right now – the attachment could not be loaded.",
       "copy": "Copying did not work.",
+      "emptyFile": "This server takes empty files from Drive 1.5 on.",
+      "inDrive": "Lies in the folder “GateControl Drive” (files on demand).",
       "generic": "That did not work ({{code}})."
     },
     "sync": {

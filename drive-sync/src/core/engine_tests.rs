@@ -585,3 +585,33 @@ fn stop_flag_cancels() {
     t.e.shared.stop.store(true, Ordering::SeqCst);
     assert_eq!(t.e.sync().unwrap_err().code, "cancelled");
 }
+
+#[test]
+fn empty_files_go_up_only_where_drive_takes_them() {
+    let mut t = setup();
+    t.e.sync().unwrap();
+    // älteres Drive: bleibt lokal, kein Fehler
+    t.fs.user_write(&t.path(&["Meine Dateien", "leer.txt"]), b"");
+    t.local_change(&["Meine Dateien", "leer.txt"]);
+    assert!(t.d.find(t.mine, "leer.txt").is_none());
+    // Drive 1.5 emptyFiles: ohne Medium (size 0)
+    t.d.set_features(&["emptyFiles", "devices"]);
+    t.e.needs_full = true;
+    t.e.sync().unwrap();
+    let n = t.d.find(t.mine, "leer.txt").expect("hochgeladen");
+    assert_eq!((n.size, n.media_id.clone()), (Some(0), None));
+    assert!(t.ph(&["Meine Dateien", "leer.txt"]).in_sync);
+    // eine Datei wird geleert → neue Fassung mit size 0
+    t.fs.user_write(&t.path(&["Meine Dateien", "voll.txt"]), b"inhalt");
+    t.local_change(&["Meine Dateien", "voll.txt"]);
+    t.fs.user_write(&t.path(&["Meine Dateien", "voll.txt"]), b"");
+    t.local_change(&["Meine Dateien", "voll.txt"]);
+    let v = t.d.find(t.mine, "voll.txt").unwrap();
+    assert_eq!((v.size, v.rev), (Some(0), 2));
+    // eine leere Datei vom Server: Platzhalter, sofort vollständig
+    let req = CommitRequest { media_id: None, size: Some(0), parent_id: t.mine, name: "vom Server.txt".into(), base_rev: None, mtime: None, on_conflict: None };
+    t.d.commit(&req).unwrap();
+    t.e.sync().unwrap();
+    let ph = t.ph(&["Meine Dateien", "vom Server.txt"]);
+    assert!(ph.in_sync && ph.hydrated);
+}

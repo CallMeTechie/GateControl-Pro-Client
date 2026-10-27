@@ -207,7 +207,8 @@ impl FakeServer {
                             }
                             ("POST", ["uploads", "commit"]) => {
                                 let req = CommitRequest {
-                                    media_id: b["mediaId"].as_str().unwrap_or("").into(),
+                                    media_id: b["mediaId"].as_str().map(str::to_string),
+                                    size: b["size"].as_u64(),
                                     parent_id: b["parentId"].as_u64().unwrap_or(0),
                                     name: b["name"].as_str().unwrap_or("").into(),
                                     base_rev: b["baseRev"].as_u64(),

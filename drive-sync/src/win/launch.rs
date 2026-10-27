@@ -302,7 +302,9 @@ pub fn plan(args: &[String]) -> Result<Plan, String> {
     };
     let st = token_of(shell.0, TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY)?;
     let shell_sid = token_sid(st.0)?;
-    if token_elevated(st.0) {
+    // Tests (CI-Runner ohne Benutzerkontensteuerung): einen Weg erzwingen, damit er auch dort läuft.
+    let force = std::env::var("GC_DRIVE_SYNC_FORCE_LAUNCH").ok().filter(|f| f == "token" || f == "parent");
+    if token_elevated(st.0) && force.is_none() {
         // UAC aus: der Benutzer hat ohnehin volle Rechte
         if shell_sid == my_sid {
             return Ok(Plan::InProcess { elevated: true, why: "Benutzerkontensteuerung aus".into() });
@@ -314,6 +316,11 @@ pub fn plan(args: &[String]) -> Result<Plan, String> {
         // Pro-Client läuft als anderes Konto (Administrator): Pipe auch für dieses öffnen
         child_args.push("--client-sid".into());
         child_args.push(my_sid.clone());
+    }
+    match force.as_deref() {
+        Some("token") => return with_token(st.0, &exe, &child_args).map(Plan::Child),
+        Some("parent") => return with_parent(shell.0, st.0, &exe, &child_args).map(Plan::Child),
+        _ => {}
     }
     let mut errs = Vec::new();
     match with_token(st.0, &exe, &child_args) {
