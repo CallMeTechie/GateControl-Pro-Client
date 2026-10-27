@@ -2,10 +2,10 @@
 //! Stücken an Windows geht (CfExecute TRANSFER_DATA).
 //!
 //! Regeln der Cloud Files API: Offset auf 4 KiB ausgerichtet, Länge ein
-//! Vielfaches von 4 KiB – außer das Stück endet am Dateiende. Windows nennt
-//! einen Pflichtbereich (Required) und optional einen Vorauslese-Bereich; der
-//! wird mitgeladen, wenn er anschließt. Geladen wird über HTTP Range in
-//! Anfragen zu höchstens 32 MiB, an Windows geht es in Stücken zu 1 MiB.
+//! Vielfaches von 4 KiB – außer das Stück endet am Dateiende. Geliefert wird
+//! je Anfrage nur der Pflichtbereich (Required); Vorauslesen fordert Windows mit
+//! eigenen Anfragen an. Geladen wird über HTTP Range in Anfragen zu höchstens
+//! 32 MiB, an Windows geht es in Stücken zu 1 MiB.
 
 use super::identity::Identity;
 use super::remote::{ApiError, Remote};

@@ -13,8 +13,10 @@ antworten, wenn das Fenster zu ist; ein kleines natives Programm ohne Laufzeit i
   …), registriert über `StorageProviderSyncRootManager.Register` (Anzeigename „GateControl Drive“, Symbol des
   Pro-Clients aus der Exe, Eintrag im Navigationsbereich). Klappt WinRT nicht, `CfRegisterSyncRoot`.
 - **Platzhalter** für alle Ordner und Dateien der Bereiche (Größe, Zeiten; Identität = Knoten-ID, `rev`, Bereich,
-  Medien-ID). Öffnen einer Datei → `FETCH_DATA` → Download mit HTTP Range → `CfExecute TRANSFER_DATA` in Stücken zu
-  1 MiB, Fortschritt per `CfReportProviderProgress` (Windows zeigt ihn an). `CANCEL_FETCH_DATA` bricht ab.
+  Medien-ID). Öffnen einer Datei → `FETCH_DATA` → Download des angefragten Pflichtbereichs mit HTTP Range →
+  `CfExecute TRANSFER_DATA` in Stücken zu 1 MiB, Fortschritt per `CfReportProviderProgress` (Windows zeigt ihn an).
+  Windows schickt für große Dateien mehrere Anfragen parallel (bis zu 4 werden gleichzeitig geladen); eine von Windows
+  beendete Anfrage (0x8007018E) gilt nicht als Fehler. `CANCEL_FETCH_DATA` bricht ab.
 - **Änderungen vom Server**: `GET changes?since=` alle 45 s, sofort auf `sync-now` (der Pro-Client schickt es beim
   Push-Ereignis `changed` des Plugins), dazu alle 6 h ein voller Vergleich. Neue/umbenannte/verschobene/gelöschte
   Knoten werden lokal nachgezogen; eine neue Fassung dehydriert den Platzhalter (angeheftet: gleich neu laden).
