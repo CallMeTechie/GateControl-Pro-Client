@@ -1334,6 +1334,8 @@
         "title": "In „{{name}}“ wurden {{count}} von {{total}} Dateien gelöscht.",
         "textBackup": "Sollen sie auch im Drive als gelöscht gelten (sie bleiben dort noch 30 Tage)? Oder holst du sie aus dem Drive zurück?",
         "textSync": "Sollen sie auch im Drive und auf deinen anderen Geräten gelöscht werden (Papierkorb)? Oder holst du sie aus dem Drive zurück?",
+        "titleDrive": "Im Drive wurden {{count}} von {{total}} Dateien aus „{{name}}“ gelöscht.",
+        "textDrive": "Sollen sie auch auf diesem PC gelöscht werden (Windows-Papierkorb)? Oder stellst du sie im Drive wieder her?",
         "restore": "Wiederherstellen",
         "apply": "Löschen übertragen"
       },

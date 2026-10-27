@@ -88,7 +88,9 @@ describe('folders in words', () => {
     const rows = SS.knownRows(st, t);
     assert.deepEqual(rows.map((r) => [r.key, r.label, !!r.folder]), [['documents', 'drive.sync.known.documents', true], ['music', 'drive.sync.known.music', false]]);
     assert.deepEqual(SS.otherFolders(st).map((f) => f.id), [b.id]);
-    assert.deepEqual(SS.confirms(st), [{ id: b.id, name: 'Documents', count: 600, total: 900, mode: 'sync' }]);
+    assert.deepEqual(SS.confirms(st), [{ id: b.id, name: 'Documents', count: 600, total: 900, mode: 'sync', from: 'pc' }]);
+    const fromDrive = { folders: [{ ...b, confirm: { count: 30, total: 40, from: 'drive' } }] };
+    assert.equal(SS.confirms(fromDrive)[0].from, 'drive');
   });
 
   it('options, labels, the add check and error texts', () => {

@@ -1334,6 +1334,8 @@
         "title": "{{count}} of {{total}} files were deleted in “{{name}}”.",
         "textBackup": "Should they count as deleted in Drive too (they stay there for 30 more days)? Or do you bring them back from Drive?",
         "textSync": "Should they be deleted in Drive and on your other devices too (trash)? Or do you bring them back from Drive?",
+        "titleDrive": "{{count}} of {{total}} files of “{{name}}” were deleted in Drive.",
+        "textDrive": "Should they be deleted on this PC too (Windows recycle bin)? Or do you restore them in Drive?",
         "restore": "Restore",
         "apply": "Delete there too"
       },

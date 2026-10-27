@@ -124,8 +124,8 @@
 				asks.appendChild(el('div', { class: 'dsv-ask', role: 'alert' }, [
 					el('span', { class: 'dsv-ask-ic' }, [icon('alert', 18)]),
 					el('div', { class: 'dsv-ask-tx' }, [
-						el('div', { class: 'dsv-ask-h', text: t('drive.sync.ask.title', { name: c.name, count: c.count, total: c.total }) }),
-						el('div', { class: 'dv-p', text: t(c.mode === 'backup' ? 'drive.sync.ask.textBackup' : 'drive.sync.ask.textSync') }),
+						el('div', { class: 'dsv-ask-h', text: t(c.from === 'drive' ? 'drive.sync.ask.titleDrive' : 'drive.sync.ask.title', { name: c.name, count: c.count, total: c.total }) }),
+						el('div', { class: 'dv-p', text: t(c.from === 'drive' ? 'drive.sync.ask.textDrive' : c.mode === 'backup' ? 'drive.sync.ask.textBackup' : 'drive.sync.ask.textSync') }),
 					]),
 					el('button', { type: 'button', class: 'btn btn-sec btn-sm', 'data-key': `ask-restore-${c.id}`, text: t('drive.sync.ask.restore'), on: { click: () => call(() => api.deletes(c.id, 'restore')) } }),
 					el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-danger', 'data-key': `ask-apply-${c.id}`, text: t('drive.sync.ask.apply'), on: { click: () => call(() => api.deletes(c.id, 'apply')) } }),

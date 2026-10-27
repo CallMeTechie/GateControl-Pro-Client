@@ -202,7 +202,7 @@
 	/** The folders waiting for an answer about a mass delete → [{ id, name, count, total }] */
 	function confirms(st) {
 		const folders = st && Array.isArray(st.folders) ? st.folders : [];
-		return folders.filter((f) => f.state === 'confirm' && f.confirm).map((f) => ({ id: f.id, name: str(f.name), count: num(f.confirm.count), total: num(f.confirm.total), mode: f.mode }));
+		return folders.filter((f) => f.state === 'confirm' && f.confirm).map((f) => ({ id: f.id, name: str(f.name), count: num(f.confirm.count), total: num(f.confirm.total), mode: f.mode, from: f.confirm.from === 'drive' ? 'drive' : 'pc' }));
 	}
 
 	/** Can the dialog "Ordner hinzufügen" add? { ok, code } */
