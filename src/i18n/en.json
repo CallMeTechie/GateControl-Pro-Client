@@ -965,5 +965,247 @@
       "hint": "Scan it with a phone camera to join the Wi-Fi.",
       "label": "QR code for the Wi-Fi {{ name }}"
     }
+  },
+  "drive": {
+    "title": "Drive",
+    "refresh": "Refresh",
+    "loading": "Loading …",
+    "retry": "Try again",
+    "cancel": "Cancel",
+    "close": "Close",
+    "create": "Create",
+    "back": "Back",
+    "areas": "Areas",
+    "crumbs": "Folder path",
+    "open": "Open",
+    "openFile": "Open file",
+    "openFolder": "Open folder",
+    "saveAs": "Save as …",
+    "saved": "Saved to {{path}}",
+    "rename": "Rename",
+    "renameTitle": "Rename “{{name}}”",
+    "move": "Move",
+    "moveTitle": "Move “{{name}}”",
+    "moveHere": "Move here",
+    "remove": "Move to trash",
+    "removeTitle": "Delete “{{name}}”",
+    "removeText": "The file goes to Drive's trash and can be restored from there.",
+    "removeFolderText": "The folder and everything in it go to Drive's trash and can be restored from there.",
+    "newFolder": "New folder",
+    "actions": "Actions",
+    "actionsFor": "Actions for {{name}}",
+    "empty": "This folder is empty.",
+    "emptyWritable": "This folder is empty. Drop files here or choose “Upload”.",
+    "more": "Showing the first entries of {{n}}.",
+    "readOnly": "Here you can only read and open files.",
+    "childNote": "The child is told that you looked into this folder.",
+    "access": {
+      "noSeat": "Drive is not switched on for you yet. Ask the administrator to switch you on under Plugins › Drive › People.",
+      "notLicensed": "Drive has no valid licence on this server.",
+      "noAreas": "You have no areas in Drive yet."
+    },
+    "area": {
+      "mine": "My files",
+      "child": "Children · {{name}}",
+      "team": "Team · {{name}}",
+      "mineHint": "only for you",
+      "familyHint": "shared with the family",
+      "childOwnHint": "your parents can look in",
+      "childParentHint": "read only · the child is told",
+      "teamHint": "Team",
+      "teamReadHint": "Team · read only",
+      "archived": "archived · read only",
+      "usageOf": "{{used}} of {{quota}}"
+    },
+    "col": {
+      "name": "Name",
+      "date": "Changed",
+      "deleted": "Deleted",
+      "size": "Size"
+    },
+    "sort": {
+      "label": "Sort",
+      "name": "Name",
+      "mtime": "Date",
+      "size": "Size"
+    },
+    "time": {
+      "today": "today {{time}}",
+      "yesterday": "yesterday {{time}}"
+    },
+    "name": {
+      "label": "Name",
+      "empty": "Enter a name.",
+      "invalid": "Not allowed: / \\ : * ? \" < > | and a dot or space at the end."
+    },
+    "search": {
+      "label": "Search Drive",
+      "placeholder": "Search files and text in scans",
+      "title": "Search: “{{q}}”",
+      "hint": "Found by the name or the recognised text of a scan",
+      "in": "in {{path}}",
+      "empty": "Nothing found.",
+      "showFolder": "Show folder"
+    },
+    "upload": {
+      "button": "Upload",
+      "notHere": "You cannot put files here. Open a folder you may write to.",
+      "rejected": {
+        "one": "{{count}} file not uploaded: {{names}}",
+        "other": "{{count}} files not uploaded: {{names}}"
+      }
+    },
+    "transfer": {
+      "title": "Transfers",
+      "summary": "{{done}} of {{total}} uploaded",
+      "clear": "Remove finished",
+      "queued": "waiting",
+      "running": "running …",
+      "progress": "{{sent}} of {{total}}",
+      "conflict": "Name already taken",
+      "choose": "Choose …",
+      "done": "uploaded",
+      "loaded": "loaded",
+      "same": "already there",
+      "skipped": "skipped",
+      "failed": "failed: {{reason}}",
+      "show": "Show in folder"
+    },
+    "conflict": {
+      "title": "“{{name}}” already exists here",
+      "text": "Save as a new version of the file, keep both or skip?",
+      "version": "New version",
+      "keep": "Keep both",
+      "skip": "Skip"
+    },
+    "versions": {
+      "menu": "Older versions",
+      "title": "Versions of “{{name}}”",
+      "current": "Current version",
+      "rev": "Version {{rev}}",
+      "none": "No older versions.",
+      "restore": "Restore"
+    },
+    "trash": {
+      "title": "Trash",
+      "empty": "The trash is empty.",
+      "info": "Deleted items stay here for {{n}} days and are gone for good after that.",
+      "from": "from {{path}}",
+      "files": {
+        "one": "{{count}} file",
+        "other": "{{count}} files"
+      },
+      "restore": "Restore",
+      "purge": "Delete for good",
+      "purgeTitle": "Delete “{{name}}” for good",
+      "purgeText": "This cannot be undone."
+    },
+    "links": {
+      "title": "Shared",
+      "sub": "your links",
+      "empty": "You have not shared anything yet. Share a file or folder with “Share link”."
+    },
+    "link": {
+      "mode": {
+        "view": "view",
+        "download": "view and download",
+        "upload": "upload files"
+      },
+      "until": "until {{date}}",
+      "endless": "no end",
+      "ended": "ended",
+      "endedMoved": "ended (folder moved)",
+      "endedTrashed": "ended (deleted)",
+      "withPin": "with PIN",
+      "stats": "{{opens}} opened · {{downloads}} downloaded"
+    },
+    "share": {
+      "menu": "Share link …",
+      "title": "Share “{{name}}”",
+      "who": "Others may",
+      "valid": "Valid",
+      "expires": {
+        "1d": "1 day",
+        "7d": "7 days",
+        "30d": "30 days",
+        "never": "no end"
+      },
+      "pin": "PIN (optional, 4–12 digits)",
+      "pinPlaceholder": "no PIN",
+      "pinInvalid": "The PIN must have 4 to 12 digits.",
+      "pinNote": "Pass the PIN on separately from the link.",
+      "create": "Create link",
+      "created": "Link created",
+      "url": "Link",
+      "copy": "Copy",
+      "copied": "Link copied",
+      "active": "Active links",
+      "end": "End"
+    },
+    "done": {
+      "trash": "Moved to the trash",
+      "move": "Moved",
+      "restore": "Restored",
+      "purge": "Deleted for good",
+      "version": "Version restored",
+      "linkEnded": "Link ended"
+    },
+    "picker": {
+      "title": "Choose a folder",
+      "areas": "Areas",
+      "up": "Parent folder",
+      "here": "Put it here",
+      "none": "You have no area you may write to.",
+      "noFolders": "No subfolders – you can put it here.",
+      "default": "Default place"
+    },
+    "save": {
+      "menu": "Save to Drive",
+      "button": "Save to Drive",
+      "title": "Save to Drive",
+      "titleNamed": "Save “{{name}}” to Drive",
+      "here": "Save here",
+      "saving": "Saving to Drive …",
+      "done": "Saved in {{where}}",
+      "doneName": "“{{name}}” saved to Drive",
+      "doneShort": "Saved to Drive",
+      "chatDefault": "My files › Messenger",
+      "schoolDefault": "Family › School › child"
+    },
+    "gatedrop": {
+      "section": "Drive",
+      "target": "My Drive",
+      "default": "My files › GateDrop",
+      "where": "Goes to: {{path}}",
+      "pick": "Choose folder …",
+      "pickTitle": "Choose a folder in Drive",
+      "needsFiles": "Only files can go into Drive."
+    },
+    "err": {
+      "offline": "The server cannot be reached right now.",
+      "noSeat": "Drive is not switched on for you. Ask the administrator.",
+      "notLicensed": "Drive has no valid licence on this server.",
+      "quota": "There is not enough space left in Drive.",
+      "forbidden": "You do not have permission for that.",
+      "unavailable": "Drive cannot be reached right now.",
+      "rateLimited": "Too many requests right now – please try again in a moment.",
+      "exists": "That name already exists here.",
+      "name": "This name is not allowed.",
+      "invalid": "That does not work (name or target not allowed).",
+      "notFound": "That no longer exists.",
+      "linksDisabled": "Links are switched off. An administrator can allow them under Plugins › Drive › Permissions.",
+      "noUnlimited": "Links without an end are not allowed here.",
+      "noPublicUrl": "The server has no public https address for links.",
+      "unsafe": "Programs are not opened directly – use “Save as …”.",
+      "openFailed": "No program is set up for this file. Use “Save as …”.",
+      "uploadInvalid": "Drive does not take this file.",
+      "tooLarge": "The file is too large.",
+      "missing": "The file is no longer there.",
+      "folder": "Folders cannot be uploaded – choose the files in them.",
+      "needsFiles": "Only files can go into Drive.",
+      "schoolOffline": "WebUntis cannot be reached right now – the attachment could not be loaded.",
+      "copy": "Copying did not work.",
+      "generic": "That did not work ({{code}})."
+    }
   }
 }

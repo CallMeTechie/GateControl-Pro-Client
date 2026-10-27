@@ -300,7 +300,9 @@
 			preview: m.preview || '',
 			body: m.body || null,
 			isNew: m.isNew === true,
-			attachments: m.hasAttachments === true,
+			attachments: m.hasAttachments === true || (Array.isArray(m.attachments) && m.attachments.length > 0),
+			// Schule 1.5: the attachments by name (older plugins: only the paper clip)
+			files: (Array.isArray(m.attachments) ? m.attachments : []).map((a) => ({ id: a.id, name: str(a.name) || str(a.id), size: Number.isFinite(a.size) ? a.size : null })),
 		};
 	}
 

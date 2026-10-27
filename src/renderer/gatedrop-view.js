@@ -47,6 +47,7 @@
 		nas: 'M4 4h16v6H4z|M4 14h16v6H4z|M8 7h.01M8 17h.01',
 		lock: 'M6 11h12v10H6z|M8 11V7a4 4 0 0 1 8 0v4',
 		users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2|M9 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M22 21v-2a4 4 0 0 0-3-3.87|M16 3.13a4 4 0 0 1 0 7.75',
+		cloud: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z',
 	};
 
 	function icon(name, size = 16, stroke = '2') {
@@ -96,6 +97,7 @@
 	 * @param {(st: object) => void} [o.onStatus] - availability (nav entry)
 	 * @param {() => void} [o.onOpen] - show the page (push / toast click)
 	 * @param {HTMLElement} [o.dialogHost] - where the send dialog goes (default document.body)
+	 * @param {{ pick: Function }} [o.driveSave] - folder picker for "Mein Drive" (renderer.js: drive-view.js)
 	 * @param {HTMLElement} [o.toastHost] - the app's toast stack (bottom right) for the send toasts;
 	 *   without one they get an own stack in dialogHost
 	 * @param {() => number} [o.now]
@@ -710,6 +712,17 @@
 					}
 					body.appendChild(row);
 				}
+				// "Mein Drive" (GateDrop 1.3 with Drive): files only, Meine Dateien › GateDrop or a folder picked
+				if (tg.drive) {
+					body.appendChild(sectionLabel(t('drive.gatedrop.section')));
+					const row = el('div', { class: 'gd-tchips' });
+					row.appendChild(targetChip({ label: t('drive.gatedrop.target'), iconName: 'cloud', on: D.sel.drive, onClick: () => { D.sel.drive = !D.sel.drive; renderDialog(); } }));
+					if (D.sel.drive && o.driveSave) {
+						row.appendChild(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', disabled: D.busy, on: { click: () => pickDriveFolder() } }, [icon('folder', 14), el('span', { text: t('drive.gatedrop.pick') })]));
+					}
+					body.appendChild(row);
+					if (D.sel.drive) body.appendChild(el('span', { class: 'gd-none', text: t('drive.gatedrop.where', { path: D.sel.driveFolder ? D.sel.driveFolder.path : t('drive.gatedrop.default') }) }));
+				}
 				if (tg.nas.length || tg.link) {
 					body.appendChild(sectionLabel(t('gatedrop.dialog.nasLink')));
 					const row = el('div', { class: 'gd-tchips' });
@@ -754,6 +767,15 @@
 			dlg.box.append(head, body, foot);
 			body.scrollTop = keepScroll;
 			updateFoot();
+		}
+
+		/** "Mein Drive": another folder than Meine Dateien › GateDrop (drive-view.js picker). */
+		async function pickDriveFolder() {
+			if (!o.driveSave) return;
+			const f = await o.driveSave.pick({ title: t('drive.gatedrop.pickTitle'), confirm: t('drive.save.here'), fallback: t('drive.gatedrop.default') });
+			if (!f || !D.open) return;
+			D.sel.driveFolder = f.folderId ? { folderId: f.folderId, path: f.path } : null;
+			renderDialog();
 		}
 
 		function updateFoot() {
