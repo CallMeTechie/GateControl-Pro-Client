@@ -77,6 +77,14 @@ jobs:
         shell: bash
         run: npm install --no-audit --no-fund
 
+      # gc-drive-sync.exe (extraResources → resources\drive-sync), wie im Release.
+      - name: Build gc-drive-sync
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo build --release --locked --manifest-path drive-sync/Cargo.toml
+
       # Same target as the release (electron-builder --win nsis), but unsigned
       # and without publishing; no signing secrets are used.
       - name: Build NSIS installer

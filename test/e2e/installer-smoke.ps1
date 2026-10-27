@@ -25,6 +25,8 @@ $cfg = @{
     DataDir       = 'gatecontrol-client-pro'
     # URL protocol of the toast buttons (app: setAsDefaultProtocolClient, HKCU)
     Protocol      = 'gatecontrol-pro'
+    # Drive „Dateien bei Bedarf“ (drive-sync/, package.json extraResources)
+    ExtraFiles    = @('resources\drive-sync\gc-drive-sync.exe')
   }
   community = @{
     Product       = 'GateControl Community Client'
@@ -34,6 +36,7 @@ $cfg = @{
     DataDir       = 'gatecontrol-client'
     # URL protocol of the toast buttons (app: setAsDefaultProtocolClient, HKCU)
     Protocol      = 'gatecontrol-community'
+    ExtraFiles    = @()
   }
 }[$Edition]
 
@@ -70,6 +73,7 @@ Check (Test-Path $uninstaller) "uninstaller present"
 Check (Test-Path (Join-Path $instDir 'resources\app.asar')) "resources\app.asar present"
 Check (Test-Path (Join-Path $instDir 'resources\update-signing.pub')) "resources\update-signing.pub present"
 Check (Test-Path (Join-Path $instDir 'resources\resources\bin\wireguard.dll')) "WireGuard DLL shipped (resources\resources\bin\wireguard.dll)"
+foreach ($f in $cfg.ExtraFiles) { Check (Test-Path (Join-Path $instDir $f)) "$f present" }
 Check (Test-Path $desktopLnk) "desktop shortcut $desktopLnk"
 Check (Test-Path $startMenuLnk) "start menu shortcut $startMenuLnk"
 

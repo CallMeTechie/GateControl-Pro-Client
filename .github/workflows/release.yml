@@ -80,6 +80,9 @@ jobs:
         run: bash scripts/fetch-core.sh --link
       - run: npm install --ignore-scripts --no-audit --no-fund
       - run: npm test
+      # gc-drive-sync (Drive „Dateien bei Bedarf“): plattformunabhängige Tests
+      - name: drive-sync tests
+        run: cargo test --locked --manifest-path drive-sync/Cargo.toml
 
   release:
     needs: [decide, security-gate, test-gate]
@@ -233,6 +236,21 @@ jobs:
         shell: bash
         run: npm install --no-audit --no-fund
 
+      # gc-drive-sync.exe (Drive „Dateien bei Bedarf“) nach
+      # drive-sync/target/release; electron-builder legt es über extraResources
+      # nach resources\drive-sync\ in Installer und Portable. Signiert wird wie
+      # die App: kein Authenticode, das Installer-Paket ist über das
+      # Ed25519-Update-Manifest (Sign update manifest) abgesichert.
+      - name: Build gc-drive-sync
+        if: steps.check_tag.outputs.exists == 'false'
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo build --release --locked --manifest-path drive-sync/Cargo.toml
+          test -f drive-sync/target/release/gc-drive-sync.exe
+          drive-sync/target/release/gc-drive-sync.exe --version
+
       - name: Build installer
         if: steps.check_tag.outputs.exists == 'false'
         run: npm run build:installer
@@ -249,6 +267,7 @@ jobs:
           echo "Patched with requireAdministrator"
           cd dist && powershell Compress-Archive -Path "win-unpacked/*" -DestinationPath "GateControl-Pro-Client-Portable.zip" -Force
           echo "Portable ZIP created"
+          test -f "dist/win-unpacked/resources/drive-sync/gc-drive-sync.exe"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

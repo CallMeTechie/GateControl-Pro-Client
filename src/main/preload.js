@@ -68,4 +68,22 @@ api.rdp = {
   onSessionTimeoutWarning: (cb) => subscribe('rdp:session-timeout-warning', cb),
 };
 
+// ══════════════════════════════════════════════════════
+//  Drive „Dateien bei Bedarf“ (gc-drive-sync.exe, main/drive-ondemand.js)
+//  Nur Kanäle – die Oberfläche folgt (W3b). Standardmäßig aus.
+// ══════════════════════════════════════════════════════
+
+api.driveOnDemand = {
+  /** { state, enabled, supported, pending, transferring, errors, lastSync, syncRoot, registered } */
+  status: () => ipcRenderer.invoke('drive-ondemand:status'),
+  /** Einschalten (registriert die Sync-Root, startet das Programm) / ausschalten. */
+  setEnabled: (on) => ipcRenderer.invoke('drive-ondemand:set-enabled', on === true),
+  syncNow: () => ipcRenderer.invoke('drive-ondemand:sync-now'),
+  pause: () => ipcRenderer.invoke('drive-ondemand:pause'),
+  resume: () => ipcRenderer.invoke('drive-ondemand:resume'),
+  /** Sync-Root abmelden: „nur online“-Platzhalter weg, Geladenes bleibt. */
+  unregister: () => ipcRenderer.invoke('drive-ondemand:unregister'),
+  onStatus: (cb) => subscribe('drive-ondemand:status', cb),
+};
+
 contextBridge.exposeInMainWorld('gatecontrol', api);

@@ -16,6 +16,7 @@
 
 const { registerBaseHandlers } = require('@gatecontrol/client-core/src/ipc/base-handlers');
 const { shortDeviceId } = require('./device-id');
+const { driveOnDemandChannels } = require('./drive-ondemand');
 
 /**
  * @param {Electron.IpcMain} ipcMain
@@ -28,6 +29,7 @@ const { shortDeviceId } = require('./device-id');
  * @param {Function} ctx.setRdpPanelOpen - (open) => void
  * @param {Function} ctx.getMachineFingerprint - () => 64-hex fingerprint (core);
  *   only its 8-character short form is handed to the renderer
+ * @param {object} [ctx.driveOnDemand] - ./drive-ondemand.js (drive-ondemand:* channels)
  * @returns {string[]} registered channels
  */
 function registerProIpc(ipcMain, ctx) {
@@ -105,6 +107,10 @@ function registerProIpc(ipcMain, ctx) {
       store.set('rdp.panelPinned', pinned);
       return pinned;
     },
+
+    // ── Drive „Dateien bei Bedarf“ (gc-drive-sync.exe, ./drive-ondemand.js) ──
+    // Immer registriert (die Preload-Brücke kennt sie); ohne Dienst „unsupported“.
+    ...driveOnDemandChannels(ctx.driveOnDemand || null, log),
   };
 
   return registerBaseHandlers(ipcMain, { ...ctx, getUpdater, overrides });

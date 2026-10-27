@@ -300,10 +300,20 @@ describe('NSIS installer script (build/installer.nsh)', () => {
   it('references the app exe only by its real file name', () => {
     const exe = expectedExeFilename();
     // electron-builder: !define APP_EXECUTABLE_FILENAME "${PRODUCT_FILENAME}.exe"
-    const resolved = instdirExeRefs().map(r => r.replace('${APP_EXECUTABLE_FILENAME}', exe));
+    // Einzige weitere Exe: gc-drive-sync.exe (package.json extraResources drive-sync/)
+    const DRIVE_SYNC = 'resources\\drive-sync\\gc-drive-sync.exe';
+    const resolved = instdirExeRefs().map(r => r.replace('${APP_EXECUTABLE_FILENAME}', exe)).filter(r => r !== DRIVE_SYNC);
     for (const ref of resolved) {
       assert.equal(ref, exe, 'falscher Exe-Pfad $INSTDIR\\' + ref + ' (erwartet ' + exe + ')');
     }
+  });
+
+  it('meldet beim Deinstallieren die Drive-Sync-Root ab (nicht bei Updates)', () => {
+    const body = macroBody('customUnInstall');
+    const notUpdated = body.slice(body.indexOf('${IfNot} ${isUpdated}'), body.indexOf('; Remove firewall rules'));
+    assert.match(notUpdated, /"\$INSTDIR\\resources\\drive-sync\\gc-drive-sync\.exe" unregister/);
+    const er = pkg.build.extraResources.find(e => e.to === 'drive-sync/');
+    assert.ok(er && er.filter.includes('gc-drive-sync.exe'), 'gc-drive-sync.exe landet in resources\\drive-sync');
   });
 
   it('customInstall allows the real app exe (not "GateControl Pro.exe") through the firewall', () => {
