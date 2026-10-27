@@ -115,6 +115,9 @@ pub struct MeAnswer {
     /// Höchste `seq` des Änderungsprotokolls.
     #[serde(default)]
     pub latest: u64,
+    /// Drive 1.5: Fähigkeiten (`emptyFiles`, `devices`, `deleteAfter`, …); ältere Drives: leer.
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -191,6 +194,9 @@ pub struct UploadCheck {
 pub struct Content {
     #[serde(default)]
     pub media_id: Option<String>,
+    /// Drive 1.5: leere Datei ohne Medium.
+    #[serde(default)]
+    pub empty: bool,
     #[serde(default)]
     pub size: Option<u64>,
     #[serde(default)]
@@ -201,7 +207,11 @@ pub struct Content {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitRequest {
-    pub media_id: String,
+    /// `None` nur für leere Dateien (Drive 1.5 `emptyFiles`, dann `size: 0`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
     pub parent_id: u64,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -251,7 +261,7 @@ mod tests {
 
     #[test]
     fn commit_body_skips_empty() {
-        let c = CommitRequest { media_id: "m".into(), parent_id: 1, name: "a".into(), base_rev: None, mtime: Some(5), on_conflict: None };
+        let c = CommitRequest { media_id: Some("m".into()), size: None, parent_id: 1, name: "a".into(), base_rev: None, mtime: Some(5), on_conflict: None };
         assert_eq!(serde_json::to_string(&c).unwrap(), r#"{"mediaId":"m","parentId":1,"name":"a","mtime":5}"#);
     }
 }

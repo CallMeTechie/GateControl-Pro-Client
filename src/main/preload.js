@@ -70,20 +70,34 @@ api.rdp = {
 
 // ══════════════════════════════════════════════════════
 //  Drive „Dateien bei Bedarf“ (gc-drive-sync.exe, main/drive-ondemand.js)
-//  Nur Kanäle – die Oberfläche folgt (W3b). Standardmäßig aus.
+//  Oberfläche: renderer/drive-ondemand-view.js. Standardmäßig aus.
 // ══════════════════════════════════════════════════════
 
 api.driveOnDemand = {
-  /** { state, enabled, supported, pending, transferring, errors, lastSync, syncRoot, registered } */
+  /** { state, enabled, supported, running, pending, transferring, errors, lastSync, syncRoot, registered, massDelete, progress, busy, launch, elevated } */
   status: () => ipcRenderer.invoke('drive-ondemand:status'),
-  /** Einschalten (registriert die Sync-Root, startet das Programm) / ausschalten. */
+  /** Einschalten (registriert die Sync-Root, startet das Programm). */
+  enable: () => ipcRenderer.invoke('drive-ondemand:enable'),
+  /** Ausschalten = Sync-Root abmelden; Fehler `relocated` / `unsynced` (mit data) lassen alles an. */
+  disable: (force) => ipcRenderer.invoke('drive-ondemand:disable', { force: force === true }),
   setEnabled: (on) => ipcRenderer.invoke('drive-ondemand:set-enabled', on === true),
   syncNow: () => ipcRenderer.invoke('drive-ondemand:sync-now'),
   pause: () => ipcRenderer.invoke('drive-ondemand:pause'),
   resume: () => ipcRenderer.invoke('drive-ondemand:resume'),
-  /** Sync-Root abmelden: „nur online“-Platzhalter weg, Geladenes bleibt. */
+  /** Massenlöschung: 'apply' (Löschen übertragen) | 'restore' (Wiederherstellen). */
+  deletes: (decision) => ipcRenderer.invoke('drive-ondemand:deletes', decision),
+  /** { localBytes, totalBytes, files, localFiles, pinnedFiles } */
+  usage: () => ipcRenderer.invoke('drive-ondemand:usage'),
+  /** { folders: [{ key, path, inDrive, from }], syncRoot } */
+  knownFolders: () => ipcRenderer.invoke('drive-ondemand:known-folders'),
+  relocate: (folder, name) => ipcRenderer.invoke('drive-ondemand:relocate', folder, name),
+  restore: (folder) => ipcRenderer.invoke('drive-ondemand:restore', folder),
+  openRoot: () => ipcRenderer.invoke('drive-ondemand:open-root'),
+  /** W3a-Name von disable(). */
   unregister: () => ipcRenderer.invoke('drive-ondemand:unregister'),
   onStatus: (cb) => subscribe('drive-ondemand:status', cb),
+  /** Explorer-Kontextmenü: { action: 'share' | 'versions', node, path } (Portal öffnet main selbst). */
+  onAction: (cb) => subscribe('drive-ondemand:action', cb),
 };
 
 contextBridge.exposeInMainWorld('gatecontrol', api);

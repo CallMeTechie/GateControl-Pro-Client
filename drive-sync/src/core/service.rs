@@ -8,7 +8,8 @@ use super::engine::{Engine, EngineConfig, Shared};
 use super::hydrate::{self, FetchRequest, TransferSink};
 use super::identity::Identity;
 use super::localfs::LocalFs;
-use super::protocol::{self, Command, Config, ProtoError, Status, StatusError};
+use super::protocol::{self, Command, Config, KnownFolder, ProtoError, Status, StatusError};
+use super::relocate::{self, KnownFolders};
 use super::remote::{ApiError, Remote};
 use super::state::State;
 use serde_json::{json, Value};
@@ -61,7 +62,24 @@ pub trait Platform: Send + Sync + 'static {
     /// CfConnectSyncRoot; Trennen beim Fallenlassen des Guards.
     fn connect(&self, cb: Arc<dyn Callbacks>) -> Result<Guard, String>;
     fn watch(&self, on_event: Box<dyn Fn(WatchEvent) + Send + Sync>) -> Result<Guard, String>;
+    /// Windows-Ordner (Desktop, Dokumente, …) – `None`: nicht unterstützt.
+    fn known(&self) -> Option<Arc<dyn KnownFolders>> {
+        None
+    }
+    /// Läuft das Programm mit Administratorrechten?
+    fn elevated(&self) -> bool {
+        false
+    }
+    /// Explorer-Kontextmenü (Link teilen, Im Portal öffnen, Ältere Versionen) an/aus.
+    fn context_menu(&self, _on: bool, _app_exe: Option<&str>, _lang: Option<&str>) -> Result<(), String> {
+        Ok(())
+    }
+    /// Dem Explorer Änderungen an Ordnern melden (nach dem Verlegen).
+    fn notify_shell(&self, _paths: &[PathBuf]) {}
 }
+
+/// Auftrag, der im Abgleich-Thread läuft (zwischen zwei Durchläufen).
+pub type EngineJob = Box<dyn FnOnce(&mut Engine) -> Result<Value, ProtoError> + Send>;
 
 pub type RemoteFactory = Box<dyn Fn(&Config) -> Result<Arc<dyn Remote>, ApiError> + Send + Sync>;
 
@@ -71,6 +89,7 @@ pub fn http_remote() -> RemoteFactory {
 }
 
 enum Msg {
+    Job(EngineJob, Sender<Result<Value, ProtoError>>),
     SyncNow,
     Pause(bool),
     Local(PathBuf),
@@ -100,6 +119,9 @@ struct Inner {
     config: Option<Config>,
     runner: Option<Runner>,
     paused: bool,
+    /// Pro-Client-Exe und Sprache (aus `hello`), für das Kontextmenü.
+    app_exe: Option<String>,
+    lang: Option<String>,
 }
 
 pub struct Service<P: Platform> {
@@ -130,7 +152,7 @@ impl<P: Platform> Service<P> {
         Arc::new(Service {
             platform,
             remote_factory,
-            inner: Mutex::new(Inner { config: None, runner: None, paused: false }),
+            inner: Mutex::new(Inner { config: None, runner: None, paused: false, app_exe: None, lang: None }),
             events: Mutex::new(None),
             quit: AtomicBool::new(false),
             log_file,
@@ -142,7 +164,8 @@ impl<P: Platform> Service<P> {
         *self.events.lock().unwrap() = sink;
     }
 
-    fn emit(&self, line: String) {
+    /// Eine Zeile an den verbundenen Pro-Client (Ereignis).
+    pub fn emit(&self, line: String) {
         let sink = self.events.lock().unwrap().clone();
         if let Some(s) = sink {
             s(line);
@@ -162,6 +185,7 @@ impl<P: Platform> Service<P> {
         let mut s = Status {
             sync_root: Some(self.platform.sync_root().to_string_lossy().to_string()),
             registered: self.platform.is_registered(),
+            elevated: self.platform.elevated(),
             ..Default::default()
         };
         match &inner.runner {
@@ -173,6 +197,7 @@ impl<P: Platform> Service<P> {
                 s.last_sync = run.last_sync.clone();
                 s.pending = r.shared.pending.load(Ordering::Relaxed);
                 s.transferring = r.shared.transferring.load(Ordering::Relaxed) + r.fetch.active();
+                s.mass_delete = r.shared.held.read().ok().and_then(|h| h.clone());
             }
         }
         s
@@ -185,16 +210,26 @@ impl<P: Platform> Service<P> {
     /// Eine Anfrage → Ergebnis (wird zur Antwortzeile).
     pub fn handle(self: &Arc<Self>, cmd: Command) -> Result<Value, ProtoError> {
         match cmd {
-            Command::Hello { version } => {
+            Command::Hello { version, app_exe, lang } => {
                 if let Some(v) = version {
                     self.log("info", &format!("Pro-Client {v} verbunden"));
                 }
+                let mut inner = self.inner.lock().unwrap();
+                if app_exe.is_some() {
+                    inner.app_exe = app_exe;
+                }
+                if lang.is_some() {
+                    inner.lang = lang;
+                }
+                drop(inner);
                 Ok(json!({
                     "protocol": protocol::PROTOCOL_VERSION,
                     "version": env!("CARGO_PKG_VERSION"),
                     "pid": std::process::id(),
                     "syncRoot": self.platform.sync_root().to_string_lossy(),
                     "state": self.status().state,
+                    "elevated": self.platform.elevated(),
+                    "knownFolders": self.platform.known().is_some(),
                 }))
             }
             Command::Configure(c) => {
@@ -241,9 +276,27 @@ impl<P: Platform> Service<P> {
                     None => Err(ProtoError::new("not_running", "not started")),
                 }
             }
-            Command::Unregister => {
-                self.unregister()?;
+            Command::Unregister { force } => {
+                self.unregister_checked(force)?;
                 Ok(json!({ "unregistered": true }))
+            }
+            Command::Deletes { apply } => {
+                let n = self.run_job(Box::new(move |eng: &mut Engine| {
+                    eng.decide_deletes(apply).map(|n| json!(n)).map_err(|e| ProtoError::new("failed", e.to_string()))
+                }))?;
+                self.publish();
+                Ok(json!({ "decided": n, "apply": apply }))
+            }
+            Command::KnownFolders => {
+                let known = self.platform.known().ok_or(ProtoError::new("unsupported", "known folders"))?;
+                Ok(relocate::list(known.as_ref(), &self.platform.sync_root(), &self.platform.data_dir()))
+            }
+            Command::Relocate { folder, name } => self.relocate(folder, name),
+            Command::Restore { folder } => self.restore(folder),
+            Command::Usage => Ok(relocate::usage(self.platform.fs().as_ref(), &self.platform.sync_root())),
+            Command::Action { action, path } => {
+                self.handle_action(&action, Path::new(&path)).map_err(|e| ProtoError::new("invalid", e))?;
+                Ok(json!({ "queued": true }))
             }
             Command::Shutdown => {
                 self.stop_runner();
@@ -261,6 +314,9 @@ impl<P: Platform> Service<P> {
         let config = inner.config.clone().ok_or(ProtoError::new("not_configured", "configure first"))?;
         let remote = (self.remote_factory)(&config).map_err(|e| ProtoError::new("client", e.to_string()))?;
         self.platform.register().map_err(|e| ProtoError::new("register_failed", e))?;
+        if let Err(e) = self.platform.context_menu(true, inner.app_exe.as_deref(), inner.lang.as_deref()) {
+            self.log("warn", &format!("Kontextmenü: {e}"));
+        }
         let shared = Arc::new(Shared::default());
         let (tx, rx) = mpsc::channel::<Msg>();
         let lg = Arc::downgrade(self);
@@ -317,20 +373,205 @@ impl<P: Platform> Service<P> {
         }
     }
 
+    /// Einen Auftrag im Abgleich-Thread ausführen und auf das Ergebnis warten.
+    pub fn run_job(&self, job: EngineJob) -> Result<Value, ProtoError> {
+        let rx = {
+            let inner = self.inner.lock().unwrap();
+            let r = inner.runner.as_ref().ok_or(ProtoError::new("not_running", "not started"))?;
+            let (tx, rx) = mpsc::channel();
+            r.tx.send(Msg::Job(job, tx)).map_err(|_| ProtoError::new("not_running", "stopped"))?;
+            rx
+        };
+        rx.recv().unwrap_or_else(|_| Err(ProtoError::new("cancelled", "stopped")))
+    }
+
+    fn progress_fn(self: &Arc<Self>, op: &'static str, folder: Option<&'static str>) -> impl Fn(&str, u64, u64) + Send + 'static {
+        let w = Arc::downgrade(self);
+        let last = Mutex::new(Instant::now() - Duration::from_secs(1));
+        move |phase: &str, done: u64, total: u64| {
+            let mut l = last.lock().unwrap();
+            if done < total && l.elapsed() < Duration::from_millis(250) {
+                return;
+            }
+            *l = Instant::now();
+            if let Some(s) = w.upgrade() {
+                s.emit(protocol::progress_event(op, folder, phase, done, total));
+            }
+        }
+    }
+
+    fn device_name(&self) -> String {
+        self.inner.lock().unwrap().config.as_ref().map(|c| c.device_name.clone()).unwrap_or_else(|| "PC".into())
+    }
+
+    fn relocate(self: &Arc<Self>, folder: KnownFolder, name: Option<String>) -> Result<Value, ProtoError> {
+        let known = self.platform.known().ok_or(ProtoError::new("unsupported", "known folders"))?;
+        let (data, device, plat) = (self.platform.data_dir(), self.device_name(), self.platform.clone());
+        let progress = self.progress_fn("relocate", Some(folder.key()));
+        self.log("info", &format!("Windows-Ordner {} wird in den Drive verlegt", folder.key()));
+        let r = self.run_job(Box::new(move |eng: &mut Engine| {
+            let args = relocate::RelocateArgs { known: known.as_ref(), data_dir: &data, folder, name, device: &device };
+            let r = relocate::relocate(eng, args, &progress)?;
+            plat.notify_shell(&[PathBuf::from(r["from"].as_str().unwrap_or_default()), PathBuf::from(r["to"].as_str().unwrap_or_default())]);
+            Ok(r)
+        }));
+        self.after_folder_job("verlegt", &r);
+        r
+    }
+
+    fn restore(self: &Arc<Self>, folder: KnownFolder) -> Result<Value, ProtoError> {
+        let known = self.platform.known().ok_or(ProtoError::new("unsupported", "known folders"))?;
+        let (data, device, plat) = (self.platform.data_dir(), self.device_name(), self.platform.clone());
+        let progress = self.progress_fn("restore", Some(folder.key()));
+        self.log("info", &format!("Windows-Ordner {} wird zurückgelegt", folder.key()));
+        let r = self.run_job(Box::new(move |eng: &mut Engine| {
+            let r = relocate::restore(eng, known.as_ref(), &data, folder, &device, &progress)?;
+            plat.notify_shell(&[PathBuf::from(r["from"].as_str().unwrap_or_default()), PathBuf::from(r["to"].as_str().unwrap_or_default())]);
+            Ok(r)
+        }));
+        self.after_folder_job("zurückgelegt", &r);
+        r
+    }
+
+    fn after_folder_job(&self, what: &str, r: &Result<Value, ProtoError>) {
+        match r {
+            Ok(v) => self.log("info", &format!("{} {what}: {} → {} ({} Einträge)", v["folder"], v["from"], v["to"], v["moved"])),
+            Err(e) => self.log("warn", &format!("Nicht {what}: {} {}", e.code, e.message)),
+        }
+        self.publish();
+    }
+
+    /// Explorer-Kontextmenü (über die Aktions-Pipe): `share` | `portal` |
+    /// `versions` für einen Pfad im Sync-Root → Ereignis `action` an den
+    /// Pro-Client (mit Knoten-ID aus dem Platzhalter). → zugestellt?
+    pub fn handle_action(&self, action: &str, path: &Path) -> Result<bool, String> {
+        let Some(action) = protocol::ACTIONS.iter().find(|a| **a == action) else { return Err("unknown action".into()) };
+        let root = self.platform.sync_root();
+        if !relocate::is_under(path, &root) || path.strip_prefix(&root).map(|r| r.as_os_str().is_empty()).unwrap_or(true) {
+            return Err("not in the sync root".into());
+        }
+        let l = self.platform.fs().stat(path).map_err(|e| e.to_string())?.ok_or("not found")?;
+        let id = l.identity().cloned();
+        let delivered = self.events.lock().unwrap().is_some();
+        self.emit(protocol::action_event(action, &path.to_string_lossy(), id.as_ref().map(|i| i.node), id.as_ref().map(|i| i.area.as_str()), l.is_dir));
+        self.log("info", &format!("Kontextmenü: {action} {}", path.display()));
+        Ok(delivered)
+    }
+
+    /// Abmelden über die Kommandozeile (Deinstallation): wie `force`, aber nie,
+    /// solange Windows-Ordner im Drive liegen (Fehler `relocated`) – sonst zeigten
+    /// Desktop/Dokumente danach in einen Ordner ohne die Dateien „nur online“.
+    pub fn unregister_cli(&self) -> Result<(), ProtoError> {
+        let rel = self.relocated();
+        if !rel.is_empty() {
+            return Err(ProtoError::new("relocated", "Windows-Ordner liegen im Drive – zuerst zurücklegen").with_data(json!({ "folders": rel })));
+        }
+        self.unregister()
+    }
+
+    /// Windows-Ordner, die gerade im Drive liegen (Schlüssel wie `desktop`).
+    pub fn relocated(&self) -> Vec<&'static str> {
+        let Some(k) = self.platform.known() else { return vec![] };
+        let root = self.platform.sync_root();
+        KnownFolder::ALL.into_iter().filter(|f| k.get(*f).is_ok_and(|p| relocate::is_under(&p, &root))).map(KnownFolder::key).collect()
+    }
+
+    /// Abmelden über die Pipe: zuerst prüfen, dass nichts verloren geht.
+    ///   * verlegte Windows-Ordner → Fehler `relocated` (erst zurücklegen);
+    ///   * ausstehende Änderungen hochladen; bleibt etwas übrig → Fehler
+    ///     `unsynced` mit Anzahl und Pfaden – außer `force` (dann bleiben diese
+    ///     Dateien als normale Dateien im Ordner);
+    ///   * nicht vollständig geladene, aber geänderte Platzhalter vorher laden.
+    pub fn unregister_checked(&self, force: bool) -> Result<(), ProtoError> {
+        let rel = self.relocated();
+        if !rel.is_empty() {
+            return Err(ProtoError::new("relocated", "Windows-Ordner liegen im Drive – zuerst zurücklegen").with_data(json!({ "folders": rel })));
+        }
+        let running = self.inner.lock().unwrap().runner.is_some();
+        let check = move |eng: &mut Engine| -> Result<Value, ProtoError> {
+            if eng.state.areas.is_empty() {
+                return Ok(json!({ "count": 0, "paths": [] }));
+            }
+            let _ = eng.process_local();
+            let (count, paths) = eng.unsynced(20);
+            if count > 0 && !force {
+                let p: Vec<String> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+                return Err(
+                    ProtoError::new("unsynced", format!("{count} Änderungen sind noch nicht hochgeladen")).with_data(json!({ "count": count, "paths": p }))
+                );
+            }
+            if force {
+                // geänderte, aber nicht vollständig geladene Dateien: laden, damit sie vollständig bleiben
+                let fs = eng.fs();
+                for p in eng.not_hydrated(&eng.cfg.root.clone()) {
+                    if fs.stat(&p).ok().flatten().is_some_and(|l| !l.in_sync()) {
+                        let _ = fs.hydrate_now(&p);
+                    }
+                }
+            }
+            Ok(json!({ "count": count }))
+        };
+        if running {
+            match self.run_job(Box::new(check)) {
+                Ok(_) => {}
+                // Server nie erreicht (keine Engine): wie ohne Abgleich prüfen
+                Err(e) if e.code == "offline" => self.check_offline(force)?,
+                Err(e) => return Err(e),
+            }
+        } else {
+            self.check_offline(force)?;
+        }
+        self.unregister()
+    }
+
+    /// Ohne laufenden Abgleich: nur prüfen, ob lokal etwas aussteht.
+    fn check_offline(&self, force: bool) -> Result<(), ProtoError> {
+        if force {
+            return Ok(());
+        }
+        let mut count = 0;
+        let mut paths = Vec::new();
+        for st in self.state_files() {
+            let eng = Engine::new(
+                EngineConfig { root: self.platform.sync_root(), device_name: String::new() },
+                Arc::new(NoRemote),
+                self.platform.fs(),
+                load_any_state(&st),
+                Arc::new(Shared::default()),
+            );
+            let (c, p) = eng.unsynced(20);
+            count += c;
+            paths.extend(p.into_iter().map(|p| p.to_string_lossy().to_string()));
+        }
+        if count > 0 {
+            return Err(
+                ProtoError::new("unsynced", format!("{count} Änderungen sind noch nicht hochgeladen")).with_data(json!({ "count": count, "paths": paths }))
+            );
+        }
+        Ok(())
+    }
+
+    fn state_files(&self) -> Vec<PathBuf> {
+        std::fs::read_dir(self.platform.data_dir())
+            .map(|d| {
+                d.filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("state-") && n.ends_with(".json")))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Platzhalter „nur online“ entfernen, Geladenes behalten, Sync-Root abmelden, Zustand löschen.
+    /// (Deinstallation: ohne Rückfrage; über die Pipe: `unregister_checked`.)
     pub fn unregister(&self) -> Result<(), ProtoError> {
         self.stop_runner();
         let fs = self.platform.fs();
-        let data_dir = self.platform.data_dir();
+        if let Err(e) = self.platform.context_menu(false, None, None) {
+            self.log("warn", &format!("Kontextmenü entfernen: {e}"));
+        }
         if self.platform.is_registered() {
-            let states: Vec<PathBuf> = std::fs::read_dir(&data_dir)
-                .map(|d| {
-                    d.filter_map(|e| e.ok())
-                        .map(|e| e.path())
-                        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("state-") && n.ends_with(".json")))
-                        .collect()
-                })
-                .unwrap_or_default();
+            let states = self.state_files();
             for sf in &states {
                 let st = load_any_state(sf);
                 let mut eng = Engine::new(
@@ -370,6 +611,20 @@ impl<P: Platform> Service<P> {
                 continue;
             }
             let out = match protocol::parse_request(&line) {
+                Ok(req) if is_slow(&req.cmd) => {
+                    // lange Befehle im eigenen Thread: Status-Abfragen laufen weiter
+                    let (svc, w2) = (self.clone(), w.clone());
+                    std::thread::spawn(move || {
+                        let out = match svc.handle(req.cmd) {
+                            Ok(v) => protocol::ok_line(&req.id, v),
+                            Err(e) => protocol::err_line(&req.id, &e),
+                        };
+                        if let Ok(mut g) = w2.lock() {
+                            let _ = writeln!(g, "{out}").and_then(|_| g.flush());
+                        }
+                    });
+                    continue;
+                }
                 Ok(req) => match self.handle(req.cmd) {
                     Ok(v) => protocol::ok_line(&req.id, v),
                     Err(e) => protocol::err_line(&req.id, &e),
@@ -387,6 +642,13 @@ impl<P: Platform> Service<P> {
         }
         self.set_event_sink(None);
     }
+}
+
+fn is_slow(c: &Command) -> bool {
+    matches!(
+        c,
+        Command::Unregister { .. } | Command::Deletes { .. } | Command::Relocate { .. } | Command::Restore { .. } | Command::Usage | Command::KnownFolders
+    )
 }
 
 fn write_log_file(path: &Path, line: &str) {
@@ -492,7 +754,24 @@ fn run_loop<P: Platform>(
 
     let state_path = state_file(&data_dir, &config.server_url);
     let mut engine: Option<Engine> = None;
+    let mut jobs: Vec<(EngineJob, Sender<Result<Value, ProtoError>>)> = Vec::new();
+    let make_engine = |me: super::model::MeAnswer| {
+        let account = hash16(&format!("{}\n{}", config.server_url.to_lowercase(), me.me.id.unwrap_or(0)));
+        let st = State::load(&state_path, &account);
+        let mut e = Engine::new(EngineConfig { root: root.clone(), device_name: config.device_name.clone() }, remote.clone(), fs.clone(), st, shared.clone());
+        let lg = svc.clone();
+        e.set_logger(move |lvl, msg| {
+            if let Some(s) = lg.upgrade() {
+                s.log(lvl, msg);
+            }
+        });
+        e
+    };
     let mut settling: HashMap<PathBuf, Instant> = HashMap::new();
+    // Löschungen aus dem Explorer sammeln, bis 2 s Ruhe ist: eine große Löschung
+    // kommt so als Ganzes zur Prüfung auf Massenlöschung.
+    let mut deleted: Vec<(u64, PathBuf)> = Vec::new();
+    let mut last_delete = Instant::now();
     let mut next_poll = Instant::now();
     let mut backoff = Duration::from_secs(15);
     loop {
@@ -502,8 +781,12 @@ fn run_loop<P: Platform>(
         if let Some(t) = settling.values().map(|t| (*t + SETTLE).saturating_duration_since(now)).min() {
             wait = wait.min(t);
         }
+        if !deleted.is_empty() {
+            wait = wait.min((last_delete + SETTLE).saturating_duration_since(now));
+        }
         match rx.recv_timeout(wait.max(Duration::from_millis(50))) {
             Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
+            Ok(Msg::Job(j, tx)) => jobs.push((j, tx)),
             Ok(Msg::SyncNow) => next_poll = Instant::now(),
             Ok(Msg::Pause(p)) => {
                 paused = p;
@@ -515,10 +798,8 @@ fn run_loop<P: Platform>(
                 settling.insert(p, Instant::now());
             }
             Ok(Msg::Deleted(n, p)) => {
-                if let Some(e) = engine.as_mut() {
-                    e.note_deleted(n, p);
-                }
-                next_poll = next_poll.min(Instant::now() + SETTLE);
+                deleted.push((n, p));
+                last_delete = Instant::now();
             }
             Ok(Msg::Overflow) => {
                 if let Some(e) = engine.as_mut() {
@@ -539,19 +820,48 @@ fn run_loop<P: Platform>(
                     settling.insert(p, Instant::now());
                 }
                 Msg::Deleted(n, p) => {
-                    if let Some(e) = engine.as_mut() {
-                        e.note_deleted(n, p);
-                    }
+                    deleted.push((n, p));
+                    last_delete = Instant::now();
                 }
                 Msg::SyncNow | Msg::Overflow => next_poll = Instant::now(),
                 Msg::Pause(p) => paused = p,
+                Msg::Job(j, tx) => jobs.push((j, tx)),
             }
+        }
+        if !jobs.is_empty() {
+            if engine.is_none() {
+                if let Ok(me) = remote.me() {
+                    engine = Some(make_engine(me));
+                }
+            }
+            for (j, tx) in jobs.drain(..) {
+                let r = match engine.as_mut() {
+                    Some(e) => j(e),
+                    None => Err(ProtoError::new("offline", "Server nicht erreichbar")),
+                };
+                let _ = tx.send(r);
+            }
+            if let Some(e) = engine.as_ref() {
+                let mut r = run.lock().unwrap();
+                r.errors = e.errors();
+            }
+            save(&engine, &state_path);
+            publish();
+            next_poll = Instant::now();
         }
         if paused {
             continue;
         }
         let now = Instant::now();
         let settled: Vec<PathBuf> = settling.iter().filter(|(_, t)| now.duration_since(**t) >= SETTLE).map(|(p, _)| p.clone()).collect();
+        if !deleted.is_empty() && now.duration_since(last_delete) >= SETTLE {
+            if let Some(e) = engine.as_mut() {
+                for (n, p) in deleted.drain(..) {
+                    e.note_deleted(n, p);
+                }
+                next_poll = now;
+            }
+        }
         let due = now >= next_poll;
         if settled.is_empty() && !due {
             continue;
@@ -559,24 +869,7 @@ fn run_loop<P: Platform>(
         // Engine anlegen, sobald der Server antwortet (Konto → Zustandsdatei)
         if engine.is_none() {
             match remote.me() {
-                Ok(me) => {
-                    let account = hash16(&format!("{}\n{}", config.server_url.to_lowercase(), me.me.id.unwrap_or(0)));
-                    let st = State::load(&state_path, &account);
-                    let mut e = Engine::new(
-                        EngineConfig { root: root.clone(), device_name: config.device_name.clone() },
-                        remote.clone(),
-                        fs.clone(),
-                        st,
-                        shared.clone(),
-                    );
-                    let lg = svc.clone();
-                    e.set_logger(move |lvl, msg| {
-                        if let Some(s) = lg.upgrade() {
-                            s.log(lvl, msg);
-                        }
-                    });
-                    engine = Some(e);
-                }
+                Ok(me) => engine = Some(make_engine(me)),
                 Err(err) => {
                     log("warn", &format!("Server nicht erreichbar: {err}"));
                     set_state(if err.offline() { "offline" } else { "error" });

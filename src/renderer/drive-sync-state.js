@@ -217,7 +217,7 @@
 	/** The error text of a failed call (drive.sync.err.* first, then Drive's own texts). */
 	function errorText(r, t) {
 		const code = str(r && r.code);
-		const own = ['overlap', 'folder_missing', 'not_a_folder', 'drive_root', 'too_many', 'target_taken', 'forbidden', 'no_home', 'no_network', 'invalid', 'offline', 'network', 'timeout', 'not_found'];
+		const own = ['overlap', 'in_drive', 'folder_missing', 'not_a_folder', 'drive_root', 'too_many', 'target_taken', 'forbidden', 'no_home', 'no_network', 'invalid', 'offline', 'network', 'timeout', 'not_found'];
 		if (own.includes(code)) return t(`drive.sync.err.${code === 'network' || code === 'timeout' ? 'offline' : code}`);
 		return t('drive.sync.err.generic', { code: code || '?' });
 	}

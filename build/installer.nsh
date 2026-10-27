@@ -363,6 +363,44 @@
 !macroend
 ; ====================== Ende GateDrop ===================================
 
+; ======================================================================
+; Drive "Dateien bei Bedarf": Deinstallation nur ohne verlegte Windows-Ordner
+;
+; Liegen Desktop/Dokumente/Bilder/Videos/Musik per "In den Drive verlegen"
+; im Ordner "GateControl Drive", zeigten sie nach dem Abmelden der Sync-Root
+; in einen Ordner ohne die Dateien "nur online" - fuer Nutzer sieht das wie
+; Datenverlust aus. Deshalb prueft der Deinstaller ganz am Anfang (un.onInit,
+; bevor irgendetwas entfernt wird) mit "gc-drive-sync.exe relocated"
+; (Exit-Code 4 = mindestens ein Ordner liegt im Drive) und bricht dann ab:
+; mit Meldung, im Silent-Modus ohne Meldung mit Exit-Code 4. Nichts wird
+; abgemeldet. Nur bei einer echten Deinstallation, nicht bei einem Update
+; (--updated): Dann bleibt alles, wie es ist. Jeder andere Exit-Code (z. B.
+; Programm fehlt oder startet nicht) haelt die Deinstallation nicht auf.
+; "gc-drive-sync.exe unregister" lehnt in diesem Fall zusaetzlich selbst ab.
+; Register $0/$1 werden gesichert.
+; ======================================================================
+!define GC_DRIVE_SYNC_EXE "$INSTDIR\resources\drive-sync\gc-drive-sync.exe"
+
+!macro customUnInit
+  ${IfNot} ${isUpdated}
+    ${If} ${FileExists} "${GC_DRIVE_SYNC_EXE}"
+      Push $0
+      Push $1
+      nsExec::ExecToStack '"${GC_DRIVE_SYNC_EXE}" relocated'
+      Pop $0
+      Pop $1
+      ${If} $0 == 4
+        MessageBox MB_OK|MB_ICONSTOP "GateControl Drive: Windows-Ordner (Desktop, Dokumente, Bilder, Videos oder Musik) liegen noch im Drive.$\r$\n$\r$\nBitte zuerst in GateControl unter Drive > Ordner sichern die Windows-Ordner zuruecklegen, dann erneut deinstallieren.$\r$\n$\r$\nWindows folders still lie in GateControl Drive. Please put them back first in GateControl under Drive > Ordner sichern, then uninstall again." /SD IDOK
+        SetErrorLevel 4
+        Quit
+      ${EndIf}
+      Pop $1
+      Pop $0
+    ${EndIf}
+  ${EndIf}
+!macroend
+; ====================== Ende Drive-Pruefung ============================
+
 !macro customInstall
   ; Add firewall rules for WireGuard tunnel
   ; Programmpfad ueber ${APP_EXECUTABLE_FILENAME} (von electron-builder aus
@@ -407,7 +445,8 @@
     ; Drive "Dateien bei Bedarf": Sync-Root "GateControl Drive" des Benutzers
     ; abmelden (gc-drive-sync.exe, drive-sync/README.md). Platzhalter, die nur
     ; online sind, verschwinden; geladene und geaenderte Dateien bleiben als
-    ; normale Dateien im Ordner. Ohne Sync-Root tut der Aufruf nichts.
+    ; normale Dateien im Ordner. Ohne Sync-Root tut der Aufruf nichts. Verlegte
+    ; Windows-Ordner haben die Deinstallation schon in customUnInit beendet.
     ${If} ${FileExists} "$INSTDIR\resources\drive-sync\gc-drive-sync.exe"
       Push $3
       DetailPrint "GateControl: Drive-Sync-Root abmelden ..."

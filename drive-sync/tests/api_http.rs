@@ -88,7 +88,8 @@ fn small_upload_commit_conflict_and_download() {
     assert!(srv.last_headers.lock().unwrap().get("repr-digest").unwrap().starts_with("sha-256=:"));
     let node = c
         .commit(&CommitRequest {
-            media_id: media.clone(),
+            media_id: Some(media.clone()),
+            size: None,
             parent_id: root,
             name: "a.txt".into(),
             base_rev: None,
@@ -101,12 +102,30 @@ fn small_upload_commit_conflict_and_download() {
     assert_eq!(c.upload(&mut Cursor::new(data.clone()), &sha(b"anders"), &mut |_, _| {}).unwrap_err().code, "changed");
     // gleicher Name ohne baseRev → 409 conflict mit current
     let m2 = c.upload(&mut Cursor::new(b"zwei".to_vec()), &sha(b"zwei"), &mut |_, _| {}).unwrap();
-    let e =
-        c.commit(&CommitRequest { media_id: m2.clone(), parent_id: root, name: "a.txt".into(), base_rev: None, mtime: None, on_conflict: None }).unwrap_err();
+    let e = c
+        .commit(&CommitRequest {
+            media_id: Some(m2.clone()),
+            size: None,
+            parent_id: root,
+            name: "a.txt".into(),
+            base_rev: None,
+            mtime: None,
+            on_conflict: None,
+        })
+        .unwrap_err();
     assert_eq!(e.code, "conflict");
     assert_eq!(e.current.as_ref().unwrap().id, node.id);
-    let v2 =
-        c.commit(&CommitRequest { media_id: m2, parent_id: root, name: "a.txt".into(), base_rev: Some(node.rev), mtime: None, on_conflict: None }).unwrap();
+    let v2 = c
+        .commit(&CommitRequest {
+            media_id: Some(m2),
+            size: None,
+            parent_id: root,
+            name: "a.txt".into(),
+            base_rev: Some(node.rev),
+            mtime: None,
+            on_conflict: None,
+        })
+        .unwrap();
     assert_eq!(v2.rev, node.rev + 1);
     // check
     let chk = c.check(root, "a.txt", &v2.sha256.clone().unwrap(), 4).unwrap();

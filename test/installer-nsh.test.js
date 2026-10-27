@@ -380,4 +380,23 @@ describe('NSIS installer script (build/installer.nsh)', () => {
     assert.ok(refs.length > 0, 'kein win-unpacked-Exe-Pfad in release.yml gefunden');
     for (const ref of refs) assert.equal(ref, expectedExeFilename());
   });
+
+  it('Drive: stops a real uninstall (not an update) while Windows folders lie in the Drive', () => {
+    const body = macroBody('customUnInit');
+    // only for a real uninstall, and only when gc-drive-sync.exe is there
+    assert.match(body, /\$\{IfNot\} \$\{isUpdated\}/);
+    assert.match(body, /\$\{FileExists\} "\$\{GC_DRIVE_SYNC_EXE\}"/);
+    assert.equal(defines.GC_DRIVE_SYNC_EXE, '$INSTDIR\\resources\\drive-sync\\gc-drive-sync.exe');
+    // asks gc-drive-sync and stops on exit code 4 – with a message, silent too (/SD), exit code 4, nothing removed
+    assert.match(body, /nsExec::ExecToStack '"\$\{GC_DRIVE_SYNC_EXE\}" relocated'/);
+    const stop = body.slice(body.indexOf('${If} $0 == 4'));
+    assert.ok(stop.length > 0, 'checks exit code 4');
+    assert.match(stop, /MessageBox MB_OK\|MB_ICONSTOP "[^"]*Ordner sichern[^"]*zuruecklegen[^"]*" \/SD IDOK/);
+    assert.match(stop, /SetErrorLevel 4\s+Quit/);
+    assert.doesNotMatch(body, /unregister/, 'nothing is unregistered in the check');
+    // registers saved
+    assert.match(body, /Push \$0\s+Push \$1/);
+    // the unregister itself stays in customUnInstall (after the check, real uninstall only)
+    assert.match(macroBody('customUnInstall'), /gc-drive-sync\.exe" unregister/);
+  });
 });

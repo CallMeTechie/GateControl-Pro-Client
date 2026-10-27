@@ -61,6 +61,9 @@ pub struct AreaDir {
     pub role: Role,
     #[serde(default)]
     pub archived: bool,
+    /// `mine` | `family` | `child` | `team` | … (ältere Zustandsdateien: leer)
+    #[serde(default)]
+    pub kind: String,
 }
 
 impl AreaDir {
@@ -261,6 +264,7 @@ mod tests {
             label: "Meine Dateien".into(),
             role: Role::Manage,
             archived: false,
+            kind: "mine".into(),
         });
         s.upsert(e(1, 0, "Meine Dateien", true));
         s.upsert(e(2, 1, "Fotos", true));

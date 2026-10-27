@@ -246,3 +246,22 @@
 .dsv .btn-pri { color: var(--acc-on); }
 .dsv button { font: inherit; }
 .dsv .sw { color: inherit; }
+
+/* ── Dateien bei Bedarf (drive-ondemand-view.js) ───────────── */
+.dod-wrap { display: flex; flex-direction: column; gap: 14px; }
+.dod .dsv-card-head .sw { margin-left: auto; }
+.dod-note { color: var(--muted); }
+.dod-detail { margin: 2px 0 8px; }
+.dod-ask { margin: 6px 0 10px; }
+.dod-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0 4px; border-top: 1px solid var(--line); }
+.dod-usage { display: flex; gap: 22px; flex-wrap: wrap; }
+.dod-usage-item { display: flex; flex-direction: column; gap: 2px; }
+.dod-usage-l { font-size: 12px; color: var(--muted); }
+.dod-usage-v { font-size: 15px; font-variant-numeric: tabular-nums; }
+.dod-known .dsv-row.dod-krow { grid-template-columns: 34px minmax(0, 1fr) auto; }
+.dod-krow.is-in .dsv-ic { background: var(--acc-bg); color: var(--acc-t); }
+.dod-lock { color: var(--warn); }
+.dod-list { margin: 8px 0 4px; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.dod-paths { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 12px; word-break: break-all; }
+.dod-agree { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; cursor: pointer; }
+.dod-off-err:empty { display: none; }

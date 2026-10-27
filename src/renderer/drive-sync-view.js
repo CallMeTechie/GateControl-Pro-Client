@@ -12,6 +12,12 @@
  * mass delete ("Löschen übertragen" / "Wiederherstellen") and the settings
  * (node_modules / .git, size, upload / download limit, home network, VPN).
  *
+ * On top: "GateControl Drive im Explorer" (Dateien bei Bedarf, its own view
+ * drive-ondemand-view.js with the Windows folders that can be moved into the
+ * Drive) when the Pro client hands over window.gatecontrol.driveOnDemand. A
+ * Windows folder moved into the Drive cannot be backed up here as well, and
+ * one backed up here cannot be moved (both views lock it).
+ *
  * Mounted by drive-view.js (it hands over its helpers el / icon / clear /
  * openDialog and its folder picker). Data: window.gatecontrol.drive.sync;
  * texts: drive.sync.*; view logic without DOM: drive-sync-state.js
@@ -37,6 +43,7 @@
 	 * @param {object} o.ui - { el, icon, clear, openDialog } of drive-view.js
 	 * @param {Function} o.pickDriveFolder - (opts) → Promise<{ folderId, path } | null>
 	 * @param {Function} [o.onSummary] - (summary) after every status
+	 * @param {object} [o.onDemandApi] - window.gatecontrol.driveOnDemand (Dateien bei Bedarf)
 	 */
 	function mount(o) {
 		const api = o.api;
@@ -56,11 +63,17 @@
 		const knownCard = el('section', { class: 'card dsv-card' });
 		const moreCard = el('section', { class: 'card dsv-card' });
 		const setCard = el('section', { class: 'card dsv-card dsv-set' });
-		wrap.append(head, asks, knownCard, moreCard, setCard);
+		// "GateControl Drive im Explorer" (Dateien bei Bedarf)
+		const od = o.onDemandApi && root.GCDriveOnDemandView ? root.GCDriveOnDemandView.mount({
+			api: o.onDemandApi, t, getLocale: o.getLocale, toast, host, ui: o.ui,
+			onKnown: () => { if (shown && st) keepFocus(renderKnown); },
+		}) : null;
+		wrap.append(head, asks, ...(od ? [od.el] : []), knownCard, moreCard, setCard);
 
 		function apply(s) {
 			if (!s || !s.ok) return;
 			st = s;
+			if (od) od.setSync(st);
 			if (typeof o.onSummary === 'function') o.onSummary(SS.summary(st, ctx()));
 			if (shown) render();
 		}
@@ -168,8 +181,11 @@
 			for (const k of rows) {
 				const f = k.folder;
 				const on = !!f;
+				// in den Drive verlegt (Dateien bei Bedarf): hier nicht zusätzlich sichern
+				const locked = !on && od ? od.w2Lock(k.path) : null;
 				const sw = el('button', {
 					type: 'button', class: `sw${on ? ' on' : ''}`, role: 'switch', 'aria-checked': on ? 'true' : 'false', 'aria-label': t('drive.sync.known.switch', { name: k.label }), 'data-key': `known-${k.key}`,
+					disabled: locked ? true : null, title: locked || null,
 					on: { click: () => (on ? removeFolder(f, SS.folderView(f, ctx())) : call(() => api.add({ path: k.path, mode: 'backup' }), 'drive.sync.done.add')) },
 				}, [el('span')]);
 				const info = f ? stateLine(f) : null;
@@ -178,7 +194,7 @@
 					el('div', { class: 'dsv-main' }, [
 						el('div', { class: 'dsv-name', text: k.label }),
 						el('div', { class: 'dsv-path', text: k.path }),
-						...(info ? info.nodes : [el('div', { class: 'dsv-detail', text: t('drive.sync.known.off') })]),
+						...(info ? info.nodes : [el('div', { class: 'dsv-detail', text: locked || t('drive.sync.known.off') })]),
 					]),
 					f ? el('div', { class: 'dsv-target' }, [el('span', { class: 'dsv-mode', text: info.v.modeText }), el('span', { class: 'dsv-target-tx', text: info.v.target })]) : el('div', { class: 'dsv-target' }),
 					f ? folderActions(f, info.v) : el('div', { class: 'dsv-acts' }),
@@ -344,14 +360,16 @@
 				shown = true;
 				wrap.hidden = false;
 				settingsKey = '';
+				if (od) od.show();
 				Promise.resolve(api.status()).then(apply).catch(() => {});
 				render();
 			},
 			hide() {
 				shown = false;
 				wrap.hidden = true;
+				if (od) od.hide();
 			},
-			relabel() { settingsKey = ''; if (shown) render(); },
+			relabel() { settingsKey = ''; if (od) od.relabel(); if (shown) render(); },
 			summary: () => (st ? SS.summary(st, ctx()) : null),
 			addDialog,
 		};

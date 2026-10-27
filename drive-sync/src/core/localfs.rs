@@ -81,4 +81,16 @@ pub trait LocalFs: Send + Sync {
     fn hydrate(&self, path: &Path) -> io::Result<()>;
     /// Lokale Daten verwerfen (Speicher freigeben).
     fn dehydrate(&self, path: &Path) -> io::Result<()>;
+    /// Normalen Ordner anlegen (Eltern müssen existieren).
+    fn create_dir(&self, path: &Path) -> io::Result<()>;
+    /// Vollständig laden und warten, bis alles da ist (Zurücklegen, Abmelden).
+    fn hydrate_now(&self, path: &Path) -> io::Result<()> {
+        self.hydrate(path)
+    }
+    /// Datei oder Ordner verschieben – auch auf ein anderes Laufwerk (dann
+    /// kopieren, und das Original erst löschen, wenn alles kopiert ist). Ziel
+    /// darf nicht existieren.
+    fn move_path(&self, from: &Path, to: &Path) -> io::Result<()> {
+        self.rename(from, to)
+    }
 }
