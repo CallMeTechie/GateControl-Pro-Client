@@ -21,7 +21,7 @@ use super::identity::Identity;
 use super::localfs::*;
 use super::model::*;
 use super::names;
-use super::protocol::StatusError;
+use super::protocol::{MassDelete, StatusError};
 use super::remote::{ApiError, ReadAt, Remote};
 use super::state::{AreaDir, Entry, State};
 use sha2::{Digest, Sha256};
@@ -31,10 +31,16 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
-/// Mehr gleichzeitig offline gelöschte Dateien als das (oder mehr als 20 %)
-/// werden nicht an den Server gegeben, sondern lokal wiederhergestellt.
+/// Werden mehr Dateien auf einmal gelöscht als das (oder mehr als 20 %, ab 10
+/// Dateien), gehen die Löschungen nicht an den Server, sondern warten auf die
+/// Antwort im Pro-Client: „Löschen übertragen“ oder „Wiederherstellen“. Gilt
+/// für Löschungen im Explorer (auch ein Ordner in den Papierkorb zählt mit
+/// allen Dateien darunter, innerhalb von `MASS_DELETE_WINDOW` zusammengezählt)
+/// und für Löschungen, während das Programm nicht lief.
 pub const MASS_DELETE_MAX: usize = 500;
 pub const MASS_DELETE_RATIO: f64 = 0.2;
+pub const MASS_DELETE_MIN: usize = 10;
+pub const MASS_DELETE_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
 const MAX_ERRORS: usize = 20;
 /// Zusätzlich zum Änderungsprotokoll regelmäßig alles vergleichen (verpasste Ereignisse).
 pub const FULL_SYNC_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
@@ -56,6 +62,8 @@ pub struct Shared {
     pub area_dirs: RwLock<HashMap<String, String>>,
     pub pending: AtomicU64,
     pub transferring: AtomicU64,
+    /// Zurückgehaltene Massenlöschung (Nachfrage im Pro-Client).
+    pub held: RwLock<Option<MassDelete>>,
     /// Laufende Uploads/Durchläufe abbrechen (stop, pause, unregister).
     pub stop: AtomicBool,
 }
@@ -99,6 +107,13 @@ pub struct Engine {
     retry: BTreeSet<PathBuf>,
     /// NOTIFY_DELETE: Knoten → Pfad, noch an den Server zu geben.
     deletes: Vec<(u64, PathBuf)>,
+    /// Massenlöschung: wartet auf „Löschen übertragen“ / „Wiederherstellen“.
+    held: Vec<(u64, PathBuf)>,
+    held_offline: bool,
+    /// Die Löschungen in `deletes` sind bestätigt („Löschen übertragen“).
+    deletes_confirmed: bool,
+    /// Zuletzt übertragene Löschungen (Zeit, Dateien) für das Zeitfenster.
+    recent_deletes: VecDeque<(std::time::Instant, usize)>,
     clock: Clock,
     log: Logger,
 }
@@ -153,6 +168,10 @@ impl Engine {
             queue: BTreeSet::new(),
             retry: BTreeSet::new(),
             deletes: Vec::new(),
+            held: Vec::new(),
+            held_offline: false,
+            deletes_confirmed: false,
+            recent_deletes: VecDeque::new(),
             clock: Box::new(chrono::Local::now),
             log: Box::new(|_, _| {}),
         };
@@ -174,6 +193,15 @@ impl Engine {
 
     pub fn pending(&self) -> u64 {
         (self.queue.len() + self.retry.len() + self.deletes.len()) as u64
+    }
+
+    pub fn fs(&self) -> Arc<dyn LocalFs> {
+        self.fs.clone()
+    }
+
+    /// Der Bereich „Meine Dateien“ (Art `mine`).
+    pub fn personal_area(&self) -> Option<&AreaDir> {
+        self.state.areas.iter().find(|a| a.kind == "mine")
     }
 
     fn update_pending(&self) {
@@ -201,7 +229,7 @@ impl Engine {
 
     /// Fehler ohne Pfad (Netz, Server) nach einem gelungenen Durchlauf entfernen.
     pub fn clear_general_errors(&mut self) {
-        self.errors.retain(|e| e.path.is_some());
+        self.errors.retain(|e| e.path.is_some() || e.code == "mass_delete");
     }
 
     fn check_stop(&self) -> Result<(), ApiError> {
@@ -342,7 +370,15 @@ impl Engine {
                     }
                 }
             }
-            let ad = AreaDir { id: a.id.clone(), root_id: a.root_id, dir: dir.clone(), label: a.label.clone(), role: a.role, archived: a.archived };
+            let ad = AreaDir {
+                id: a.id.clone(),
+                root_id: a.root_id,
+                dir: dir.clone(),
+                label: a.label.clone(),
+                role: a.role,
+                archived: a.archived,
+                kind: a.kind.clone(),
+            };
             self.state.areas.retain(|x| x.id != a.id);
             self.state.areas.push(ad);
             let root_entry = Entry {
@@ -592,22 +628,8 @@ impl Engine {
         if offline.is_empty() {
             return Ok(());
         }
-        let files = self.state.files().max(1);
-        if offline.len() > MASS_DELETE_MAX || (offline.len() >= 10 && offline.len() as f64 > MASS_DELETE_RATIO * files as f64) {
-            self.error(
-                "mass_delete",
-                &format!("{} Dateien wurden lokal gelöscht, während das Programm nicht lief – nicht übertragen, wiederhergestellt", offline.len()),
-                None,
-            );
-            for (id, path) in offline {
-                if let (Some(e), Some(dir)) = (self.state.get(id).cloned(), path.parent()) {
-                    self.fs.create_placeholder(dir, &e.name, &meta(&e)).map_err(io_err)?;
-                    if e.is_dir {
-                        let (mut o, mut orph) = (Vec::new(), Vec::new());
-                        self.populate(id, false, &mut o, &mut orph)?;
-                    }
-                }
-            }
+        if !self.held.is_empty() || self.is_mass(self.count_files(&offline)) {
+            self.hold(offline, true);
             return Ok(());
         }
         for (id, path) in offline {
@@ -748,7 +770,22 @@ impl Engine {
                 Err(e) => self.error(&e.code, &e.message, Some(&path)),
             }
         }
-        let deletes = std::mem::take(&mut self.deletes);
+        let mut deletes = std::mem::take(&mut self.deletes);
+        if !deletes.is_empty() {
+            let now = std::time::Instant::now();
+            while self.recent_deletes.front().is_some_and(|(t, _)| now.duration_since(*t) > MASS_DELETE_WINDOW) {
+                self.recent_deletes.pop_front();
+            }
+            let recent: usize = self.recent_deletes.iter().map(|(_, n)| n).sum();
+            let files = self.count_files(&deletes);
+            if std::mem::take(&mut self.deletes_confirmed) {
+                self.recent_deletes.push_back((now, files));
+            } else if !self.held.is_empty() || self.is_mass(files + recent) {
+                self.hold(std::mem::take(&mut deletes), false);
+            } else {
+                self.recent_deletes.push_back((now, files));
+            }
+        }
         for (i, (node, path)) in deletes.iter().enumerate() {
             if let Err(e) = self.process_delete(*node, path) {
                 if e.transient() {
@@ -1138,6 +1175,159 @@ impl Engine {
         }
     }
 
+    // ───────────────────────── Massenlöschung ─────────────────────────
+
+    /// Dateien, die mit diesen Knoten gelöscht würden (Ordner: alle Dateien darunter).
+    fn count_files(&self, items: &[(u64, PathBuf)]) -> usize {
+        let mut seen = HashSet::new();
+        let mut n = 0;
+        for (id, _) in items {
+            for i in std::iter::once(*id).chain(self.state.descendants(*id)) {
+                if seen.insert(i) && self.state.get(i).is_some_and(|e| !e.is_dir) {
+                    n += 1;
+                }
+            }
+        }
+        n.max(items.len().min(1))
+    }
+
+    fn is_mass(&self, files: usize) -> bool {
+        let all = self.state.files().max(1);
+        files > MASS_DELETE_MAX || (files >= MASS_DELETE_MIN && files as f64 > MASS_DELETE_RATIO * all as f64)
+    }
+
+    fn hold(&mut self, items: Vec<(u64, PathBuf)>, offline: bool) {
+        for (id, path) in items {
+            if !self.held.iter().any(|(h, _)| *h == id) {
+                self.held.push((id, path));
+            }
+        }
+        self.held_offline |= offline;
+        let files = self.count_files(&self.held.clone());
+        let msg = if self.held_offline {
+            format!("{files} Dateien wurden gelöscht, während das Programm nicht lief – wartet auf Bestätigung")
+        } else {
+            format!("{files} Dateien wurden im Explorer gelöscht – wartet auf Bestätigung")
+        };
+        self.error("mass_delete", &msg, None);
+        self.publish_held();
+        self.update_pending();
+    }
+
+    fn publish_held(&self) {
+        let info = if self.held.is_empty() {
+            None
+        } else {
+            Some(MassDelete {
+                files: self.count_files(&self.held) as u64,
+                items: self.held.len() as u64,
+                offline: self.held_offline,
+                sample: self.held.iter().take(5).map(|(_, p)| p.to_string_lossy().to_string()).collect(),
+            })
+        };
+        if let Ok(mut h) = self.shared.held.write() {
+            *h = info;
+        }
+    }
+
+    /// Die Antwort auf die Nachfrage: `apply` = an den Server (Papierkorb),
+    /// sonst lokal wiederherstellen (Platzhalter „nur online“).
+    pub fn decide_deletes(&mut self, apply: bool) -> Result<usize, ApiError> {
+        let held = std::mem::take(&mut self.held);
+        let n = held.len();
+        self.held_offline = false;
+        self.errors.retain(|e| e.code != "mass_delete");
+        if apply {
+            let files = self.count_files(&held);
+            self.deletes_confirmed = true;
+            self.info(&format!("Massenlöschung bestätigt: {files} Dateien in den Papierkorb"));
+            self.deletes.extend(held);
+        } else {
+            self.info(&format!("Massenlöschung: {n} Einträge wiederhergestellt"));
+            for (id, path) in held {
+                let (Some(e), Some(dir)) = (self.state.get(id).cloned(), path.parent().map(Path::to_path_buf)) else { continue };
+                // inzwischen anders verschoben/umbenannt: an den Ort laut Zustand
+                let dir = self.path_of(e.parent).unwrap_or(dir);
+                if self.fs.stat(&dir.join(&e.name)).map_err(io_err)?.is_some() {
+                    continue;
+                }
+                if self.fs.stat(&dir).map_err(io_err)?.is_none() {
+                    continue; // Elternordner ist selbst eine wiederhergestellte Löschung (kommt mit)
+                }
+                self.fs.create_placeholder(&dir, &e.name, &meta(&e)).map_err(io_err)?;
+                if e.is_dir {
+                    let (mut o, mut orph) = (Vec::new(), Vec::new());
+                    self.populate(id, false, &mut o, &mut orph)?;
+                }
+            }
+        }
+        self.publish_held();
+        self.update_pending();
+        Ok(n)
+    }
+
+    // ───────────────────────── Abmelden: was noch fehlt ─────────────────────────
+
+    /// Lokale Änderungen, die noch nicht auf dem Server sind: neue Dateien und
+    /// Ordner, geänderte Platzhalter (nicht „in sync“). Gesperrte und
+    /// Zwischendateien zählen nicht. Höchstens `max` Pfade.
+    pub fn unsynced(&self, max: usize) -> (usize, Vec<PathBuf>) {
+        let mut count = 0;
+        let mut out = Vec::new();
+        let mut stack: Vec<PathBuf> = self.state.areas.iter().map(|a| self.cfg.root.join(&a.dir)).collect();
+        while let Some(dir) = stack.pop() {
+            let Ok(list) = self.fs.list(&dir) else { continue };
+            for l in list {
+                if names::is_ignored(&l.name) {
+                    continue;
+                }
+                let path = dir.join(&l.name);
+                let open = match &l.placeholder {
+                    None => !l.is_dir || self.fs.list(&path).map(|v| v.iter().all(|c| names::is_ignored(&c.name))).unwrap_or(false),
+                    Some(ph) => !l.is_dir && !ph.in_sync,
+                };
+                if open {
+                    count += 1;
+                    if out.len() < max {
+                        out.push(path.clone());
+                    }
+                }
+                if l.is_dir {
+                    stack.push(path);
+                }
+            }
+        }
+        (count, out)
+    }
+
+    /// Dateien unter `dir`, die nicht vollständig lokal sind (Platzhalter „nur online“ oder teilweise).
+    pub fn not_hydrated(&self, dir: &Path) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            let Ok(list) = self.fs.list(&d) else { continue };
+            for l in list {
+                let path = d.join(&l.name);
+                if l.is_dir {
+                    stack.push(path);
+                } else if l.placeholder.as_ref().is_some_and(|p| !p.hydrated) {
+                    out.push(path);
+                }
+            }
+        }
+        out
+    }
+
+    /// Einträge unterhalb von `id` aus dem Zustand nehmen (der nächste volle
+    /// Abgleich legt sie wieder als Platzhalter an, statt sie als „offline
+    /// gelöscht“ zu behandeln).
+    pub fn forget_below(&mut self, id: u64) {
+        for c in self.state.children_of(id).iter().map(|e| e.id).collect::<Vec<_>>() {
+            self.state.remove(c);
+        }
+        self.needs_full = true;
+    }
+
     // ───────────────────────── Pin-Zustände ─────────────────────────
 
     fn effective_pin(&self, path: &Path, own: Pin) -> Pin {
@@ -1227,7 +1417,15 @@ impl Engine {
         }
         match &l.placeholder {
             Some(ph) if !ph.hydrated && ph.in_sync => self.fs.remove_file(path).map_err(io_err),
-            Some(_) => self.fs.revert_placeholder(path).map_err(io_err),
+            Some(ph) => match self.fs.revert_placeholder(path) {
+                Ok(()) => Ok(()),
+                // nicht vollständig geladen und geändert: liegt so bleiben (die Daten sind auf dem Server)
+                Err(e) if !ph.hydrated => {
+                    (self.log)("warn", &format!("Nicht zurückverwandelt (nicht vollständig geladen): {} – {e}", path.display()));
+                    Ok(())
+                }
+                Err(e) => Err(io_err(e)),
+            },
             None => Ok(()),
         }
     }

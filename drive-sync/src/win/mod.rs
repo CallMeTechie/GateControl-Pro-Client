@@ -1,14 +1,19 @@
 //! Windows: Cloud Files API, Sync-Root, Beobachtung, Pipe, Programmstart.
 
+pub mod actions;
 pub mod cfapi;
+pub mod known;
+pub mod launch;
 pub mod main;
 pub mod pipe;
+pub mod shellmenu;
 pub mod syncroot;
 pub mod util;
 pub mod watcher;
 pub mod winfs;
 
 use crate::core::localfs::LocalFs;
+use crate::core::relocate::KnownFolders;
 use crate::core::service::{Callbacks, Guard, Platform, WatchEvent};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -29,6 +34,10 @@ pub struct WinPlatform {
     pub spec: syncroot::SyncRootSpec,
     pub data: PathBuf,
     fs: Arc<winfs::WinFs>,
+    known: Arc<known::WinKnown>,
+    /// Schlüssel des Kontextmenüs (Tests: eigener, damit das echte unberührt bleibt).
+    pub menu_verb: String,
+    pub elevated: bool,
 }
 
 impl WinPlatform {
@@ -49,7 +58,16 @@ impl WinPlatform {
             },
             data,
             fs: Arc::new(winfs::WinFs::new()),
+            known: Arc::new(known::WinKnown::real()),
+            menu_verb: shellmenu::VERB.to_string(),
+            elevated: false,
         }
+    }
+
+    /// Tests: Windows-Ordner unter `base` statt der echten.
+    pub fn with_fake_known(mut self, base: &std::path::Path) -> WinPlatform {
+        self.known = Arc::new(known::WinKnown::fake(base));
+        self
     }
 }
 
@@ -77,5 +95,22 @@ impl Platform for WinPlatform {
     }
     fn watch(&self, on_event: Box<dyn Fn(WatchEvent) + Send + Sync>) -> Result<Guard, String> {
         watcher::watch(self.spec.root.clone(), on_event).map(|w| Box::new(w) as Guard)
+    }
+    fn known(&self) -> Option<Arc<dyn KnownFolders>> {
+        Some(self.known.clone())
+    }
+    fn elevated(&self) -> bool {
+        self.elevated
+    }
+    fn context_menu(&self, on: bool, app_exe: Option<&str>, lang: Option<&str>) -> Result<(), String> {
+        if on {
+            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            shellmenu::register(&self.menu_verb, &self.spec.root, &exe, app_exe, lang)
+        } else {
+            shellmenu::unregister(&self.menu_verb)
+        }
+    }
+    fn notify_shell(&self, paths: &[PathBuf]) {
+        known::notify(paths);
     }
 }

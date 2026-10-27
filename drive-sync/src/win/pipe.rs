@@ -35,6 +35,11 @@ pub fn pipe_name(sid: &str) -> String {
     format!(r"\\.\pipe\gatecontrol-drive-sync-{sid}-{hex}")
 }
 
+/// „S-1-5-21-…“: nur Ziffern und Bindestriche hinter „S-1-“.
+pub fn valid_sid(s: &str) -> bool {
+    s.len() <= 184 && s.starts_with("S-1-") && s[4..].bytes().all(|b| b.is_ascii_digit() || b == b'-') && !s.ends_with('-')
+}
+
 pub struct PipeServer {
     h: Arc<OwnedHandle>,
     pub name: String,
@@ -54,8 +59,19 @@ fn event() -> io::Result<OwnedHandle> {
 }
 
 impl PipeServer {
-    pub fn create(name: &str, sid: &str) -> Result<PipeServer, String> {
-        let sddl = wide_str(&format!("D:P(A;;GA;;;{sid})(A;;GA;;;SY)"));
+    /// `extra`: weitere SIDs mit Zugriff (der Pro-Client, wenn er als anderes
+    /// Konto läuft – Administrator per „Als anderer Benutzer“).
+    pub fn create(name: &str, sid: &str, extra: &[String]) -> Result<PipeServer, String> {
+        let mut aces = format!("(A;;GA;;;{sid})(A;;GA;;;SY)");
+        for x in extra {
+            if !valid_sid(x) {
+                return Err(format!("SID: {x}"));
+            }
+            if x != sid {
+                aces.push_str(&format!("(A;;GA;;;{x})"));
+            }
+        }
+        let sddl = wide_str(&format!("D:P{aces}"));
         let mut psd = PSECURITY_DESCRIPTOR::default();
         unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(PCWSTR(sddl.as_ptr()), 1, &mut psd, None) }.map_err(|e| format!("SDDL: {e}"))?;
         let sa = SECURITY_ATTRIBUTES { nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: psd.0, bInheritHandle: false.into() };

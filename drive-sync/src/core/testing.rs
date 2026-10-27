@@ -574,6 +574,11 @@ impl FakeFs {
     pub fn get(&self, path: &Path) -> Option<LocalEntry> {
         self.nodes.lock().unwrap().get(&k(path)).map(Self::entry)
     }
+    /// Weiteren Ordner anlegen, der nicht im Sync-Root liegt (Windows-Ordner in Tests).
+    pub fn add_root(&self, path: &Path) {
+        let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        self.nodes.lock().unwrap().insert(k(path), FNode { name, is_dir: true, data: vec![], size: 0, mtime_ms: 0, ph: None, locked: false });
+    }
     /// Alle Pfade (klein geschrieben, mit „/“) unterhalb von `root`.
     pub fn paths(&self) -> Vec<String> {
         self.nodes.lock().unwrap().keys().cloned().collect()
@@ -735,6 +740,31 @@ impl LocalFs for FakeFs {
             ph.hydrated = true;
         }
         Ok(())
+    }
+
+    fn create_dir(&self, path: &Path) -> io::Result<()> {
+        let mut m = self.nodes.lock().unwrap();
+        let key = k(path);
+        Self::need_parent(&m, &key)?;
+        if m.contains_key(&key) {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, "exists"));
+        }
+        self.op(format!("mkdir {key}"));
+        let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        m.insert(key, FNode { name, is_dir: true, data: vec![], size: 0, mtime_ms: 0, ph: None, locked: false });
+        Ok(())
+    }
+
+    fn move_path(&self, from: &Path, to: &Path) -> io::Result<()> {
+        let locked = {
+            let m = self.nodes.lock().unwrap();
+            let fk = k(from);
+            m.iter().any(|(kk, n)| (*kk == fk || kk.starts_with(&format!("{fk}/"))) && n.locked)
+        };
+        if locked {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "sharing violation"));
+        }
+        self.rename(from, to)
     }
 
     fn dehydrate(&self, path: &Path) -> io::Result<()> {

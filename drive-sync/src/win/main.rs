@@ -8,12 +8,21 @@
 //!   gc-drive-sync.exe unregister [--root <dir>] [--data-dir <dir>]
 //!       Sync-Root abmelden (Deinstallation): Platzhalter „nur online“ weg,
 //!       geladene/geänderte Dateien bleiben als normale Dateien.
+//!   gc-drive-sync.exe launch --parent-pid <pid>
+//!       Wie `run`, aber mit den Rechten des angemeldeten Benutzers, auch wenn
+//!       der Aufrufer erhöht läuft (launch.rs). Der Starter reicht die erste
+//!       Zeile weiter und bleibt als Wächter, bis das Kind endet.
+//!   gc-drive-sync.exe action <share|portal|versions> <Pfad>
+//!       Explorer-Kontextmenü → laufender Dienst (actions.rs).
 //!   gc-drive-sync.exe info
-//!       Ob die Cloud Files API hier nutzbar ist (JSON).
+//!       Ob die Cloud Files API hier nutzbar ist, Rechte, Kontextmenü (JSON).
 //!   gc-drive-sync.exe --version
+//!
+//! Weitere Schalter für `run`: `--watch-stdin` (endet, wenn stdin schließt –
+//! der Starter ist weg), `--client-sid <SID>` (Pipe zusätzlich für dieses Konto).
 
 use super::util::{current_user_sid, wide_str, OwnedHandle};
-use super::{default_data_dir, default_root, pipe, syncroot, WinPlatform};
+use super::{actions, default_data_dir, default_root, launch, pipe, shellmenu, syncroot, WinPlatform};
 use crate::core::service::{http_remote, Service};
 use serde_json::json;
 use std::io::{BufReader, Write};
@@ -30,10 +39,14 @@ struct Args {
     parent: Option<u32>,
     root: Option<PathBuf>,
     data: Option<PathBuf>,
+    watch_stdin: bool,
+    client_sid: Option<String>,
+    /// `action <a> <Pfad>`
+    action: Vec<String>,
 }
 
 fn parse(argv: &[String]) -> Result<Args, String> {
-    let mut a = Args { cmd: "run".into(), pipe: None, parent: None, root: None, data: None };
+    let mut a = Args { cmd: "run".into(), pipe: None, parent: None, root: None, data: None, watch_stdin: false, client_sid: None, action: vec![] };
     let mut it = argv.iter().skip(1);
     while let Some(x) = it.next() {
         match x.as_str() {
@@ -41,11 +54,32 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--parent-pid" => a.parent = it.next().and_then(|v| v.parse().ok()),
             "--root" => a.root = it.next().map(PathBuf::from),
             "--data-dir" => a.data = it.next().map(PathBuf::from),
-            "run" | "unregister" | "info" | "--version" | "--help" => a.cmd = x.trim_start_matches('-').to_string(),
+            "--watch-stdin" => a.watch_stdin = true,
+            "--client-sid" => a.client_sid = it.next().filter(|s| pipe::valid_sid(s)).cloned(),
+            "action" => {
+                a.cmd = "action".into();
+                a.action = it.by_ref().take(2).cloned().collect();
+            }
+            "run" | "launch" | "unregister" | "info" | "--version" | "--help" => a.cmd = x.trim_start_matches('-').to_string(),
             other => return Err(format!("unbekannt: {other}")),
         }
     }
     Ok(a)
+}
+
+/// Argumente für das Kind von `launch` (ohne `launch`).
+fn child_args(a: &Args) -> Vec<String> {
+    let mut v = vec!["run".to_string()];
+    if let Some(p) = a.parent {
+        v.extend(["--parent-pid".into(), p.to_string()]);
+    }
+    if let Some(r) = &a.root {
+        v.extend(["--root".into(), r.to_string_lossy().to_string()]);
+    }
+    if let Some(d) = &a.data {
+        v.extend(["--data-dir".into(), d.to_string_lossy().to_string()]);
+    }
+    v
 }
 
 fn out(v: serde_json::Value) {
@@ -69,20 +103,44 @@ pub fn run() -> i32 {
             return 0;
         }
         "help" => {
-            println!("gc-drive-sync [run|unregister|info] [--parent-pid N] [--pipe NAME] [--root DIR] [--data-dir DIR]");
+            println!("gc-drive-sync [run|launch|unregister|info|action <a> <path>] [--parent-pid N] [--pipe NAME] [--root DIR] [--data-dir DIR]");
             return 0;
         }
         "info" => {
             let root = args.root.clone().unwrap_or_else(default_root);
-            let v = match syncroot::platform_info() {
+            let mut v = match syncroot::platform_info() {
                 Ok((b, r, i)) => json!({ "cfapi": true, "build": b, "revision": r, "integration": i, "registered": syncroot::is_registered(&root) }),
                 Err(e) => json!({ "cfapi": false, "error": e }),
             };
+            v["launch"] = launch::describe();
+            v["menu"] = json!(shellmenu::applies_of(shellmenu::VERB).is_some());
             out(v);
             return 0;
         }
+        "action" => {
+            let (Some(a), Some(p)) = (args.action.first(), args.action.get(1)) else { return 2 };
+            return match current_user_sid() {
+                Ok(sid) => actions::client(&sid, a, p),
+                Err(_) => 1,
+            };
+        }
+        "launch" => match launch::plan(&child_args(&args)) {
+            Ok(launch::Plan::Child(c)) => return launch::supervise(c, args.parent),
+            Ok(launch::Plan::InProcess { elevated, why }) => return serve_main(args, elevated, Some(why)),
+            Err(e) => {
+                let code = if e.starts_with("wrong_user") { "wrong_user" } else { "launch" };
+                out(json!({ "event": "error", "code": code, "message": e }));
+                return 1;
+            }
+        },
         _ => {}
     }
+    let elevated = launch::self_elevated();
+    serve_main(args, elevated, None)
+}
+
+/// `run` (oder `launch` im selben Prozess).
+fn serve_main(args: Args, elevated: bool, launch_note: Option<String>) -> i32 {
     let sid = match current_user_sid() {
         Ok(s) => s,
         Err(e) => {
@@ -92,7 +150,9 @@ pub fn run() -> i32 {
     };
     let root = args.root.clone().unwrap_or_else(default_root);
     let data = args.data.clone().unwrap_or_else(default_data_dir);
-    let platform = Arc::new(WinPlatform::new(&sid, root, data));
+    let mut platform = WinPlatform::new(&sid, root, data);
+    platform.elevated = elevated;
+    let platform = Arc::new(platform);
     let svc = Service::new(platform, http_remote());
 
     if args.cmd == "unregister" {
@@ -125,7 +185,8 @@ pub fn run() -> i32 {
     };
 
     let name = args.pipe.clone().unwrap_or_else(|| pipe::pipe_name(&sid));
-    let server = match pipe::PipeServer::create(&name, &sid) {
+    let extra: Vec<String> = args.client_sid.iter().cloned().collect();
+    let server = match pipe::PipeServer::create(&name, &sid, &extra) {
         Ok(s) => s,
         Err(e) => {
             out(json!({ "event": "error", "code": "pipe", "message": e }));
@@ -133,7 +194,19 @@ pub fn run() -> i32 {
         }
     };
 
-    if let Some(pid) = args.parent {
+    if args.watch_stdin {
+        // Der Starter (launch) hält stdin offen; ist er weg, enden wir sauber.
+        let s = svc.clone();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 256];
+            let mut stdin = std::io::stdin().lock();
+            while std::io::Read::read(&mut stdin, &mut buf).is_ok_and(|n| n > 0) {}
+            s.log("info", "Starter beendet – gc-drive-sync endet");
+            s.stop_runner();
+            std::process::exit(0);
+        });
+    }
+    if let Some(pid) = args.parent.filter(|_| !args.watch_stdin) {
         match unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid) } {
             Ok(h) => {
                 let h = OwnedHandle(h);
@@ -153,10 +226,16 @@ pub fn run() -> i32 {
         }
     }
 
-    out(
-        json!({ "event": "ready", "pipe": server.name, "pid": std::process::id(), "version": env!("CARGO_PKG_VERSION"), "protocol": crate::core::protocol::PROTOCOL_VERSION }),
-    );
-    svc.log("info", &format!("gc-drive-sync {} bereit", env!("CARGO_PKG_VERSION")));
+    actions::serve(svc.clone(), &sid);
+    let mut ready = json!({ "event": "ready", "pipe": server.name, "pid": std::process::id(), "version": env!("CARGO_PKG_VERSION"), "protocol": crate::core::protocol::PROTOCOL_VERSION, "elevated": elevated });
+    if launch_note.is_some() {
+        ready["launch"] = json!("inprocess");
+    }
+    out(ready);
+    svc.log("info", &format!("gc-drive-sync {} bereit{}", env!("CARGO_PKG_VERSION"), if elevated { " (mit Administratorrechten)" } else { "" }));
+    if let Some(n) = launch_note {
+        svc.log(if elevated { "warn" } else { "info" }, &format!("Start im selben Prozess: {n}"));
+    }
 
     while !svc.quit.load(Ordering::SeqCst) {
         match server.accept(&svc.quit) {

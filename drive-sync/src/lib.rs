@@ -13,6 +13,7 @@ pub mod core {
     pub mod model;
     pub mod names;
     pub mod protocol;
+    pub mod relocate;
     pub mod remote;
     pub mod service;
     pub mod state;

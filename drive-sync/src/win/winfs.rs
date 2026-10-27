@@ -291,8 +291,54 @@ impl LocalFs for WinFs {
         Ok(())
     }
 
+    fn create_dir(&self, path: &Path) -> io::Result<()> {
+        std::fs::create_dir(path)
+    }
+
+    fn hydrate_now(&self, path: &Path) -> io::Result<()> {
+        let h = Self::open(path, FILE_READ_DATA.0 | FILE_READ_ATTRIBUTES.0)?;
+        unsafe { CfHydratePlaceholder(h.0, 0, -1, CF_HYDRATE_FLAG_NONE, None) }.map_err(werr)
+    }
+
+    fn move_path(&self, from: &Path, to: &Path) -> io::Result<()> {
+        match self.rename(from, to) {
+            Err(e) if e.raw_os_error() == Some(17) => {
+                // anderes Laufwerk: erst alles kopieren, dann das Original löschen
+                if let Err(e) = copy_tree(from, to) {
+                    let _ = if to.is_dir() { std::fs::remove_dir_all(to) } else { std::fs::remove_file(to) };
+                    return Err(e);
+                }
+                if from.is_dir() {
+                    std::fs::remove_dir_all(from)
+                } else {
+                    std::fs::remove_file(from)
+                }
+            }
+            r => r,
+        }
+    }
+
     fn dehydrate(&self, path: &Path) -> io::Result<()> {
         let h = Self::open(path, WRITE_DAC | FILE_WRITE_ATTRIBUTES.0)?;
         unsafe { CfDehydratePlaceholder(h.0, 0, -1, CF_DEHYDRATE_FLAG_NONE, None) }.map_err(werr)
+    }
+}
+
+/// Kopie mit Größenprüfung (für das Verschieben über Laufwerksgrenzen).
+fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
+    let m = std::fs::symlink_metadata(from)?;
+    if m.is_dir() {
+        std::fs::create_dir(to)?;
+        for e in std::fs::read_dir(from)? {
+            let e = e?;
+            copy_tree(&e.path(), &to.join(e.file_name()))?;
+        }
+        Ok(())
+    } else {
+        let n = std::fs::copy(from, to)?;
+        if n != m.len() {
+            return Err(io::Error::other("Kopie unvollständig"));
+        }
+        Ok(())
     }
 }

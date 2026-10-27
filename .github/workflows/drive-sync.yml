@@ -4,10 +4,14 @@ name: Drive Sync (gc-drive-sync)
 # Explorer über die Windows Cloud Files API.
 #   - Linux: Format, Clippy und die plattformunabhängigen Tests (Abgleich,
 #     Zustand, Pipe-Protokoll, HTTP-Client gegen einen Fake-Server).
-#   - Windows: dasselbe für das Windows-Ziel, Release-Build und der
+#   - Windows: dasselbe für das Windows-Ziel, Release-Build, der Start über
+#     den Starter `launch` (Pipe-Übergabe, Startweg im Log) und der
 #     Integrations-Test mit echter Sync-Root (registrieren, Platzhalter, Öffnen
-#     → Laden, Speicher freigeben, anheften, Upload, abmelden) gegen den
-#     Fake-Server. Ist die Cloud Files API auf dem Runner nicht nutzbar
+#     → Laden, Speicher freigeben, anheften, Upload, Kontextmenü in der
+#     Registry und Aktions-Pipe, Massenlöschung → Nachfrage → wiederherstellen,
+#     Windows-Ordner verlegen und zurücklegen mit einem Test-Ordner statt der
+#     echten Windows-Ordner, Abmelden mit offener Datei abgelehnt, abmelden)
+#     gegen den Fake-Server. Ist die Cloud Files API auf dem Runner nicht nutzbar
 #     (Server-SKU ohne cldflt), überspringt der Test sichtbar: Zeile
 #     „CFAPI-SKIPPED“ im Log und eine Warnung in der Zusammenfassung.
 
@@ -82,6 +86,14 @@ jobs:
           cargo build --release --locked
           ls -la target/release/gc-drive-sync.exe
           ./target/release/gc-drive-sync.exe --version
+
+      - name: Launcher (Start mit Benutzerrechten)
+        run: |
+          set -o pipefail
+          cargo test --locked --release --test launch_windows -- --nocapture 2>&1 | tee launch.log
+          grep -q 'LAUNCH-RESULT: ok' launch.log
+          echo "### Starter (launch)" >> "$GITHUB_STEP_SUMMARY"
+          grep 'LAUNCH-INFO' launch.log >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Cloud Files API on this runner
         id: cfinfo

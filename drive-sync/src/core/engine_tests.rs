@@ -384,7 +384,7 @@ fn offline_delete_is_sent_after_restart() {
 }
 
 #[test]
-fn mass_offline_delete_is_restored_not_sent() {
+fn mass_offline_delete_waits_for_an_answer() {
     let mut t = setup();
     for i in 0..30 {
         t.d.add_file(t.mine, &format!("f{i}.txt"), b"x");
@@ -395,9 +395,84 @@ fn mass_offline_delete_is_restored_not_sent() {
     }
     t.e.needs_full = true;
     t.e.sync().unwrap();
+    // nicht übertragen, wartet auf die Antwort
     assert_eq!(t.d.live_children(t.mine).len(), 30);
-    assert!(t.fs.get(&t.path(&["Meine Dateien", "f3.txt"])).is_some());
     assert!(t.e.errors().iter().any(|e| e.code == "mass_delete"));
+    let held = t.e.shared.held.read().unwrap().clone().expect("Nachfrage");
+    assert_eq!((held.files, held.items, held.offline), (20, 20, true));
+    // ein weiterer voller Abgleich zählt nicht doppelt
+    t.e.needs_full = true;
+    t.e.sync().unwrap();
+    assert_eq!(t.e.shared.held.read().unwrap().as_ref().unwrap().items, 20);
+    // „Wiederherstellen“: Platzhalter kommen zurück, nichts gelöscht
+    assert_eq!(t.e.decide_deletes(false).unwrap(), 20);
+    assert!(t.fs.get(&t.path(&["Meine Dateien", "f3.txt"])).unwrap().placeholder.is_some());
+    assert!(t.e.shared.held.read().unwrap().is_none());
+    assert!(!t.e.errors().iter().any(|e| e.code == "mass_delete"));
+    t.e.sync().unwrap();
+    assert_eq!(t.d.live_children(t.mine).len(), 30);
+}
+
+#[test]
+fn mass_delete_in_explorer_is_sent_after_confirmation() {
+    let mut t = setup();
+    let ordner = t.d.add_dir(t.mine, "Fotos");
+    for i in 0..30 {
+        t.d.add_file(ordner.id, &format!("Bild {i}.jpg"), b"x");
+    }
+    t.d.add_file(t.mine, "a.txt", b"a");
+    t.e.sync().unwrap();
+    // Ordner in den Papierkorb des Explorers (ein NOTIFY_RENAME nach außen)
+    let path = t.path(&["Meine Dateien", "Fotos"]);
+    t.fs.user_delete(&path);
+    t.e.note_deleted(ordner.id, path);
+    t.e.process_local().unwrap();
+    assert!(!t.d.get(ordner.id).unwrap().deleted, "noch nicht gelöscht");
+    assert_eq!(t.e.shared.held.read().unwrap().as_ref().unwrap().files, 30);
+    // weitere Löschungen während der Nachfrage warten mit
+    let a = t.d.find(t.mine, "a.txt").unwrap();
+    t.fs.user_delete(&t.path(&["Meine Dateien", "a.txt"]));
+    t.e.note_deleted(a.id, t.path(&["Meine Dateien", "a.txt"]));
+    t.e.process_local().unwrap();
+    assert!(!t.d.get(a.id).unwrap().deleted);
+    // „Löschen übertragen“
+    assert_eq!(t.e.decide_deletes(true).unwrap(), 2);
+    t.e.process_local().unwrap();
+    assert!(t.d.get(ordner.id).unwrap().deleted);
+    assert!(t.d.get(a.id).unwrap().deleted);
+}
+
+#[test]
+fn few_deletes_go_through_without_asking() {
+    let mut t = setup();
+    for i in 0..40 {
+        t.d.add_file(t.mine, &format!("f{i}.txt"), b"x");
+    }
+    t.e.sync().unwrap();
+    for i in 0..3 {
+        let n = t.d.find(t.mine, &format!("f{i}.txt")).unwrap();
+        let path = t.path(&["Meine Dateien", &format!("f{i}.txt")]);
+        t.fs.user_delete(&path);
+        t.e.note_deleted(n.id, path);
+    }
+    t.e.process_local().unwrap();
+    assert_eq!(t.d.live_children(t.mine).len(), 37);
+    assert!(t.e.shared.held.read().unwrap().is_none());
+}
+
+#[test]
+fn unsynced_lists_what_is_not_on_the_server() {
+    let mut t = setup();
+    t.d.add_file(t.mine, "a.txt", b"a");
+    t.e.sync().unwrap();
+    assert_eq!(t.e.unsynced(10).0, 0);
+    t.fs.user_write(&t.path(&["Meine Dateien", "neu.txt"]), b"neu");
+    t.fs.user_write(&t.path(&["Meine Dateien", "a.txt"]), b"geaendert");
+    t.fs.user_write(&t.path(&["Meine Dateien", "~$sperre.docx"]), b"x");
+    t.fs.user_mkdir(&t.path(&["Meine Dateien", "Leer"]));
+    let (n, paths) = t.e.unsynced(10);
+    assert_eq!(n, 3, "{paths:?}");
+    assert_eq!(t.e.unsynced(1).1.len(), 1);
 }
 
 #[test]

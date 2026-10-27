@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 pub const MAX_LINE: usize = 64 * 1024;
 
 /// Kopfzeilen, die der Pro-Client zusätzlich zum Token mitgeben darf
@@ -36,35 +36,104 @@ impl std::fmt::Debug for Config {
     }
 }
 
+/// Windows-Ordner, die sich in den Drive verlegen lassen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum KnownFolder {
+    Desktop,
+    Documents,
+    Pictures,
+    Videos,
+    Music,
+}
+
+impl KnownFolder {
+    pub const ALL: [KnownFolder; 5] = [KnownFolder::Desktop, KnownFolder::Documents, KnownFolder::Pictures, KnownFolder::Videos, KnownFolder::Music];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            KnownFolder::Desktop => "desktop",
+            KnownFolder::Documents => "documents",
+            KnownFolder::Pictures => "pictures",
+            KnownFolder::Videos => "videos",
+            KnownFolder::Music => "music",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<KnownFolder> {
+        KnownFolder::ALL.into_iter().find(|k| k.key() == s)
+    }
+
+    /// Name des Ordners unter `%USERPROFILE%` (Windows-Vorgabe).
+    pub fn default_leaf(self) -> &'static str {
+        match self {
+            KnownFolder::Desktop => "Desktop",
+            KnownFolder::Documents => "Documents",
+            KnownFolder::Pictures => "Pictures",
+            KnownFolder::Videos => "Videos",
+            KnownFolder::Music => "Music",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    Hello { version: Option<String> },
+    Hello {
+        version: Option<String>,
+        app_exe: Option<String>,
+        lang: Option<String>,
+    },
     Configure(Config),
     Start,
     Stop,
     Pause,
     Resume,
     Status,
-    Unregister,
+    /// `force`: nicht hochgeladene Änderungen bleiben als normale Dateien im Ordner
+    /// (sonst Fehler `unsynced`).
+    Unregister {
+        force: bool,
+    },
     SyncNow,
     Shutdown,
+    /// Antwort auf eine Massenlöschung.
+    Deletes {
+        apply: bool,
+    },
+    KnownFolders,
+    /// Windows-Ordner nach „Meine Dateien\<name>“ verlegen.
+    Relocate {
+        folder: KnownFolder,
+        name: Option<String>,
+    },
+    /// Verlegten Windows-Ordner zurück an den alten Ort (vollständig lokal).
+    Restore {
+        folder: KnownFolder,
+    },
+    /// Belegter Platz auf diesem PC.
+    Usage,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Request {
     pub id: Value,
     pub cmd: Command,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ProtoError {
     pub code: &'static str,
     pub message: String,
+    /// Zusätzliche Angaben (z. B. `unsynced`: `{count, paths}`).
+    pub data: Option<Value>,
 }
 
 impl ProtoError {
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
-        ProtoError { code, message: message.into() }
+        ProtoError { code, message: message.into(), data: None }
+    }
+    pub fn with_data(mut self, data: Value) -> Self {
+        self.data = Some(data);
+        self
     }
 }
 
@@ -92,7 +161,11 @@ pub fn parse_request(line: &str) -> Result<Request, (Value, ProtoError)> {
     let fail = |code, msg: &str| (id.clone(), ProtoError::new(code, msg));
     let cmd = obj.get("cmd").and_then(Value::as_str).ok_or_else(|| fail("bad_request", "cmd missing"))?;
     let cmd = match cmd {
-        "hello" => Command::Hello { version: obj.get("version").and_then(Value::as_str).map(|s| s.chars().take(40).collect()) },
+        "hello" => Command::Hello {
+            version: obj.get("version").and_then(Value::as_str).map(|s| s.chars().take(40).collect()),
+            app_exe: obj.get("appExe").and_then(Value::as_str).filter(|s| valid_app_exe(s)).map(str::to_string),
+            lang: obj.get("lang").and_then(Value::as_str).filter(|l| matches!(*l, "de" | "en")).map(str::to_string),
+        },
         "configure" => {
             let raw: RawConfigure = serde_json::from_value(v.clone()).map_err(|_| fail("invalid", "bad configure"))?;
             Command::Configure(validate_config(raw).map_err(|e| (id.clone(), e))?)
@@ -102,12 +175,41 @@ pub fn parse_request(line: &str) -> Result<Request, (Value, ProtoError)> {
         "pause" => Command::Pause,
         "resume" => Command::Resume,
         "status" => Command::Status,
-        "unregister" => Command::Unregister,
+        "unregister" => Command::Unregister { force: obj.get("force").and_then(Value::as_bool).unwrap_or(false) },
+        "deletes" => match obj.get("decision").and_then(Value::as_str) {
+            Some("apply") => Command::Deletes { apply: true },
+            Some("restore") => Command::Deletes { apply: false },
+            _ => return Err(fail("invalid", "decision")),
+        },
+        "known-folders" => Command::KnownFolders,
+        "relocate" | "restore" => {
+            let folder = obj.get("folder").and_then(Value::as_str).and_then(KnownFolder::parse).ok_or_else(|| fail("invalid", "folder"))?;
+            if cmd == "restore" {
+                Command::Restore { folder }
+            } else {
+                let name = match obj.get("name") {
+                    None | Some(Value::Null) => None,
+                    Some(Value::String(n)) if super::names::is_valid_name(n.trim()) && n.trim().chars().count() <= 100 => Some(n.trim().to_string()),
+                    _ => return Err(fail("invalid", "name")),
+                };
+                Command::Relocate { folder, name }
+            }
+        }
+        "usage" => Command::Usage,
         "sync-now" => Command::SyncNow,
         "shutdown" => Command::Shutdown,
         _ => return Err(fail("unknown_command", "unknown cmd")),
     };
     Ok(Request { id, cmd })
+}
+
+/// Pfad der Pro-Client-Exe (für das Kontextmenü, wenn gc-drive-sync nicht läuft).
+fn valid_app_exe(s: &str) -> bool {
+    let b = s.as_bytes();
+    s.len() <= 1024
+        && s.to_ascii_lowercase().ends_with(".exe")
+        && !s.chars().any(|c| c.is_control() || c == '"')
+        && ((b.len() > 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/')) || s.starts_with("\\\\"))
 }
 
 fn validate_config(raw: RawConfigure) -> Result<Config, ProtoError> {
@@ -142,7 +244,11 @@ pub fn ok_line(id: &Value, result: Value) -> String {
 }
 
 pub fn err_line(id: &Value, e: &ProtoError) -> String {
-    json!({ "id": id, "ok": false, "error": { "code": e.code, "message": e.message } }).to_string()
+    let mut err = json!({ "code": e.code, "message": e.message });
+    if let Some(d) = &e.data {
+        err["data"] = d.clone();
+    }
+    json!({ "id": id, "ok": false, "error": err }).to_string()
 }
 
 /// Zustand für `status`-Antworten und -Ereignisse.
@@ -160,6 +266,23 @@ pub struct Status {
     pub last_sync: Option<String>,
     pub sync_root: Option<String>,
     pub registered: bool,
+    /// Zurückgehaltene Massenlöschung (Nachfrage) oder `null`.
+    pub mass_delete: Option<MassDelete>,
+    /// Läuft mit Administratorrechten (kein Start mit Benutzerrechten möglich).
+    pub elevated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MassDelete {
+    /// Dateien, die gelöscht würden (Ordner mit allem darunter).
+    pub files: u64,
+    /// Gelöschte Einträge (Dateien und Ordner) im Explorer.
+    pub items: u64,
+    /// Gelöscht, während das Programm nicht lief.
+    pub offline: bool,
+    /// Bis zu 5 Pfade.
+    pub sample: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -184,6 +307,18 @@ pub fn log_event(level: &str, message: &str, at: &str) -> String {
     json!({ "event": "log", "level": level, "message": message, "at": at }).to_string()
 }
 
+/// Fortschritt eines längeren Befehls (`relocate`, `restore`, `unregister`).
+pub fn progress_event(op: &str, folder: Option<&str>, phase: &str, done: u64, total: u64) -> String {
+    json!({ "event": "progress", "op": op, "folder": folder, "phase": phase, "done": done, "total": total }).to_string()
+}
+
+/// Explorer-Kontextmenü → Pro-Client (`share` | `portal` | `versions`).
+pub fn action_event(action: &str, path: &str, node: Option<u64>, area: Option<&str>, is_dir: bool) -> String {
+    json!({ "event": "action", "action": action, "path": path, "node": node, "area": area, "isDir": is_dir }).to_string()
+}
+
+pub const ACTIONS: &[&str] = &["share", "portal", "versions"];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,13 +335,33 @@ mod tests {
             ("pause", Command::Pause),
             ("resume", Command::Resume),
             ("status", Command::Status),
-            ("unregister", Command::Unregister),
+            ("unregister", Command::Unregister { force: false }),
+            ("known-folders", Command::KnownFolders),
+            ("usage", Command::Usage),
             ("sync-now", Command::SyncNow),
             ("shutdown", Command::Shutdown),
         ] {
             assert_eq!(parse(&format!(r#"{{"id":1,"cmd":"{s}"}}"#)), Ok(c));
         }
-        assert_eq!(parse(r#"{"cmd":"hello","version":"1.48.0"}"#), Ok(Command::Hello { version: Some("1.48.0".into()) }));
+        assert_eq!(parse(r#"{"cmd":"hello","version":"1.48.0"}"#), Ok(Command::Hello { version: Some("1.48.0".into()), app_exe: None, lang: None }));
+        assert_eq!(
+            parse(r#"{"cmd":"hello","appExe":"C:\\Program Files\\GateControl Pro\\GateControl Pro Client.exe"}"#),
+            Ok(Command::Hello { version: None, app_exe: Some(r"C:\Program Files\GateControl Pro\GateControl Pro Client.exe".into()), lang: None })
+        );
+        assert_eq!(parse(r#"{"cmd":"hello","appExe":"calc"}"#), Ok(Command::Hello { version: None, app_exe: None, lang: None }));
+        assert_eq!(parse(r#"{"cmd":"hello","lang":"en"}"#), Ok(Command::Hello { version: None, app_exe: None, lang: Some("en".into()) }));
+        assert_eq!(parse(r#"{"cmd":"unregister","force":true}"#), Ok(Command::Unregister { force: true }));
+        assert_eq!(parse(r#"{"cmd":"deletes","decision":"apply"}"#), Ok(Command::Deletes { apply: true }));
+        assert_eq!(parse(r#"{"cmd":"deletes","decision":"restore"}"#), Ok(Command::Deletes { apply: false }));
+        assert_eq!(parse(r#"{"cmd":"deletes","decision":"maybe"}"#).unwrap_err().code, "invalid");
+        assert_eq!(parse(r#"{"cmd":"relocate","folder":"documents"}"#), Ok(Command::Relocate { folder: KnownFolder::Documents, name: None }));
+        assert_eq!(
+            parse(r#"{"cmd":"relocate","folder":"pictures","name":" Bilder "}"#),
+            Ok(Command::Relocate { folder: KnownFolder::Pictures, name: Some("Bilder".into()) })
+        );
+        assert_eq!(parse(r#"{"cmd":"relocate","folder":"pictures","name":"a/b"}"#).unwrap_err().code, "invalid");
+        assert_eq!(parse(r#"{"cmd":"relocate","folder":"windows"}"#).unwrap_err().code, "invalid");
+        assert_eq!(parse(r#"{"cmd":"restore","folder":"music"}"#), Ok(Command::Restore { folder: KnownFolder::Music }));
     }
 
     #[test]
@@ -266,5 +421,12 @@ mod tests {
         assert_eq!(v["lastSync"], Value::Null);
         let l: Value = serde_json::from_str(&log_event("warn", "x", "t")).unwrap();
         assert_eq!(l["event"], "log");
+        assert_eq!(v["massDelete"], Value::Null);
+        let e: Value = serde_json::from_str(&err_line(&json!(3), &ProtoError::new("unsynced", "x").with_data(json!({"count": 2})))).unwrap();
+        assert_eq!(e["error"]["data"]["count"], 2);
+        let a: Value = serde_json::from_str(&action_event("share", "C:\\x", Some(7), Some("mine:1"), false)).unwrap();
+        assert_eq!((a["event"].as_str(), a["node"].as_u64()), (Some("action"), Some(7)));
+        let p: Value = serde_json::from_str(&progress_event("restore", Some("music"), "load", 1, 3)).unwrap();
+        assert_eq!(p["total"], 3);
     }
 }
