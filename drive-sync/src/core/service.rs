@@ -763,6 +763,14 @@ impl FetchPool {
                     let mut sink = CancelSink { inner: job.sink, key: job.key, pool: pool.clone() };
                     let (o, e) = hydrate::plan_range(&job.req);
                     let node = job.req.identity.as_ref().map(|i| i.node).unwrap_or(0);
+                    let r = &job.req;
+                    log(
+                        "info",
+                        &format!(
+                            "FETCH_DATA Knoten {node}: Pflicht {}+{}, optional {}+{}, Größe {}",
+                            r.required_offset, r.required_length, r.optional_offset, r.optional_length, r.file_size
+                        ),
+                    );
                     match hydrate::fetch(remote.as_ref(), &job.req, &mut sink) {
                         Ok(n) => log("info", &format!("Geladen: Knoten {node}, {n} Bytes ab {o}")),
                         Err(err) if err.code == "cancelled" => log("info", &format!("Laden abgebrochen: Knoten {node}")),

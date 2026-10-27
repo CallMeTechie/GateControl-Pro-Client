@@ -43,18 +43,16 @@ fn align_up(v: u64) -> u64 {
     v.div_ceil(ALIGN) * ALIGN
 }
 
-/// Zu ladender Bereich `[start, end)`.
+/// Zu ladender Bereich `[start, end)`: nur der Pflichtbereich (auf 4 KiB
+/// ausgerichtet). Den Vorauslese-Bereich fordert Windows bei Bedarf mit eigenen
+/// Anfragen an; eine Anfrage endet, sobald ihr Pflichtbereich geliefert ist –
+/// weitere Bytes auf ihren Schlüssel lehnt Windows ab (im CI beobachtet:
+/// 0x8007018E, danach scheiterte das Lesen).
 pub fn plan_range(r: &FetchRequest) -> (u64, u64) {
     let size = r.file_size;
     let start = align_down(r.required_offset).min(size);
     let req_end = r.required_offset.saturating_add(r.required_length);
-    let mut end = align_up(req_end).min(size);
-    if r.optional_length > 0 && r.optional_offset <= end {
-        let opt_end = r.optional_offset.saturating_add(r.optional_length);
-        if opt_end > end {
-            end = align_up(opt_end).min(size);
-        }
-    }
+    let end = align_up(req_end).min(size);
     (start, end.max(start))
 }
 
@@ -169,8 +167,8 @@ mod tests {
     fn ranges() {
         assert_eq!(plan_range(&req(10_000, 0, 10_000, 0, 0)), (0, 10_000));
         assert_eq!(plan_range(&req(100_000, 5000, 100, 0, 0)), (4096, 8192));
-        assert_eq!(plan_range(&req(100_000, 5000, 100, 5100, 20_000)), (4096, 28_672));
-        // Vorauslese-Bereich mit Lücke wird nicht geladen
+        // der Vorauslese-Bereich wird nicht mitgeladen
+        assert_eq!(plan_range(&req(100_000, 5000, 100, 5100, 20_000)), (4096, 8192));
         assert_eq!(plan_range(&req(100_000, 0, 4096, 50_000, 1000)), (0, 4096));
         assert_eq!(plan_range(&req(5000, 4096, 904, 0, 0)), (4096, 5000));
         assert_eq!(plan_range(&req(0, 0, 0, 0, 0)), (0, 0));
@@ -259,11 +257,7 @@ mod tests {
         let r = FetchRequest { identity: Some(id.clone()), ..req(size as u64, 0, size as u64, 0, 0) };
         assert_eq!(fetch(&d, &r, &mut s).unwrap_err().code, "transfer");
         assert_eq!(s.failed, Some((TRANSFER_CHUNK, 2 * TRANSFER_CHUNK)));
-        // Pflichtbereich schon geliefert, Fehler nur im Vorauslese-Bereich: nichts melden
-        let mut s = Sink { fail_at: Some(TRANSFER_CHUNK), ..Default::default() };
-        let r = FetchRequest { identity: Some(id), ..req(size as u64, 0, 4096, 4096, size as u64) };
-        assert_eq!(fetch(&d, &r, &mut s).unwrap_err().code, "transfer");
-        assert_eq!(s.failed, None);
+        let _ = id;
     }
 
     #[test]
