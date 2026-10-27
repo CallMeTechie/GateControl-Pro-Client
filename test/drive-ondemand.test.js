@@ -30,7 +30,9 @@ afterEach(() => {
 });
 
 /** Fake-Programm: Socket-Server + Kindprozess-Double. */
-function fakeProgram({ ready = true, failCmd = null, handlers = {}, readyExtra = {} } = {}) {
+function fakeProgram({ ready = true, failCmd = null, handlers: handlerObj = {}, readyExtra = {} } = {}) {
+  // Map: command names come over the socket, never used to index an object
+  const handlers = new Map(Object.entries(handlerObj));
   const prog = { spawned: [], received: [], args: null, child: null, conn: null };
   const spawn = (exe, args, opts) => {
     prog.spawned.push({ exe, args, opts });
@@ -64,9 +66,10 @@ function fakeProgram({ ready = true, failCmd = null, handlers = {}, readyExtra =
             c.write(`${JSON.stringify({ id: msg.id, ok: false, error: { code: 'register_failed', message: 'nope' } })}\n`);
             continue;
           }
-          if (handlers[msg.cmd]) {
+          const handler = typeof msg.cmd === 'string' ? handlers.get(msg.cmd) : undefined;
+          if (typeof handler === 'function') {
             const fail = (code, data) => c.write(`${JSON.stringify({ id: msg.id, ok: false, error: { code, message: code, ...(data ? { data } : {}) } })}\n`);
-            handlers[msg.cmd](msg, reply, fail, (ev) => c.write(`${JSON.stringify(ev)}\n`));
+            handler(msg, reply, fail, (ev) => c.write(`${JSON.stringify(ev)}\n`));
             continue;
           }
           switch (msg.cmd) {

@@ -32,7 +32,8 @@ function createDriveSyncFake({ dir }) {
   const fake = {
     received: [],
     unsynced: 0,
-    known: Object.fromEntries(KNOWN.map((k) => [k, { path: [profile, LEAF[k]].join(sep), inDrive: false, from: null }])),
+    // Map: folder names come over the pipe, never used as object keys
+    known: new Map(KNOWN.map((k) => [k, { path: [profile, LEAF[k]].join(sep), inDrive: false, from: null }])),
     status: { state: 'stopped', pending: 0, transferring: 0, errors: [], lastSync: null, syncRoot: root, registered: false, massDelete: null, elevated: false },
     conn: null,
     send(obj) { if (fake.conn) fake.conn.write(`${JSON.stringify(obj)}\n`); },
@@ -56,24 +57,26 @@ function createDriveSyncFake({ dir }) {
       case 'resume': reply({ paused: false }); return fake.pushStatus({ state: 'idle' });
       case 'usage': return reply({ localBytes: 3435973837, totalBytes: 197568495616, files: 4210, localFiles: 312, pinnedFiles: 40 });
       case 'known-folders':
-        return reply({ syncRoot: root, folders: KNOWN.map((k) => ({ key: k, ...fake.known[k] })) });
+        return reply({ syncRoot: root, folders: KNOWN.map((k) => ({ key: k, ...fake.known.get(k) })) });
       case 'relocate': {
-        const k = fake.known[msg.folder];
+        const key = KNOWN.find((x) => x === msg.folder);
+        const k = key ? fake.known.get(key) : null;
         if (!k || k.inDrive) return fail('already_relocated', 'x');
-        const to = [root, 'Meine Dateien', msg.name || LEAF[msg.folder]].join(sep);
+        const to = [root, 'Meine Dateien', typeof msg.name === 'string' ? msg.name : key].join(sep);
         fake.send({ event: 'progress', op: 'relocate', folder: msg.folder, phase: 'move', done: 1, total: 3 });
         setTimeout(() => {
-          fake.known[msg.folder] = { path: to, inDrive: true, from: k.path };
+          fake.known.set(key, { path: to, inDrive: true, from: k.path });
           reply({ folder: msg.folder, from: k.path, to, moved: 3 });
         }, 300);
         return undefined;
       }
       case 'restore': {
-        const k = fake.known[msg.folder];
+        const key = KNOWN.find((x) => x === msg.folder);
+        const k = key ? fake.known.get(key) : null;
         if (!k || !k.inDrive) return fail('not_relocated', 'x');
         fake.send({ event: 'progress', op: 'restore', folder: msg.folder, phase: 'load', done: 2, total: 5 });
         setTimeout(() => {
-          fake.known[msg.folder] = { path: k.from, inDrive: false, from: null };
+          fake.known.set(key, { path: k.from, inDrive: false, from: null });
           reply({ folder: msg.folder, from: k.path, to: k.from, moved: 3 });
         }, 300);
         return undefined;
@@ -85,7 +88,7 @@ function createDriveSyncFake({ dir }) {
         reply({ queued: true });
         return fake.action(msg.action, 11);
       case 'unregister': {
-        const rel = KNOWN.filter((k) => fake.known[k].inDrive);
+        const rel = KNOWN.filter((k) => fake.known.get(k).inDrive);
         if (rel.length) return fail('relocated', 'Windows-Ordner liegen im Drive', { folders: rel });
         if (fake.unsynced > 0 && !msg.force) {
           return fail('unsynced', `${fake.unsynced} Änderungen`, { count: fake.unsynced, paths: [`${root}${sep}Meine Dateien${sep}Notiz.txt`] });

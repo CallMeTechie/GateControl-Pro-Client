@@ -28,7 +28,7 @@ async function openSync(page) {
 
 const fake = (app) => app.evaluate(() => {
   const f = globalThis.__gcE2E.driveSyncFake;
-  return { received: f.received, known: f.known };
+  return { received: f.received, known: Object.fromEntries(f.known) };
 });
 
 test.describe('drive on demand', () => {
