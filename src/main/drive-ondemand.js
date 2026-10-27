@@ -354,9 +354,12 @@ function createDriveOnDemand({
     return () => pushClient.removeListener?.('event', onEvent);
   }
 
-  /** Abmelden über `gc-drive-sync.exe unregister` (nur, wenn das Programm nicht startet). */
+  /**
+   * Abmelden über `gc-drive-sync.exe unregister` (nur, wenn das Programm nicht startet).
+   * Liegen Windows-Ordner im Drive, lehnt es ab (Exit 4, `relocated`) – dann bleibt alles an.
+   */
   function unregisterCli() {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const p = spawn(exePath, ['unregister'], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
       let out = '';
       p.stdout.on('data', (d) => { out += d; });
@@ -364,6 +367,11 @@ function createDriveOnDemand({
       p.once('exit', (code) => {
         let r = null;
         try { r = JSON.parse(out.trim().split('\n').pop()); } catch { r = null; }
+        if (r && r.error === 'relocated') {
+          reject(err('relocated', 'Windows folders lie in Drive', { folders: Array.isArray(r.folders) ? r.folders : [] }));
+          return;
+        }
+        store.set(`${STORE_KEY}.enabled`, false);
         setStatus({ state: 'disabled', registered: false });
         resolve(r || { unregistered: code === 0 });
       });
@@ -402,8 +410,7 @@ function createDriveOnDemand({
       if (!sock) {
         // Programm startet nicht (z. B. ohne Server): abmelden ohne Abgleich
         if (!force && enabled() && supported().ok) throw err('not_running', 'gc-drive-sync does not start');
-        store.set(`${STORE_KEY}.enabled`, false);
-        if (!supported().ok) { setStatus({ state: 'disabled' }); return { unregistered: false }; }
+        if (!supported().ok) { store.set(`${STORE_KEY}.enabled`, false); setStatus({ state: 'disabled' }); return { unregistered: false }; }
         return unregisterCli();
       }
       const r = await busy('disable', null, () => request('unregister', { force: force === true }, LONG_TIMEOUT_MS));

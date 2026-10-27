@@ -115,7 +115,9 @@ Fehlercodes in `errors` u. a.: `network`, `timeout`, `http_<status>`, Codes des 
 ## Weitere Aufrufe
 
 ```
-gc-drive-sync.exe unregister [--root <dir>] [--data-dir <dir>]   Deinstallation (installer.nsh); stdout: {"unregistered":true}
+gc-drive-sync.exe unregister [--root <dir>] [--data-dir <dir>]   Deinstallation (installer.nsh); stdout: {"unregistered":true}; liegen Windows-Ordner
+                                                                 im Drive: {"unregistered":false,"error":"relocated","folders":[…]}, Exit-Code 4
+gc-drive-sync.exe relocated [--data-dir <dir>]                   {"relocated":[…]}; Exit-Code 0 = keiner verlegt, 4 = verlegt (installer.nsh, customUnInit)
 gc-drive-sync.exe info                                           {"cfapi":true,"build":…,"registered":…,"launch":{…},"menu":…} oder {"cfapi":false,…}
 gc-drive-sync.exe action <share|portal|versions> <Pfad>          Kontextmenü → Aktions-Pipe \\.\pipe\gatecontrol-drive-actions-<SID>
                                                                  ({"action","path"} je Zeile, nur der Benutzer); läuft nichts: Pro-Client mit

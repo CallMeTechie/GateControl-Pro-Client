@@ -43,7 +43,11 @@ function fakeProgram({ ready = true, failCmd = null, handlers: handlerObj = {}, 
     child.kill = () => { child.killed = true; setImmediate(() => child.emit('exit', 1)); };
     prog.child = child;
     if (args[0] === 'unregister') {
-      setImmediate(() => { child.stdout.end('{"unregistered":true}\n'); child.emit('exit', 0); });
+      const relocated = prog.cliRelocated;
+      setImmediate(() => {
+        child.stdout.end(relocated ? '{"unregistered":false,"error":"relocated","folders":["desktop"]}\n' : '{"unregistered":true}\n');
+        child.emit('exit', relocated ? 4 : 0);
+      });
       return child;
     }
     const sockPath = process.platform === 'win32'
@@ -238,6 +242,13 @@ describe('drive-ondemand', () => {
     assert.deepEqual(r, { unregistered: true });
     assert.deepEqual(prog.spawned[0].args, ['unregister']);
     assert.equal(store.data['driveOnDemand.enabled'], false);
+  });
+
+  it('„gc-drive-sync unregister“ lehnt ab, solange Windows-Ordner im Drive liegen', async () => {
+    const { dod, prog, store } = make({ store: memStore({ 'server.url': 'https://x', 'server.apiKey': TOKEN, 'driveOnDemand.enabled': false }) });
+    prog.cliRelocated = true;
+    await assert.rejects(dod.disable({ force: true }), (e) => e.code === 'relocated' && e.data.folders[0] === 'desktop');
+    assert.notEqual(store.data['driveOnDemand.enabled'], true);
   });
 
   it('ausschalten bei laufendem Programm: unregister über die Pipe, dann Ende', async () => {

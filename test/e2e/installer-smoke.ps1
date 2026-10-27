@@ -201,6 +201,36 @@ if ($Edition -eq 'pro') {
   Check ($LASTEXITCODE -eq 0) "autostart task GateControlProAutostart present before uninstall"
 }
 
+# ── Drive: no uninstall while a Windows folder lies in the Drive ─────
+# build/installer.nsh customUnInit asks "gc-drive-sync.exe relocated" (exit 4
+# = a Known Folder of the user lies below %USERPROFILE%\GateControl Drive) and
+# stops before anything is removed. Simulated with the user's Music folder
+# (HKCU User Shell Folders, restored right after). The uninstaller runs in
+# place (_?=) so its exit code is the real one.
+if ($Edition -eq 'pro') {
+  Write-Host "`n== Uninstall refused while Musik lies in GateControl Drive"
+  $usf = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders'
+  $musicOld = (Get-Item $usf).GetValue('My Music', $null, 'DoNotExpandEnvironmentNames')
+  $musicNew = Join-Path $env:USERPROFILE 'GateControl Drive\Meine Dateien\Musik'
+  New-Item -ItemType Directory -Force -Path $musicNew | Out-Null
+  try {
+    Set-ItemProperty -Path $usf -Name 'My Music' -Value $musicNew -Type ExpandString
+    $rel = & (Join-Path $instDir 'resources\drive-sync\gc-drive-sync.exe') relocated
+    Write-Host "  gc-drive-sync relocated: $rel (exit $LASTEXITCODE)"
+    Check ($LASTEXITCODE -eq 4) "gc-drive-sync relocated: exit 4 while Musik lies in the Drive"
+    $p = Start-Process -FilePath $uninstaller -ArgumentList '/S', "_?=$instDir" -Wait -PassThru
+    Check ($p.ExitCode -eq 4) "uninstaller stops with exit code 4 (got $($p.ExitCode))"
+    Check (Test-Path $exe) "app exe still installed after the refused uninstall"
+    Check (Test-Path (Join-Path $instDir 'resources\drive-sync\gc-drive-sync.exe')) "gc-drive-sync.exe still installed"
+    Check (Test-Path $desktopLnk) "desktop shortcut kept"
+  } finally {
+    if ($null -ne $musicOld) { Set-ItemProperty -Path $usf -Name 'My Music' -Value $musicOld -Type ExpandString }
+    Remove-Item -Recurse -Force (Join-Path $env:USERPROFILE 'GateControl Drive') -ErrorAction SilentlyContinue
+  }
+  $rel = & (Join-Path $instDir 'resources\drive-sync\gc-drive-sync.exe') relocated
+  Check ($LASTEXITCODE -eq 0) "gc-drive-sync relocated: exit 0 after putting Musik back ($rel)"
+}
+
 # ── Uninstall ────────────────────────────────────────────
 Write-Host "`n== Silent uninstall"
 $p = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru

@@ -40,7 +40,8 @@ antworten, wenn das Fenster zu ist; ein kleines natives Programm ohne Laufzeit i
   Dateien als normale Dateien im Ordner; nicht vollständig geladene, geänderte Dateien werden vorher geladen. Danach:
   Platzhalter „nur online“ werden gelöscht (sie sind im Drive), geladene und angeheftete Dateien bleiben als normale
   Dateien, Kontextmenü und Sync-Root werden abgemeldet. `gc-drive-sync.exe unregister` (Deinstallation) arbeitet wie
-  `force`: nichts wird gelöscht, was nur lokal ist.
+  `force`: nichts wird gelöscht, was nur lokal ist. Verlegte Windows-Ordner lehnen aber auch hier ab (`relocated`,
+  Exit-Code 4) – auch `force` meldet dann nichts ab.
 - **Start mit Benutzerrechten** (`launch`, `src/win/launch.rs`): Der Pro-Client läuft mit Administratorrechten
   (`requireAdministrator`), gc-drive-sync soll aber als der angemeldete Benutzer laufen – sonst gehörten neue Dateien
   der Gruppe Administratoren und `SHSetKnownFolderPath` träfe nicht das richtige Profil. Der Starter nimmt das Token
@@ -163,7 +164,9 @@ Release (`release.yml`): `cargo build --release` vor electron-builder; `package.
 `gc-drive-sync.exe` nach `resources\drive-sync\` (Installer und Portable). Signatur wie bei der App: kein
 Authenticode-Zertifikat im Projekt; der Installer ist über das Ed25519-signierte Update-Manifest abgesichert, damit
 auch die darin enthaltene `gc-drive-sync.exe`. Beim Deinstallieren ruft `build/installer.nsh`
-`gc-drive-sync.exe unregister` auf.
+`gc-drive-sync.exe unregister` auf. Vorher (`customUnInit`, nur echte Deinstallation, kein Update) prüft es mit
+`gc-drive-sync.exe relocated`, ob Windows-Ordner im Drive liegen; dann bricht die Deinstallation mit Hinweis ab
+(„Drive › Ordner sichern“ → zurücklegen), auch still (`/S`, Exit-Code 4), und es wird nichts abgemeldet.
 
 ## Grenzen
 

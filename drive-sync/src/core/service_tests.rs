@@ -375,6 +375,11 @@ fn unregister_refuses_while_a_windows_folder_is_in_the_drive() {
     let e = c.svc.handle(Command::Unregister { force: true }).unwrap_err();
     assert_eq!(e.code, "relocated");
     assert_eq!(e.data.unwrap()["folders"], json!(["music"]));
+    // auch über die Kommandozeile (Deinstallation) nicht
+    assert_eq!(c.svc.relocated(), vec!["music"]);
+    assert_eq!(c.svc.unregister_cli().unwrap_err().code, "relocated");
+    assert!(c.plat.is_registered(), "nichts abgemeldet");
+    assert!(c.plat.fs.get(&p(&c.plat.root, &["Meine Dateien", "Musik", "Lied.mp3"])).is_some());
     // Liste der Windows-Ordner
     let l = c.svc.handle(Command::KnownFolders).unwrap();
     let music = l["folders"].as_array().unwrap().iter().find(|f| f["key"] == "music").unwrap().clone();

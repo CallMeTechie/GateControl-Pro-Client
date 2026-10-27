@@ -458,8 +458,19 @@ impl<P: Platform> Service<P> {
         Ok(delivered)
     }
 
-    /// Windows-Ordner, die gerade im Drive liegen.
-    fn relocated(&self) -> Vec<&'static str> {
+    /// Abmelden über die Kommandozeile (Deinstallation): wie `force`, aber nie,
+    /// solange Windows-Ordner im Drive liegen (Fehler `relocated`) – sonst zeigten
+    /// Desktop/Dokumente danach in einen Ordner ohne die Dateien „nur online“.
+    pub fn unregister_cli(&self) -> Result<(), ProtoError> {
+        let rel = self.relocated();
+        if !rel.is_empty() {
+            return Err(ProtoError::new("relocated", "Windows-Ordner liegen im Drive – zuerst zurücklegen").with_data(json!({ "folders": rel })));
+        }
+        self.unregister()
+    }
+
+    /// Windows-Ordner, die gerade im Drive liegen (Schlüssel wie `desktop`).
+    pub fn relocated(&self) -> Vec<&'static str> {
         let Some(k) = self.platform.known() else { return vec![] };
         let root = self.platform.sync_root();
         KnownFolder::ALL.into_iter().filter(|f| k.get(*f).is_ok_and(|p| relocate::is_under(&p, &root))).map(KnownFolder::key).collect()

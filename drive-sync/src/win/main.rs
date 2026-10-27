@@ -14,6 +14,9 @@
 //!       Zeile weiter und bleibt als Wächter, bis das Kind endet.
 //!   gc-drive-sync.exe action <share|portal|versions> <Pfad>
 //!       Explorer-Kontextmenü → laufender Dienst (actions.rs).
+//!   gc-drive-sync.exe relocated
+//!       Liegen Windows-Ordner im Drive? stdout {"relocated":[…]}; Exit-Code 0:
+//!       keiner, 4: mindestens einer (der Deinstaller bricht dann ab).
 //!   gc-drive-sync.exe info
 //!       Ob die Cloud Files API hier nutzbar ist, Rechte, Kontextmenü (JSON).
 //!   gc-drive-sync.exe --version
@@ -60,7 +63,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 a.cmd = "action".into();
                 a.action = it.by_ref().take(2).cloned().collect();
             }
-            "run" | "launch" | "unregister" | "info" | "--version" | "--help" => a.cmd = x.trim_start_matches('-').to_string(),
+            "run" | "launch" | "unregister" | "relocated" | "info" | "--version" | "--help" => a.cmd = x.trim_start_matches('-').to_string(),
             other => return Err(format!("unbekannt: {other}")),
         }
     }
@@ -103,7 +106,7 @@ pub fn run() -> i32 {
             return 0;
         }
         "help" => {
-            println!("gc-drive-sync [run|launch|unregister|info|action <a> <path>] [--parent-pid N] [--pipe NAME] [--root DIR] [--data-dir DIR]");
+            println!("gc-drive-sync [run|launch|unregister|relocated|info|action <a> <path>] [--parent-pid N] [--pipe NAME] [--root DIR] [--data-dir DIR]");
             return 0;
         }
         "info" => {
@@ -155,11 +158,20 @@ fn serve_main(args: Args, elevated: bool, launch_note: Option<String>) -> i32 {
     let platform = Arc::new(platform);
     let svc = Service::new(platform, http_remote());
 
+    if args.cmd == "relocated" {
+        let rel = svc.relocated();
+        out(json!({ "relocated": rel }));
+        return if rel.is_empty() { 0 } else { 4 };
+    }
     if args.cmd == "unregister" {
-        return match svc.unregister() {
+        return match svc.unregister_cli() {
             Ok(()) => {
                 out(json!({ "unregistered": true }));
                 0
+            }
+            Err(e) if e.code == "relocated" => {
+                out(json!({ "unregistered": false, "error": "relocated", "folders": e.data.as_ref().map(|d| d["folders"].clone()) }));
+                4
             }
             Err(e) => {
                 out(json!({ "unregistered": false, "error": e.message }));
