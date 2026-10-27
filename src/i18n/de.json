@@ -965,5 +965,247 @@
       "hint": "Mit der Handy-Kamera scannen, um sich mit dem WLAN zu verbinden.",
       "label": "QR-Code für das WLAN {{ name }}"
     }
+  },
+  "drive": {
+    "title": "Drive",
+    "refresh": "Aktualisieren",
+    "loading": "Wird geladen …",
+    "retry": "Erneut versuchen",
+    "cancel": "Abbrechen",
+    "close": "Schließen",
+    "create": "Anlegen",
+    "back": "Zurück",
+    "areas": "Bereiche",
+    "crumbs": "Ordnerpfad",
+    "open": "Öffnen",
+    "openFile": "Datei öffnen",
+    "openFolder": "Ordner öffnen",
+    "saveAs": "Speichern unter …",
+    "saved": "Gespeichert unter {{path}}",
+    "rename": "Umbenennen",
+    "renameTitle": "„{{name}}“ umbenennen",
+    "move": "Verschieben",
+    "moveTitle": "„{{name}}“ verschieben",
+    "moveHere": "Hierher verschieben",
+    "remove": "In den Papierkorb",
+    "removeTitle": "„{{name}}“ löschen",
+    "removeText": "Die Datei kommt in den Papierkorb von Drive und lässt sich dort wiederherstellen.",
+    "removeFolderText": "Der Ordner kommt mit allem, was darin liegt, in den Papierkorb von Drive und lässt sich dort wiederherstellen.",
+    "newFolder": "Neuer Ordner",
+    "actions": "Aktionen",
+    "actionsFor": "Aktionen für {{name}}",
+    "empty": "Dieser Ordner ist leer.",
+    "emptyWritable": "Dieser Ordner ist leer. Zieh Dateien hierher oder wähle „Hochladen“.",
+    "more": "Es werden die ersten Einträge von {{n}} gezeigt.",
+    "readOnly": "Hier kannst du nur lesen und Dateien öffnen.",
+    "childNote": "Das Kind erfährt, dass du in diesen Ordner hineingesehen hast.",
+    "access": {
+      "noSeat": "Drive ist für dich noch nicht freigeschaltet. Bitte den Administrator, dich unter Plugins › Drive › Personen freizuschalten.",
+      "notLicensed": "Drive hat auf diesem Server keine gültige Lizenz.",
+      "noAreas": "Du hast noch keine Bereiche in Drive."
+    },
+    "area": {
+      "mine": "Meine Dateien",
+      "child": "Kinder · {{name}}",
+      "team": "Team · {{name}}",
+      "mineHint": "nur für dich",
+      "familyHint": "mit der Familie geteilt",
+      "childOwnHint": "deine Eltern können hineinsehen",
+      "childParentHint": "nur lesen · das Kind erfährt es",
+      "teamHint": "Team",
+      "teamReadHint": "Team · nur lesen",
+      "archived": "archiviert · nur lesen",
+      "usageOf": "{{used}} von {{quota}}"
+    },
+    "col": {
+      "name": "Name",
+      "date": "Geändert",
+      "deleted": "Gelöscht",
+      "size": "Größe"
+    },
+    "sort": {
+      "label": "Sortieren",
+      "name": "Name",
+      "mtime": "Datum",
+      "size": "Größe"
+    },
+    "time": {
+      "today": "heute {{time}}",
+      "yesterday": "gestern {{time}}"
+    },
+    "name": {
+      "label": "Name",
+      "empty": "Gib einen Namen ein.",
+      "invalid": "Nicht erlaubt: / \\ : * ? \" < > | und ein Punkt oder Leerzeichen am Ende."
+    },
+    "search": {
+      "label": "In Drive suchen",
+      "placeholder": "Dateien und Text in Scans suchen",
+      "title": "Suche: „{{q}}“",
+      "hint": "Gefunden über den Namen oder den erkannten Text eines Scans",
+      "in": "in {{path}}",
+      "empty": "Nichts gefunden.",
+      "showFolder": "Ordner zeigen"
+    },
+    "upload": {
+      "button": "Hochladen",
+      "notHere": "Hier kannst du keine Dateien ablegen. Öffne einen Ordner, in dem du schreiben darfst.",
+      "rejected": {
+        "one": "{{count}} Datei nicht hochgeladen: {{names}}",
+        "other": "{{count}} Dateien nicht hochgeladen: {{names}}"
+      }
+    },
+    "transfer": {
+      "title": "Übertragungen",
+      "summary": "{{done}} von {{total}} hochgeladen",
+      "clear": "Erledigte entfernen",
+      "queued": "wartet",
+      "running": "läuft …",
+      "progress": "{{sent}} von {{total}}",
+      "conflict": "Name schon vergeben",
+      "choose": "Auswählen …",
+      "done": "hochgeladen",
+      "loaded": "geladen",
+      "same": "schon vorhanden",
+      "skipped": "übersprungen",
+      "failed": "fehlgeschlagen: {{reason}}",
+      "show": "Im Ordner zeigen"
+    },
+    "conflict": {
+      "title": "„{{name}}“ gibt es hier schon",
+      "text": "Als neue Version der Datei speichern, beide behalten oder überspringen?",
+      "version": "Neue Version",
+      "keep": "Beide behalten",
+      "skip": "Überspringen"
+    },
+    "versions": {
+      "menu": "Ältere Versionen",
+      "title": "Versionen von „{{name}}“",
+      "current": "Aktuelle Version",
+      "rev": "Version {{rev}}",
+      "none": "Keine älteren Versionen.",
+      "restore": "Wiederherstellen"
+    },
+    "trash": {
+      "title": "Papierkorb",
+      "empty": "Der Papierkorb ist leer.",
+      "info": "Gelöschtes bleibt {{n}} Tage hier und ist danach endgültig weg.",
+      "from": "aus {{path}}",
+      "files": {
+        "one": "{{count}} Datei",
+        "other": "{{count}} Dateien"
+      },
+      "restore": "Wiederherstellen",
+      "purge": "Endgültig löschen",
+      "purgeTitle": "„{{name}}“ endgültig löschen",
+      "purgeText": "Das lässt sich nicht rückgängig machen."
+    },
+    "links": {
+      "title": "Geteilt",
+      "sub": "deine Links",
+      "empty": "Du hast noch nichts geteilt. Teile eine Datei oder einen Ordner über „Link teilen“."
+    },
+    "link": {
+      "mode": {
+        "view": "ansehen",
+        "download": "ansehen und laden",
+        "upload": "Dateien hochladen"
+      },
+      "until": "bis {{date}}",
+      "endless": "ohne Ende",
+      "ended": "beendet",
+      "endedMoved": "beendet (Ordner verschoben)",
+      "endedTrashed": "beendet (gelöscht)",
+      "withPin": "mit PIN",
+      "stats": "{{opens}} geöffnet · {{downloads}} geladen"
+    },
+    "share": {
+      "menu": "Link teilen …",
+      "title": "„{{name}}“ teilen",
+      "who": "Andere dürfen",
+      "valid": "Gültig",
+      "expires": {
+        "1d": "1 Tag",
+        "7d": "7 Tage",
+        "30d": "30 Tage",
+        "never": "ohne Ende"
+      },
+      "pin": "PIN (optional, 4–12 Ziffern)",
+      "pinPlaceholder": "ohne PIN",
+      "pinInvalid": "Die PIN muss aus 4 bis 12 Ziffern bestehen.",
+      "pinNote": "Gib die PIN getrennt vom Link weiter.",
+      "create": "Link erstellen",
+      "created": "Link erstellt",
+      "url": "Link",
+      "copy": "Kopieren",
+      "copied": "Link kopiert",
+      "active": "Aktive Links",
+      "end": "Beenden"
+    },
+    "done": {
+      "trash": "In den Papierkorb verschoben",
+      "move": "Verschoben",
+      "restore": "Wiederhergestellt",
+      "purge": "Endgültig gelöscht",
+      "version": "Version wiederhergestellt",
+      "linkEnded": "Link beendet"
+    },
+    "picker": {
+      "title": "Ordner wählen",
+      "areas": "Bereiche",
+      "up": "Übergeordneter Ordner",
+      "here": "Hier ablegen",
+      "none": "Du hast keinen Bereich, in dem du schreiben darfst.",
+      "noFolders": "Keine Unterordner – du kannst hier ablegen.",
+      "default": "Standardort"
+    },
+    "save": {
+      "menu": "In Drive speichern",
+      "button": "In Drive speichern",
+      "title": "In Drive speichern",
+      "titleNamed": "„{{name}}“ in Drive speichern",
+      "here": "Hier speichern",
+      "saving": "Wird in Drive gespeichert …",
+      "done": "Gespeichert in {{where}}",
+      "doneName": "„{{name}}“ in Drive gespeichert",
+      "doneShort": "In Drive gespeichert",
+      "chatDefault": "Meine Dateien › Messenger",
+      "schoolDefault": "Familie › Schule › Kind"
+    },
+    "gatedrop": {
+      "section": "Drive",
+      "target": "Mein Drive",
+      "default": "Meine Dateien › GateDrop",
+      "where": "Ablage: {{path}}",
+      "pick": "Ordner wählen …",
+      "pickTitle": "Ordner in Drive wählen",
+      "needsFiles": "In Drive lassen sich nur Dateien ablegen."
+    },
+    "err": {
+      "offline": "Der Server ist gerade nicht erreichbar.",
+      "noSeat": "Drive ist für dich nicht freigeschaltet. Bitte den Administrator darum.",
+      "notLicensed": "Drive hat auf diesem Server keine gültige Lizenz.",
+      "quota": "In Drive ist nicht mehr genug Platz frei.",
+      "forbidden": "Dafür fehlt dir die Berechtigung.",
+      "unavailable": "Drive ist gerade nicht erreichbar.",
+      "rateLimited": "Gerade zu viele Anfragen – bitte versuch es gleich noch einmal.",
+      "exists": "Den Namen gibt es hier schon.",
+      "name": "Dieser Name ist nicht erlaubt.",
+      "invalid": "Das geht nicht (Name oder Ziel nicht erlaubt).",
+      "notFound": "Das gibt es nicht mehr.",
+      "linksDisabled": "Links sind abgeschaltet. Ein Administrator kann sie unter Plugins › Drive › Berechtigungen erlauben.",
+      "noUnlimited": "Links ohne Ende sind hier nicht erlaubt.",
+      "noPublicUrl": "Der Server hat keine öffentliche https-Adresse für Links.",
+      "unsafe": "Programme werden nicht direkt geöffnet – nimm „Speichern unter …“.",
+      "openFailed": "Für diese Datei ist kein Programm eingerichtet. Nimm „Speichern unter …“.",
+      "uploadInvalid": "Drive nimmt diese Datei nicht an.",
+      "tooLarge": "Die Datei ist zu groß.",
+      "missing": "Die Datei ist nicht mehr da.",
+      "folder": "Ordner lassen sich nicht hochladen – wähle die Dateien darin.",
+      "needsFiles": "In Drive lassen sich nur Dateien ablegen.",
+      "schoolOffline": "WebUntis ist gerade nicht erreichbar – der Anhang konnte nicht geladen werden.",
+      "copy": "Kopieren hat nicht geklappt.",
+      "generic": "Das hat nicht geklappt ({{code}})."
+    }
   }
 }

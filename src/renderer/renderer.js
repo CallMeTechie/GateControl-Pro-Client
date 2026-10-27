@@ -10,7 +10,7 @@
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
-	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, gatedrop: gatedropApi, vault: vaultApi,
+	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, gatedrop: gatedropApi, vault: vaultApi, drive: driveApi,
 	signin: signinApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
@@ -191,6 +191,7 @@ function refreshTexts() {
 	schoolView?.relabel();
 	gatedropView?.relabel();
 	vaultView?.relabel();
+	driveView?.relabel();
 	notifyRoutesView?.render();
 }
 
@@ -208,6 +209,7 @@ let chatView = null; // chat-view.js instance (CHATS section below)
 let schoolView = null; // school-view.js instance (SCHULE section below)
 let gatedropView = null; // gatedrop-view.js instance (GATEDROP section below)
 let vaultView = null; // vault-view.js instance (VAULT section below)
+let driveView = null; // drive-view.js instance (DRIVE section below)
 let notifyRoutesView = null; // notify-routes.js in Settings › Benachrichtigungen
 let appVersion = '';
 let serverUrl = '';
@@ -358,7 +360,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'gatedrop', 'vault', 'inbox', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'gatedrop', 'drive', 'vault', 'inbox', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -398,6 +400,9 @@ function navigateTo(page, opts = {}) {
 	// GateDrop: the lists load when shown
 	if (page === 'gatedrop' && prev !== 'gatedrop') gatedropView?.show();
 	else if (prev === 'gatedrop' && page !== 'gatedrop') gatedropView?.hide();
+	// Drive: the areas and the folder load when shown
+	if (page === 'drive' && prev !== 'drive') driveView?.show();
+	else if (prev === 'drive' && page !== 'drive') driveView?.hide();
 	// Vault: footer in the status bar, secrets leave the screen with the page
 	if (page === 'vault' && prev !== 'vault') vaultView?.show();
 	else if (prev === 'vault' && page !== 'vault') vaultView?.hide();
@@ -2513,12 +2518,13 @@ function onInboxListKey(e) {
 	if (row) { row.focus(); row.scrollIntoView({ block: 'nearest' }); }
 }
 
-/** Pages that exist right now (Chats / Schule / GateDrop / Vault only while the server offers them). */
+/** Pages that exist right now (Chats / Schule / GateDrop / Drive / Vault only while the server offers them). */
 function shownPages() {
 	return PAGES.filter((p) => (p === 'chats' ? !!chatView && !$('#nav-chats').hidden
 		: p === 'schule' ? !!schoolView && !$('#nav-schule').hidden
 			: p === 'gatedrop' ? !!gatedropView && !$('#nav-gatedrop').hidden
-				: p === 'vault' ? !!vaultView && !$('#nav-vault').hidden : true));
+				: p === 'drive' ? !!driveView && !$('#nav-drive').hidden
+					: p === 'vault' ? !!vaultView && !$('#nav-vault').hidden : true));
 }
 
 /** Vault on a push target (emergency access, a shared vault), e.g. from a toast click. */
@@ -2815,6 +2821,20 @@ async function openCardRoute(route, target) {
 }
 
 // ══════════════════════════════════════════════════════════
+//  "IN DRIVE SPEICHERN" (Chats, GateDrop, Schule)
+//  The folder picker of drive-view.js (writable areas / folders only, starts
+//  in the folder picked last); the page's plugin then hands the file to
+//  Drive on the server (core chat:to-drive, school:attachment:drive,
+//  GateDrop to.drive). null without Drive in this build.
+// ══════════════════════════════════════════════════════════
+const driveSave = driveApi && window.GCDriveView
+	? {
+		pick: (opts) => window.GCDriveView.pickFolder({ api: driveApi, t, ...(opts || {}) }),
+		save: (save, opts) => window.GCDriveView.saveToDrive({ api: driveApi, t, toast: (msg, type) => showToast(msg, type || 'info'), save, ...(opts || {}) }),
+	}
+	: null;
+
+// ══════════════════════════════════════════════════════════
 //  CHATS (GateControl Messenger)
 //  Data: window.gatecontrol.chat (core MessengerService in main); the page
 //  is built by chat-view.js (window.GCChatView) with chat-state.js. The nav
@@ -2853,6 +2873,8 @@ chatView = chatApi && window.GCChatView && $('#page-chats')
 		// connected): the chat page says so.
 		openRoute: (route, target) => openCardRoute(route, target),
 		openPortal: () => (currentPortalUrl ? portal.open().catch(() => false) : Promise.resolve(false)),
+		// "In Drive speichern" of a picture / voice message / file (Messenger 1.10 with Drive)
+		driveSave,
 	})
 	: null;
 
@@ -2867,6 +2889,9 @@ schoolView = schoolApi && window.GCSchoolView && $('#page-schule')
 		root: $('#page-schule'),
 		api: schoolApi,
 		t,
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		// "In Drive speichern" of an attachment (Schule 1.7 with Drive)
+		driveSave,
 		getLocale: () => window.gatecontrol.i18n.getLocale(),
 		onStatus: (st) => {
 			const show = !!st && st.state === 'available';
@@ -2888,6 +2913,8 @@ gatedropView = gatedropApi && window.GCGateDropView && $('#page-gatedrop')
 		root: $('#page-gatedrop'),
 		api: gatedropApi,
 		t,
+		// "Mein Drive": the folder picker for a folder other than Meine Dateien › GateDrop
+		driveSave,
 		getLocale: () => window.gatecontrol.i18n.getLocale(),
 		toast: (msg, type) => showToast(msg, type || 'info'),
 		toastHost: $('#toasts'),
@@ -2905,8 +2932,8 @@ if (gatedropView) {
 		api: gatedropApi,
 		t,
 		toast: (msg, type) => showToast(msg, type || 'info'),
-		// The chat composer takes files itself.
-		skip: (target) => !!(target.closest && target.closest('#page-chats')),
+		// The chat composer and the Drive page take files themselves.
+		skip: (target) => !!(target.closest && target.closest('#page-chats, #page-drive')),
 	});
 }
 
@@ -2930,6 +2957,28 @@ vaultView = vaultApi && window.GCVaultView && $('#page-vault')
 			const show = !!st && st.state === 'available';
 			$('#nav-vault').hidden = !show;
 			if (!show && currentPage === 'vault' && st && st.state === 'unavailable') navigateTo('status');
+		},
+	})
+	: null;
+
+// ══════════════════════════════════════════════════════════
+//  DRIVE (plugin gatecontrol-drive: the files of the person, the family
+//  and the team on the own storage)
+//  Data: window.gatecontrol.drive (core DriveService in main); the page is
+//  built by drive-view.js (window.GCDriveView) with drive-state.js. The nav
+//  entry is shown only while the server lists the plugin (like Vault).
+// ══════════════════════════════════════════════════════════
+driveView = driveApi && window.GCDriveView && $('#page-drive')
+	? window.GCDriveView.mount({
+		root: $('#page-drive'),
+		api: driveApi,
+		t,
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		onStatus: (st) => {
+			const show = !!st && st.state === 'available';
+			$('#nav-drive').hidden = !show;
+			if (!show && currentPage === 'drive' && st && st.state === 'unavailable') navigateTo('status');
 		},
 	})
 	: null;

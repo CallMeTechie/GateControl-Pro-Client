@@ -187,6 +187,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       gatedrop: { on() {}, status: () => ({ state: 'unavailable' }) },
       // … and Vault (vault:* channels)
       vault: { on() {}, touch() {}, status: () => ({ state: 'unavailable' }) },
+      // … and Drive (drive:* channels; a core before Drive ignores it)
+      drive: { on() {}, status: () => ({ state: 'unavailable' }) },
     };
     const registered = registerProIpc(ipcMain, ctx);
     return { handlers, stored, written, calls, registered, apiClient };

@@ -29,8 +29,10 @@ function dates(from, to) {
   return out;
 }
 
-function createSchool({ version = '1.4.0', students = [], day = () => null, changes = [], messages = [], absences = [], updatedAt = Date.now() } = {}) {
-  const state = { version, students, day, changes, messages, absences, updatedAt, log: [] };
+function createSchool({ version = '1.4.0', students = [], day = () => null, changes = [], messages = [], absences = [], updatedAt = Date.now(), drive = false } = {}) {
+  // drive (1.7.0): app/messages says `drive: true`; POST app/messages/<id>/attachments/<attId>/drive answers
+  // { saved } (state.driveSaves: [{ messageId, attachmentId, body }])
+  const state = { version, students, day, changes, messages, absences, updatedAt, log: [], drive, driveSaves: [] };
   const has14 = () => {
     const [a, b] = String(state.version).split('.').map(Number);
     return a > 1 || (a === 1 && b >= 4);
@@ -39,10 +41,20 @@ function createSchool({ version = '1.4.0', students = [], day = () => null, chan
   state.entry = () => ({ id: 'gatecontrol-schule', name: 'Schule', version: state.version, tab: null });
 
   /** → true when the request was ours (answered). */
-  state.handle = ({ method, route, query }, json) => {
+  state.handle = ({ method, route, query, raw }, json) => {
     if (!route.startsWith(BASE)) return false;
     const path = route.slice(BASE.length);
     state.log.push({ route: path, query });
+    const save = /^app\/messages\/([^/]+)\/attachments\/([^/]+)\/drive$/.exec(path);
+    if (save && method === 'POST' && state.drive) {
+      let body = {};
+      try { body = raw && raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { body = {}; }
+      state.driveSaves.push({ messageId: decodeURIComponent(save[1]), attachmentId: decodeURIComponent(save[2]), body });
+      const msg = state.messages.find((m) => String(m.id) === decodeURIComponent(save[1]));
+      const att = msg && (msg.attachments || []).find((a) => String(a.id) === decodeURIComponent(save[2]));
+      if (!att) return json(404, { ok: false, code: 'SCHULE_ATTACHMENT_NOT_FOUND' }), true;
+      return json(200, { ok: true, saved: { nodeId: 900, name: att.name, where: `Familie › Schule › Lena › ${att.name}` } }), true;
+    }
     if (method !== 'GET') return json(404, { ok: false, code: 'NOT_FOUND' }), true;
     if (path === 'app/timetable') {
       const { from, to } = query;
@@ -55,7 +67,7 @@ function createSchool({ version = '1.4.0', students = [], day = () => null, chan
       return json(200, { ok: true, updatedAt: state.updatedAt, students: list }), true;
     }
     if (path === 'app/changes') return json(200, { ok: true, changes: state.changes }), true;
-    if (path === 'app/messages' && has14()) return json(200, { ok: true, messages: state.messages }), true;
+    if (path === 'app/messages' && has14()) return json(200, { ok: true, messages: state.messages, ...(state.drive ? { drive: true } : {}) }), true;
     if (path === 'app/absences' && has14()) return json(200, { ok: true, absences: state.absences }), true;
     return json(404, { ok: false, code: 'NOT_FOUND' }), true;
   };

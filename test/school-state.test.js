@@ -137,7 +137,11 @@ describe('lists', () => {
     const msgs = [{ id: 1, studentIds: [3] }, { id: 2, studentIds: [4] }, { id: 3, studentIds: [] }];
     assert.deepEqual(SS.forStudent(msgs, 3, 'messages').map((m) => m.id), [1, 3]);
     const v = SS.messageView({ id: 1, subject: '', sender: 'Frau Schulz', sentAt: at('2026-10-19', 8, 0), preview: 'Liebe Eltern', body: null, isNew: true, hasAttachments: true }, t, 'de', at(TODAY, 9, 0));
-    assert.deepEqual(v, { id: 1, subject: 'school.messages.noSubject', sender: 'Frau Schulz', when: '19.10. 08:00', preview: 'Liebe Eltern', body: null, isNew: true, attachments: true });
+    assert.deepEqual(v, { id: 1, subject: 'school.messages.noSubject', sender: 'Frau Schulz', when: '19.10. 08:00', preview: 'Liebe Eltern', body: null, isNew: true, attachments: true, files: [] });
+    // Schule 1.5: the attachments by name (In Drive speichern, Schule 1.7)
+    const w = SS.messageView({ id: 2, subject: 'Brief', attachments: [{ id: 'a1', name: 'Elternbrief.pdf', size: 1200, mime: 'application/pdf' }, { id: 3, name: null, size: null }] }, t, 'de', at(TODAY, 9, 0));
+    assert.equal(w.attachments, true);
+    assert.deepEqual(w.files, [{ id: 'a1', name: 'Elternbrief.pdf', size: 1200 }, { id: 3, name: '3', size: null }]);
   });
 
   it('absences: days, times, excused', () => {

@@ -38,6 +38,7 @@ let createUpdateInstaller, installErrorText;
 let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema, setupNotifications;
 let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
+let DriveService;
 let VaultService, windowsHello, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
@@ -96,6 +97,9 @@ try {
   ({ setupMessenger } = require('./messenger'));
   // Schule (plugin gatecontrol-schule): WebUntis timetable (core services/school.js).
   ({ SchoolService } = require('@gatecontrol/client-core'));
+  // Drive (plugin gatecontrol-drive): the files of the person, the family and
+  // the team on the own storage (core services/drive.js); absent in an older core.
+  ({ DriveService } = require('@gatecontrol/client-core'));
   // Vault (plugin gatecontrol-vault): end-to-end encrypted password manager
   // (core docs/vault.md); quick search window on Strg+Alt+P.
   ({ VaultService, windowsHello } = require('@gatecontrol/client-core'));
@@ -254,6 +258,7 @@ let school = null; // Schule (core SchoolService), one per app lifetime
 let vault = null; // Vault (core VaultService), one per app lifetime
 let vaultQuick = null; // Vault quick search window (./vault-quick.js)
 let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
+let drive = null; // Drive (core DriveService), one per app lifetime
 let trayState = 'disconnected'; // last state drawn in the tray (refresh on unread / DND changes)
 let pendingUpdate = null;
 // Version for which the "Update erforderlich" notification was already shown
@@ -945,6 +950,17 @@ function initializeServices() {
     pushClient: notifications?.pushClient,
   }) : null;
 
+  // Drive: shown while the server lists the plugin; opened files go to
+  // %TEMP%\gatecontrol-drive, the folder last picked for "In Drive speichern"
+  // is kept per server in the store.
+  drive = DriveService ? new DriveService({
+    apiClient, log, store, shell, dialog,
+    getMainWindow: () => mainWindow,
+    tempDir: () => path.join(app.getPath('temp'), 'gatecontrol-drive'),
+    getLang: () => getLocale(),
+    pushClient: notifications?.pushClient,
+  }) : null;
+
   // Vault: shown while the server lists the plugin. Keys and decrypted entries
   // stay in this process while unlocked; the offline copy is ciphertext only;
   // "Angemeldet bleiben" keeps the user key under DPAPI (safeStorage);
@@ -1229,6 +1245,8 @@ function registerIpcHandlers() {
     vault,
     // gatedrop:* channels + events, reset on server:setup (core, opt-in)
     gatedrop: gatedrop?.service,
+    // drive:* channels + events, reset on server:setup (core, opt-in)
+    drive,
     gatedropExplorer: gatedrop?.explorer,
     // Result of a bundle the admin requested (the button shows its own toast).
     onSupportResult: (res) => {
@@ -1301,6 +1319,8 @@ app.on('ready', () => {
   chats.start();
   // Schule: availability check, push → page.
   school?.start();
+  // Drive: availability check (the page shows while the server lists the plugin).
+  drive?.start();
   // Vault: availability, sync, auto-lock; Strg+Alt+P while the server offers it.
   vault?.start();
   vaultQuick?.start();
@@ -1425,6 +1445,7 @@ app.on('before-quit', (e) => {
   // Chats: save the cache, leave the open chat.
   chats?.stop();
   school?.stop();
+  drive?.stop();
   // Vault: forget the keys, stop timers, release Strg+Alt+P.
   vaultQuick?.stop();
   vault?.lock('quit');

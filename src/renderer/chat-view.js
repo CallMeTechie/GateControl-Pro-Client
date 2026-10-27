@@ -86,6 +86,7 @@
 		chart: 'M5 20V10M12 20V4M19 20v-7',
 		calendar: 'M4 6h16v15H4z|M4 10h16M8 3v4M16 3v4',
 		home: 'M3 11l9-8 9 8|M5 10v10h14V10',
+		cloud: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z',
 		archive: 'M3 5h18v4H3z|M5 9v11h14V9|M10 13h4',
 		list: 'M9 6h11M9 12h11M9 18h11|M4 6h.01M4 12h.01M4 18h.01',
 		user: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M4 21a8 8 0 0 1 16 0',
@@ -157,6 +158,7 @@
 	 *   (plg-…, "Live-Bild"; Messenger 1.6 also plg-…/<screen>) — `target` { route, topic, data } of a notice card's notification
 	 *   opens what a click on it would; else the app's page or the plugin's portal tab; false: not reachable now
 	 * @param {() => Promise<boolean>} [o.openPortal] - open the portal (profile is managed there); false: no portal now
+	 * @param {{ save: Function }} [o.driveSave] - "In Drive speichern" (renderer.js: drive-view.js folder picker)
 	 */
 	function mount(o) {
 		const api = o.api;
@@ -1725,6 +1727,10 @@
 			if (acts.edit) item('pen', t('chat.msg.edit'), () => startEdit(m));
 			if (m.kind === 'file' && m.media) item('down', t('chat.msg.saveAs'), () => saveMedia(m));
 			if (m.kind === 'image' && m.media) item('down', t('chat.msg.saveAs'), () => saveMedia(m));
+			// Messenger 1.10 with Drive: picture / voice message / file into Drive (folder picker, then the plugin saves)
+			if (o.driveSave && root.GCDriveState && root.GCDriveState.chatCanSave(m, me()) && typeof api.toDrive === 'function') {
+				item('cloud', t('drive.save.menu'), () => o.driveSave.save((folderId) => api.toDrive(m.id, folderId), { fallback: t('drive.save.chatDefault') }));
+			}
 			// Messenger 1.4.0 (msg_tools): pin, "Erinnere mich", suggestions to Familie
 			if (acts.pin) item('thumbtack', acts.pinned ? t('chat.pin.unpin') : t('chat.pin.pin'), () => pinMsg(c, m.id, !acts.pinned));
 			if (acts.remind && rich) item('clock', t('chat.remind.menu'), () => rich.remindDialog(m));

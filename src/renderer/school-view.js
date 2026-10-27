@@ -85,6 +85,7 @@
 	 * @param {Function} o.t - i18n
 	 * @param {() => string} o.getLocale
 	 * @param {(st: object) => void} [o.onStatus] - availability (nav entry)
+	 * @param {{ save: Function }} [o.driveSave] - "In Drive speichern" of attachments (renderer.js: drive-view.js folder picker)
 	 * @param {() => number} [o.now]
 	 * @returns {{ show(), hide(), open(ctx), refresh(), status(), relabel() }}
 	 */
@@ -473,7 +474,8 @@
 				const row = el('div', { class: `sv-row sv-msg${open ? ' is-open' : ''}${v.isNew ? ' is-new' : ''}`, 'data-id': String(v.id) }, [head]);
 				if (open) {
 					row.appendChild(el('div', { class: 'sv-msg-body', text: v.body || v.preview || t('school.messages.noBody') }));
-					if (v.attachments) row.appendChild(el('div', { class: 'sv-row-foot', text: t('school.messages.attachmentsHint') }));
+					if (v.files.length) row.appendChild(attachmentList(v));
+					else if (v.attachments) row.appendChild(el('div', { class: 'sv-row-foot', text: t('school.messages.attachmentsHint') }));
 				}
 				box.appendChild(row);
 			}
@@ -482,6 +484,37 @@
 				const target = box.querySelector('.sv-msg.is-open');
 				if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'nearest' });
 			}
+		}
+
+		/**
+		 * The attachments of an opened message; with Schule 1.7 and Drive (`drive: true` in app/messages)
+		 * each gets "In Drive speichern" (folder picker, then the plugin copies it into Drive — slow).
+		 */
+		function attachmentList(v) {
+			const canDrive = !!(o.driveSave && S.lists.messages && S.lists.messages.drive && typeof api.attachmentToDrive === 'function');
+			const DS = root.GCDriveState;
+			const box = el('div', { class: 'sv-atts' });
+			for (const f of v.files) {
+				const btn = canDrive ? el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('drive.save.button'), title: t('drive.save.title') }) : null;
+				if (btn) {
+					btn.addEventListener('click', async () => {
+						btn.disabled = true;
+						try {
+							await o.driveSave.save((folderId) => api.attachmentToDrive(v.id, f.id, folderId), { title: t('drive.save.titleNamed', { name: f.name }), fallback: t('drive.save.schoolDefault') });
+						} finally {
+							btn.disabled = false;
+						}
+					});
+				}
+				box.appendChild(el('div', { class: 'sv-att' }, [
+					icon('clip', 13),
+					el('span', { class: 'sv-att-name', text: f.name, title: f.name }),
+					f.size !== null && DS ? el('span', { class: 'sv-att-size', text: DS.formatBytes(f.size, locale()) }) : null,
+					btn,
+				]));
+			}
+			if (!canDrive) box.appendChild(el('div', { class: 'sv-row-foot', text: t('school.messages.attachmentsHint') }));
+			return box;
 		}
 
 		function renderAbsences(items) {

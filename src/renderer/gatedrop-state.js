@@ -80,7 +80,8 @@
 
 	/** Empty selection of the dialog. */
 	function emptySelection() {
-		return { devices: [], people: [], nas: [], link: false, expires: '1d', pin: true };
+		// drive: "Mein Drive" (GateDrop 1.3); driveFolder: { folderId, path } picked, null = Meine Dateien › GateDrop
+		return { devices: [], people: [], nas: [], link: false, expires: '1d', pin: true, drive: false, driveFolder: null };
 	}
 
 	function toggle(list, id) {
@@ -109,7 +110,12 @@
 			nas: (s.nas || []).filter((id) => nasById.has(id)).map((id) => ({ id, path: nasById.get(id).path || undefined })),
 		};
 		if (s.link) to.link = { expires: EXPIRES.includes(s.expires) ? s.expires : '1d', pin: s.pin === true };
-		const any = to.people.length || to.devices.length || to.nas.length || to.link;
+		// "Mein Drive" only while the server offers it (targets.drive)
+		if (s.drive && targets && targets.drive === true) {
+			const f = s.driveFolder && Number.isSafeInteger(s.driveFolder.folderId) && s.driveFolder.folderId > 0 ? s.driveFolder.folderId : null;
+			to.drive = f ? { folderId: f } : true;
+		}
+		const any = to.people.length || to.devices.length || to.nas.length || to.link || to.drive;
 		return any ? to : null;
 	}
 
@@ -124,6 +130,7 @@
 		const to = buildTo(selection, targets);
 		if (!to) return { ok: false, key: 'gatedrop.dialog.pickTarget' };
 		if (to.link && !list.length) return { ok: false, key: 'gatedrop.dialog.linkNeedsFiles' };
+		if (to.drive && !list.length) return { ok: false, key: 'drive.gatedrop.needsFiles' };
 		return { ok: true, key: null };
 	}
 
@@ -147,6 +154,7 @@
 			people,
 			nas: me.canNas ? (tg.nas || []) : [],
 			link: !!(me.canLink && tg.links && tg.links.enabled),
+			drive: tg.drive === true,
 			expires: offered.length ? offered : EXPIRES.slice(),
 		};
 	}
@@ -249,7 +257,7 @@
 	function sentView(s, { t, locale, now }) {
 		const deliveries = (s.deliveries || []).map((d) => {
 			const status = STATUS.includes(d.status) ? d.status : 'pending';
-			const label = d.targetName || d.target || t(`gatedrop.kind.${d.kind}`);
+			const label = d.kind === 'drive' ? (d.targetName || t('drive.gatedrop.target')) : (d.targetName || d.target || t(`gatedrop.kind.${d.kind}`));
 			const full = status === 'waiting';
 			return {
 				label,
@@ -351,6 +359,9 @@
 		if (ERRORS.includes(code)) return t(`gatedrop.error.${code}`);
 		if (code === 'auth') return t('gatedrop.error.forbidden');
 		if (code === 'too_many') return t('gatedrop.dialog.tooMany');
+		// "Mein Drive" (GateDrop 1.3): Drive is gone / a file is missing for it
+		if (code === 'drive_unavailable') return t('drive.err.unavailable');
+		if (code === 'drive_needs_files') return t('drive.gatedrop.needsFiles');
 		if (code === 'empty') return t('gatedrop.dialog.empty');
 		return t('gatedrop.error.failed', { code: str(code || (res && res.status) || '?').slice(0, 40) });
 	}
