@@ -267,7 +267,8 @@ jobs:
           echo "Patched with requireAdministrator"
           cd dist && powershell Compress-Archive -Path "win-unpacked/*" -DestinationPath "GateControl-Pro-Client-Portable.zip" -Force
           echo "Portable ZIP created"
-          test -f "dist/win-unpacked/resources/drive-sync/gc-drive-sync.exe"
+          DRIVE_SYNC_DIR=dist/win-unpacked/resources/drive-sync
+          test -f "$DRIVE_SYNC_DIR/gc-drive-sync.exe"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

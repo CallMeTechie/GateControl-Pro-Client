@@ -263,7 +263,16 @@ impl<P: Platform> Service<P> {
         self.platform.register().map_err(|e| ProtoError::new("register_failed", e))?;
         let shared = Arc::new(Shared::default());
         let (tx, rx) = mpsc::channel::<Msg>();
-        let fetch = FetchPool::new(remote.clone(), FETCH_WORKERS);
+        let lg = Arc::downgrade(self);
+        let fetch = FetchPool::new(
+            remote.clone(),
+            FETCH_WORKERS,
+            Arc::new(move |lvl: &str, msg: &str| {
+                if let Some(s) = lg.upgrade() {
+                    s.log(lvl, msg);
+                }
+            }),
+        );
         let root = self.platform.sync_root();
         let cb = Arc::new(Handler { shared: shared.clone(), tx: Mutex::new(tx.clone()), fetch: fetch.clone(), root: root.clone() });
         let conn = self.platform.connect(cb).map_err(|e| ProtoError::new("connect_failed", e))?;
@@ -692,6 +701,8 @@ impl Callbacks for Handler {
 
 // ───────────────────────── Laden beim Öffnen ─────────────────────────
 
+type FetchLog = Arc<dyn Fn(&str, &str) + Send + Sync>;
+
 struct Job {
     key: i64,
     req: FetchRequest,
@@ -730,7 +741,7 @@ impl TransferSink for CancelSink {
 }
 
 impl FetchPool {
-    pub fn new(remote: Arc<dyn Remote>, n: usize) -> Arc<FetchPool> {
+    pub fn new(remote: Arc<dyn Remote>, n: usize, log: FetchLog) -> Arc<FetchPool> {
         let (tx, rx) = mpsc::channel::<Job>();
         let rx = Arc::new(Mutex::new(rx));
         let pool = Arc::new(FetchPool {
@@ -741,7 +752,7 @@ impl FetchPool {
             workers: Mutex::new(Vec::new()),
         });
         for i in 0..n {
-            let (rx, remote, weak) = (rx.clone(), remote.clone(), Arc::downgrade(&pool));
+            let (rx, remote, weak, log) = (rx.clone(), remote.clone(), Arc::downgrade(&pool), log.clone());
             let h = std::thread::Builder::new()
                 .name(format!("drive-fetch-{i}"))
                 .spawn(move || loop {
@@ -750,7 +761,13 @@ impl FetchPool {
                     let Some(pool) = weak.upgrade() else { break };
                     pool.active.fetch_add(1, Ordering::Relaxed);
                     let mut sink = CancelSink { inner: job.sink, key: job.key, pool: pool.clone() };
-                    let _ = hydrate::fetch(remote.as_ref(), &job.req, &mut sink);
+                    let (o, e) = hydrate::plan_range(&job.req);
+                    let node = job.req.identity.as_ref().map(|i| i.node).unwrap_or(0);
+                    match hydrate::fetch(remote.as_ref(), &job.req, &mut sink) {
+                        Ok(n) => log("info", &format!("Geladen: Knoten {node}, {n} Bytes ab {o}")),
+                        Err(err) if err.code == "cancelled" => log("info", &format!("Laden abgebrochen: Knoten {node}")),
+                        Err(err) => log("warn", &format!("Laden fehlgeschlagen: Knoten {node} [{o}, {e}): {err}")),
+                    }
                     pool.cancelled.lock().unwrap().remove(&job.key);
                     pool.active.fetch_sub(1, Ordering::Relaxed);
                 })

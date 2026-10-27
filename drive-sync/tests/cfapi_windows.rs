@@ -122,6 +122,11 @@ fn real_sync_root_roundtrip() {
         wait_for("Server-Datei", || fs.stat(&area.join("Vom Server.txt")).ok().flatten().is_some());
     }));
 
+    if result.is_err() {
+        // Fehlersuche: Log des Dienstes und Anfragen an den Fake-Server
+        println!("--- drive-sync.log ---\n{}", std::fs::read_to_string(data.join("drive-sync.log")).unwrap_or_default());
+        println!("--- requests ---\n{}", srv.requests.lock().unwrap().join("\n"));
+    }
     svc.handle(Command::Stop).unwrap();
     svc.handle(Command::Unregister).unwrap();
     let still = syncroot::is_registered(&root);
