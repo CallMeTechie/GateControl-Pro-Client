@@ -58,15 +58,34 @@ pub fn plan_range(r: &FetchRequest) -> (u64, u64) {
     (start, end.max(start))
 }
 
+/// Fehler des Ziels: „cancelled…“ heißt, Windows hat die Anfrage beendet.
+fn sink_error(m: String) -> ApiError {
+    if m.starts_with(CANCELLED) {
+        ApiError::new(None, "cancelled", m)
+    } else {
+        ApiError::new(None, "transfer", m)
+    }
+}
+
+/// Präfix, mit dem ein `TransferSink` meldet, dass Windows die Anfrage beendet hat.
+pub const CANCELLED: &str = "cancelled";
+
 /// Lädt den Bereich und gibt ihn an `sink` → geladene Bytes.
 pub fn fetch(remote: &dyn Remote, req: &FetchRequest, sink: &mut dyn TransferSink) -> Result<u64, ApiError> {
     let (start, end) = plan_range(req);
     match fetch_inner(remote, req, start, end, sink) {
         Ok(n) => Ok(n),
+        // Windows hat die Anfrage beendet (z. B. weil eine parallele Anfrage die
+        // Bytes schon geliefert hat): nichts mehr melden.
+        Err((_, e)) if e.code == "cancelled" => Err(e),
         Err((done, e)) => {
-            let rest = end.saturating_sub(done);
-            let (off, len) = if rest > 0 { (done, rest) } else { (align_down(req.required_offset), req.required_length.max(1)) };
-            sink.fail(off, len);
+            // Nur den noch fehlenden Pflichtbereich als gescheitert melden – der
+            // Vorauslese-Bereich ist optional, und ein Fehler dort ließe Lesevorgänge
+            // anderer, paralleler Anfragen scheitern.
+            let req_end = align_up(req.required_offset.saturating_add(req.required_length)).min(req.file_size).max(start);
+            if done < req_end {
+                sink.fail(done, req_end - done);
+            }
             Err(e)
         }
     }
@@ -120,7 +139,7 @@ fn fetch_inner(remote: &dyn Remote, req: &FetchRequest, start: u64, end: u64, si
             Ok(_) => return Err((sent, ApiError::network("short download"))),
             Err(e) => {
                 let e = match sink_err {
-                    Some(m) => ApiError::new(None, "transfer", m),
+                    Some(m) => sink_error(m),
                     None => e,
                 };
                 return Err((sent, e));
@@ -129,7 +148,7 @@ fn fetch_inner(remote: &dyn Remote, req: &FetchRequest, start: u64, end: u64, si
         pos = to;
     }
     if !buf.is_empty() {
-        sink.transfer(sent, &buf).map_err(|m| (sent, ApiError::new(None, "transfer", m)))?;
+        sink.transfer(sent, &buf).map_err(|m| (sent, sink_error(m)))?;
         sent += buf.len() as u64;
         sink.progress(total, sent - start);
     }
@@ -233,13 +252,39 @@ mod tests {
     }
 
     #[test]
-    fn transfer_error_reports_rest() {
+    fn transfer_error_reports_rest_of_required_range() {
         let size = 3 * TRANSFER_CHUNK as usize;
         let (d, id, _) = setup(size);
         let mut s = Sink { fail_at: Some(TRANSFER_CHUNK), ..Default::default() };
-        let r = FetchRequest { identity: Some(id), ..req(size as u64, 0, size as u64, 0, 0) };
+        let r = FetchRequest { identity: Some(id.clone()), ..req(size as u64, 0, size as u64, 0, 0) };
         assert_eq!(fetch(&d, &r, &mut s).unwrap_err().code, "transfer");
         assert_eq!(s.failed, Some((TRANSFER_CHUNK, 2 * TRANSFER_CHUNK)));
+        // Pflichtbereich schon geliefert, Fehler nur im Vorauslese-Bereich: nichts melden
+        let mut s = Sink { fail_at: Some(TRANSFER_CHUNK), ..Default::default() };
+        let r = FetchRequest { identity: Some(id), ..req(size as u64, 0, 4096, 4096, size as u64) };
+        assert_eq!(fetch(&d, &r, &mut s).unwrap_err().code, "transfer");
+        assert_eq!(s.failed, None);
+    }
+
+    #[test]
+    fn cancelled_by_windows_is_quiet() {
+        struct C(u32);
+        impl TransferSink for C {
+            fn transfer(&mut self, _: u64, _: &[u8]) -> Result<(), String> {
+                self.0 += 1;
+                Err(format!("{CANCELLED}: request ended"))
+            }
+            fn progress(&mut self, _: u64, _: u64) {}
+            fn fail(&mut self, _: u64, _: u64) {
+                panic!("must not fail a cancelled request");
+            }
+        }
+        let size = 2 * TRANSFER_CHUNK as usize;
+        let (d, id, _) = setup(size);
+        let r = FetchRequest { identity: Some(id), ..req(size as u64, 0, size as u64, 0, 0) };
+        let mut c = C(0);
+        assert_eq!(fetch(&d, &r, &mut c).unwrap_err().code, "cancelled");
+        assert_eq!(c.0, 1);
     }
 
     #[test]

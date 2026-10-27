@@ -202,7 +202,15 @@ impl WinSink {
 
 impl TransferSink for WinSink {
     fn transfer(&mut self, offset: u64, data: &[u8]) -> Result<(), String> {
-        self.execute(STATUS_SUCCESS, data.as_ptr(), offset, data.len() as u64).map_err(|e| e.to_string())
+        self.execute(STATUS_SUCCESS, data.as_ptr(), offset, data.len() as u64).map_err(|e| {
+            // ERROR_CLOUD_FILE_REQUEST_CANCELED / …_REQUEST_ABORTED: Windows hat die Anfrage beendet
+            let code = e.code().0 as u32;
+            if code == 0x8007_018E || code == 0x8007_018D {
+                format!("{}: {e}", crate::core::hydrate::CANCELLED)
+            } else {
+                e.to_string()
+            }
+        })
     }
     fn progress(&mut self, total: u64, done: u64) {
         unsafe {
