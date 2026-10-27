@@ -1206,6 +1206,182 @@
       "schoolOffline": "WebUntis cannot be reached right now – the attachment could not be loaded.",
       "copy": "Copying did not work.",
       "generic": "That did not work ({{code}})."
+    },
+    "sync": {
+      "title": "Back up folders",
+      "intro": "Folders of this PC in Drive: backed up only, or kept in step with your other devices. It keeps running while the window is closed.",
+      "pauseAll": "Pause all",
+      "resumeAll": "Resume",
+      "runAll": "Sync now",
+      "run": "Sync now",
+      "pause": "Pause",
+      "resume": "Resume",
+      "openLocal": "Open in Explorer",
+      "remove": "Remove",
+      "removeTitle": "Stop backing up “{{name}}”?",
+      "removeText": "The folder is no longer backed up. Nothing is deleted – neither on this PC nor in Drive ({{target}}).",
+      "removeTextSync": "The folder is no longer synced. Nothing is deleted – neither on this PC nor in Drive ({{target}}).",
+      "unlimited": "Unlimited",
+      "noLimit": "No limit",
+      "ago": {
+        "now": "just now",
+        "min": "{{n}} min ago",
+        "hour": "{{n}} h ago",
+        "date": "on {{date}}"
+      },
+      "reason": {
+        "all": "all paused",
+        "folder": "paused",
+        "offline": "server not reachable",
+        "unavailable": "Drive is not available",
+        "not_home": "not on the home network",
+        "no_vpn": "VPN not connected",
+        "other_server": "belongs to another server",
+        "folder_missing": "folder not found on this PC",
+        "target_gone": "the Drive folder no longer exists",
+        "no_seat": "Drive is not switched on for you",
+        "not_licensed": "no valid Drive licence",
+        "forbidden": "no write access to the Drive folder",
+        "quota": "Drive is full",
+        "some_failed": "some files failed",
+        "no_area": "no own area in Drive",
+        "exists": "a file is in the way",
+        "too_many_files": "too many files",
+        "mass_delete": "many files deleted",
+        "generic": "error ({{code}})"
+      },
+      "mode": {
+        "backup": "Back up only",
+        "sync": "Sync",
+        "backupDesc": "From this PC to Drive only (My files › Geräte › {{device}}). The folder stays complete here; files deleted here stay in Drive for 30 more days.",
+        "syncDesc": "Both ways with a Drive folder of your choice. Every file is complete on each device; conflicts are kept next to it as a “(Konflikt …)” copy."
+      },
+      "state": {
+        "running": "Running · {{done}} of {{total}} files",
+        "checking": "Checking …",
+        "paused": "Paused",
+        "pausedAll": "Paused (all)",
+        "waiting": "Waiting: {{reason}}",
+        "confirm": "Many files deleted – please decide",
+        "failed": {
+          "one": "1 file failed",
+          "other": "{{count}} files failed"
+        },
+        "error": "Error: {{reason}}",
+        "idleSince": "Up to date · {{when}}",
+        "idle": "Up to date"
+      },
+      "failure": "“{{name}}”: {{code}}",
+      "last": "last backed up {{when}}",
+      "files": {
+        "one": "1 file",
+        "other": "{{count}} files"
+      },
+      "pendingDeletes": {
+        "one": "1 file deleted here is still kept in Drive",
+        "other": "{{count}} files deleted here are still kept in Drive"
+      },
+      "conflicts": {
+        "one": "1 conflict copy made",
+        "other": "{{count}} conflict copies made"
+      },
+      "skipped": {
+        "one": "1 item left out",
+        "other": "{{count}} items left out"
+      },
+      "sum": {
+        "none": "No folder yet",
+        "paused": "Paused",
+        "confirm": "Please decide",
+        "running": "Running · {{done}} of {{total}}",
+        "checking": "Checking …",
+        "error": "Error",
+        "waiting": "Waiting: {{reason}}",
+        "okSince": "All up to date · {{when}}",
+        "ok": "All up to date"
+      },
+      "known": {
+        "title": "Windows folders",
+        "text": "Back up only, to My files › Geräte › {{device}}.",
+        "switch": "Back up {{name}}",
+        "off": "Not backed up",
+        "desktop": "Desktop",
+        "documents": "Documents",
+        "pictures": "Pictures",
+        "videos": "Videos",
+        "music": "Music"
+      },
+      "more": {
+        "title": "More folders",
+        "text": "Back up any folder, or sync it with a Drive folder.",
+        "empty": "No more folders yet."
+      },
+      "add": {
+        "button": "Add folder",
+        "title": "Add folder",
+        "confirm": "Add",
+        "local": "Folder on this PC",
+        "pickLocal": "Choose folder …",
+        "noLocal": "No folder chosen yet",
+        "mode": "Kind",
+        "target": "Drive folder",
+        "pickTarget": "Choose Drive folder …",
+        "noTarget": "No Drive folder chosen yet",
+        "pickTargetTitle": "Sync with which Drive folder?",
+        "pickTargetHere": "Use this folder"
+      },
+      "ask": {
+        "title": "{{count}} of {{total}} files were deleted in “{{name}}”.",
+        "textBackup": "Should they count as deleted in Drive too (they stay there for 30 more days)? Or do you bring them back from Drive?",
+        "textSync": "Should they be deleted in Drive and on your other devices too (trash)? Or do you bring them back from Drive?",
+        "restore": "Restore",
+        "apply": "Delete there too"
+      },
+      "set": {
+        "title": "Settings",
+        "device": "This PC is called “{{device}}” in Drive.",
+        "deviceKey": "Device ID: {{key}}.",
+        "skipDev": "Leave out node_modules and .git",
+        "skipDevDesc": "Folders of development projects that can be rebuilt",
+        "maxSize": "Leave out larger files",
+        "maxSizeDesc": "Files over this size are not transferred",
+        "up": "Limit upload",
+        "down": "Limit download",
+        "homeOnly": "Only on the home network",
+        "atHome": "You are on a home network now ({{n}} saved).",
+        "notHome": "You are not on a home network now ({{n}} saved).",
+        "noHome": "No home network set yet.",
+        "markHome": "This network is my home network",
+        "forgetHome": "Forget home networks",
+        "vpnOnly": "Only with the VPN connected",
+        "vpnOnlyDesc": "Otherwise whenever the server can be reached",
+        "always": "Always left out: temporary files (~$…, *.tmp), Thumbs.db, desktop.ini, .DS_Store, empty files and names Drive does not take."
+      },
+      "done": {
+        "run": "Sync started.",
+        "add": "Folder added – the backup starts.",
+        "remove": "Folder is no longer backed up.",
+        "home": "This network is a home network now."
+      },
+      "err": {
+        "overlap": "This folder is inside a backed-up folder or contains one.",
+        "folder_missing": "This folder does not exist.",
+        "not_a_folder": "That is not a folder.",
+        "drive_root": "A whole drive cannot be backed up – choose a folder on it.",
+        "too_many": "There are too many folders already.",
+        "target_taken": "This Drive folder is synced already.",
+        "forbidden": "You may not write to this Drive folder.",
+        "no_home": "Set a home network first.",
+        "no_network": "No network is connected right now.",
+        "invalid": "That does not work.",
+        "offline": "The server cannot be reached right now.",
+        "not_found": "That no longer exists.",
+        "generic": "That did not work ({{code}})."
+      },
+      "tray": {
+        "pause": "Pause Drive backup",
+        "resume": "Resume Drive backup"
+      }
     }
   }
 }

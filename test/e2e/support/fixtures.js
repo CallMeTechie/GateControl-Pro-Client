@@ -110,6 +110,8 @@ const test = base.test.extend({
         /** Queues answers (button index) for the next native message boxes. */
         answerDialogs: (answers) => app.evaluate((_e, a) => { globalThis.__gcE2E.dialogAnswers.push(...a); }, answers),
         dialogs: () => app.evaluate(() => globalThis.__gcE2E.dialogs),
+        /** Queues paths the next native open dialogs (folder / file pickers) answer. */
+        answerOpenDialogs: (paths) => app.evaluate((_e, p) => { globalThis.__gcE2E.openDialogPaths.push(...p); }, paths),
         trayLabels: () => app.evaluate(() => globalThis.__gcE2E.trayLabels()),
         clickTrayItem: (pattern) => app.evaluate((_e, p) => globalThis.__gcE2E.clickTrayItem(p), pattern),
         /** Click on the last notification whose title/body/toast XML matches (see app-hooks). */

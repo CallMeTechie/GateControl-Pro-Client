@@ -12,6 +12,10 @@
  * downloads show in a list at the bottom; a taken name asks "Neue Version" /
  * "Beide behalten" / "Überspringen".
  *
+ * "Ordner sichern" (folders of this PC backed up / synced, core DriveSync)
+ * is a view of the page too: drive-sync-view.js, shown by the last entry on
+ * the left.
+ *
  * pickFolder() is the dialog "In Drive speichern" of Chats, GateDrop and
  * Schule: writable areas and folders only, it starts in the folder picked
  * last and remembers the new one.
@@ -62,6 +66,9 @@
 		alert: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 8v5M12 16h.01',
 		check: 'M4 12l5 5L20 6',
 		lock: 'M6 11h12v10H6z|M8 11V7a4 4 0 0 1 8 0v4',
+		pause: 'M8 5v14M16 5v14',
+		play: 'M7 5l12 7-12 7z',
+		sync: 'M4 12a8 8 0 0 1 14-5.3L20 9|M20 4v5h-5|M20 12a8 8 0 0 1-14 5.3L4 15|M4 20v-5h5',
 	};
 	const KIND_ICON = { folder: 'folder', image: 'image', video: 'video', audio: 'audio', pdf: 'pdf', archive: 'archive' };
 	const AREA_ICON = { mine: 'user', family: 'users', child: 'child', team: 'team' };
@@ -284,7 +291,7 @@
 			access: null,
 			areas: [],
 			areaId: remembered('gc.drive.area'),
-			view: 'folder',     // folder | search | trash | links
+			view: 'folder',     // folder | search | trash | links | sync
 			folderId: null,
 			folder: null,
 			sort: DS.SORTS.includes(remembered('gc.drive.sort')) ? remembered('gc.drive.sort') : 'name',
@@ -298,6 +305,7 @@
 			conflictOpen: false,
 			menu: null,
 			previews: new Map(),
+			syncSummary: '',
 		};
 
 		// ── Skeleton ─────────────────────────────────────
@@ -316,7 +324,19 @@
 		refs.list = el('div', { class: 'dv-list card', role: 'list' });
 		refs.listWrap = el('div', { class: 'dv-list-wrap scroll' }, [refs.list]);
 		refs.transfers = el('div', { class: 'dv-transfers card', hidden: true });
-		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.listWrap, refs.transfers]);
+		// "Ordner sichern" (drive-sync-view.js): only with the core's DriveSync
+		const syncView = root.GCDriveSyncView && api.sync ? root.GCDriveSyncView.mount({
+			api: api.sync, t, getLocale: o.getLocale, now, toast, host,
+			ui: { el, icon, clear, openDialog },
+			pickDriveFolder: (opts) => pickFolder({ api, t, host, ...(opts || {}) }),
+			onSummary: (sum) => {
+				const tx = sum ? sum.text : '';
+				if (tx === S.syncSummary) return;
+				S.syncSummary = tx;
+				if (S.shown && !refs.main.hidden) renderSide();
+			},
+		}) : null;
+		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.listWrap, refs.transfers, syncView ? syncView.el : null]);
 		refs.empty = el('div', { class: 'dv-gate', hidden: true });
 		refs.main = el('div', { class: 'dv-main' }, [refs.side, refs.pane]);
 		rootEl.append(
@@ -395,7 +415,8 @@
 			if (S.view === 'folder') {
 				const a = DS.currentArea(S.areas, S.areaId);
 				await loadFolder(S.folderId || (a && a.rootId), { quiet: true, fallback: a && a.rootId });
-			} else if (S.view === 'trash') await loadTrash();
+			} else if (S.view === 'sync') openSync();
+			else if (S.view === 'trash') await loadTrash();
 			else if (S.view === 'links') await loadLinks();
 			else if (S.view === 'search') await runSearch();
 			else render();
@@ -420,6 +441,17 @@
 				S.error = r;
 			}
 			render();
+		}
+
+		function openSync() {
+			if (!syncView) return;
+			S.view = 'sync';
+			S.loading = false;
+			S.error = null;
+			refs.search.value = '';
+			S.query = '';
+			render();
+			syncView.show();
 		}
 
 		async function loadTrash() {
@@ -490,7 +522,7 @@
 			toast(DS.errorText(r, t), 'error');
 			return false;
 		}
-		const refreshView = () => (S.view === 'folder' && S.folder ? loadFolder(S.folder.node.id, { quiet: true }) : S.view === 'trash' ? loadTrash() : S.view === 'search' ? runSearch() : S.view === 'links' ? loadLinks() : null);
+		const refreshView = () => (S.view === 'folder' && S.folder ? loadFolder(S.folder.node.id, { quiet: true }) : S.view === 'trash' ? loadTrash() : S.view === 'search' ? runSearch() : S.view === 'links' ? loadLinks() : S.view === 'sync' ? openSync() : null);
 
 		async function openNode(n) {
 			if (n.isDir) { refs.search.value = ''; S.query = ''; loadFolder(n.id); return; }
@@ -794,6 +826,7 @@
 			refs.refresh.title = t('drive.refresh');
 			refs.refresh.setAttribute('aria-label', t('drive.refresh'));
 			render();
+			if (syncView) syncView.relabel();
 		}
 
 		function render() {
@@ -817,9 +850,13 @@
 				refs.sub.textContent = '';
 				return;
 			}
+			const inSync = S.view === 'sync' && !!syncView;
+			refs.bar.hidden = inSync;
+			refs.listWrap.hidden = inSync;
+			if (syncView && !inSync) syncView.hide();
 			renderSide();
 			renderBar();
-			renderList();
+			if (!inSync) renderList();
 			renderTransfers();
 		}
 
@@ -845,6 +882,10 @@
 			refs.side.appendChild(el('span', { class: 'dv-side-sep' }));
 			refs.side.appendChild(sideButton({ label: t('drive.links.title'), sub: t('drive.links.sub'), ic: 'link', on: S.view === 'links', onClick: () => { refs.search.value = ''; loadLinks(); } }));
 			refs.side.appendChild(sideButton({ label: t('drive.trash.title'), sub: null, ic: 'trash', on: S.view === 'trash', onClick: () => { refs.search.value = ''; loadTrash(); } }));
+			if (syncView) {
+				refs.side.appendChild(el('span', { class: 'dv-side-sep' }));
+				refs.side.appendChild(sideButton({ label: t('drive.sync.title'), sub: S.syncSummary || null, ic: 'sync', on: S.view === 'sync', onClick: () => openSync() }));
+			}
 		}
 
 		function renderBar() {
@@ -878,6 +919,8 @@
 				const days = S.me && S.me.settings && S.me.settings.trashDays;
 				refs.note.hidden = !days;
 				if (days) refs.note.textContent = t('drive.trash.info', { n: days });
+				refs.sub.textContent = '';
+			} else if (S.view === 'sync') {
 				refs.sub.textContent = '';
 			} else if (S.view === 'links') {
 				refs.bar.append(el('span', { class: 'dv-bar-h', text: t('drive.links.title') }));
@@ -960,7 +1003,7 @@
 
 		function renderTransfers() {
 			const rows = S.transfers || [];
-			refs.transfers.hidden = !rows.length || refs.main.hidden;
+			refs.transfers.hidden = !rows.length || refs.main.hidden || S.view === 'sync';
 			clear(refs.transfers);
 			if (refs.transfers.hidden) return;
 			const summary = DS.transfersSummary(rows, t);
@@ -998,7 +1041,10 @@
 			hide() {
 				S.shown = false;
 				closeMenu();
+				if (syncView) syncView.hide();
 			},
+			/** Opens "Ordner sichern" (tray entry, links). */
+			openSync: () => { if (syncView) { S.shown = true; openSync(); } },
 			refresh: () => reload(),
 			status: () => S.status,
 			available: () => !!(S.status && S.status.state === 'available'),

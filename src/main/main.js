@@ -38,7 +38,7 @@ let createUpdateInstaller, installErrorText;
 let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema, setupNotifications;
 let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
-let DriveService;
+let DriveService, DriveSync;
 let VaultService, windowsHello, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
@@ -99,7 +99,7 @@ try {
   ({ SchoolService } = require('@gatecontrol/client-core'));
   // Drive (plugin gatecontrol-drive): the files of the person, the family and
   // the team on the own storage (core services/drive.js); absent in an older core.
-  ({ DriveService } = require('@gatecontrol/client-core'));
+  ({ DriveService, DriveSync } = require('@gatecontrol/client-core'));
   // Vault (plugin gatecontrol-vault): end-to-end encrypted password manager
   // (core docs/vault.md); quick search window on Strg+Alt+P.
   ({ VaultService, windowsHello } = require('@gatecontrol/client-core'));
@@ -259,6 +259,8 @@ let vault = null; // Vault (core VaultService), one per app lifetime
 let vaultQuick = null; // Vault quick search window (./vault-quick.js)
 let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
 let drive = null; // Drive (core DriveService), one per app lifetime
+let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
+let driveSyncTray = ''; // what the tray entry of "Ordner sichern" last showed
 let trayState = 'disconnected'; // last state drawn in the tray (refresh on unread / DND changes)
 let pendingUpdate = null;
 // Version for which the "Update erforderlich" notification was already shown
@@ -395,6 +397,11 @@ function updateTray(connState) {
     ...(chats ? chats.menuItems(t, () => { showWindow(); mainWindow?.webContents.send('navigate', 'chats'); }) : []),
     ...(notifications ? notifications.menuItems(t) : []),
     ...(gatedrop ? gatedrop.menuItems(t) : []),
+    // "Ordner sichern": pause / resume while folders are set up
+    ...(driveSync && driveSyncTray ? [{
+      label: t(driveSyncTray === 'resume' ? 'drive.sync.tray.resume' : 'drive.sync.tray.pause'),
+      click: () => { try { driveSync.setPaused(null, driveSyncTray === 'pause'); } catch (err) { log.warn(`Drive sync pause failed: ${err.message}`); } },
+    }] : []),
   ];
 
   // Build context menu with RDP status
@@ -961,6 +968,31 @@ function initializeServices() {
     pushClient: notifications?.pushClient,
   }) : null;
 
+  // "Ordner sichern": folders of this PC backed up / synced with Drive. Runs
+  // in the main process (tray), the state of each folder lives in
+  // %APPDATA%\…\drive-sync (no tokens); deleted files go to the recycle bin.
+  driveSync = drive && DriveSync ? new DriveSync({
+    drive, store, log, shell, dialog,
+    dir: path.join(app.getPath('userData'), 'drive-sync'),
+    trashItem: (p) => shell.trashItem(p),
+    getMainWindow: () => mainWindow,
+    isVpnUp: () => tunnelState.connected,
+    // the PC's stable short id (Settings → About), shown on the page (read once)
+    getDeviceKey: (() => { let key; return () => (key === undefined ? (key = shortDeviceId(getMachineFingerprint, log)) : key); })(),
+    knownFolders: () => ['desktop', 'documents', 'pictures', 'videos', 'music'].map((key) => {
+      try { return { key, path: app.getPath(key) }; } catch { return null; }
+    }).filter(Boolean),
+    pushClient: notifications?.pushClient,
+    ...(e2e ? { timing: { startMs: 1000, settleMs: 300, watchMs: 500 } } : {}),
+  }) : null;
+  // The tray entry (pause / resume) follows the folders and the pause.
+  const driveSyncTrayKey = (st) => (st && st.folders && st.folders.length ? (st.paused ? 'resume' : 'pause') : '');
+  if (driveSync) driveSyncTray = driveSyncTrayKey(driveSync.status());
+  driveSync?.on('change', (st) => {
+    const key = driveSyncTrayKey(st);
+    if (key !== driveSyncTray) { driveSyncTray = key; updateTray(trayState); }
+  });
+
   // Vault: shown while the server lists the plugin. Keys and decrypted entries
   // stay in this process while unlocked; the offline copy is ciphertext only;
   // "Angemeldet bleiben" keeps the user key under DPAPI (safeStorage);
@@ -1247,6 +1279,8 @@ function registerIpcHandlers() {
     gatedrop: gatedrop?.service,
     // drive:* channels + events, reset on server:setup (core, opt-in)
     drive,
+    // drive:sync:* ("Ordner sichern"), reset on server:setup (core, opt-in with drive)
+    driveSync,
     gatedropExplorer: gatedrop?.explorer,
     // Result of a bundle the admin requested (the button shows its own toast).
     onSupportResult: (res) => {
@@ -1321,6 +1355,8 @@ app.on('ready', () => {
   school?.start();
   // Drive: availability check (the page shows while the server lists the plugin).
   drive?.start();
+  // "Ordner sichern": watches the folders, a full run shortly after start and every 15 min.
+  driveSync?.start();
   // Vault: availability, sync, auto-lock; Strg+Alt+P while the server offers it.
   vault?.start();
   vaultQuick?.start();
@@ -1446,6 +1482,7 @@ app.on('before-quit', (e) => {
   chats?.stop();
   school?.stop();
   drive?.stop();
+  driveSync?.stop();
   // Vault: forget the keys, stop timers, release Strg+Alt+P.
   vaultQuick?.stop();
   vault?.lock('quit');
