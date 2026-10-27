@@ -403,6 +403,18 @@
 
     ; "Senden an -> GateDrop" (Verknuepfung, die die App anlegt)
     !insertmacro GC_GATEDROP_SENDTO_REMOVE
+
+    ; Drive "Dateien bei Bedarf": Sync-Root "GateControl Drive" des Benutzers
+    ; abmelden (gc-drive-sync.exe, drive-sync/README.md). Platzhalter, die nur
+    ; online sind, verschwinden; geladene und geaenderte Dateien bleiben als
+    ; normale Dateien im Ordner. Ohne Sync-Root tut der Aufruf nichts.
+    ${If} ${FileExists} "$INSTDIR\resources\drive-sync\gc-drive-sync.exe"
+      Push $3
+      DetailPrint "GateControl: Drive-Sync-Root abmelden ..."
+      nsExec::ExecToLog '"$INSTDIR\resources\drive-sync\gc-drive-sync.exe" unregister'
+      Pop $3
+      Pop $3
+    ${EndIf}
   ${EndIf}
 
   ; Remove firewall rules

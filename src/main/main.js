@@ -41,6 +41,7 @@ let SchoolService;
 let DriveService, DriveSync;
 let VaultService, windowsHello, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
+let createDriveOnDemand, driveOnDemandExePath;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
 let installWindowGuard, autostartTask, createAutostart;
 
@@ -108,6 +109,8 @@ try {
   // "Senden an" in the Explorer (core services/gatedrop.js).
   ({ GateDropService, GateDropFirewall, gatedropShell } = require('@gatecontrol/client-core'));
   ({ setupGateDrop } = require('./gatedrop'));
+  // Drive „Dateien bei Bedarf“: gc-drive-sync.exe (drive-sync/), standardmäßig aus.
+  ({ createDriveOnDemand, defaultExePath: driveOnDemandExePath } = require('./drive-ondemand'));
   RdpManager = require('../services/rdp/rdp-manager');
   ({ runRdpTrustMigration } = require('../services/rdp/rdp-trust-migration'));
   RdpWolClient = require('../services/rdp/rdp-wol');
@@ -230,6 +233,14 @@ const proSchema = {
     },
     default: {},
   },
+  // Drive „Dateien bei Bedarf“ (./drive-ondemand.js): nur auf ausdrücklichen Wunsch.
+  driveOnDemand: {
+    type: 'object',
+    properties: {
+      enabled: { type: 'boolean', default: false },
+    },
+    default: {},
+  },
 };
 
 const store = new Store({
@@ -260,7 +271,8 @@ let vaultQuick = null; // Vault quick search window (./vault-quick.js)
 let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
 let drive = null; // Drive (core DriveService), one per app lifetime
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
-let driveSyncTray = ''; // what the tray entry of "Ordner sichern" last showed
+let driveSyncTray = '';
+let driveOnDemand = null; // Drive „Dateien bei Bedarf“ (./drive-ondemand.js, gc-drive-sync.exe) // what the tray entry of "Ordner sichern" last showed
 let trayState = 'disconnected'; // last state drawn in the tray (refresh on unread / DND changes)
 let pendingUpdate = null;
 // Version for which the "Update erforderlich" notification was already shown
@@ -993,6 +1005,23 @@ function initializeServices() {
     if (key !== driveSyncTray) { driveSyncTray = key; updateTray(trayState); }
   });
 
+  // Drive „Dateien bei Bedarf“: Explorer-Ordner „GateControl Drive“ über
+  // gc-drive-sync.exe (Cloud Files API). Aus, bis es jemand einschaltet; nie
+  // in E2E-Läufen (keine Sync-Root auf dem Testrechner).
+  driveOnDemand = e2e ? null : createDriveOnDemand({
+    store, log,
+    getServer: () => ({ url: store.get('server.url', ''), apiKey: store.get('server.apiKey', '') }),
+    getHeaders: () => apiClient.buildHeaders(),
+    exePath: driveOnDemandExePath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appRoot: path.join(__dirname, '..', '..') }),
+    appVersion: require('../../package.json').version,
+    onStatus: (st) => {
+      const w = mainWindow;
+      if (w && !w.isDestroyed()) w.webContents.send('drive-ondemand:status', st);
+    },
+  });
+  driveOnDemand?.watchPush(notifications?.pushClient);
+  store.onDidChange('server', () => { driveOnDemand?.serverChanged().catch(() => {}); });
+
   // Vault: shown while the server lists the plugin. Keys and decrypted entries
   // stay in this process while unlocked; the offline copy is ciphertext only;
   // "Angemeldet bleiben" keeps the user key under DPAPI (safeStorage);
@@ -1282,6 +1311,8 @@ function registerIpcHandlers() {
     // drive:sync:* ("Ordner sichern"), reset on server:setup (core, opt-in with drive)
     driveSync,
     gatedropExplorer: gatedrop?.explorer,
+    // drive-ondemand:* (Pro, ./ipc-pro.js)
+    driveOnDemand,
     // Result of a bundle the admin requested (the button shows its own toast).
     onSupportResult: (res) => {
       if (!res || res.cancelled) return;
@@ -1357,6 +1388,8 @@ app.on('ready', () => {
   drive?.start();
   // "Ordner sichern": watches the folders, a full run shortly after start and every 15 min.
   driveSync?.start();
+  // Drive „Dateien bei Bedarf“: startet gc-drive-sync.exe nur, wenn eingeschaltet.
+  driveOnDemand?.start().catch((err) => log.warn(`Drive on demand start failed: ${err.message}`));
   // Vault: availability, sync, auto-lock; Strg+Alt+P while the server offers it.
   vault?.start();
   vaultQuick?.start();
@@ -1483,6 +1516,8 @@ app.on('before-quit', (e) => {
   school?.stop();
   drive?.stop();
   driveSync?.stop();
+  // gc-drive-sync.exe beenden (endet sonst mit dem Prozess über --parent-pid).
+  driveOnDemand?.stop().catch(() => {});
   // Vault: forget the keys, stop timers, release Strg+Alt+P.
   vaultQuick?.stop();
   vault?.lock('quit');

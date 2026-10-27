@@ -1,0 +1,120 @@
+name: Drive Sync (gc-drive-sync)
+
+# gc-drive-sync.exe (drive-sync/, Rust): Drive „Dateien bei Bedarf“ im
+# Explorer über die Windows Cloud Files API.
+#   - Linux: Format, Clippy und die plattformunabhängigen Tests (Abgleich,
+#     Zustand, Pipe-Protokoll, HTTP-Client gegen einen Fake-Server).
+#   - Windows: dasselbe für das Windows-Ziel, Release-Build und der
+#     Integrations-Test mit echter Sync-Root (registrieren, Platzhalter, Öffnen
+#     → Laden, Speicher freigeben, anheften, Upload, abmelden) gegen den
+#     Fake-Server. Ist die Cloud Files API auf dem Runner nicht nutzbar
+#     (Server-SKU ohne cldflt), überspringt der Test sichtbar: Zeile
+#     „CFAPI-SKIPPED“ im Log und eine Warnung in der Zusammenfassung.
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drive-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: '0'
+
+jobs:
+  linux:
+    name: drive-sync (Linux, Tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: drive-sync
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+          rustc --version && cargo --version
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked
+
+  windows:
+    name: drive-sync (Windows, Build, Tests, cfapi)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+        working-directory: drive-sync
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+          rustc --version && cargo --version
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Unit and HTTP tests
+        run: cargo test --locked --lib --test api_http
+
+      - name: Release build
+        run: |
+          cargo build --release --locked
+          ls -la target/release/gc-drive-sync.exe
+          ./target/release/gc-drive-sync.exe --version
+
+      - name: Cloud Files API on this runner
+        id: cfinfo
+        shell: pwsh
+        run: |
+          $info = & ./target/release/gc-drive-sync.exe info
+          Write-Host "gc-drive-sync info: $info"
+          $os = Get-CimInstance Win32_OperatingSystem
+          Write-Host "OS: $($os.Caption) $($os.Version) (ProductType $($os.ProductType))"
+          $flt = Get-Service cldflt -ErrorAction SilentlyContinue
+          if ($flt) { Write-Host "cldflt: $($flt.Status) / $($flt.StartType)" } else { Write-Host "cldflt: kein Dienst" }
+          fltmc filters | Select-String -Pattern 'CldFlt' | ForEach-Object { Write-Host "fltmc: $_" }
+
+      - name: Integration test (real sync root)
+        run: |
+          set -o pipefail
+          cargo test --locked --test cfapi_windows -- --nocapture --test-threads=1 2>&1 | tee cfapi.log
+          if grep -q 'CFAPI-SKIPPED' cfapi.log; then
+            reason=$(grep 'CFAPI-SKIPPED' cfapi.log | head -1)
+            echo "::warning title=cfapi-Integrationstest übersprungen::${reason}"
+            echo "### cfapi-Integrationstest: übersprungen" >> "$GITHUB_STEP_SUMMARY"
+            echo "${reason}" >> "$GITHUB_STEP_SUMMARY"
+          elif grep -q 'CFAPI-RESULT: ok' cfapi.log; then
+            echo "### cfapi-Integrationstest: bestanden (echte Sync-Root)" >> "$GITHUB_STEP_SUMMARY"
+            grep 'CFAPI-INFO' cfapi.log >> "$GITHUB_STEP_SUMMARY" || true
+          else
+            echo "::error::cfapi-Integrationstest ohne Ergebniszeile"
+            exit 1
+          fi
+
+      - name: Upload gc-drive-sync.exe
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gc-drive-sync
+          path: drive-sync/target/release/gc-drive-sync.exe
+          retention-days: 7

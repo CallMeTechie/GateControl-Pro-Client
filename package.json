@@ -93,6 +93,13 @@
         ]
       },
       {
+        "from": "drive-sync/target/release/",
+        "to": "drive-sync/",
+        "filter": [
+          "gc-drive-sync.exe"
+        ]
+      },
+      {
         "from": "build/update-signing.pub",
         "to": "update-signing.pub"
       }
