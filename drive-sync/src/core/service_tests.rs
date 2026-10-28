@@ -1,4 +1,5 @@
 use super::*;
+use crate::core::guard;
 use crate::core::localfs::LocalFs;
 use crate::core::model::Role;
 use crate::core::testing::{p, FakeDrive, FakeFs};
@@ -483,6 +484,19 @@ fn drive_stops_the_device_and_the_pro_client_frees_it() {
 
 #[test]
 fn the_local_check_asks_and_keep_pauses() {
+    local_check(None);
+}
+
+/// Die Änderungen kommen in zwei Schüben: der erste (4 von 25, unter der Schwelle von 20 %)
+/// geht hoch, der zweite löst die Prüfung aus – mit allen 8 Dateien des Zeitfensters.
+#[test]
+fn the_local_check_counts_an_earlier_batch_below_the_threshold() {
+    local_check(Some(4));
+}
+
+/// 25 Briefe hoch, dann 8 davon verrauscht. `split`: nach so vielen Dateien länger als
+/// SETTLE warten, damit sie als eigener Schub verarbeitet werden.
+fn local_check(split: Option<usize>) {
     let c = started();
     let dir = p(&c.plat.root, &["Meine Dateien", "Briefe"]);
     c.plat.fs.user_mkdir(&dir);
@@ -497,20 +511,29 @@ fn the_local_check_asks_and_keep_pauses() {
     drop(w);
     wait_for(|| c.drive.find(c.mine, "Briefe").is_some_and(|b| c.drive.live_children(b.id).len() == 25));
     let commits = c.drive.commits().len();
+    let noise: Vec<u8> = (0..70_000u32).map(|x| (x.wrapping_mul(2_654_435_761) >> 13) as u8).collect();
     let w = c.plat.watcher.lock().unwrap();
     for i in 0..8 {
+        if split == Some(i) {
+            std::thread::sleep(SETTLE + Duration::from_millis(300));
+        }
         let f = dir.join(format!("brief{i}.txt"));
-        let noise: Vec<u8> = (0..70_000u32).map(|x| (x.wrapping_mul(2_654_435_761) >> 13) as u8).collect();
         c.plat.fs.user_write(&f, &noise);
         (w.as_ref().unwrap())(WatchEvent::Changed(f));
     }
     drop(w);
     wait_for(|| c.svc.status().state == "suspect");
     let s = c.svc.status().suspect.unwrap();
-    assert!(s.count >= 4 && s.why == "entropy", "{s:?}");
-    // je nach Takt gingen die ersten (unter der Schwelle) schon hoch; der Rest wartet
+    assert!(s.count >= 5 && s.why == "entropy", "{s:?}");
+    // Kamen die Änderungen in Schüben, ging ein Schub unter der Schwelle schon hoch: bei 25
+    // Dateien höchstens 4 (5 = 20 % lösen aus); der Rest wartet.
+    let below = (guard::GUARD_SHARE * 25.0).ceil() as usize - 1;
     let held = c.drive.commits().len();
-    assert!(held < commits + 4, "{held} {commits}");
+    assert!(held <= commits + below, "{held} {commits}");
+    if let Some(n) = split {
+        assert_eq!(held, commits + n);
+        assert_eq!(s.count, 8);
+    }
     // „Pausiert lassen“
     c.svc.handle(Command::Suspect { upload: false }).unwrap();
     assert_eq!(c.svc.status().state, "paused");
