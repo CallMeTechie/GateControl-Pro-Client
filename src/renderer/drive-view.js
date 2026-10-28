@@ -22,6 +22,16 @@
  * is a view of the page too: drive-sync-view.js, shown by the last entry on
  * the left.
  *
+ * Drive 1.7 (only with the features `me` reports): "Auf früheren Stand
+ * zurücksetzen …" of a folder (row menu, and the bar for the folder shown;
+ * 'timeTravel'): a time → the preview (what comes back, gets its old
+ * content, goes into the trash, is moved; a note when Drive does not know
+ * older renames; what happens to the folders of this PC in "Ordner
+ * sichern") → run → the result with "Rückgängig" (a time travel to
+ * `before`). "Fotos" ('photos' / 'albums' / 'frame', drive-photos-view.js)
+ * and "Speicher" ('storage', drive-storage-view.js) are views of the page
+ * like "Ordner sichern".
+ *
  * pickFolder() is the dialog "In Drive speichern" of Chats, GateDrop and
  * Schule: writable areas and folders only, it starts in the folder picked
  * last and remembers the new one.
@@ -65,6 +75,7 @@
 		pen: 'M4 20h4L19 9l-4-4L4 16z',
 		move: 'M5 12h14|M13 6l6 6-6 6',
 		history: 'M3 12a9 9 0 1 0 3-6.7L3 8|M3 3v5h5|M12 7v5l3 3',
+		disk: 'M4 6a8 3 0 1 0 16 0a8 3 0 1 0-16 0|M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6|M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
 		restore: 'M3 12a9 9 0 1 0 3-6.7L3 8|M3 3v5h5',
 		copy: 'M9 9h11v11H9z|M5 15H4V4h11v1',
 		open: 'M14 4h6v6|M20 4l-9 9|M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
@@ -319,7 +330,7 @@
 			access: null,
 			areas: [],
 			areaId: remembered('gc.drive.area'),
-			view: 'folder',     // folder | search | trash | links | sync
+			view: 'folder',     // folder | search | trash | links | sync | photos | storage
 			folderId: null,
 			folder: null,
 			sort: DS.SORTS.includes(remembered('gc.drive.sort')) ? remembered('gc.drive.sort') : 'name',
@@ -367,7 +378,16 @@
 				if (S.shown && !refs.main.hidden) renderSide();
 			},
 		}) : null;
-		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.listWrap, refs.transfers, syncView ? syncView.el : null]);
+		// Drive 1.7: "Fotos" (drive-photos-view.js) and "Speicher" (drive-storage-view.js)
+		const extra = {
+			api, t, getLocale: o.getLocale, toast, host, ui: { el, icon, clear, openDialog },
+			getMe: () => S.me, getAreas: () => S.areas, areaLabel: DS.areaLabel, errorText: DS.errorText, formatBytes: DS.formatBytes,
+			openFolder: (id) => { refs.search.value = ''; S.query = ''; loadFolder(id); },
+		};
+		const photosView = root.GCDrivePhotosView && typeof api.photos === 'function' ? root.GCDrivePhotosView.mount(extra) : null;
+		const storageView = root.GCDriveStorageView && typeof api.storage === 'function' ? root.GCDriveStorageView.mount(extra) : null;
+		const VIEWS = { sync: syncView, photos: photosView, storage: storageView };
+		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.listWrap, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null]);
 		refs.empty = el('div', { class: 'dv-gate', hidden: true });
 		refs.main = el('div', { class: 'dv-main' }, [refs.side, refs.pane]);
 		rootEl.append(
@@ -462,6 +482,7 @@
 				const a = DS.currentArea(S.areas, S.areaId);
 				await loadFolder(S.folderId || (a && a.rootId), { quiet: true, fallback: a && a.rootId });
 			} else if (S.view === 'sync') openSync();
+			else if (S.view === 'photos' || S.view === 'storage') openExtra(S.view);
 			else if (S.view === 'trash') await loadTrash();
 			else if (S.view === 'links') await loadLinks();
 			else if (S.view === 'search') await runSearch();
@@ -498,6 +519,24 @@
 			S.query = '';
 			render();
 			syncView.show();
+		}
+
+		/** "Fotos" / "Speicher" (Drive 1.7): only while this Drive reports the feature. */
+		function extraAvailable(view) {
+			if (view === 'photos') return !!photosView && DS.hasFeature(S.me, 'photos');
+			if (view === 'storage') return !!storageView && DS.hasFeature(S.me, 'storage');
+			return false;
+		}
+
+		function openExtra(view) {
+			if (!extraAvailable(view)) { S.view = 'folder'; const a = DS.currentArea(S.areas, S.areaId); loadFolder(S.folderId || (a && a.rootId)); return; }
+			S.view = view;
+			S.loading = false;
+			S.error = null;
+			refs.search.value = '';
+			S.query = '';
+			render();
+			VIEWS[view].show();
 		}
 
 		async function loadTrash({ quiet = false } = {}) {
@@ -565,14 +604,14 @@
 			toast(DS.errorText(r, t), 'error');
 			return false;
 		}
-		const refreshView = () => (S.view === 'folder' && S.folder ? loadFolder(S.folder.node.id, { quiet: true }) : S.view === 'trash' ? loadTrash() : S.view === 'search' ? runSearch() : S.view === 'links' ? loadLinks() : S.view === 'sync' ? openSync() : null);
+		const refreshView = () => (S.view === 'folder' && S.folder ? loadFolder(S.folder.node.id, { quiet: true }) : S.view === 'trash' ? loadTrash() : S.view === 'search' ? runSearch() : S.view === 'links' ? loadLinks() : S.view === 'sync' ? openSync() : VIEWS[S.view] ? VIEWS[S.view].refresh() : null);
 
 		/**
 		 * Live reload (push `changed`, back in the window): without "loading", scroll position and
 		 * the focused row kept; waits while a menu or dialog is open.
 		 */
 		async function liveRefresh() {
-			if (!S.shown || S.loading || S.view === 'sync') return;
+			if (!S.shown || S.loading || VIEWS[S.view] !== undefined) return;
 			if (S.menu || host.querySelector('.dv-scrim')) { S.livePending = true; return; }
 			S.livePending = false;
 			const top = refs.listWrap.scrollTop;
@@ -769,6 +808,114 @@
 			load();
 		}
 
+		// ── Time travel (Drive 1.7) ──────────────────────
+		/**
+		 * "Auf früheren Stand zurücksetzen …": a time (quick choices or date and time) → the preview
+		 * → run → the result with "Rückgängig" (a time travel to `before`).
+		 */
+		function timeTravelDialog(n) {
+			const name = n.parentId ? n.name : DS.areaLabel(S.areas.find((a) => a.id === n.areaId), t) || n.name;
+			const dlg = openDialog({ title: t('drive.tt.title', { name }), host, wide: true, closeLabel: t('drive.close') });
+			dlg.box.classList.add('dv-tt');
+			const errEl = el('span', { class: 'dv-dlg-err', role: 'alert' });
+			let at = null;
+			const back = () => pickStep();
+
+			function pickStep() {
+				clear(dlg.body);
+				clear(dlg.foot);
+				errEl.textContent = '';
+				const nowMs = now();
+				const id = nextId('dv-tt-at');
+				const input = el('input', { id, type: 'datetime-local', class: 'dv-input dv-tt-at', max: DS.localInputValue(nowMs), value: DS.localInputValue(at || nowMs - 86400000) });
+				const presets = el('div', { class: 'dv-tt-presets' });
+				for (const p of DS.timeTravelPresets(nowMs, t)) presets.appendChild(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: p.label, on: { click: () => { input.value = DS.localInputValue(p.at); at = p.at; preview(); } } }));
+				const go = el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.tt.preview') });
+				const submit = () => {
+					const v = DS.parseLocalInput(input.value);
+					const e = DS.timeTravelError(v, now(), t);
+					if (e) { errEl.textContent = e; return; }
+					at = v;
+					preview();
+				};
+				go.addEventListener('click', submit);
+				input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+				dlg.body.append(
+					el('p', { class: 'dv-p', text: t('drive.tt.intro') }),
+					el('span', { class: 'lbl', text: t('drive.tt.quick') }),
+					presets,
+					el('label', { class: 'lbl', for: id, text: t('drive.tt.when') }),
+					input,
+				);
+				dlg.foot.append(errEl, el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }), go);
+				setTimeout(() => input.focus(), 0);
+			}
+
+			async function preview() {
+				clear(dlg.body);
+				clear(dlg.foot);
+				errEl.textContent = '';
+				dlg.body.appendChild(el('div', { class: 'dv-pick-note', text: t('drive.tt.checking') }));
+				const r = await Promise.resolve(api.timeTravelPreview(n.id, new Date(at).toISOString())).catch(fail);
+				if (dlg.closed) return;
+				clear(dlg.body);
+				if (!r || !r.ok) {
+					dlg.body.appendChild(el('div', { class: 'dv-dlg-err', text: DS.errorText(r, t) }));
+					dlg.foot.append(el('span', { class: 'dv-grow' }), el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.back'), on: { click: back } }));
+					return;
+				}
+				const v = DS.timeTravelView(r, { t, locale: locale() });
+				dlg.body.appendChild(el('p', { class: 'dv-p dv-tt-when', text: t('drive.tt.backTo', { when: DS.longWhen(at, locale()) }) }));
+				if (v.empty) {
+					dlg.body.appendChild(el('div', { class: 'dv-note', text: t('drive.tt.nothingToDo') }));
+					dlg.foot.append(el('span', { class: 'dv-grow' }), el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.back'), on: { click: back } }), el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.close'), on: { click: () => dlg.close(null) } }));
+					return;
+				}
+				dlg.body.appendChild(el('ul', { class: 'dv-tt-sum' }, v.lines.map((l) => el('li', { text: l }))));
+				if (v.sample.length) {
+					dlg.body.appendChild(el('span', { class: 'lbl', text: t('drive.tt.examples') }));
+					dlg.body.appendChild(el('div', { class: 'dv-tt-sample' }, v.sample.map((x) => el('div', { class: 'dv-tt-row' }, [
+						el('span', { class: 'dv-tt-op', text: x.op }),
+						el('span', { class: 'dv-tt-name', text: x.path || x.name }),
+					]))));
+					if (v.more) dlg.body.appendChild(el('span', { class: 'dv-pick-note', text: t('drive.tt.more', { count: v.more }) }));
+				}
+				if (v.limited) dlg.body.appendChild(el('div', { class: 'dv-note is-warn', text: v.limited }));
+				if (v.lost) dlg.body.appendChild(el('div', { class: 'dv-note is-warn', text: v.lost }));
+				if (v.tooMany) {
+					dlg.body.appendChild(el('div', { class: 'dv-dlg-err dv-tt-many', role: 'alert', text: v.tooMany }));
+					dlg.foot.append(el('span', { class: 'dv-grow' }), el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.back'), on: { click: back } }));
+					return;
+				}
+				for (const l of DS.timeTravelLinked(r.linked, t)) dlg.body.appendChild(el('div', { class: `dv-note${l.mode === 'sync' ? '' : ' is-muted'}` }, [el('b', { text: t(l.mode === 'sync' ? 'drive.tt.linkedSyncH' : 'drive.tt.linkedBackupH') }), ' ', l.text]));
+				dlg.body.appendChild(el('p', { class: 'dv-p', text: t('drive.tt.safe') }));
+				const ok = el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.tt.run') });
+				ok.addEventListener('click', () => run(at, ok));
+				dlg.foot.append(errEl, el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.back'), on: { click: back } }), ok);
+			}
+
+			async function run(when, btn, { undo = false } = {}) {
+				if (btn) btn.disabled = true;
+				errEl.textContent = '';
+				const r = await Promise.resolve(api.timeTravel(n.id, new Date(when).toISOString())).catch(fail);
+				if (btn) btn.disabled = false;
+				if (!r || !r.ok) { errEl.textContent = DS.errorText(r, t); if (dlg.closed) toast(DS.errorText(r, t), 'error'); return; }
+				refreshView();
+				const text = DS.timeTravelResultText(r, t, { undo });
+				toast(text, 'success');
+				if (dlg.closed) return;
+				clear(dlg.body);
+				clear(dlg.foot);
+				dlg.body.append(el('div', { class: 'dv-share-ok' }, [icon('check', 16), el('span', { text })]));
+				if (!undo) dlg.body.appendChild(el('p', { class: 'dv-p', text: t('drive.tt.undoHint') }));
+				const undoBtn = !undo && Number.isFinite(r.before) ? el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.tt.undo') }) : null;
+				if (undoBtn) undoBtn.addEventListener('click', () => run(r.before, undoBtn, { undo: true }));
+				dlg.foot.append(errEl, undoBtn, el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.close'), on: { click: () => dlg.close(null) } }));
+			}
+
+			pickStep();
+		}
+
 		function shareDialog(n) {
 			const dlg = openDialog({ title: t('drive.share.title', { name: n.name }), host, wide: true, closeLabel: t('drive.close') });
 			const draft = { mode: 'view', expires: '7d', pin: '' };
@@ -894,6 +1041,7 @@
 			if (acts.rename) item('pen', t('drive.rename'), () => renameNode(n));
 			if (acts.move) item('move', t('drive.move'), () => moveNode(n));
 			if (acts.versions) item('history', t('drive.versions.menu'), () => versionsDialog(n));
+			if (acts.timeTravel) item('restore', t('drive.tt.menu'), () => timeTravelDialog(n));
 			if (acts.portal) item('cloud', t('drive.portal.open'), () => openInPortal(n));
 			if (acts.remove) item('trash', t('drive.remove'), () => trashNode(n), true);
 			const menu = el('div', { class: 'dv-menu', role: 'menu' }, items);
@@ -948,7 +1096,7 @@
 			refs.refresh.title = t('drive.refresh');
 			refs.refresh.setAttribute('aria-label', t('drive.refresh'));
 			render();
-			if (syncView) syncView.relabel();
+			for (const v of Object.values(VIEWS)) if (v) v.relabel();
 		}
 
 		function render() {
@@ -973,10 +1121,10 @@
 				refs.sub.textContent = '';
 				return;
 			}
-			const inSync = S.view === 'sync' && !!syncView;
+			const inSync = !!VIEWS[S.view];
 			refs.bar.hidden = inSync;
 			refs.listWrap.hidden = inSync;
-			if (syncView && !inSync) syncView.hide();
+			for (const [k, v] of Object.entries(VIEWS)) if (v && k !== S.view) v.hide();
 			renderSide();
 			renderBar();
 			if (!inSync) renderList();
@@ -1003,8 +1151,10 @@
 				}));
 			}
 			refs.side.appendChild(el('span', { class: 'dv-side-sep' }));
+			if (extraAvailable('photos')) refs.side.appendChild(sideButton({ label: t('drive.photos.title'), sub: null, ic: 'image', on: S.view === 'photos', onClick: () => openExtra('photos') }));
 			refs.side.appendChild(sideButton({ label: t('drive.links.title'), sub: t('drive.links.sub'), ic: 'link', on: S.view === 'links', onClick: () => { refs.search.value = ''; loadLinks(); } }));
 			refs.side.appendChild(sideButton({ label: t('drive.trash.title'), sub: null, ic: 'trash', on: S.view === 'trash', onClick: () => { refs.search.value = ''; loadTrash(); } }));
+			if (extraAvailable('storage')) refs.side.appendChild(sideButton({ label: t('drive.storage.title'), sub: null, ic: 'disk', on: S.view === 'storage', onClick: () => openExtra('storage') }));
 			if (syncView) {
 				refs.side.appendChild(el('span', { class: 'dv-side-sep' }));
 				refs.side.appendChild(sideButton({ label: t('drive.sync.title'), sub: S.syncSummary || null, ic: 'sync', on: S.view === 'sync', onClick: () => openSync() }));
@@ -1027,7 +1177,9 @@
 					sort.appendChild(el('button', { type: 'button', role: 'radio', 'aria-checked': S.sort === s ? 'true' : 'false', class: S.sort === s ? 'on' : '', text: t(`drive.sort.${s}`), on: { click: () => { S.sort = s; keep('gc.drive.sort', s); if (S.folder) loadFolder(S.folder.node.id, { quiet: true }); } } }));
 				}
 				const w = !!(S.folder && S.folder.writable);
+				const tt = S.folder && DS.actionsFor(S.folder.node, w, S.me).timeTravel;
 				refs.bar.append(nav, el('span', { class: 'dv-grow' }), sort,
+					tt ? el('button', { type: 'button', class: 'dv-ib dv-tt-btn', title: t('drive.tt.menu'), 'aria-label': t('drive.tt.menu'), on: { click: () => timeTravelDialog(S.folder.node) } }, [icon('restore', 16)]) : null,
 					w ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: newFolder } }, [icon('plus', 14), el('span', { text: t('drive.newFolder') })]) : null,
 					w && typeof api.pickFolders === 'function' ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-up-folder', on: { click: pickFolderAndUpload } }, [icon('folder', 14), el('span', { text: t('drive.upload.folderButton') })]) : null,
 					w ? el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: pickAndUpload } }, [icon('upload', 14), el('span', { text: t('drive.upload.button') })]) : null);
@@ -1044,7 +1196,7 @@
 				refs.note.hidden = !days;
 				if (days) refs.note.textContent = t('drive.trash.info', { n: days });
 				refs.sub.textContent = '';
-			} else if (S.view === 'sync') {
+			} else if (VIEWS[S.view]) {
 				refs.sub.textContent = '';
 			} else if (S.view === 'links') {
 				refs.bar.append(el('span', { class: 'dv-bar-h', text: t('drive.links.title') }));
@@ -1127,7 +1279,7 @@
 
 		function renderTransfers() {
 			const rows = S.transfers || [];
-			refs.transfers.hidden = !rows.length || refs.main.hidden || S.view === 'sync';
+			refs.transfers.hidden = !rows.length || refs.main.hidden || !!VIEWS[S.view];
 			clear(refs.transfers);
 			if (refs.transfers.hidden) return;
 			const summary = DS.transfersSummary(rows, t);
@@ -1165,7 +1317,7 @@
 			hide() {
 				S.shown = false;
 				closeMenu();
-				if (syncView) syncView.hide();
+				for (const v of Object.values(VIEWS)) if (v) v.hide();
 			},
 			/** Opens "Ordner sichern" (tray entry, links). */
 			openSync: () => { if (syncView) { S.shown = true; openSync(); } },
