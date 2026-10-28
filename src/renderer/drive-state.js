@@ -218,8 +218,8 @@
 		return { sort: s, order: s === 'name' ? 'asc' : 'desc' };
 	}
 
-	/** What a row's menu offers: { open, saveAs, share, rename, move, versions, remove }. */
-	function actionsFor(node, writable) {
+	/** What a row's menu offers: { open, saveAs, share, rename, move, versions, remove, portal }. */
+	function actionsFor(node, writable, me) {
 		const n = node || {};
 		return {
 			open: true,
@@ -229,7 +229,76 @@
 			move: !!writable,
 			versions: !n.isDir,
 			remove: !!writable,
+			// Drive 1.6 'links': "Im Portal öffnen"
+			portal: hasPortalLinks(me),
 		};
+	}
+
+	/** Does this Drive give direct portal links (me.features 'links', me.links.node)? */
+	function hasPortalLinks(me) {
+		return !!(me && Array.isArray(me.features) && me.features.includes('links') && me.links && me.links.node);
+	}
+
+	// ── Live (push `changed`) ───────────────────────────
+
+	/** Does a change elsewhere ({ areas, seq }) touch what the page shows? */
+	function liveRelevant(ev, { view, areaId } = {}) {
+		if (!['folder', 'search', 'trash', 'links'].includes(view)) return false;
+		const areas = ev && Array.isArray(ev.areas) ? ev.areas : null;
+		if (!areas || !areas.length || view !== 'folder') return true;
+		return areas.includes(areaId);
+	}
+
+	/**
+	 * At most one call of `fn` per `ms` (the last request wins, nothing is lost):
+	 * throttle(fn, 2000) → { request(), cancel() }.
+	 */
+	function throttle(fn, ms, { now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+		let last = -Infinity;
+		let timer = null;
+		const fire = () => { timer = null; last = now(); fn(); };
+		return {
+			request() {
+				if (timer) return;
+				const wait = Math.max(0, last + ms - now());
+				if (!wait) fire();
+				else timer = setTimer(fire, wait);
+			},
+			cancel() { if (timer) clearTimer(timer); timer = null; },
+		};
+	}
+
+	// ── Guard (Drive 1.6) ───────────────────────────────
+
+	/**
+	 * The banner "Von Drive gestoppt" → { id, title, text, sample: [string], more } | null
+	 * (only while Drive keeps this device stopped).
+	 */
+	function guardView(g, { t, locale, now = Date.now() } = {}) {
+		if (!g || !g.locked) return null;
+		const inc = g.incident || {};
+		const sample = (Array.isArray(inc.sample) ? inc.sample : []).map(str).filter(Boolean).slice(0, 5);
+		const files = Number(inc.files) || 0;
+		const parts = [];
+		if (files) parts.push(plural(t, 'drive.guard.files', files));
+		if (Number.isFinite(inc.at)) parts.push(t('drive.guard.at', { when: when(inc.at, now, locale, t) }));
+		if (inc.deviceName) parts.push(t('drive.guard.device', { name: str(inc.deviceName) }));
+		return {
+			id: inc.id === undefined || inc.id === null ? null : inc.id,
+			title: t('drive.guard.title'),
+			text: [t('drive.guard.text'), parts.join(' · ')].filter(Boolean).join(' '),
+			sample,
+			more: Math.max(0, files - sample.length),
+			portal: !!g.portal,
+		};
+	}
+
+	/** The toast after queueing uploads with folders: "2 Ordner, 37 Dateien …" (null without folders). */
+	function folderQueuedText(r, t) {
+		if (!r || !r.ok || !r.folders) return null;
+		const parts = [plural(t, 'drive.upload.folders', r.folders), plural(t, 'drive.upload.files', (r.queued || []).length)];
+		if (r.skipped) parts.push(plural(t, 'drive.upload.skipped', r.skipped));
+		return t('drive.upload.folderQueued', { what: parts.join(', ') });
 	}
 
 	// ── Links ────────────────────────────────────────────
@@ -276,9 +345,9 @@
 		let cls = '';
 		switch (x.state) {
 			case 'queued': text = t('drive.transfer.queued'); break;
-			case 'running': text = total ? t('drive.transfer.progress', { sent: formatBytes(sent, locale), total: formatBytes(total, locale) }) : t('drive.transfer.running'); break;
+			case 'running': text = x.folder ? t('drive.transfer.folderMaking') : total ? t('drive.transfer.progress', { sent: formatBytes(sent, locale), total: formatBytes(total, locale) }) : t('drive.transfer.running'); break;
 			case 'conflict': text = t('drive.transfer.conflict'); cls = 'is-warn'; break;
-			case 'done': text = t(x.dir === 'down' ? 'drive.transfer.loaded' : 'drive.transfer.done'); cls = 'is-ok'; break;
+			case 'done': text = x.folder ? plural(t, 'drive.transfer.folderDone', x.files || 0) : t(x.dir === 'down' ? 'drive.transfer.loaded' : 'drive.transfer.done'); cls = 'is-ok'; break;
 			case 'same': text = t('drive.transfer.same'); cls = 'is-ok'; break;
 			case 'skipped': text = t('drive.transfer.skipped'); break;
 			case 'failed': text = t('drive.transfer.failed', { reason: errorText({ code: x.code }, t) }); cls = 'is-err'; break;
@@ -356,6 +425,7 @@
 		http_404: 'notFound', http_403: 'forbidden', http_507: 'quota', SCHULE_ATTACHMENT_NOT_FOUND: 'notFound',
 		SCHULE_MESSAGE_NOT_FOUND: 'notFound', SCHULE_ATTACHMENT_TOO_LARGE: 'tooLarge', SCHULE_UNTIS_UNAVAILABLE: 'schoolOffline',
 		SCHULE_ATTACHMENT_FAILED: 'schoolOffline', empty_file: 'emptyFile', in_drive: 'inDrive',
+		device_locked: 'locked', guard_locked: 'locked', unsupported: 'unsupported',
 	};
 
 	/** The text of a failed answer ({ ok: false, code }) — Drive's codes and those of the plugins passing them on. */
@@ -370,7 +440,8 @@
 		plural, extOf, kindOf, badgeOf, formatBytes, when,
 		validName, nameError,
 		sortAreas, areaLabel, areaHint, usage, currentArea, accessOf,
-		crumbs, rowView, sortQuery, actionsFor,
+		crumbs, rowView, sortQuery, actionsFor, hasPortalLinks,
+		liveRelevant, throttle, guardView, folderQueuedText,
 		linkModes, pinOk, linkRequest, linkView,
 		transferView, transfersSummary,
 		writableAreas, pickerStart, canPick, pickerFolders, pickerPath,

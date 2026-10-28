@@ -28,7 +28,7 @@
 	// "Dateien größer als … auslassen": bytes, 0 = keine Grenze
 	const SIZES = [1 * GB, 2 * GB, 5 * GB, 10 * GB, 20 * GB, 50 * GB, 0];
 	const REASONS = ['all', 'folder', 'offline', 'unavailable', 'not_home', 'no_vpn', 'other_server', 'folder_missing', 'target_gone',
-		'no_seat', 'not_licensed', 'forbidden', 'quota', 'some_failed', 'no_area', 'exists', 'too_many_files', 'mass_delete'];
+		'no_seat', 'not_licensed', 'forbidden', 'quota', 'some_failed', 'no_area', 'exists', 'too_many_files', 'mass_delete', 'guard_locked', 'suspect'];
 
 	const str = (v) => (v === null || v === undefined ? '' : String(v));
 	const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -134,7 +134,11 @@
 				break;
 			case 'confirm':
 				v.cls = 'ask';
-				v.text = t('drive.sync.state.confirm');
+				v.text = t(f.reason === 'suspect' ? 'drive.sync.state.suspect' : 'drive.sync.state.confirm');
+				break;
+			case 'locked':
+				v.cls = 'err';
+				v.text = t('drive.sync.state.locked');
 				break;
 			case 'error':
 				v.cls = 'err';
@@ -150,7 +154,12 @@
 		}
 		if (f.state !== 'idle' && last) v.detail.push(t('drive.sync.last', { when: last }));
 		if (num(f.files) > 0 && f.state !== 'syncing') v.detail.push([plural(t, 'drive.sync.files', f.files), formatBytes(f.bytes, locale)].filter(Boolean).join(' · '));
-		if (num(f.pendingDeletes) > 0) v.detail.push(plural(t, 'drive.sync.pendingDeletes', f.pendingDeletes));
+		if (num(f.pendingDeletes) > 0) {
+			// Drive 1.5: Drive deletes them at a known time
+			const at = Number.isFinite(f.pendingUntil) && f.pendingUntil > 0 ? new Date(f.pendingUntil).toLocaleDateString(localeTag(locale), { day: '2-digit', month: '2-digit', year: 'numeric' }) : null;
+			v.detail.push(at ? plural(t, 'drive.sync.pendingDeletesAt', f.pendingDeletes, { date: at }) : plural(t, 'drive.sync.pendingDeletes', f.pendingDeletes));
+		}
+		if (num(f.held) > 0) v.detail.push(plural(t, 'drive.sync.held', f.held));
 		if (num(f.conflicts) > 0) v.detail.push(plural(t, 'drive.sync.conflicts', f.conflicts));
 		if (num(f.skipped) > 0) v.detail.push(plural(t, 'drive.sync.skipped', f.skipped));
 		return v;
@@ -160,6 +169,7 @@
 	function summary(st, { t, locale, now }) {
 		if (!st || !Array.isArray(st.folders) || !st.folders.length) return { cls: 'none', text: t('drive.sync.sum.none') };
 		const folders = st.folders;
+		if (st.state === 'locked' || (st.guard && st.guard.locked)) return { cls: 'err', text: t('drive.sync.sum.locked') };
 		if (st.paused) return { cls: 'pause', text: t('drive.sync.sum.paused') };
 		const ask = folders.filter((f) => f.state === 'confirm').length;
 		if (ask) return { cls: 'ask', text: t('drive.sync.sum.confirm') };
@@ -202,7 +212,17 @@
 	/** The folders waiting for an answer about a mass delete → [{ id, name, count, total }] */
 	function confirms(st) {
 		const folders = st && Array.isArray(st.folders) ? st.folders : [];
-		return folders.filter((f) => f.state === 'confirm' && f.confirm).map((f) => ({ id: f.id, name: str(f.name), count: num(f.confirm.count), total: num(f.confirm.total), mode: f.mode, from: f.confirm.from === 'drive' ? 'drive' : 'pc' }));
+		return folders.filter((f) => f.state === 'confirm' && f.reason !== 'suspect' && f.confirm).map((f) => ({ id: f.id, name: str(f.name), count: num(f.confirm.count), total: num(f.confirm.total), mode: f.mode, from: f.confirm.from === 'drive' ? 'drive' : 'pc' }));
+	}
+
+	/** The folders where many files changed in an unusual way → [{ id, name, count, sample, why }] */
+	function suspects(st) {
+		const folders = st && Array.isArray(st.folders) ? st.folders : [];
+		return folders.filter((f) => f.state === 'confirm' && f.reason === 'suspect' && f.suspect).map((f) => ({
+			id: f.id, name: str(f.name), count: num(f.suspect.count),
+			sample: (Array.isArray(f.suspect.sample) ? f.suspect.sample : []).map(str).filter(Boolean).slice(0, 5),
+			why: f.suspect.why === 'extension' ? 'extension' : 'entropy',
+		}));
 	}
 
 	/** Can the dialog "Ordner hinzufügen" add? { ok, code } */
@@ -239,6 +259,7 @@
 		knownRows,
 		otherFolders,
 		confirms,
+		suspects,
 		addCheck,
 		errorText,
 	};

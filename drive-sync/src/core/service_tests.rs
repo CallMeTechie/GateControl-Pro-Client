@@ -290,7 +290,7 @@ fn serve_speaks_json_lines() {
     let lines: Vec<Value> = text.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     let resp: Vec<&Value> = lines.iter().filter(|l| l.get("event").is_none()).collect();
     assert_eq!(resp.len(), 6, "{text}");
-    assert_eq!(resp[0]["result"]["protocol"], 2);
+    assert_eq!(resp[0]["result"]["protocol"], 3);
     assert_eq!(resp[1]["result"]["configured"], true);
     assert_eq!(resp[2]["result"]["state"], "stopped");
     assert_eq!(resp[3]["error"]["code"], "bad_json");
@@ -448,5 +448,78 @@ fn context_menu_actions_become_events() {
     assert!(c.svc.handle_action("rm", &path).is_err());
     assert!(c.svc.handle_action("share", Path::new("/etc/passwd")).is_err());
     assert!(c.svc.handle_action("share", &c.plat.root).is_err());
+    c.svc.handle(Command::Stop).unwrap();
+}
+
+#[test]
+fn drive_stops_the_device_and_the_pro_client_frees_it() {
+    let c = started();
+    c.drive.set_features(&["guard"]);
+    c.drive.set_locked(true);
+    // eine lokale Änderung: der Commit wird abgelehnt → gestoppt
+    let path = p(&c.plat.root, &["Meine Dateien", "neu.txt"]);
+    c.plat.fs.user_write(&path, b"neu");
+    let w = c.plat.watcher.lock().unwrap();
+    (w.as_ref().unwrap())(WatchEvent::Changed(path.clone()));
+    drop(w);
+    wait_for(|| c.svc.status().state == "locked");
+    let st = c.svc.status();
+    assert!(st.locked);
+    assert!(st.pending >= 1);
+    assert!(c.drive.find(c.mine, "neu.txt").is_none());
+    // der Pro-Client meldet: frei (nach „War ich – freigeben“)
+    c.drive.set_locked(false);
+    let r = c.svc.handle(Command::Guard { locked: false, undo: false }).unwrap();
+    assert_eq!(r["locked"], false);
+    wait_for(|| c.drive.find(c.mine, "neu.txt").is_some());
+    wait_for(|| c.svc.status().state == "idle");
+    // der Pro-Client meldet die Sperre zuerst (Ereignis guard): sofort gestoppt
+    c.svc.handle(Command::Guard { locked: true, undo: false }).unwrap();
+    assert_eq!(c.svc.status().state, "locked");
+    c.svc.handle(Command::Guard { locked: false, undo: true }).unwrap();
+    wait_for(|| c.svc.status().state == "idle");
+    c.svc.handle(Command::Stop).unwrap();
+}
+
+#[test]
+fn the_local_check_asks_and_keep_pauses() {
+    let c = started();
+    let dir = p(&c.plat.root, &["Meine Dateien", "Briefe"]);
+    c.plat.fs.user_mkdir(&dir);
+    let w = c.plat.watcher.lock().unwrap();
+    let send = w.as_ref().unwrap();
+    send(WatchEvent::Changed(dir.clone()));
+    for i in 0..25 {
+        let f = dir.join(format!("brief{i}.txt"));
+        c.plat.fs.user_write(&f, format!("Zeile {i}: ein Brief mit Text.\n").repeat(200).as_bytes());
+        send(WatchEvent::Changed(f));
+    }
+    drop(w);
+    wait_for(|| c.drive.find(c.mine, "Briefe").is_some_and(|b| c.drive.live_children(b.id).len() == 25));
+    let commits = c.drive.commits().len();
+    let w = c.plat.watcher.lock().unwrap();
+    for i in 0..8 {
+        let f = dir.join(format!("brief{i}.txt"));
+        let noise: Vec<u8> = (0..70_000u32).map(|x| (x.wrapping_mul(2_654_435_761) >> 13) as u8).collect();
+        c.plat.fs.user_write(&f, &noise);
+        (w.as_ref().unwrap())(WatchEvent::Changed(f));
+    }
+    drop(w);
+    wait_for(|| c.svc.status().state == "suspect");
+    let s = c.svc.status().suspect.unwrap();
+    assert!(s.count >= 4 && s.why == "entropy", "{s:?}");
+    // je nach Takt gingen die ersten (unter der Schwelle) schon hoch; der Rest wartet
+    let held = c.drive.commits().len();
+    assert!(held < commits + 4, "{held} {commits}");
+    // „Pausiert lassen“
+    c.svc.handle(Command::Suspect { upload: false }).unwrap();
+    assert_eq!(c.svc.status().state, "paused");
+    assert!(c.svc.status().suspect.is_none());
+    // weiter: fragt erneut; „Hochladen“
+    c.svc.handle(Command::Resume).unwrap();
+    wait_for(|| c.svc.status().state == "suspect");
+    c.svc.handle(Command::Suspect { upload: true }).unwrap();
+    wait_for(|| c.drive.commits().len() == commits + 8);
+    wait_for(|| c.svc.status().state == "idle");
     c.svc.handle(Command::Stop).unwrap();
 }

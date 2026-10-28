@@ -9,7 +9,10 @@
  * their state (aktuell / läuft n von m Dateien / pausiert / wartet / Fehler
  * mit Grund, zuletzt gesichert), pause, "Jetzt abgleichen", "Im Explorer
  * öffnen" and "Entfernen" (stops, deletes nothing), the question after a
- * mass delete ("Löschen übertragen" / "Wiederherstellen") and the settings
+ * mass delete ("Löschen übertragen" / "Wiederherstellen"), the question after
+ * many files changed in an unusual way (ransomware check: "Hochladen" /
+ * "Pausiert lassen"), "Von Drive gestoppt" (Drive 1.6 guard; the banner with
+ * the decision is on top of the Drive page) and the settings
  * (node_modules / .git, size, upload / download limit, home network, VPN).
  *
  * On top: "GateControl Drive im Explorer" (Dateien bei Bedarf, its own view
@@ -133,6 +136,18 @@
 
 		function renderAsks() {
 			clear(asks);
+			for (const c of SS.suspects(st)) {
+				asks.appendChild(el('div', { class: 'dsv-ask is-guard', role: 'alert' }, [
+					el('span', { class: 'dsv-ask-ic' }, [icon('lock', 18)]),
+					el('div', { class: 'dsv-ask-tx' }, [
+						el('div', { class: 'dsv-ask-h', text: t('drive.sync.suspect.title', { name: c.name, count: c.count }) }),
+						el('div', { class: 'dv-p', text: t(c.why === 'extension' ? 'drive.sync.suspect.textExtension' : 'drive.sync.suspect.textEntropy') }),
+						c.sample.length ? el('div', { class: 'dsv-detail', text: c.sample.join(', ') }) : null,
+					]),
+					el('button', { type: 'button', class: 'btn btn-pri btn-sm', 'data-key': `sus-keep-${c.id}`, text: t('drive.sync.suspect.keep'), on: { click: () => call(() => api.suspect(c.id, 'keep')) } }),
+					el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-danger', 'data-key': `sus-upload-${c.id}`, text: t('drive.sync.suspect.upload'), on: { click: () => call(() => api.suspect(c.id, 'upload')) } }),
+				]));
+			}
 			for (const c of SS.confirms(st)) {
 				asks.appendChild(el('div', { class: 'dsv-ask', role: 'alert' }, [
 					el('span', { class: 'dsv-ask-ic' }, [icon('alert', 18)]),

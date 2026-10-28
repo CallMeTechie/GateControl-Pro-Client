@@ -17,11 +17,12 @@
 //! Konflikte gehen nie verloren: die lokale Fassung bleibt als
 //! „Name (Konflikt <Gerät> <Datum>).ext“ und wird hochgeladen.
 
+use super::guard;
 use super::identity::Identity;
 use super::localfs::*;
 use super::model::*;
 use super::names;
-use super::protocol::{MassDelete, StatusError};
+use super::protocol::{MassDelete, StatusError, Suspect};
 use super::remote::{ApiError, ReadAt, Remote};
 use super::state::{AreaDir, Entry, State};
 use sha2::{Digest, Sha256};
@@ -41,6 +42,9 @@ pub const MASS_DELETE_MAX: usize = 500;
 pub const MASS_DELETE_RATIO: f64 = 0.2;
 pub const MASS_DELETE_MIN: usize = 10;
 pub const MASS_DELETE_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
+/// Verdächtige Änderungen der letzten 10 Minuten zählen bei der lokalen Prüfung mit
+/// (eine Schadsoftware verschlüsselt nach und nach).
+pub const SUSPECT_WINDOW: std::time::Duration = std::time::Duration::from_secs(600);
 const MAX_ERRORS: usize = 20;
 /// Zusätzlich zum Änderungsprotokoll regelmäßig alles vergleichen (verpasste Ereignisse).
 pub const FULL_SYNC_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
@@ -66,6 +70,13 @@ pub struct Shared {
     pub held: RwLock<Option<MassDelete>>,
     /// Laufende Uploads/Durchläufe abbrechen (stop, pause, unregister).
     pub stop: AtomicBool,
+    /// Drive 1.6 `guard`: Drive hat dieses Gerät gestoppt (423 `device_locked`, `me.guard`,
+    /// oder vom Pro-Client gemeldet) – nichts geht hoch, nichts wird gelöscht.
+    pub locked: AtomicBool,
+    /// Lokale Prüfung: viele Dateien ungewöhnlich geändert – wartet auf „Hochladen“ / „Pausiert lassen“.
+    pub suspect: RwLock<Option<Suspect>>,
+    /// Nach „Rückgängig machen“ zurückgehaltene Dateien.
+    pub held_files: AtomicU64,
 }
 
 impl Shared {
@@ -118,6 +129,15 @@ pub struct Engine {
     log: Logger,
     /// Drive 1.5: Fähigkeiten aus `me` (`emptyFiles` …).
     features: Vec<String>,
+    /// „Hochladen“ nach der lokalen Prüfung: der nächste Durchlauf prüft nicht.
+    allow_suspect: bool,
+    /// Nach „Rückgängig machen“: der nächste Vollabgleich lädt nichts hoch, sondern holt die
+    /// Fassungen aus Drive; abweichende lokale Fassungen bleiben als zurückgehaltene Kopie.
+    restoring: bool,
+    /// Entropie der Dateien, die die lokale Prüfung gelesen hat (für den Commit).
+    ent_cache: HashMap<PathBuf, f64>,
+    /// Verdächtige Änderungen, die schon hochgingen (Zeit, Ordner, Name) – im Zeitfenster.
+    recent_suspect: VecDeque<(std::time::Instant, String, String, PathBuf)>,
 }
 
 fn io_err(e: io::Error) -> ApiError {
@@ -177,6 +197,10 @@ impl Engine {
             clock: Box::new(chrono::Local::now),
             log: Box::new(|_, _| {}),
             features: Vec::new(),
+            allow_suspect: false,
+            restoring: false,
+            ent_cache: HashMap::new(),
+            recent_suspect: VecDeque::new(),
         };
         e.publish_roles();
         e
@@ -197,6 +221,82 @@ impl Engine {
     /// Drive 1.5 `emptyFiles`: leere Dateien gehen ohne Medium hoch (`size: 0`).
     fn empty_ok(&self) -> bool {
         self.features.iter().any(|f| f == "emptyFiles")
+    }
+
+    /// Drive 1.6 `guard`: die Entropie geht mit jedem Commit.
+    fn guard_ok(&self) -> bool {
+        self.features.iter().any(|f| f == "guard")
+    }
+
+    fn locked(&self) -> bool {
+        self.shared.locked.load(Ordering::Relaxed)
+    }
+
+    /// Ein Schreibfehler, weil Drive dieses Gerät gestoppt hat?
+    fn note_locked(&self, e: &ApiError) -> bool {
+        if e.status == Some(423) || e.code == "device_locked" {
+            self.shared.locked.store(true, Ordering::Relaxed);
+            return true;
+        }
+        false
+    }
+
+    /// Antwort auf die lokale Prüfung: `true` = hochladen (die Änderungen sind gewollt).
+    pub fn decide_suspect(&mut self, upload: bool) {
+        if let Ok(mut s) = self.shared.suspect.write() {
+            *s = None;
+        }
+        self.errors.retain(|e| e.code != "suspect");
+        self.allow_suspect = upload;
+    }
+
+    /// Drive hat die Änderungen dieses Geräts rückgängig gemacht: beim nächsten
+    /// Vollabgleich die Fassungen aus Drive holen, Lokales zurückhalten.
+    pub fn after_undo(&mut self) {
+        self.restoring = true;
+        self.needs_full = true;
+        self.info("Drive hat die Änderungen dieses PCs rückgängig gemacht – die Dateien kommen aus Drive zurück");
+    }
+
+    /// Schlüssel eines zurückgehaltenen Pfads: klein, mit `/` (Windows kennt keinen Unterschied).
+    fn held_key(path: &Path) -> String {
+        path.to_string_lossy().replace('\\', "/").to_lowercase()
+    }
+
+    /// Lokale Datei zurückhalten (nicht hochladen, solange sie unverändert ist).
+    fn hold_back(&mut self, path: &Path) -> Result<(), ApiError> {
+        if let Some(l) = self.fs.stat(path).map_err(io_err)? {
+            if !l.is_dir {
+                self.state.held.insert(Self::held_key(path), (l.size, l.mtime_ms));
+                self.info(&format!("Zurückgehalten (nicht hochgeladen): {}", path.display()));
+            }
+        }
+        self.shared.held_files.store(self.state.held.len() as u64, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// Zurückgehalten und unverändert? (Geändert oder weg: nicht mehr zurückgehalten.)
+    fn is_held(&mut self, path: &Path, l: &LocalEntry) -> bool {
+        let key = Self::held_key(path);
+        let Some((size, mtime)) = self.state.held.get(&key).copied() else { return false };
+        let same = !l.is_dir && l.size == size && l.mtime_ms == mtime;
+        if !same {
+            self.state.held.remove(&key);
+            self.shared.held_files.store(self.state.held.len() as u64, Ordering::Relaxed);
+        }
+        same
+    }
+
+    /// Entropie der ersten 64 KB (`None`: nicht lesbar, leer).
+    fn file_entropy(&self, path: &Path) -> Option<f64> {
+        if let Some(e) = self.ent_cache.get(path) {
+            return Some(*e);
+        }
+        let mut r = self.fs.open_read(path).ok()?;
+        let len = (r.len() as usize).min(guard::ENTROPY_BYTES);
+        let mut buf = vec![0u8; len];
+        let n = r.read_at(0, &mut buf).ok()?;
+        guard::entropy(&buf[..n])
     }
 
     pub fn errors(&self) -> Vec<StatusError> {
@@ -302,6 +402,11 @@ impl Engine {
         let had_state = self.state.cursor > 0 && !self.state.is_empty();
         let me = self.remote.me()?;
         self.features = me.features.clone();
+        if me.guard.as_ref().is_some_and(|g| g.locked) {
+            self.shared.locked.store(true, Ordering::Relaxed);
+        } else if me.guard.is_some() {
+            self.shared.locked.store(false, Ordering::Relaxed);
+        }
         self.sync_areas()?;
         let roots: Vec<u64> = self.state.areas.iter().map(|a| a.root_id).collect();
         let mut offline_deletes: Vec<(u64, PathBuf)> = Vec::new();
@@ -313,6 +418,13 @@ impl Engine {
         self.state.cursor = self.state.cursor.max(me.latest);
         self.needs_full = false;
         self.needs_full_later = false;
+        if self.restoring {
+            // was noch in der Warteschlange liegt (lokal geändert, neu): zurückhalten statt hochladen
+            for path in std::mem::take(&mut self.queue) {
+                self.restore_path(&path)?;
+            }
+            self.restoring = false;
+        }
         self.last_full = Some(std::time::Instant::now());
         self.info(&format!("Vollständiger Abgleich: {} Einträge", self.state.len()));
         Ok(())
@@ -406,6 +518,7 @@ impl Engine {
                 sha256: None,
                 mtime_ms: 0,
                 ctime_ms: 0,
+                ent: None,
             };
             self.state.upsert(root_entry.clone());
             let path = self.cfg.root.join(&dir);
@@ -594,7 +707,11 @@ impl Engine {
         let to = dir.join(&c);
         self.fs.rename(path, &to).map_err(io_err)?;
         self.info(&format!("Konfliktkopie: {}", to.display()));
-        self.queue.insert(to.clone());
+        if self.restoring {
+            self.hold_back(&to)?;
+        } else {
+            self.queue.insert(to.clone());
+        }
         Ok(to)
     }
 
@@ -767,6 +884,15 @@ impl Engine {
     pub fn process_local(&mut self) -> Result<(), ApiError> {
         let retry = std::mem::take(&mut self.retry);
         self.queue.extend(retry);
+        if self.locked() {
+            self.update_pending();
+            return Err(ApiError::new(Some(423), "device_locked", "Drive hat dieses Gerät gestoppt"));
+        }
+        if self.shared.suspect.read().is_ok_and(|s| s.is_some()) || self.check_suspect()? {
+            self.update_pending();
+            return Ok(());
+        }
+        self.allow_suspect = false;
         while let Some(path) = self.queue.pop_first() {
             self.update_pending();
             self.check_stop()?;
@@ -775,7 +901,7 @@ impl Engine {
                 Err(e) if e.code == "busy" => {
                     self.retry.insert(path);
                 }
-                Err(e) if e.transient() || e.code == "cancelled" => {
+                Err(e) if e.transient() || e.code == "cancelled" || self.note_locked(&e) => {
                     self.queue.insert(path);
                     self.update_pending();
                     return Err(e);
@@ -801,7 +927,7 @@ impl Engine {
         }
         for (i, (node, path)) in deletes.iter().enumerate() {
             if let Err(e) = self.process_delete(*node, path) {
-                if e.transient() {
+                if e.transient() || self.note_locked(&e) {
                     self.deletes.extend(deletes[i..].iter().cloned());
                     self.update_pending();
                     return Err(e);
@@ -809,8 +935,123 @@ impl Engine {
                 self.error(&e.code, &e.message, Some(path));
             }
         }
+        self.ent_cache.clear();
         self.update_pending();
         Ok(())
+    }
+
+    /// Die lokale Prüfung vor dem Hochladen (guard.rs): viele bestehende Dateien plötzlich
+    /// hoch-entropisch oder auf eine Ransomware-Endung umbenannt → nichts hoch, Nachfrage.
+    fn check_suspect(&mut self) -> Result<bool, ApiError> {
+        let now = std::time::Instant::now();
+        while self.recent_suspect.front().is_some_and(|(t, _, _, _)| now.duration_since(*t) > SUSPECT_WINDOW) {
+            self.recent_suspect.pop_front();
+        }
+        if self.allow_suspect {
+            self.recent_suspect.clear();
+            return Ok(false);
+        }
+        if self.queue.is_empty() {
+            return Ok(false);
+        }
+        let mut items: Vec<(String, String)> = Vec::new();
+        let mut dirs: HashMap<String, PathBuf> = self.recent_suspect.iter().map(|(_, d, _, p)| (d.clone(), p.clone())).collect();
+        let (mut by_ent, mut by_ext) = (0usize, 0usize);
+        for path in self.queue.clone() {
+            let Some(l) = self.fs.stat(&path).map_err(io_err)? else { continue };
+            if l.is_dir {
+                continue;
+            }
+            let dir = path.parent().unwrap_or(&self.cfg.root).to_path_buf();
+            let dkey = dir.to_string_lossy().to_lowercase();
+            let suspicious = match l.identity().and_then(|i| self.state.get(i.node)).cloned() {
+                Some(e) if !e.is_dir => {
+                    if e.name != l.name && guard::ransom_rename(&l.name, std::slice::from_ref(&e.name)) {
+                        by_ext += 1;
+                        true
+                    } else if !l.in_sync() {
+                        let ent = self.file_entropy(&path);
+                        if let Some(v) = ent {
+                            self.ent_cache.insert(path.clone(), v);
+                        }
+                        let hit = guard::suspicious_change(&l.name, ent, e.ent.map(guard::from_milli));
+                        by_ent += usize::from(hit);
+                        hit
+                    } else {
+                        false
+                    }
+                }
+                Some(_) => false,
+                None => {
+                    let siblings: Vec<String> = self
+                        .rel(&dir)
+                        .and_then(|r| self.state.lookup(r))
+                        .map(|id| self.state.children_of(id).iter().filter(|c| !c.is_dir).map(|c| c.name.clone()).collect())
+                        .unwrap_or_default();
+                    let hit = guard::ransom_rename(&l.name, &siblings);
+                    by_ext += usize::from(hit);
+                    hit
+                }
+            };
+            if suspicious {
+                items.push((dkey.clone(), l.name.clone()));
+                dirs.insert(dkey, dir);
+            }
+        }
+        let files_in = |d: &str| -> usize {
+            dirs.get(d)
+                .and_then(|p| self.rel(p))
+                .and_then(|r| self.state.lookup(r))
+                .map(|id| self.state.children_of(id).iter().filter(|c| !c.is_dir).count())
+                .unwrap_or(0)
+        };
+        let fresh = items.len();
+        let mut all: Vec<(String, String)> = self.recent_suspect.iter().map(|(_, d, n, _)| (d.clone(), n.clone())).collect();
+        all.extend(items.iter().cloned());
+        let t = guard::trips(&all, files_in);
+        if !t.trip {
+            for (d, n) in items.into_iter().take(fresh) {
+                let p = dirs.get(&d).cloned().unwrap_or_default();
+                self.recent_suspect.push_back((now, d, n, p));
+            }
+            return Ok(false);
+        }
+        let why = if by_ext > by_ent { "extension" } else { "entropy" };
+        let msg = format!("{} Dateien ungewöhnlich geändert ({why}) – nichts hochgeladen, wartet auf Bestätigung", t.count);
+        self.error("suspect", &msg, None);
+        if let Ok(mut s) = self.shared.suspect.write() {
+            *s = Some(Suspect { count: t.count as u64, sample: t.sample, why: why.into() });
+        }
+        Ok(true)
+    }
+
+    /// Nach „Rückgängig machen“: eine lokal geänderte Datei bekommt die Fassung aus Drive,
+    /// die lokale bleibt als zurückgehaltene Konfliktkopie; neue lokale Dateien werden zurückgehalten.
+    fn restore_path(&mut self, path: &Path) -> Result<(), ApiError> {
+        let Some(l) = self.fs.stat(path).map_err(io_err)? else { return Ok(()) };
+        if l.is_dir {
+            return Ok(());
+        }
+        match l.identity().and_then(|i| self.state.get(i.node)).cloned() {
+            Some(e) if !e.is_dir && !l.in_sync() => {
+                let (hex, _, size) = self.hash_file(path)?;
+                if e.sha256.as_deref() == Some(hex.as_str()) && e.size == size {
+                    self.fs.update_placeholder(path, &meta(&e), false).map_err(io_err)?;
+                    return Ok(());
+                }
+                // die Drive-Fassung an den Namen, die lokale daneben (zurückgehalten)
+                let cur = self.path_of(e.id).unwrap_or_else(|| path.to_path_buf());
+                self.set_aside(path, &l)?;
+                if let Some(dir) = cur.parent() {
+                    if self.fs.stat(&cur).map_err(io_err)?.is_none() {
+                        self.fs.create_placeholder(dir, &e.name, &meta(&e)).map_err(io_err)?;
+                    }
+                }
+                Ok(())
+            }
+            Some(_) => Ok(()),
+            None => self.hold_back(path),
+        }
     }
 
     fn process_delete(&mut self, node: u64, path: &Path) -> Result<(), ApiError> {
@@ -860,6 +1101,12 @@ impl Engine {
         if !names::is_valid_name(&name) {
             self.error("name_unsupported", "Name wird vom Server nicht angenommen", Some(path));
             return Ok(());
+        }
+        if self.is_held(path, &l) {
+            return Ok(()); // nach „Rückgängig machen“ zurückgehalten
+        }
+        if self.restoring {
+            return self.restore_path(path);
         }
         let parent_path = path.parent().unwrap_or(&self.cfg.root).to_path_buf();
         let Some(parent_id) = self.dir_id_for(&parent_path)? else { return Ok(()) };
@@ -1060,6 +1307,7 @@ impl Engine {
             }
         }
         let (media, empty) = if size == 0 { (None, Some(0)) } else { (Some(self.upload_media(path, &sha)?), None) };
+        let ent = if size > 0 { self.file_entropy(path) } else { None };
         let req = CommitRequest {
             media_id: media,
             size: empty,
@@ -1068,11 +1316,14 @@ impl Engine {
             base_rev: None,
             mtime: Some(l.mtime_ms).filter(|m| *m > 0),
             on_conflict: None,
+            entropy: ent.filter(|_| self.guard_ok()),
         };
         match self.remote.commit(&req) {
             Ok(node) => {
                 self.info(&format!("Hochgeladen: {}", path.display()));
-                self.finish_upload(path, l, &node, false)
+                self.finish_upload(path, l, &node, false)?;
+                self.keep_entropy(node.id, ent);
+                Ok(())
             }
             Err(e) if e.status == Some(409) => self.commit_as_conflict(path, l, req, e.current.map(|b| *b), false),
             Err(e) => Err(e),
@@ -1133,6 +1384,7 @@ impl Engine {
             return Ok(());
         }
         let (media, empty) = if size == 0 { (None, Some(0)) } else { (Some(self.upload_media(path, &sha)?), None) };
+        let ent = if size > 0 { self.file_entropy(path) } else { None };
         // Konflikt nur, wenn sich der Inhalt auf dem Server seit unserer Fassung geändert hat.
         let base = if e.media == id.media { e.rev } else { id.rev };
         let req = CommitRequest {
@@ -1143,14 +1395,25 @@ impl Engine {
             base_rev: Some(base),
             mtime: Some(l.mtime_ms).filter(|m| *m > 0),
             on_conflict: None,
+            entropy: ent.filter(|_| self.guard_ok()),
         };
         match self.remote.commit(&req) {
             Ok(node) => {
                 self.info(&format!("Neue Fassung hochgeladen: {}", path.display()));
-                self.finish_upload(path, l, &node, true)
+                self.finish_upload(path, l, &node, true)?;
+                self.keep_entropy(node.id, ent);
+                Ok(())
             }
             Err(err) if err.status == Some(409) => self.commit_as_conflict(path, l, req, err.current.map(|b| *b), true),
             Err(err) => Err(err),
+        }
+    }
+
+    /// Die Entropie der hochgeladenen Fassung im Zustand (Vergleich bei der nächsten Änderung).
+    fn keep_entropy(&mut self, id: u64, ent: Option<f64>) {
+        if let Some(mut e) = self.state.get(id).cloned() {
+            e.ent = ent.map(guard::milli);
+            self.state.upsert(e);
         }
     }
 

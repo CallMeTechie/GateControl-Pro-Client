@@ -272,6 +272,8 @@ let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
 let drive = null; // Drive (core DriveService), one per app lifetime
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
 let driveSyncTray = '';
+let driveOnDemandLocked = false; // letzter Status von gc-drive-sync: von Drive gestoppt?
+let driveGuard = null; // Drive 1.6 'guard': { locked } des letzten guard-Ereignisses
 let driveOnDemand = null; // Drive „Dateien bei Bedarf“ (./drive-ondemand.js, gc-drive-sync.exe) // what the tray entry of "Ordner sichern" last showed
 let trayState = 'disconnected'; // last state drawn in the tray (refresh on unread / DND changes)
 let pendingUpdate = null;
@@ -978,6 +980,8 @@ function initializeServices() {
     tempDir: () => path.join(app.getPath('temp'), 'gatecontrol-drive'),
     getLang: () => getLocale(),
     pushClient: notifications?.pushClient,
+    // Drive 1.6 'links': „Im Portal öffnen“ nur auf dem Host des Servers oder des Portals
+    allowedHosts: () => [store.get('server.url', ''), portalUrl].map((u) => { try { return u ? new URL(u).hostname : null; } catch { return null; } }).filter(Boolean),
   }) : null;
 
   // "Ordner sichern": folders of this PC backed up / synced with Drive. Runs
@@ -1030,13 +1034,24 @@ function initializeServices() {
       return folders.some((f) => f && f.path && drivePathsOverlap(f.path, p)) ? 'w2_active' : null;
     },
     onAction: (a) => handleDriveAction(a).catch((err) => log.warn(`Drive action failed: ${err.message}`)),
+    // Drive 1.6 'guard': ist das Gerät gestoppt? (gleich nach dem Start an gc-drive-sync)
+    getGuard: () => driveGuard,
     onStatus: (st) => {
       const w = mainWindow;
       if (w && !w.isDestroyed()) w.webContents.send('drive-ondemand:status', st);
+      // gc-drive-sync bekam selbst ein 423 device_locked: die Drive-Seite fragt nach (Banner)
+      const locked = !!(st && st.locked);
+      if (locked && !driveOnDemandLocked) drive?.guard({ fresh: true }).catch(() => {});
+      driveOnDemandLocked = locked;
     },
     ...(e2e && e2e.driveOnDemand ? e2e.driveOnDemand : {}),
   });
   driveOnDemand?.watchPush(notifications?.pushClient);
+  // Drive 1.6 'guard': Drive hat dieses Gerät gestoppt / freigegeben → auch gc-drive-sync
+  drive?.on('guard', (g) => {
+    driveGuard = g && typeof g === 'object' ? { locked: g.locked === true } : null;
+    driveOnDemand?.guard(g && g.locked === true, !!(g && g.decided === 'undo')).catch((err) => log.warn(`gc-drive-sync guard: ${err.code || err.message}`));
+  });
   store.onDidChange('server', () => { driveOnDemand?.serverChanged().catch(() => {}); });
 
   // Vault: shown while the server lists the plugin. Keys and decrypted entries
@@ -1490,13 +1505,20 @@ app.on('ready', () => {
 });
 
 // Explorer-Kontextmenü „GateControl Drive ›“ (gc-drive-sync → Ereignis action):
-// „Im Portal öffnen“ öffnet die Drive-Seite des Portals (angemeldet, ohne
-// Sprung zur Datei – das Portal kennt keinen), „Link teilen …“ und „Ältere
-// Versionen“ öffnen den Dialog der Drive-Seite.
+// „Im Portal öffnen“ öffnet bei Drive 1.6 ('links') die Seite der Datei / des
+// Ordners im Portal (me.links.node, nur https auf dem Host von Server oder
+// Portal, core DriveService.openInPortal), sonst wie bisher die Drive-Seite des
+// Portals (angemeldet); „Link teilen …“ und „Ältere Versionen“ öffnen den
+// Dialog der Drive-Seite.
 async function handleDriveAction(a) {
   if (!a) return;
   if (a.action === 'portal') {
-    await openPortalSafe({ next: '/portal#plg-gatecontrol-drive' });
+    let opened = false;
+    if (a.node && drive && typeof drive.openInPortal === 'function') {
+      const r = await drive.openInPortal(a.node).catch(() => null);
+      opened = !!(r && r.ok);
+    }
+    if (!opened) await openPortalSafe({ next: '/portal#plg-gatecontrol-drive' });
     return;
   }
   let node = null;

@@ -39,6 +39,10 @@ struct DriveInner {
     bypass: bool,
     /// Drive 1.5: `me.features`.
     features: Vec<String>,
+    /// Drive 1.6 `guard`: Gerät gestoppt – jede Schreibanfrage 423 `device_locked`.
+    locked: bool,
+    /// Alle Commits (Prüfung von `entropy`).
+    commits: Vec<CommitRequest>,
 }
 
 /// Ein Drive im Speicher.
@@ -74,6 +78,9 @@ impl DriveInner {
         let n = self.live(id)?;
         if self.bypass {
             return Ok(());
+        }
+        if self.locked {
+            return Err(err(423, "device_locked"));
         }
         match self.area_of(&n.area_id) {
             Some(a) if a.writable() => Ok(()),
@@ -151,6 +158,7 @@ impl FakeDrive {
                 base_rev: None,
                 mtime: None,
                 on_conflict: None,
+                entropy: None,
             })
             .unwrap()
         })
@@ -169,9 +177,20 @@ impl FakeDrive {
                 base_rev: Some(n.rev),
                 mtime: None,
                 on_conflict: None,
+                entropy: None,
             })
             .unwrap()
         })
+    }
+
+    /// Drive 1.6 `guard`: dieses Gerät stoppen / freigeben.
+    pub fn set_locked(&self, locked: bool) {
+        self.inner.lock().unwrap().locked = locked;
+    }
+
+    /// Alle Commits bisher.
+    pub fn commits(&self) -> Vec<CommitRequest> {
+        self.inner.lock().unwrap().commits.clone()
     }
 
     /// Drive 1.5: Fähigkeiten in `me` (z. B. `emptyFiles`).
@@ -255,6 +274,7 @@ impl Remote for FakeDrive {
             me: Me { id: Some(1), name: Some("Max".into()), seat: Some("family".into()), device_id: Some("dev1".into()) },
             latest: d.log.len() as u64,
             features: d.features.clone(),
+            guard: d.features.iter().any(|f| f == "guard").then_some(GuardInfo { locked: d.locked }),
         })
     }
 
@@ -412,6 +432,7 @@ impl Remote for FakeDrive {
         let mut d = self.inner.lock().unwrap();
         d.hit("commit")?;
         d.writable(req.parent_id)?;
+        d.commits.push(req.clone());
         let empty = req.media_id.is_none() && req.size == Some(0) && d.features.iter().any(|f| f == "emptyFiles");
         let data = if empty { Vec::new() } else { req.media_id.as_ref().and_then(|m| d.media.get(m)).cloned().ok_or_else(|| err(400, "upload_invalid"))? };
         let mut name = req.name.clone();

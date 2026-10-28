@@ -7,6 +7,7 @@
 pub mod core {
     pub mod api;
     pub mod engine;
+    pub mod guard;
     pub mod hydrate;
     pub mod identity;
     pub mod localfs;

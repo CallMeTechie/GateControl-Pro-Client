@@ -139,14 +139,36 @@ describe('the page', () => {
     for (const m of src.matchAll(/['"`](drive\.sync\.[A-Za-z0-9_.]+)['"`]/g)) if (!m[1].endsWith('.')) keys.add(m[1]);
     for (const m of SS.MODES) { keys.add(`drive.sync.mode.${m}`); keys.add(`drive.sync.mode.${m}Desc`); }
     for (const k of SS.KNOWN) keys.add(`drive.sync.known.${k}`);
-    for (const r of ['all', 'folder', 'offline', 'unavailable', 'not_home', 'no_vpn', 'other_server', 'folder_missing', 'target_gone', 'no_seat', 'not_licensed', 'forbidden', 'quota', 'some_failed', 'mass_delete', 'generic']) keys.add(`drive.sync.reason.${r}`);
+    for (const r of ['all', 'folder', 'offline', 'unavailable', 'not_home', 'no_vpn', 'other_server', 'folder_missing', 'target_gone', 'no_seat', 'not_licensed', 'forbidden', 'quota', 'some_failed', 'mass_delete', 'guard_locked', 'suspect', 'generic']) keys.add(`drive.sync.reason.${r}`);
     for (const e of ['overlap', 'folder_missing', 'not_a_folder', 'drive_root', 'too_many', 'target_taken', 'forbidden', 'no_home', 'no_network', 'invalid', 'offline', 'not_found', 'generic']) keys.add(`drive.sync.err.${e}`);
-    const plurals = ['drive.sync.state.failed', 'drive.sync.files', 'drive.sync.pendingDeletes', 'drive.sync.conflicts', 'drive.sync.skipped'];
+    const plurals = ['drive.sync.state.failed', 'drive.sync.files', 'drive.sync.pendingDeletes', 'drive.sync.pendingDeletesAt', 'drive.sync.held', 'drive.sync.conflicts', 'drive.sync.skipped'];
     for (const p of plurals) { keys.delete(p); keys.add(`${p}.one`); keys.add(`${p}.other`); }
     assert.ok(keys.size > 80, `only ${keys.size} keys found`);
     for (const k of keys) {
       assert.ok(k in de, `de: ${k}`);
       assert.ok(k in en, `en: ${k}`);
     }
+  });
+});
+
+describe('Drive 1.5 / 1.6 in "Ordner sichern"', () => {
+  it('Drive deletes at a date, held-back files, stopped by Drive, unusual changes', () => {
+    const until = new Date(2026, 10, 26, 10, 0).getTime();
+    let v = SS.folderView(folder({ state: 'idle', pendingDeletes: 2, pendingUntil: until, held: 1 }), ctx);
+    assert.ok(v.detail.includes('drive.sync.pendingDeletesAt.other(date=26.11.2026,count=2)'), v.detail.join(' | '));
+    assert.ok(v.detail.includes('drive.sync.held.one(count=1)'));
+    v = SS.folderView(folder({ state: 'idle', pendingDeletes: 1, pendingUntil: null }), ctx);
+    assert.ok(v.detail.includes('drive.sync.pendingDeletes.one(count=1)'));
+    v = SS.folderView(folder({ state: 'locked', reason: 'guard_locked' }), ctx);
+    assert.deepEqual([v.cls, v.text], ['err', 'drive.sync.state.locked']);
+    v = SS.folderView(folder({ state: 'confirm', reason: 'suspect', suspect: { count: 9, sample: ['a'], why: 'entropy' } }), ctx);
+    assert.deepEqual([v.cls, v.text], ['ask', 'drive.sync.state.suspect']);
+    const st = { ok: true, state: 'confirm', folders: [
+      folder({ id: 'aaaaaaaaaaaaaaaa', state: 'confirm', reason: 'suspect', suspect: { count: 9, sample: ['a', 'b'], why: 'extension' } }),
+      folder({ id: 'bbbbbbbbbbbbbbbb', state: 'confirm', reason: 'mass_delete', confirm: { count: 20, total: 40, from: 'pc' } }),
+    ] };
+    assert.deepEqual(SS.suspects(st).map((x) => [x.id, x.count, x.why, x.sample]), [['aaaaaaaaaaaaaaaa', 9, 'extension', ['a', 'b']]]);
+    assert.deepEqual(SS.confirms(st).map((x) => x.id), ['bbbbbbbbbbbbbbbb']);
+    assert.deepEqual(SS.summary({ ok: true, state: 'locked', guard: { locked: true }, folders: [folder({ state: 'locked' })] }, ctx), { cls: 'err', text: 'drive.sync.sum.locked' });
   });
 });

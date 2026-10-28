@@ -428,6 +428,9 @@ mod tests {
         let e = error_from_body(409, br#"{"ok":false,"code":"conflict","error":"Name exists","current":{"id":3,"name":"a","rev":2}}"#);
         assert_eq!(e.code, "conflict");
         assert_eq!(e.current.unwrap().rev, 2);
+        let e = error_from_body(423, br#"{"ok":false,"code":"device_locked","error":"locked","incident":{"id":4}}"#);
+        assert_eq!((e.code.as_str(), e.status), ("device_locked", Some(423)));
+        assert!(!e.transient());
         let e = error_from_body(502, b"<html>");
         assert_eq!(e.code, "http_502");
         assert!(e.transient());

@@ -609,9 +609,225 @@ fn empty_files_go_up_only_where_drive_takes_them() {
     let v = t.d.find(t.mine, "voll.txt").unwrap();
     assert_eq!((v.size, v.rev), (Some(0), 2));
     // eine leere Datei vom Server: Platzhalter, sofort vollständig
-    let req = CommitRequest { media_id: None, size: Some(0), parent_id: t.mine, name: "vom Server.txt".into(), base_rev: None, mtime: None, on_conflict: None };
+    let req = CommitRequest {
+        media_id: None,
+        size: Some(0),
+        parent_id: t.mine,
+        name: "vom Server.txt".into(),
+        base_rev: None,
+        mtime: None,
+        on_conflict: None,
+        entropy: None,
+    };
     t.d.commit(&req).unwrap();
     t.e.sync().unwrap();
     let ph = t.ph(&["Meine Dateien", "vom Server.txt"]);
     assert!(ph.in_sync && ph.hydrated);
+}
+
+// ───────────── Drive 1.6: Schutz vor Erpressungstrojanern ─────────────
+
+/// Pseudo-Zufallsbytes (hohe Entropie) ohne zusätzliche Abhängigkeit.
+fn noise(seed: u64, n: usize) -> Vec<u8> {
+    let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+    (0..n)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            (x >> 24) as u8
+        })
+        .collect()
+}
+
+fn text(i: usize) -> Vec<u8> {
+    format!("Zeile {i}: Das ist ein ganz normaler Brief mit Text.\n").repeat(200).into_bytes()
+}
+
+/// 25 Briefe lokal angelegt und hochgeladen (Entropie gemerkt).
+fn with_letters(features: &[&str]) -> T {
+    let mut t = setup();
+    t.d.set_features(features);
+    t.e.sync().unwrap();
+    t.fs.user_mkdir(&t.path(&["Meine Dateien", "Briefe"]));
+    for i in 0..25 {
+        let path = t.path(&["Meine Dateien", "Briefe", &format!("brief{i}.txt")]);
+        t.fs.user_write(&path, &text(i));
+        t.e.queue_local(path);
+    }
+    t.e.queue_local(t.path(&["Meine Dateien", "Briefe"]));
+    t.e.process_local().unwrap();
+    t
+}
+
+#[test]
+fn entropy_goes_with_commits_to_guard_drives_and_is_kept() {
+    let t = with_letters(&["guard"]);
+    let c = t.d.commits();
+    assert_eq!(c.len(), 25);
+    assert!(c.iter().all(|r| r.entropy.is_some_and(|e| e > 0.0 && e < 5.0)));
+    let briefe = t.d.find(t.mine, "Briefe").unwrap();
+    let n = t.d.find(briefe.id, "brief0.txt").unwrap();
+    assert!(t.e.state.get(n.id).unwrap().ent.is_some_and(|m| m < 5000));
+    // ein älteres Drive bekommt keine Entropie
+    let t2 = with_letters(&[]);
+    assert!(t2.d.commits().iter().all(|r| r.entropy.is_none()));
+}
+
+#[test]
+fn many_files_turned_into_noise_wait_for_an_answer() {
+    let mut t = with_letters(&[]);
+    let before = t.d.commits().len();
+    for i in 0..6 {
+        let path = t.path(&["Meine Dateien", "Briefe", &format!("brief{i}.txt")]);
+        t.fs.user_write(&path, &noise(i as u64 + 1, 70_000));
+        t.e.queue_local(path);
+    }
+    t.e.process_local().unwrap();
+    let s = t.e.shared.suspect.read().unwrap().clone().expect("angeschlagen");
+    assert_eq!((s.count, s.why.as_str(), s.sample.len()), (6, "entropy", 5));
+    assert_eq!(t.d.commits().len(), before);
+    assert!(t.e.pending() >= 6);
+    assert!(t.e.errors().iter().any(|e| e.code == "suspect"));
+    // nichts geht hoch, solange die Antwort fehlt
+    t.e.process_local().unwrap();
+    assert_eq!(t.d.commits().len(), before);
+    // „Hochladen“
+    t.e.decide_suspect(true);
+    t.e.process_local().unwrap();
+    assert_eq!(t.d.commits().len(), before + 6);
+    assert!(t.e.shared.suspect.read().unwrap().is_none());
+}
+
+#[test]
+fn few_changes_and_compressed_types_go_up() {
+    let mut t = with_letters(&[]);
+    let before = t.d.commits().len();
+    for i in 0..3 {
+        let path = t.path(&["Meine Dateien", "Briefe", &format!("brief{i}.txt")]);
+        t.fs.user_write(&path, &noise(i as u64 + 9, 70_000));
+        t.e.queue_local(path);
+    }
+    t.e.process_local().unwrap();
+    assert_eq!(t.d.commits().len(), before + 3);
+    // Fotos (ohne bekannte Entropie) dürfen hoch-entropisch sein
+    t.fs.user_mkdir(&t.path(&["Meine Dateien", "Fotos"]));
+    for i in 0..25 {
+        let path = t.path(&["Meine Dateien", "Fotos", &format!("f{i}.jpg")]);
+        t.fs.user_write(&path, &noise(100 + i as u64, 70_000));
+        t.e.queue_local(path);
+    }
+    t.e.queue_local(t.path(&["Meine Dateien", "Fotos"]));
+    t.e.process_local().unwrap();
+    assert!(t.e.shared.suspect.read().unwrap().is_none());
+    assert_eq!(t.d.commits().len(), before + 28);
+}
+
+#[test]
+fn renamed_to_a_ransomware_extension_waits() {
+    let mut t = with_letters(&[]);
+    let briefe = t.d.find(t.mine, "Briefe").unwrap();
+    for i in 0..6 {
+        let from = t.path(&["Meine Dateien", "Briefe", &format!("brief{i}.txt")]);
+        let to = t.path(&["Meine Dateien", "Briefe", &format!("brief{i}.txt.locked")]);
+        t.fs.user_rename(&from, &to);
+        t.e.queue_local(to);
+    }
+    t.e.process_local().unwrap();
+    let s = t.e.shared.suspect.read().unwrap().clone().expect("angeschlagen");
+    assert_eq!(s.why, "extension");
+    // nichts umbenannt auf dem Server
+    assert!(t.d.find(briefe.id, "brief0.txt").is_some());
+    assert!(t.d.find(briefe.id, "brief0.txt.locked").is_none());
+}
+
+#[test]
+fn a_stopped_device_writes_nothing_until_released() {
+    let mut t = with_letters(&["guard"]);
+    let before = t.d.commits().len();
+    t.d.set_locked(true);
+    let path = t.path(&["Meine Dateien", "Briefe", "brief1.txt"]);
+    t.fs.user_write(&path, b"neu");
+    t.e.queue_local(path.clone());
+    let e = t.e.process_local().unwrap_err();
+    assert_eq!((e.code.as_str(), e.status), ("device_locked", Some(423)));
+    assert!(t.e.shared.locked.load(Ordering::Relaxed));
+    assert_eq!(t.e.pending(), 1, "bleibt vorgemerkt");
+    // weitere Durchläufe versuchen nichts
+    t.d.clear_calls();
+    assert_eq!(t.e.process_local().unwrap_err().code, "device_locked");
+    assert!(t.d.calls().is_empty());
+    // me.guard meldet die Sperre auch beim Vollabgleich
+    t.e.shared.locked.store(false, Ordering::Relaxed);
+    t.e.needs_full = true;
+    assert_eq!(t.e.sync().unwrap_err().code, "device_locked");
+    // freigegeben: es geht weiter
+    t.d.set_locked(false);
+    t.e.needs_full = true;
+    t.e.sync().unwrap();
+    assert!(!t.e.shared.locked.load(Ordering::Relaxed));
+    assert!(t.d.commits().len() > before);
+}
+
+#[test]
+fn after_undo_drive_versions_come_back_and_local_ones_are_held() {
+    let mut t = with_letters(&["guard"]);
+    let briefe = t.d.find(t.mine, "Briefe").unwrap();
+    let b0 = t.d.find(briefe.id, "brief0.txt").unwrap();
+    // „die Schadsoftware“: brief0 verschlüsselt und hochgeladen, brief1 nur lokal verschlüsselt, eine neue Datei
+    let p0 = t.path(&["Meine Dateien", "Briefe", "brief0.txt"]);
+    t.fs.user_write(&p0, &noise(1, 5000));
+    t.e.queue_local(p0.clone());
+    t.e.process_local().unwrap();
+    assert_eq!(t.d.file_data(b0.id).unwrap(), noise(1, 5000));
+    let p1 = t.path(&["Meine Dateien", "Briefe", "brief1.txt"]);
+    t.fs.user_write(&p1, &noise(2, 5000));
+    let pn = t.path(&["Meine Dateien", "Briefe", "LIESMICH.txt"]);
+    t.fs.user_write(&pn, b"Zahle 1 BTC");
+    // Drive macht rückgängig: brief0 bekommt seine alte Fassung
+    t.d.modify(b0.id, &text(0));
+    t.e.after_undo();
+    t.e.sync().unwrap();
+    let before = t.d.commits().len();
+    // die Drive-Fassungen liegen am Namen
+    let ph0 = t.ph(&["Meine Dateien", "Briefe", "brief0.txt"]);
+    assert_eq!(ph0.identity.as_ref().unwrap().node, b0.id);
+    let ph1 = t.ph(&["Meine Dateien", "Briefe", "brief1.txt"]);
+    assert!(ph1.in_sync);
+    // brief0 war schon hochgeladen (die verschlüsselte Fassung bleibt in Drives Versionen);
+    // brief1 war nur lokal geändert: daneben als Konfliktkopie, zurückgehalten – wie die neue Datei
+    let copies: Vec<String> = t.fs.paths().into_iter().filter(|p| p.contains("konflikt")).collect();
+    assert_eq!(copies.len(), 1, "{copies:?}");
+    assert!(copies[0].contains("brief1"));
+    assert_eq!(t.fs.data(&PathBuf::from(&copies[0])).unwrap(), noise(2, 5000));
+    assert_eq!(t.e.shared.held_files.load(Ordering::Relaxed), 2);
+    t.e.queue_local(PathBuf::from(&copies[0]));
+    t.e.queue_local(pn.clone());
+    t.e.process_local().unwrap();
+    assert_eq!(t.d.commits().len(), before, "nichts Zurückgehaltenes geht hoch");
+    assert!(t.d.find(briefe.id, "LIESMICH.txt").is_none());
+    // geändert: dann wie jede neue Datei
+    t.fs.user_write(&pn, b"meine echte Notiz");
+    t.e.queue_local(pn);
+    t.e.process_local().unwrap();
+    assert!(t.d.find(briefe.id, "LIESMICH.txt").is_some());
+    assert_eq!(t.e.shared.held_files.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn changes_bit_by_bit_count_together() {
+    let mut t = with_letters(&[]);
+    let before = t.d.commits().len();
+    for round in 0..2 {
+        for i in 0..3 {
+            let n = round * 3 + i;
+            let path = t.path(&["Meine Dateien", "Briefe", &format!("brief{n}.txt")]);
+            t.fs.user_write(&path, &noise(50 + n as u64, 70_000));
+            t.e.queue_local(path);
+        }
+        t.e.process_local().unwrap();
+    }
+    // die ersten drei gingen hoch, dann schlägt die Prüfung an (6 von 25)
+    assert_eq!(t.d.commits().len(), before + 3);
+    assert_eq!(t.e.shared.suspect.read().unwrap().as_ref().map(|s| s.count), Some(6));
 }

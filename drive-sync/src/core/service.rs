@@ -28,6 +28,8 @@ use std::time::{Duration, Instant};
 pub const POLL_INTERVAL: Duration = Duration::from_secs(45);
 /// Eine lokale Änderung gilt als fertig, wenn so lange nichts mehr kam.
 pub const SETTLE: Duration = Duration::from_secs(2);
+/// Solange Drive das Gerät gestoppt hat: so oft fragen, ob es wieder frei ist.
+pub const LOCKED_RECHECK: Duration = Duration::from_secs(300);
 const FETCH_WORKERS: usize = 4;
 
 /// Ereignis der Dateisystem-Beobachtung.
@@ -96,6 +98,8 @@ enum Msg {
     Deleted(u64, PathBuf),
     Overflow,
     Stop,
+    /// Drive 1.6 `guard` vom Pro-Client: (gestoppt, rückgängig gemacht).
+    Guard(bool, bool),
 }
 
 type EventSink = Arc<dyn Fn(String) + Send + Sync>;
@@ -192,7 +196,19 @@ impl<P: Platform> Service<P> {
             None => s.state = if inner.config.is_some() { "stopped".into() } else { "unconfigured".into() },
             Some(r) => {
                 let run = r.run.lock().unwrap();
-                s.state = if inner.paused { "paused".into() } else { run.state.clone() };
+                let suspect = r.shared.suspect.read().ok().and_then(|x| x.clone());
+                s.locked = r.shared.locked.load(Ordering::Relaxed);
+                s.state = if inner.paused {
+                    "paused".into()
+                } else if s.locked {
+                    "locked".into()
+                } else if suspect.is_some() {
+                    "suspect".into()
+                } else {
+                    run.state.clone()
+                };
+                s.suspect = suspect;
+                s.held = r.shared.held_files.load(Ordering::Relaxed);
                 s.errors = run.errors.clone();
                 s.last_sync = run.last_sync.clone();
                 s.pending = r.shared.pending.load(Ordering::Relaxed);
@@ -294,6 +310,36 @@ impl<P: Platform> Service<P> {
             Command::Relocate { folder, name } => self.relocate(folder, name),
             Command::Restore { folder } => self.restore(folder),
             Command::Usage => Ok(relocate::usage(self.platform.fs().as_ref(), &self.platform.sync_root())),
+            Command::Guard { locked, undo } => {
+                let inner = self.inner.lock().unwrap();
+                match &inner.runner {
+                    Some(r) => {
+                        r.shared.locked.store(locked, Ordering::Relaxed);
+                        let _ = r.tx.send(Msg::Guard(locked, undo));
+                    }
+                    None => return Err(ProtoError::new("not_running", "not started")),
+                }
+                drop(inner);
+                self.log("info", if locked { "Drive hat dieses Gerät gestoppt – nichts wird hochgeladen" } else { "Drive hat dieses Gerät freigegeben" });
+                self.publish();
+                Ok(json!({ "locked": locked, "undo": undo }))
+            }
+            Command::Suspect { upload } => {
+                self.run_job(Box::new(move |eng: &mut Engine| {
+                    eng.decide_suspect(upload);
+                    Ok(json!(upload))
+                }))?;
+                if !upload {
+                    // „Pausiert lassen“
+                    let mut inner = self.inner.lock().unwrap();
+                    inner.paused = true;
+                    if let Some(r) = &inner.runner {
+                        let _ = r.tx.send(Msg::Pause(true));
+                    }
+                }
+                self.publish();
+                Ok(json!({ "upload": upload }))
+            }
             Command::Action { action, path } => {
                 self.handle_action(&action, Path::new(&path)).map_err(|e| ProtoError::new("invalid", e))?;
                 Ok(json!({ "queued": true }))
@@ -774,6 +820,7 @@ fn run_loop<P: Platform>(
     let mut last_delete = Instant::now();
     let mut next_poll = Instant::now();
     let mut backoff = Duration::from_secs(15);
+    let mut pending_undo = false;
     loop {
         // auf Nachrichten warten, bis zur nächsten Abfrage oder bis eine Änderung „fertig“ ist
         let now = Instant::now();
@@ -807,6 +854,14 @@ fn run_loop<P: Platform>(
                 }
                 next_poll = Instant::now();
             }
+            Ok(Msg::Guard(locked, undo)) => {
+                if undo {
+                    pending_undo = true;
+                }
+                if !locked {
+                    next_poll = Instant::now();
+                }
+            }
             Err(RecvTimeoutError::Timeout) => {}
         }
         // weitere Nachrichten ohne Warten einsammeln
@@ -826,6 +881,12 @@ fn run_loop<P: Platform>(
                 Msg::SyncNow | Msg::Overflow => next_poll = Instant::now(),
                 Msg::Pause(p) => paused = p,
                 Msg::Job(j, tx) => jobs.push((j, tx)),
+                Msg::Guard(locked, undo) => {
+                    pending_undo |= undo;
+                    if !locked {
+                        next_poll = Instant::now();
+                    }
+                }
             }
         }
         if !jobs.is_empty() {
@@ -886,6 +947,27 @@ fn run_loop<P: Platform>(
             settling.remove(&p);
             eng.queue_local(p);
         }
+        if std::mem::take(&mut pending_undo) {
+            eng.after_undo();
+        }
+        // Drive hat das Gerät gestoppt: nur ab und zu fragen, ob es wieder frei ist
+        if shared.locked.load(Ordering::Relaxed) {
+            if !due {
+                continue;
+            }
+            if let Ok(me) = remote.me() {
+                if me.guard.as_ref().is_some_and(|g| !g.locked) {
+                    shared.locked.store(false, Ordering::Relaxed);
+                    log("info", "Drive hat dieses Gerät freigegeben");
+                }
+            }
+            if shared.locked.load(Ordering::Relaxed) {
+                set_state("locked");
+                next_poll = Instant::now() + LOCKED_RECHECK;
+                publish();
+                continue;
+            }
+        }
         set_state("syncing");
         let res = if due { eng.sync() } else { eng.process_local() };
         {
@@ -902,6 +984,12 @@ fn run_loop<P: Platform>(
                 set_state("idle");
             }
             Err(e) if e.code == "cancelled" => {}
+            Err(e) if e.code == "device_locked" || e.status == Some(423) => {
+                shared.locked.store(true, Ordering::Relaxed);
+                log("warn", "Drive hat dieses Gerät nach ungewöhnlichen Änderungen gestoppt – nichts wird hochgeladen");
+                set_state("locked");
+                next_poll = Instant::now() + LOCKED_RECHECK;
+            }
             Err(e) => {
                 log("warn", &format!("Abgleich: {e}"));
                 {

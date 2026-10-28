@@ -1053,6 +1053,20 @@
       "rejected": {
         "one": "{{count}} file not uploaded: {{names}}",
         "other": "{{count}} files not uploaded: {{names}}"
+      },
+      "folderButton": "Upload folder",
+      "folderQueued": "Uploading: {{what}}",
+      "folders": {
+        "one": "1 folder",
+        "other": "{{count}} folders"
+      },
+      "files": {
+        "one": "1 file",
+        "other": "{{count}} files"
+      },
+      "skipped": {
+        "one": "1 item left out",
+        "other": "{{count}} items left out"
       }
     },
     "transfer": {
@@ -1069,7 +1083,12 @@
       "same": "already there",
       "skipped": "skipped",
       "failed": "failed: {{reason}}",
-      "show": "Show in folder"
+      "show": "Show in folder",
+      "folderDone": {
+        "one": "Folder created · 1 file",
+        "other": "Folder created · {{count}} files"
+      },
+      "folderMaking": "Creating folders …"
     },
     "conflict": {
       "title": "“{{name}}” already exists here",
@@ -1157,7 +1176,8 @@
       "here": "Put it here",
       "none": "You have no area you may write to.",
       "noFolders": "No subfolders – you can put it here.",
-      "default": "Default place"
+      "default": "Default place",
+      "newName": "Name of the new folder"
     },
     "save": {
       "menu": "Save to Drive",
@@ -1207,7 +1227,9 @@
       "copy": "Copying did not work.",
       "emptyFile": "This server takes empty files from Drive 1.5 on.",
       "inDrive": "Lies in the folder “GateControl Drive” (files on demand).",
-      "generic": "That did not work ({{code}})."
+      "generic": "That did not work ({{code}}).",
+      "locked": "Drive stopped this device after unusual changes – please decide above.",
+      "unsupported": "This Drive does not offer that yet."
     },
     "sync": {
       "title": "Back up folders",
@@ -1250,7 +1272,9 @@
         "exists": "a file is in the way",
         "too_many_files": "too many files",
         "mass_delete": "many files deleted",
-        "generic": "error ({{code}})"
+        "generic": "error ({{code}})",
+        "guard_locked": "stopped by Drive",
+        "suspect": "unusual changes"
       },
       "mode": {
         "backup": "Back up only",
@@ -1271,7 +1295,9 @@
         },
         "error": "Error: {{reason}}",
         "idleSince": "Up to date · {{when}}",
-        "idle": "Up to date"
+        "idle": "Up to date",
+        "suspect": "Unusual changes – please decide",
+        "locked": "Stopped by Drive: unusual changes"
       },
       "failure": "“{{name}}”: {{code}}",
       "last": "last backed up {{when}}",
@@ -1300,7 +1326,8 @@
         "error": "Error",
         "waiting": "Waiting: {{reason}}",
         "okSince": "All up to date · {{when}}",
-        "ok": "All up to date"
+        "ok": "All up to date",
+        "locked": "Stopped by Drive"
       },
       "known": {
         "title": "Windows folders",
@@ -1386,6 +1413,21 @@
       "tray": {
         "pause": "Pause Drive backup",
         "resume": "Resume Drive backup"
+      },
+      "pendingDeletesAt": {
+        "one": "1 file deleted here will be deleted in Drive on {{date}}",
+        "other": "{{count}} files deleted here will be deleted in Drive on {{date}}"
+      },
+      "held": {
+        "one": "1 file held back after “Undo” (not uploaded)",
+        "other": "{{count}} files held back after “Undo” (not uploaded)"
+      },
+      "suspect": {
+        "title": "“{{name}}”: {{count}} files changed in an unusual way",
+        "textEntropy": "Their content suddenly looks encrypted – this may be ransomware. Nothing was uploaded.",
+        "textExtension": "They got an extension ransomware uses. Nothing was uploaded.",
+        "keep": "Keep paused",
+        "upload": "Upload"
       }
     },
     "od": {
@@ -1416,7 +1458,9 @@
         "loading": {
           "one": "Loading 1 file",
           "other": "Loading {{count}} files"
-        }
+        },
+        "locked": "Stopped by Drive: unusual changes",
+        "suspect": "Unusual changes – please decide"
       },
       "busy": {
         "relocate": "Moving {{name}} into Drive …",
@@ -1540,7 +1584,36 @@
         "launch": "The sync program does not start",
         "wrong_user": "The Pro client runs under another account than the signed-in user",
         "generic": "Error ({{code}})"
+      },
+      "suspect": {
+        "title": "{{count}} files changed in an unusual way"
       }
+    },
+    "portal": {
+      "open": "Open in portal"
+    },
+    "guard": {
+      "title": "Stopped by Drive: unusual changes",
+      "text": "Many files on this PC changed in an unusual way (for example encrypted). Until you decide, this PC uploads nothing and deletes nothing in Drive.",
+      "files": {
+        "one": "1 file affected",
+        "other": "{{count}} files affected"
+      },
+      "at": "since {{when}}",
+      "device": "Device: {{name}}",
+      "more": {
+        "one": "and 1 more",
+        "other": "and {{count}} more"
+      },
+      "undo": "Undo",
+      "release": "It was me – release",
+      "portal": "Check in portal",
+      "undoTitle": "Undo the changes?",
+      "undoText": "Drive restores the files as they were before the changes and moves new ones to the trash. This PC then fetches them from Drive; files that differ here stay as a conflict copy and are not uploaded.",
+      "releaseTitle": "Release the changes?",
+      "releaseText": "Only if you changed the files yourself (for example encrypted or compressed them). Drive keeps them as they are and syncing goes on.",
+      "undone": "Undone: {{restored}} restored, {{trashed}} moved to the trash",
+      "released": "Released – syncing goes on"
     }
   }
 }
