@@ -78,6 +78,13 @@ antworten, wenn das Fenster zu ist; ein kleines natives Programm ohne Laufzeit i
   (Befehl `deletes`). Weitere Löschungen während der Nachfrage warten mit.
 - **Leere Dateien** (Drive 1.5, nur wenn `me.features` `emptyFiles` nennt): gehen ohne Medium hoch
   (`uploads/commit { size: 0 }`); leere Platzhalter brauchen kein Laden. Ältere Drives: wie bisher ausgelassen.
+- **Schutz vor Erpressungstrojanern** (Drive 1.6 `guard`, `src/core/guard.rs`): Jeder Commit nennt die Entropie der
+  ersten 64 KB (`entropy`). Lehnt Drive Schreibanfragen mit 423 `device_locked` ab (oder meldet `me.guard.locked`, oder
+  der Pro-Client schickt `guard {locked: true}`), lädt das Programm sofort nichts mehr hoch und löscht nichts (Zustand
+  `locked`), bis Drive das Gerät freigibt; nach „Rückgängig machen“ (`guard {undo: true}`) kommen die Fassungen aus
+  Drive, lokal abweichende bleiben als zurückgehaltene Konfliktkopie. Vor dem Hochladen prüft es selbst: werden viele
+  bestehende Dateien plötzlich hoch-entropisch oder bekommen eine Ransomware-Endung (≥ 50 oder ≥ 20 % eines Ordners mit
+  ≥ 20 Dateien, 10-Minuten-Fenster), geht nichts hoch (Zustand `suspect`, Befehl `suspect upload|keep`).
 
 ### Richtlinien der Sync-Root
 

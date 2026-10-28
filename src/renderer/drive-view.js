@@ -1029,7 +1029,7 @@
 				const w = !!(S.folder && S.folder.writable);
 				refs.bar.append(nav, el('span', { class: 'dv-grow' }), sort,
 					w ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: newFolder } }, [icon('plus', 14), el('span', { text: t('drive.newFolder') })]) : null,
-					w && typeof api.pickFolders === 'function' ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: pickFolderAndUpload } }, [icon('folder', 14), el('span', { text: t('drive.upload.folderButton') })]) : null,
+					w && typeof api.pickFolders === 'function' ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-up-folder', on: { click: pickFolderAndUpload } }, [icon('folder', 14), el('span', { text: t('drive.upload.folderButton') })]) : null,
 					w ? el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: pickAndUpload } }, [icon('upload', 14), el('span', { text: t('drive.upload.button') })]) : null);
 				if (a && a.kind === 'child' && a.via === 'parent') { refs.note.hidden = false; refs.note.textContent = t('drive.childNote'); }
 				else if (S.folder && !w) { refs.note.hidden = false; refs.note.textContent = t('drive.readOnly'); }

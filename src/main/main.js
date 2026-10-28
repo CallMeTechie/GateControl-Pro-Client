@@ -272,6 +272,7 @@ let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
 let drive = null; // Drive (core DriveService), one per app lifetime
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
 let driveSyncTray = '';
+let driveOnDemandLocked = false; // letzter Status von gc-drive-sync: von Drive gestoppt?
 let driveGuard = null; // Drive 1.6 'guard': { locked } des letzten guard-Ereignisses
 let driveOnDemand = null; // Drive „Dateien bei Bedarf“ (./drive-ondemand.js, gc-drive-sync.exe) // what the tray entry of "Ordner sichern" last showed
 let trayState = 'disconnected'; // last state drawn in the tray (refresh on unread / DND changes)
@@ -1038,6 +1039,10 @@ function initializeServices() {
     onStatus: (st) => {
       const w = mainWindow;
       if (w && !w.isDestroyed()) w.webContents.send('drive-ondemand:status', st);
+      // gc-drive-sync bekam selbst ein 423 device_locked: die Drive-Seite fragt nach (Banner)
+      const locked = !!(st && st.locked);
+      if (locked && !driveOnDemandLocked) drive?.guard({ fresh: true }).catch(() => {});
+      driveOnDemandLocked = locked;
     },
     ...(e2e && e2e.driveOnDemand ? e2e.driveOnDemand : {}),
   });

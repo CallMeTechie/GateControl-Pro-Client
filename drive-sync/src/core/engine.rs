@@ -258,8 +258,9 @@ impl Engine {
         self.info("Drive hat die Änderungen dieses PCs rückgängig gemacht – die Dateien kommen aus Drive zurück");
     }
 
+    /// Schlüssel eines zurückgehaltenen Pfads: klein, mit `/` (Windows kennt keinen Unterschied).
     fn held_key(path: &Path) -> String {
-        path.to_string_lossy().to_lowercase()
+        path.to_string_lossy().replace('\\', "/").to_lowercase()
     }
 
     /// Lokale Datei zurückhalten (nicht hochladen, solange sie unverändert ist).
