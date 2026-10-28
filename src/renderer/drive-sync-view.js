@@ -424,8 +424,6 @@
 				settingsNow();
 			},
 			hideSettings() { settingsShown = false; },
-			/** "Ordner sichern" / "GateControl Drive im Explorer" in one line for the Drive settings. */
-			onDemandText: () => (od && typeof od.summary === 'function' ? od.summary() : null),
 			summary: () => (st ? SS.summary(st, ctx()) : null),
 			addDialog,
 		};
