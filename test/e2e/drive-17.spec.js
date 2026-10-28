@@ -11,7 +11,8 @@ const { setupWithApiKey } = require('./support/ui');
 // "Speicher" (total, areas, largest files, duplicates into the trash).
 // Selectors by id/class, texts in both languages.
 
-const side = (root, re) => root.locator('.dv-area', { hasText: re });
+// Drive 1.11: "Fotos" and "Speicher" are icons at the bottom of the menu
+const tool = (root, view) => root.locator(`.dv-tool[data-view="${view}"]`);
 
 async function openDrive(page) {
   await expect(page.locator('#nav-drive')).toBeVisible();
@@ -26,8 +27,9 @@ test.describe('drive 1.7', () => {
     const { page } = await launchApp();
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
-    await expect(root.locator('.dv-area')).toHaveCount(7);
-    await expect(side(root, /^(Fotos|Photos)$/)).toHaveCount(0);
+    await expect(root.locator('.dv-tool')).toHaveCount(4);
+    await expect(tool(root, 'photos')).toHaveCount(0);
+    await expect(tool(root, 'storage')).toHaveCount(0);
     await expect(root.locator('.dv-tt-btn')).toHaveCount(0);
     await root.locator('.dv-row[data-id="10"] .dv-more-btn').click();
     await expect(page.locator('.dv-menu-item', { hasText: /früheren Stand|earlier state/ })).toHaveCount(0);
@@ -76,7 +78,7 @@ test.describe('drive 1.7', () => {
     const { page } = await launchApp();
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
-    await side(root, /^(Fotos|Photos)$/).click();
+    await tool(root, 'photos').click();
     const pv = root.locator('.dpv');
     await expect(pv).toBeVisible();
     await expect(root.locator('.dv-list-wrap')).toBeHidden();
@@ -130,7 +132,7 @@ test.describe('drive 1.7', () => {
     const { page } = await launchApp();
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
-    await side(root, /^(Speicher|Storage)$/).click();
+    await tool(root, 'storage').click();
     const sg = root.locator('.dsg');
     await expect(sg).toBeVisible();
     await expect(sg.locator('.dsg-big')).toBeVisible();

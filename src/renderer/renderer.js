@@ -2986,6 +2986,8 @@ driveView = driveApi && window.GCDriveView && $('#page-drive')
 		toast: (msg, type) => showToast(msg, type || 'info'),
 		// Dateien bei Bedarf (gc-drive-sync): Karte oben in „Ordner sichern“
 		onDemandApi: window.gatecontrol.driveOnDemand || null,
+		// Drive-Einstellungen › Benachrichtigungen: die Drive-Themen der Mitteilungen (stumm auf diesem PC)
+		notifyApi: window.gatecontrol.notify || null,
 		onStatus: (st) => {
 			const show = !!st && st.state === 'available';
 			$('#nav-drive').hidden = !show;

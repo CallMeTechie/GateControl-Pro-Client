@@ -621,6 +621,9 @@
 		feature_off: 'featureOff', encrypted: 'encrypted', office_unavailable: 'officeUnavailable',
 		vault_locked: 'vaultLocked', vault_unsupported: 'vaultUnsupported', recovery_key: 'recoveryKey', safety: 'safety',
 		stale_key: 'staleKey', vault_decrypt: 'vaultDecrypt', vault_invalid: 'vaultDecrypt', recovery_required: 'recoveryRequired',
+		// Drive 1.11: the vault lock (Windows Hello)
+		hello_cancelled: 'helloCancelled', hello_not_set_up: 'helloNotSetUp', hello_policy: 'helloPolicy', hello_busy: 'helloBusy',
+		hello_retries: 'helloRetries', hello_unavailable: 'helloUnavailable', hello_failed: 'helloFailed',
 	};
 
 	/** The text of a failed answer ({ ok: false, code }) — Drive's codes and those of the plugins passing them on. */

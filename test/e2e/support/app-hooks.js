@@ -18,7 +18,8 @@
  *     server (GC_E2E_MAP_URL) instead of OpenStreetMap,
  *   - keeps the real Windows Hello provider (availability is checked on the
  *     runner) but lets a test switch to a fake one (useFakeHello(), see
- *     hello-fake.js) for the UI flow,
+ *     hello-fake.js) for the UI flow; the same for the confirmation of the
+ *     Drive vault lock (useFakeConsent()),
  *   - records the installer launch (the updater's spawn, and shell.openPath
  *     as its fallback) instead of starting the file, plus quit and service
  *     calls, in GC_E2E_DIR/events.jsonl and on globalThis.__gcE2E (reachable
@@ -186,9 +187,12 @@ function install({ app, env }) {
   // ── Windows Hello: the real provider (availability on this machine) until a test switches to the fake ──
   const helloFile = coreFile('src/services/windows-hello');
   const realHello = require(helloFile);
-  const { createFakeHello } = require('./hello-fake');
+  const { createFakeHello, createFakeConsent } = require('./hello-fake');
   state.hello = { fake: null };
   state.useFakeHello = () => { state.hello.fake = createFakeHello(); return true; };
+  // Drive 1.11 vault lock: Windows Hello as a confirmation (real detection until a test switches to the fake)
+  state.consent = { fake: null };
+  state.useFakeConsent = () => { state.consent.fake = createFakeConsent(); return true; };
   stubModule(helloFile, {
     ...realHello,
     createWindowsHello(opts) {
@@ -202,7 +206,21 @@ function install({ app, env }) {
         remove: (...a) => pick().remove(...a),
       };
     },
+    createConsentVerifier(opts) {
+      const real = typeof realHello.createConsentVerifier === 'function' ? realHello.createConsentVerifier(opts) : null;
+      const pick = () => (state.consent.fake ? state.consent.fake.provider : real);
+      return {
+        kind: 'e2e-switch-consent',
+        available: () => (pick() ? pick().available() : Promise.resolve({ available: false, reason: 'unsupported_os' })),
+        verify: (...a) => (pick() ? pick().verify(...a) : Promise.resolve({ status: 'unavailable' })),
+      };
+    },
   });
+
+  // ── Linux runs (xvfb, no keyring): safeStorage with its in-memory key, so the DPAPI-bound parts (Drive vault
+  // device key, "Angemeldet bleiben") work there as on Windows; e2e only, never in a packaged app ──
+  const { safeStorage } = require('electron');
+  if (process.platform === 'linux' && safeStorage && typeof safeStorage.setUsePlainTextEncryption === 'function') safeStorage.setUsePlainTextEncryption(true);
 
   // ── Electron side effects → recorder ──
   const { shell, Tray } = require('electron');

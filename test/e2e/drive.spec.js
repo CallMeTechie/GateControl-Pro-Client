@@ -40,9 +40,11 @@ test.describe('drive', () => {
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
 
-    // 4 areas, "Geteilt", "Papierkorb", "Ordner sichern"; Meine Dateien with a preview of the photo
-    await expect(root.locator('.dv-area')).toHaveCount(7);
-    await expect(root.locator('.dv-area.is-on .dv-area-name')).toHaveText(/^(Meine Dateien|My files)$/);
+    // Drive 1.11 menu: 4 areas in the tree (Meine Dateien unfolded), the icons "Geteilt", "Papierkorb",
+    // "Ordner sichern", "Einstellungen"; Meine Dateien with a preview of the photo
+    await expect(root.locator('.dv-tree-row.is-area')).toHaveCount(4);
+    await expect(root.locator('.dv-tool')).toHaveCount(4);
+    await expect(root.locator('.dv-tree-row.is-on .dv-area-name')).toHaveText(/^(Meine Dateien|My files)$/);
     await expect(rows(root)).toHaveText(['Dokumente', 'Foto.jpg', 'setup.exe']);
     await expect(root.locator('.dv-row[data-id="11"] .dv-thumb img')).toHaveCount(1);
     await page.screenshot({ path: test.info().outputPath('drive-root.png') });
@@ -53,7 +55,8 @@ test.describe('drive', () => {
     await expect(rows(root)).toHaveText(['Brief.pdf']);
 
     // new folder: names Drive refuses are not taken
-    await root.locator('.dv-bar .btn-sec').click();
+    await root.locator('.dv-bar .dv-new').click();
+    await page.locator('.dv-menu-item[data-item="folder"]').click();
     const dlg = page.locator('.dv-dlg');
     await dlg.locator('input').fill('Reise/2026');
     await expect(dlg.locator('.btn-pri')).toBeDisabled();
@@ -74,7 +77,7 @@ test.describe('drive', () => {
     await menuItem(page, /^(In den Papierkorb|Move to trash)$/).click();
     await dlg.locator('.btn-danger').click();
     await expect(rows(root)).toHaveText(['Brief.pdf']);
-    await root.locator('.dv-area').nth(5).click();
+    await root.locator('.dv-tool[data-view="trash"]').click();
     await expect(root.locator('.dv-row.is-trash .dv-name')).toHaveText(['Reisen']);
     await root.locator('.dv-row.is-trash .dv-trash-act .btn-sec').click();
     await expect(root.locator('.dv-row.is-trash')).toHaveCount(0);
@@ -108,7 +111,7 @@ test.describe('drive', () => {
     await dlg.locator('.dv-dlg-foot .btn-sec').click();
 
     // "Geteilt": the person's links
-    await root.locator('.dv-area').nth(4).click();
+    await root.locator('.dv-tool[data-view="links"]').click();
     await expect(root.locator('.dv-link')).toHaveCount(1);
     await expect(root.locator('.dv-link .dv-row-sub')).toContainText(/mit PIN|with PIN/);
     await root.locator('.dv-link .btn-sec').click();
@@ -142,7 +145,7 @@ test.describe('drive', () => {
     const { page, answerOpenDialogs, trayLabels } = await launchApp();
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
-    await root.locator('.dv-area').nth(6).click();
+    await root.locator('.dv-tool[data-view="sync"]').click();
     const sv = root.locator('.dsv');
     await expect(sv).toBeVisible();
     await expect(sv.locator('.dsv-pill')).toHaveText(/Noch kein Ordner|No folder yet/);
@@ -177,9 +180,17 @@ test.describe('drive', () => {
     await row.locator('.dsv-act').first().click();
     await expect(row.locator('.dsv-state-tx')).toHaveText(/^(Aktuell|Up to date)/);
 
-    // settings: an upload limit
-    await sv.locator('.dsv-set select').nth(1).selectOption('512');
+    // settings: an upload limit — Drive 1.11: in the Drive settings (a line in "Ordner sichern" leads there)
+    await expect(sv.locator('.dsv-set')).toHaveCount(0);
+    await sv.locator('.dsv-set-link [data-key="open-settings"]').click();
+    const set = root.locator('.dset');
+    await expect(set).toBeVisible();
+    await set.locator('.dsv-set select').nth(1).selectOption('512');
     await expect.poll(() => page.evaluate(() => window.gatecontrol.drive.sync.status().then((s) => s.settings.upKBs))).toBe(512);
+    await set.locator('.dsv-set').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath('drive-sync-settings.png') });
+    await set.locator('[data-key="open-sync"]').click();
+    await expect(sv).toBeVisible();
 
     // "Abgleichen" with Meine Dateien › Dokumente, picked in Drive's folder picker
     const laptop = testInfo.outputPath('Laptop');
@@ -209,8 +220,6 @@ test.describe('drive', () => {
     expect(named('Notiz.txt', d.srv.state.nodes.get(10))).toBeTruthy();
     await synced.scrollIntoViewIfNeeded();
     await page.screenshot({ path: test.info().outputPath('drive-sync-more.png') });
-    await sv.locator('.dsv-set').scrollIntoViewIfNeeded();
-    await page.screenshot({ path: test.info().outputPath('drive-sync-settings.png') });
 
     // removing stops it, nothing is deleted
     await synced.locator('.dsv-act.dv-danger').click();

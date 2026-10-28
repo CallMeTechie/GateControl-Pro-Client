@@ -1234,13 +1234,20 @@
       "featureOff": "This is switched off on this server.",
       "encrypted": "Not possible for files in vault folders.",
       "officeUnavailable": "No office in the browser is available for this file.",
-      "vaultLocked": "This PC has no key for the vault – ask for access.",
+      "vaultLocked": "The vault is locked or this PC has no key for it yet.",
       "vaultUnsupported": "This PC cannot store keys protected – vault folders do not work here.",
       "recoveryKey": "The recovery key is not correct.",
       "safety": "The safety number does not match – do not approve.",
       "staleKey": "The vault has a new key – please try again.",
       "vaultDecrypt": "The file cannot be decrypted (damaged or another key).",
-      "recoveryRequired": "The new key needs a new recovery key."
+      "recoveryRequired": "The new key needs a new recovery key.",
+      "helloCancelled": "Windows Hello was cancelled.",
+      "helloNotSetUp": "Windows Hello is not set up on this PC.",
+      "helloPolicy": "Windows Hello is turned off by a policy.",
+      "helloBusy": "Windows Hello is busy – please try again in a moment.",
+      "helloRetries": "Too many attempts – sign in to Windows again and then retry.",
+      "helloUnavailable": "Windows Hello is not available here.",
+      "helloFailed": "Windows Hello did not confirm."
     },
     "sync": {
       "title": "Back up folders",
@@ -1397,7 +1404,8 @@
         "forgetHome": "Forget home networks",
         "vpnOnly": "Only with the VPN connected",
         "vpnOnlyDesc": "Otherwise whenever the server can be reached",
-        "always": "Always left out: temporary files (~$…, *.tmp), Thumbs.db, desktop.ini, .DS_Store, empty files and names Drive does not take."
+        "always": "Always left out: temporary files (~$…, *.tmp), Thumbs.db, desktop.ini, .DS_Store, empty files and names Drive does not take.",
+        "moved": "Bandwidth, home network, VPN and exclusions are now in the Drive settings."
       },
       "done": {
         "run": "Sync started.",
@@ -1885,10 +1893,24 @@
         "kept": "I have written the key down"
       },
       "create": {
-        "title": "New vault folder",
+        "title": "New vault",
         "intro": "Contents and names are encrypted on your devices. The server never sees them. No previews, search, links or office for this folder.",
         "ok": "Create",
-        "button": "New vault folder"
+        "button": "New vault",
+        "menuHint": "Shows in the menu under “Vaults”, not here",
+        "who": "Who may open it?",
+        "onlyMe": "Only me",
+        "onlyMeHint": "Private, lies in “My files”",
+        "family": "Share with the family",
+        "familyHint": "Every family member needs your approval for their device",
+        "teamHint": "For the team – every device needs an approval",
+        "noArea": "You have no area where you may create a vault.",
+        "lockHint": {
+          "one": "Opens only with Windows Hello. The vault locks after 1 minute without use. You find it on the left under “Vaults”.",
+          "other": "Opens only with Windows Hello. The vault locks after {{count}} minutes without use. You find it on the left under “Vaults”."
+        },
+        "lockHintNever": "Opens only with Windows Hello. You find it on the left under “Vaults”.",
+        "lockHintNoHello": "You find it on the left under “Vaults”. “Open with Windows Hello” is off – then only this PC’s approval protects it."
       },
       "recover": {
         "title": "Open with recovery key",
@@ -2016,6 +2038,122 @@
       "menu": "Import from Google Drive / OneDrive",
       "sub": "in the portal",
       "opened": "The import opens in the portal."
+    },
+    "menu": {
+      "label": "Drive menu",
+      "personal": "Personal",
+      "shared": "Shared",
+      "vaults": "Vaults",
+      "tools": "More of Drive",
+      "links": "Shared (your links)",
+      "fold": "Collapse: {{name}}",
+      "unfold": "Expand: {{name}}",
+      "seat": {
+        "family": "Family seat",
+        "business": "Business seat"
+      },
+      "vault": {
+        "private": "Private",
+        "family": "Shared with the family",
+        "lockedName": "Vault of {{date}}",
+        "lockedNameNoDate": "Vault",
+        "state": {
+          "open": "unlocked",
+          "locked": "locked",
+          "pending": "waiting for approval",
+          "none": "no access",
+          "unsupported": "not on this PC"
+        }
+      }
+    },
+    "new": {
+      "button": "New",
+      "files": "Upload files …"
+    },
+    "lock": {
+      "card": {
+        "title": "Vault locked",
+        "text": "Unlock it with Windows Hello – face, fingerprint or PIN – to see names and files.",
+        "textNoHello": "Unlock it to see names and files."
+      },
+      "unlockHello": "Unlock with Windows Hello",
+      "unlock": "Unlock",
+      "now": "Lock vaults now",
+      "locked": "Vaults locked",
+      "hello": {
+        "label": "Open with Windows Hello",
+        "desc": "Face, fingerprint or Windows Hello PIN before a vault unlocks",
+        "offWarn": "Off: then only this PC’s approval protects the vaults – anyone at this Windows account can open them.",
+        "notSetUp": "Windows Hello is not set up on this PC. Set up a PIN, face or fingerprint in the Windows settings – or switch off “Open with Windows Hello” in the Drive settings.",
+        "policy": "Windows Hello is turned off on this PC by a policy. Ask your IT – or switch off “Open with Windows Hello” in the Drive settings.",
+        "busy": "Windows Hello is busy right now – try again in a moment.",
+        "unavailable": "Windows Hello is not available here (for example in a remote desktop session). Open the vault at the PC itself – or switch off “Open with Windows Hello” in the Drive settings.",
+        "setup": "Set up Windows Hello"
+      },
+      "after": {
+        "one": "after 1 minute",
+        "other": "after {{count}} minutes",
+        "never": "Never"
+      },
+      "auto": {
+        "label": "Lock automatically",
+        "desc": "When no vault is used"
+      },
+      "leave": {
+        "label": "Lock when leaving",
+        "desc": "When the window is minimized or closed. When Windows locks, the vaults always lock."
+      },
+      "state": {
+        "label": "Vaults on this PC",
+        "open": "Unlocked",
+        "locked": "Locked"
+      }
+    },
+    "settings": {
+      "title": "Drive settings",
+      "intro": "Applies to this PC – except “AI for documents”, which applies to the whole area.",
+      "open": "Drive settings",
+      "backup": {
+        "title": "Backup",
+        "open": "Open",
+        "syncDesc": "Back up or sync folders of this PC with Drive",
+        "explorer": "GateControl Drive in Explorer",
+        "explorerDesc": "Files on demand and Windows folders in the Drive – in “Back up folders”"
+      },
+      "vaults": {
+        "title": "Vaults",
+        "safety": "Safety number of this PC",
+        "safetyDesc": "To compare when another device approves this PC",
+        "noDevice": "none yet",
+        "approved": "Approved for",
+        "none": "No vault on this PC yet"
+      },
+      "ai": {
+        "vaults": "Vaults are never read by the AI."
+      },
+      "view": {
+        "title": "View",
+        "sort": "Sort by",
+        "sortDesc": "For the folder lists"
+      },
+      "data": {
+        "title": "Data on this device"
+      },
+      "cache": {
+        "label": "Cache",
+        "size": "{{size}} for previews and opened files",
+        "clear": "Clear",
+        "never": "Vault keys and running uploads are never removed.",
+        "cleared": "Cache cleared",
+        "clearedKept": "Cleared – {{count}} opened files are still in use"
+      },
+      "notify": {
+        "title": "Notifications",
+        "desc": "Drive notifications on this PC",
+        "deadline": "Deadline reminders",
+        "vault": "Vault access requests",
+        "none": "This server reports no Drive notifications."
+      }
     }
   }
 }

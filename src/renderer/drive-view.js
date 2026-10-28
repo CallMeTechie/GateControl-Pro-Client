@@ -1,10 +1,16 @@
 /**
  * GateControl -- Drive (renderer view of the plugin gatecontrol-drive)
  *
- * The page "Drive": the areas on the left (Meine Dateien, Familie, Kinder ·
- * Name, Team · Name with their storage), "Geteilt" (the person's links) and
- * "Papierkorb"; on the right the folder with breadcrumbs, sorting, "Neuer
- * Ordner" and "Hochladen" (button or files dropped on the page), the list
+ * The page "Drive": the menu on the left (Drive 1.11, drive-menu-state.js) —
+ * the person's name and seat, "Persönlich" (Meine Dateien) and "Gemeinsam"
+ * (Familie, Kinder · Name, Team · Name with their storage) as an unfoldable
+ * folder tree (the arrow folds, the name opens; loaded only when unfolded;
+ * unfolded nodes kept on this PC; arrows / Home / End / Enter on the keyboard),
+ * "Tresore" (the vault folders — only here, never among the files) and a bar
+ * of icons (Fotos, Geteilt, Papierkorb, Speicher, Ordner sichern, Fristen,
+ * Importieren, Einstellungen — what this Drive has); on the right the folder
+ * with breadcrumbs, sorting, "Neu" (Neuer Ordner, Dateien / Ordner hochladen,
+ * Neuer Tresor) and "Hochladen" (button or files dropped on the page), the list
  * (preview pictures, name, date, size; sorted by name, date, size or type —
  * "Typ" here: folders, then documents, tables, … by extension and name) and a menu per row: Öffnen, Speichern
  * unter …, Link teilen (rights, validity, PIN), Umbenennen, Verschieben,
@@ -20,8 +26,11 @@
  * machen", "War ich – freigeben" and "Im Portal prüfen".
  *
  * "Ordner sichern" (folders of this PC backed up / synced, core DriveSync)
- * is a view of the page too: drive-sync-view.js, shown by the last entry on
- * the left.
+ * is a view of the page too: drive-sync-view.js; so are the Drive settings
+ * (drive-settings-view.js, the gear). Drive 1.11 vault lock: a vault opens
+ * only after Windows Hello (the card "Tresor gesperrt"); when the core locks
+ * the vaults (time without use, window hidden, Windows locked) an open vault
+ * folder closes to its card; activity on a vault keeps it open.
  *
  * Drive 1.7 (only with the features `me` reports): "Auf früheren Stand
  * zurücksetzen …" of a folder (row menu, and the bar for the folder shown;
@@ -40,8 +49,8 @@
  * Drive 1.8 / 1.9 (only with the features `me` reports): "Details" of a
  * file — what Drive recognised, its suggestion and deadlines ('docAi',
  * drive-docs-view.js) — and "Fristen" on the left; a symbol of the kind of
- * document in the list; the switch "KI für Dokumente" of the area in the bar
- * (write right, never in a vault folder); "Aus Google Drive / OneDrive importieren (im
+ * document in the list; the switch "KI für Dokumente" per area in the Drive
+ * settings (write right; Drive 1.11); "Aus Google Drive / OneDrive importieren (im
  * Portal)" ('cloudImport'); "Im Browser bearbeiten / ansehen" for office
  * documents ('office'); vault folders ('vault', drive-vault-view.js): "Neuer
  * Tresor-Ordner", names decrypted on this PC, the card to ask for access or
@@ -59,6 +68,7 @@
 	'use strict';
 
 	const DS = root.GCDriveState;
+	const MS = root.GCDriveMenuState;
 	const NS = 'http://www.w3.org/2000/svg';
 	const ICONS = {
 		cloud: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z',
@@ -111,6 +121,10 @@
 		device: 'M3 5h18v11H3z|M8 20h8|M12 16v4',
 		globe: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M3 12h18|M12 3c3 3 3 15 0 18|M12 3c-3 3-3 15 0 18',
 		import: 'M12 3v12|M7 10l5 5 5-5|M5 21h14|M17 3h3v3',
+		// Drive 1.11
+		gear: 'M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.8l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.8v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z|M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
+		chevDown: 'M6 9l6 6 6-6',
+		folderPlus: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 10v6M9 13h6',
 	};
 	const KIND_ICON = { folder: 'folder', image: 'image', video: 'video', audio: 'audio', pdf: 'pdf', archive: 'archive', vault: 'vault' };
 	const AREA_ICON = { mine: 'user', family: 'users', child: 'child', team: 'team' };
@@ -244,7 +258,7 @@
 			}
 			dlg.body.append(path, nfRow, list);
 			const std = o.fallback ? el('button', { type: 'button', class: 'btn btn-ghost', title: o.fallback, text: t('drive.picker.default'), on: { click: () => dlg.close({ folderId: null, path: o.fallback }) } }) : null;
-			dlg.foot.append(err, nfBtn, std, el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }), ok);
+			dlg.foot.append(...[err, nfBtn, std, el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }), ok].filter(Boolean));
 
 			async function pick() {
 				if (!DS.canPick(P.folder) || P.folder.node.id === o.exclude) return;
@@ -374,7 +388,15 @@
 			livePending: false,
 			vaultStatus: null, // Drive 1.9: { supported, device } of this PC
 			vaults: [],        // Drive 1.9: the vaults (pending requests, needsRotation)
+			// Drive 1.11: the menu's tree (node id → { items, loading, error }), the unfolded nodes (kept on this PC),
+			// the vault lock's status, the last activity sent to the core
+			tree: new Map(),
+			open: MS.parseOpen(remembered(MS.OPEN_KEY)),
+			treeFocus: null,
+			lock: null,
+			lastTouch: 0,
 		};
+		const keepOpen = () => keep(MS.OPEN_KEY, MS.serializeOpen(S.open));
 
 		// ── Skeleton ─────────────────────────────────────
 		const refs = {};
@@ -398,6 +420,8 @@
 			api: api.sync, t, getLocale: o.getLocale, now, toast, host, onDemandApi: o.onDemandApi || null,
 			ui: { el, icon, clear, openDialog },
 			pickDriveFolder: (opts) => pickFolder({ api, t, host, ...(opts || {}) }),
+			// Drive 1.11: its settings card is shown in the Drive settings
+			openSettings: (section) => openSettingsView(section),
 			onSummary: (sum) => {
 				const tx = sum ? sum.text : '';
 				if (tx === S.syncSummary) return;
@@ -413,7 +437,25 @@
 		};
 		const photosView = root.GCDrivePhotosView && typeof api.photos === 'function' ? root.GCDrivePhotosView.mount(extra) : null;
 		const storageView = root.GCDriveStorageView && typeof api.storage === 'function' ? root.GCDriveStorageView.mount(extra) : null;
-		const VIEWS = { sync: syncView, photos: photosView, storage: storageView };
+		// Drive 1.11: the Drive settings (the gear)
+		const settingsView = root.GCDriveSettingsView ? root.GCDriveSettingsView.mount({
+			api, t, getLocale: o.getLocale, toast, ui: { el, icon, clear, openDialog }, syncView, onDemand: !!o.onDemandApi, notifyApi: o.notifyApi || null,
+			page: () => ({ me: S.me, areas: S.areas, vaults: S.vaults, vaultStatus: S.vaultStatus, lock: S.lock, sort: S.sort, syncSummary: S.syncSummary }),
+			openSync: () => openSync(),
+			// kept for the lists; the folder loads in that order when it is shown next
+			setSort: (sort) => { if (DS.SORTS.includes(sort)) { S.sort = sort; keep('gc.drive.sort', sort); } },
+			docAiChanged: (areaId, on) => {
+				S.areas = DS.withDocAi(S.areas, areaId, on);
+				if (S.me && Array.isArray(S.me.areas)) S.me = { ...S.me, areas: DS.withDocAi(S.me.areas, areaId, on) };
+				S.dirty = true;
+			},
+			lockChanged: (st) => { S.lock = st && st.ok !== false ? st : S.lock; },
+			cacheCleared: () => {
+				for (const p of S.previews.values()) Promise.resolve(p).then((u) => { if (u) URL.revokeObjectURL(u); }).catch(() => {});
+				S.previews.clear();
+			},
+		}) : null;
+		const VIEWS = { sync: syncView, photos: photosView, storage: storageView, settings: settingsView };
 		// Drive 1.8 'docAi' (drive-docs-view.js) and 1.9 'vault' (drive-vault-view.js)
 		const docs = root.GCDriveDocsView && typeof api.insight === 'function' ? root.GCDriveDocsView.create({
 			api, t, getLocale: o.getLocale, ui: { el, icon, clear, openDialog }, host, toast, now, errorText: DS.errorText,
@@ -425,9 +467,13 @@
 		const vaultUi = root.GCDriveVaultView && api.vault ? root.GCDriveVaultView.create({
 			api, t, ui: { el, icon, clear, openDialog }, host, toast, errorText: DS.errorText,
 			changed: () => { loadVaults().then(() => refreshView()); },
+			// Drive 1.11: the vault lock
+			getLock: () => S.lock,
+			unlocked: () => { loadVaults().then(() => refreshView()); },
+			openSettings: () => openSettingsView('vaults'),
 		}) : null;
 		const vaultOn = () => !!vaultUi && root.GCDriveVaultState.vaultAvailable(S.me, S.vaultStatus);
-		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.listWrap, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null]);
+		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.listWrap, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null]);
 		refs.empty = el('div', { class: 'dv-gate', hidden: true });
 		refs.main = el('div', { class: 'dv-main' }, [refs.side, refs.pane]);
 		rootEl.append(
@@ -493,6 +539,36 @@
 		if (api.vault && typeof api.vault.onEvent === 'function') {
 			api.vault.onEvent(() => { if (S.shown && vaultOn()) loadVaults().then(() => { if (S.view === 'folder') live.request(); }); });
 		}
+		// Drive 1.11: the vaults locked (time without use, window hidden, Windows locked, by hand) / unlocked
+		if (api.vault && typeof api.vault.onLock === 'function') {
+			api.vault.onLock((e) => {
+				if (S.lock) S.lock = { ...S.lock, unlocked: !(e && e.locked) };
+				if (!e || !e.locked) return;
+				// an open vault folder closes to its card; the menu shows the vaults locked again
+				const fv = S.folder && S.folder.vault;
+				if (fv) {
+					// the vault's "Geräte" closes too (approving needs its key); a recovery key being shown stays
+					for (const d of host.querySelectorAll('.dv-scrim')) { if (d.querySelector('.dv-vdev') && !d.querySelector('.dv-rk')) d.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); }
+					const v = vaultOf(fv.id);
+					S.folder = null;
+					S.dirty = true;
+					if (S.shown) loadVaults().then(() => loadFolder(v ? v.nodeId : S.folderId));
+				} else if (S.shown && vaultOn()) {
+					loadVaults().then(() => { if (!VIEWS[S.view] || S.view === 'settings') render(); });
+				}
+			});
+		}
+		// Drive 1.11: real input on a vault keeps it open (vault:touch at most every 15 s)
+		const vaultActivity = () => {
+			if (!S.shown || !api.vault || typeof api.vault.touch !== 'function') return;
+			if (!(S.folder && S.folder.vault && S.folder.vault.state === 'open')) return;
+			if (now() - S.lastTouch < 15000) return;
+			S.lastTouch = now();
+			Promise.resolve(api.vault.touch()).catch(() => {});
+		};
+		rootEl.addEventListener('pointerdown', vaultActivity, true);
+		rootEl.addEventListener('keydown', vaultActivity, true);
+		rootEl.addEventListener('wheel', vaultActivity, { capture: true, passive: true });
 		Promise.resolve(api.transfers()).then((r) => { if (r && r.ok) { S.transfers = r.transfers; renderTransfers(); } }).catch(() => {});
 
 		// ── Loading ──────────────────────────────────────
@@ -503,8 +579,12 @@
 		/** Drive 1.9: this PC's vault state and the vaults (requests waiting, a new key needed). */
 		async function loadVaults() {
 			if (!vaultUi || !DS.hasFeature(S.me, 'vault')) { S.vaultStatus = null; S.vaults = []; return; }
-			const st = await Promise.resolve(api.vault.status()).catch(() => null);
+			const [st, lock] = await Promise.all([
+				Promise.resolve(api.vault.status()).catch(() => null),
+				typeof api.vault.lockStatus === 'function' ? Promise.resolve(api.vault.lockStatus()).catch(() => null) : null,
+			]);
 			S.vaultStatus = st && st.ok ? st : null;
+			S.lock = lock && lock.ok ? lock : null;
 			if (!vaultOn()) { S.vaults = []; return; }
 			const r = await Promise.resolve(api.vault.list()).catch(() => null);
 			S.vaults = r && r.ok ? r.vaults : [];
@@ -529,6 +609,12 @@
 			if (S.access.usable) {
 				const ar = await Promise.resolve(api.areas()).catch(fail);
 				S.areas = DS.sortAreas(ar && ar.ok ? ar.areas : me.areas);
+				// the menu's tree loads again (only what is unfolded); the first time "Meine Dateien" is unfolded
+				S.tree.clear();
+				if (remembered(MS.OPEN_KEY) === null) {
+					const mine = S.areas.find((x) => x.kind === 'mine');
+					if (mine) { S.open.add(mine.rootId); keepOpen(); }
+				}
 				await loadVaults();
 			} else {
 				S.areas = [];
@@ -544,7 +630,48 @@
 			else if (S.view === 'links') await loadLinks();
 			else if (S.view === 'search') await runSearch();
 			else if (S.view === 'deadlines') openDeadlines();
+			else if (S.view === 'settings') openSettingsView();
 			else render();
+		}
+
+		/** The Drive settings (Drive 1.11, the gear); `section` scrolls to one ('backup', 'vaults', …). */
+		function openSettingsView(section = null) {
+			if (!settingsView) return;
+			S.view = 'settings';
+			S.loading = false;
+			S.error = null;
+			refs.search.value = '';
+			S.query = '';
+			render();
+			settingsView.show();
+			if (section) setTimeout(() => settingsView.focus(section), 0);
+		}
+
+		// ── The menu's tree (Drive 1.11) ─────────────────
+		/** Loads the subfolders of `id` (once; again with `fresh`) and draws the menu. */
+		async function loadTree(id, { fresh = false } = {}) {
+			const cur = S.tree.get(id);
+			if (cur && cur.loading) return;
+			if (cur && cur.items && !fresh) return;
+			S.tree.set(id, { ...(cur || {}), loading: true, error: null });
+			const r = typeof api.tree === 'function' ? await Promise.resolve(api.tree(id)).catch(fail) : null;
+			if (r && r.ok) S.tree.set(id, { items: r.items, loading: false, error: null });
+			else S.tree.set(id, { items: cur && cur.items ? cur.items : null, loading: false, error: DS.errorText(r || { code: 'unsupported' }, t) });
+			if (S.shown && !refs.main.hidden) renderSide();
+		}
+
+		/** What is unfolded and loaded loads again (after a change: new / renamed / moved folders). */
+		function refreshTree() {
+			for (const [id, x] of S.tree) {
+				if (x && x.items && S.open.has(id)) loadTree(id, { fresh: true });
+				else if (!S.open.has(id)) S.tree.delete(id);
+			}
+		}
+
+		function setOpen(id, on) {
+			if (on) S.open.add(id); else S.open.delete(id);
+			keepOpen();
+			renderSide();
 		}
 
 		/** "Fristen" (Drive 1.8 'docAi'): the deadlines of every file the person reads. */
@@ -570,6 +697,11 @@
 				S.error = null;
 				S.areaId = r.node.areaId;
 				keep('gc.drive.area', S.areaId);
+				// the folder shown is visible in the menu: the folders above it unfold (not inside a vault)
+				if (!r.vault) {
+					const up = MS.ancestorsOf(r).filter((x) => !S.open.has(x));
+					if (up.length) { for (const x of up) S.open.add(x); keepOpen(); }
+				}
 			} else if (fallback && fallback !== id && r && (r.code === 'not_found' || r.code === 'forbidden')) {
 				await loadFolder(fallback);
 				return;
@@ -673,7 +805,10 @@
 			toast(DS.errorText(r, t), 'error');
 			return false;
 		}
-		const refreshView = () => (S.view === 'folder' && S.folder ? loadFolder(S.folder.node.id, { quiet: true }) : S.view === 'trash' ? loadTrash() : S.view === 'search' ? runSearch() : S.view === 'links' ? loadLinks() : S.view === 'deadlines' ? openDeadlines() : S.view === 'sync' ? openSync() : VIEWS[S.view] ? VIEWS[S.view].refresh() : null);
+		const refreshView = () => {
+			refreshTree();
+			return S.view === 'folder' && S.folder ? loadFolder(S.folder.node.id, { quiet: true }) : S.view === 'trash' ? loadTrash() : S.view === 'search' ? runSearch() : S.view === 'links' ? loadLinks() : S.view === 'deadlines' ? openDeadlines() : S.view === 'sync' ? openSync() : VIEWS[S.view] ? VIEWS[S.view].refresh() : null;
+		};
 
 		/**
 		 * Live reload (push `changed`, back in the window): without "loading", scroll position and
@@ -688,6 +823,7 @@
 			const row = a && refs.list.contains(a) ? a.closest('[data-id]') : null;
 			const focusId = row ? row.getAttribute('data-id') : null;
 			const focusMore = !!(a && a.classList && a.classList.contains('dv-more-btn'));
+			refreshTree();
 			if (S.view === 'folder' && S.folder) await loadFolder(S.folder.node.id, { quiet: true });
 			else if (S.view === 'trash') await loadTrash({ quiet: true });
 			else if (S.view === 'search' && S.query) await runSearch({ quiet: true });
@@ -847,6 +983,54 @@
 			nameDialog({ title: t('drive.newFolder'), confirm: t('drive.create'), run: (name) => api.mkdir(parentId, name) });
 		}
 
+		/**
+		 * "Neu" (Drive 1.11, like the app's plus menu): Neuer Ordner, Dateien hochladen, Ordner hochladen and — not in
+		 * a vault — "Neuer Tresor" (it goes into the top folder of the area picked and shows in the menu).
+		 */
+		function newMenu(anchor) {
+			const fv = S.folder && S.folder.vault;
+			const items = [
+				{ icon: 'folderPlus', label: t('drive.newFolder'), run: newFolder, key: 'folder' },
+				{ icon: 'upload', label: t('drive.new.files'), run: pickAndUpload, key: 'files' },
+				typeof api.pickFolders === 'function' ? { icon: 'folder', label: t('drive.upload.folderButton'), run: pickFolderAndUpload, key: 'dir' } : null,
+			];
+			if (!fv && vaultOn() && vaultUi) {
+				items.push('sep', { icon: 'lock', label: t('drive.vault.create.button'), sub: t('drive.vault.create.menuHint'), key: 'vault', run: () => {
+					const lock = S.lock && S.lock.settings ? S.lock.settings : null;
+					vaultUi.createDialog(MS.vaultChoices(S.me, S.areas, t), { autoLock: lock ? lock.autoLockMinutes : 3, hello: !lock || !S.lock.enforced ? true : lock.hello });
+				} });
+			}
+			popupMenu(anchor, items.filter(Boolean));
+		}
+
+		/** A small menu below a button (the row menu's look): items { icon, label, sub?, run, key } or 'sep'. */
+		function popupMenu(anchor, items) {
+			closeMenu();
+			const els = items.map((x) => (x === 'sep' ? el('div', { class: 'dv-menu-sep', role: 'separator' }) : el('button', { type: 'button', role: 'menuitem', class: `dv-menu-item${x.sub ? ' has-sub' : ''}`, 'data-item': x.key, on: { click: () => { closeMenu(); x.run(); } } }, [
+				icon(x.icon, 15),
+				x.sub ? el('span', { class: 'dv-menu-tx' }, [el('span', { text: x.label }), el('span', { class: 'dv-menu-sub', text: x.sub })]) : el('span', { text: x.label }),
+			])));
+			const menu = el('div', { class: 'dv-menu', role: 'menu' }, els);
+			const layer = el('div', { class: 'dv-menu-layer', on: { mousedown: (e) => { if (e.target === layer) closeMenu(); } } }, [menu]);
+			const buttons = els.filter((x) => x.tagName === 'BUTTON');
+			layer.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape') { e.stopPropagation(); closeMenu(); if (anchor && anchor.focus) anchor.focus(); return; }
+				const i = buttons.indexOf(document.activeElement);
+				if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+					e.preventDefault();
+					const n = buttons.length;
+					buttons[(i + (e.key === 'ArrowDown' ? 1 : n - 1) + n) % n].focus();
+				}
+			});
+			host.appendChild(layer);
+			S.menu = layer;
+			const r = anchor.getBoundingClientRect();
+			const mr = menu.getBoundingClientRect();
+			menu.style.left = `${Math.max(8, Math.min(window.innerWidth - mr.width - 8, r.right - mr.width))}px`;
+			menu.style.top = `${r.bottom + 4 + mr.height + 8 < window.innerHeight ? r.bottom + 4 : Math.max(8, r.top - 4 - mr.height)}px`;
+			if (buttons[0]) buttons[0].focus();
+		}
+
 		function renameNode(n) {
 			nameDialog({ title: t('drive.renameTitle', { name: n.name }), value: n.name, confirm: t('drive.rename'), run: (name) => api.rename(n.id, name) });
 		}
@@ -995,7 +1179,7 @@
 				if (!undo) dlg.body.appendChild(el('p', { class: 'dv-p', text: t('drive.tt.undoHint') }));
 				const undoBtn = !undo && Number.isFinite(r.before) ? el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.tt.undo') }) : null;
 				if (undoBtn) undoBtn.addEventListener('click', () => run(r.before, undoBtn, { undo: true }));
-				dlg.foot.append(errEl, undoBtn, el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.close'), on: { click: () => dlg.close(null) } }));
+				dlg.foot.append(...[errEl, undoBtn, el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.close'), on: { click: () => dlg.close(null) } })].filter(Boolean));
 			}
 
 			pickStep();
@@ -1220,36 +1404,136 @@
 			renderTransfers();
 		}
 
-		function sideButton({ label, sub, ic, on, onClick }) {
-			return el('button', { type: 'button', class: `dv-area${on ? ' is-on' : ''}`, 'aria-current': on ? 'page' : null, on: { click: onClick } }, [
+		function sideButton({ label, sub, ic, on, onClick, cls = '' }) {
+			return el('button', { type: 'button', class: `dv-area${cls}${on ? ' is-on' : ''}`, 'aria-current': on ? 'page' : null, on: { click: onClick } }, [
 				el('span', { class: 'dv-area-ic' }, [icon(ic, 16)]),
 				el('span', { class: 'dv-area-tx' }, [el('span', { class: 'dv-area-name', text: label }), sub ? el('span', { class: 'dv-area-sub', text: sub }) : null]),
 			]);
 		}
 
+		/** Drive 1.11: the menu — who, "Persönlich" / "Gemeinsam" as trees, "Tresore", the bar of icons. */
 		function renderSide() {
+			const before = document.activeElement;
+			const focusKey = before && refs.side.contains(before) ? before.getAttribute('data-key') : null;
+			const scrollTop = refs.sideScroll ? refs.sideScroll.scrollTop : 0;
 			clear(refs.side);
-			refs.side.setAttribute('aria-label', t('drive.areas'));
-			refs.side.appendChild(el('span', { class: 'lbl dv-side-lbl', text: t('drive.areas') }));
-			const cur = S.view === 'folder' ? (S.folder ? S.folder.node.areaId : S.areaId) : null;
-			for (const a of S.areas) {
-				const use = DS.usage(a, t, locale());
-				refs.side.appendChild(sideButton({
-					label: DS.areaLabel(a, t), sub: [DS.areaHint(a, t), use].filter(Boolean).join(' · '), ic: AREA_ICON[a.kind] || 'folder', on: cur === a.id,
-					onClick: () => { refs.search.value = ''; S.query = ''; S.areaId = a.id; keep('gc.drive.area', a.id); loadFolder(a.rootId); },
-				}));
+			refs.side.setAttribute('aria-label', t('drive.menu.label'));
+			const mv = MS.meView(S.me, t);
+			refs.side.appendChild(el('div', { class: 'dv-me' }, [
+				el('span', { class: 'dv-me-av', 'aria-hidden': 'true', text: mv.initial }),
+				el('span', { class: 'dv-me-tx' }, [el('span', { class: 'dv-me-name', text: mv.name || t('drive.title') }), mv.seat ? el('span', { class: 'dv-me-seat', text: mv.seat }) : null]),
+			]));
+			const scroll = el('div', { class: 'dv-side-scroll scroll' });
+			refs.sideScroll = scroll;
+			const inFolder = S.view === 'folder';
+			const shownVault = inFolder && S.folder && S.folder.vault ? S.folder.vault.id : null;
+			const current = inFolder && !shownVault ? (S.folder ? S.folder.node.id : S.folderId) : null;
+			const groups = MS.areaGroups(S.areas);
+			const opts = { nodes: S.tree, open: S.open, current, usage: (a) => DS.usage(a, t, locale()), areaLabel: (a) => DS.areaLabel(a, t), areaHint: (a) => DS.areaHint(a, t) };
+			const needs = [];
+			for (const [key, list] of [['personal', groups.personal], ['shared', groups.shared]]) {
+				if (!list.length) continue;
+				const labelId = nextId('dv-grp');
+				scroll.appendChild(el('span', { class: 'lbl dv-side-lbl', id: labelId, text: t(`drive.menu.${key}`) }));
+				const tr = MS.treeRows(list, opts);
+				needs.push(...tr.needs);
+				scroll.appendChild(treeEl(tr.rows, labelId));
 			}
-			refs.side.appendChild(el('span', { class: 'dv-side-sep' }));
-			if (extraAvailable('photos')) refs.side.appendChild(sideButton({ label: t('drive.photos.title'), sub: null, ic: 'image', on: S.view === 'photos', onClick: () => openExtra('photos') }));
-			refs.side.appendChild(sideButton({ label: t('drive.links.title'), sub: t('drive.links.sub'), ic: 'link', on: S.view === 'links', onClick: () => { refs.search.value = ''; loadLinks(); } }));
-			if (docs && DS.hasFeature(S.me, 'docAi')) refs.side.appendChild(sideButton({ label: t('drive.deadline.title'), sub: null, ic: 'calendar', on: S.view === 'deadlines', onClick: () => openDeadlines() }));
-			refs.side.appendChild(sideButton({ label: t('drive.trash.title'), sub: null, ic: 'trash', on: S.view === 'trash', onClick: () => { refs.search.value = ''; loadTrash(); } }));
-			if (typeof api.openImport === 'function' && DS.hasFeature(S.me, 'cloudImport')) refs.side.appendChild(sideButton({ label: t('drive.import.menu'), sub: t('drive.import.sub'), ic: 'import', on: false, onClick: () => openImport() }));
-			if (extraAvailable('storage')) refs.side.appendChild(sideButton({ label: t('drive.storage.title'), sub: null, ic: 'disk', on: S.view === 'storage', onClick: () => openExtra('storage') }));
-			if (syncView) {
-				refs.side.appendChild(el('span', { class: 'dv-side-sep' }));
-				refs.side.appendChild(sideButton({ label: t('drive.sync.title'), sub: S.syncSummary || null, ic: 'sync', on: S.view === 'sync', onClick: () => openSync() }));
+			// "Tresore": only here (Drive 1.11), never among the files
+			if (vaultOn() && S.vaults.length) {
+				const labelId = nextId('dv-grp');
+				scroll.appendChild(el('span', { class: 'lbl dv-side-lbl', id: labelId, text: t('drive.menu.vaults') }));
+				const box = el('div', { class: 'dv-vaults', role: 'group', 'aria-labelledby': labelId });
+				for (const v of MS.vaultRows(S.vaults, S.areas, { t, locale: locale(), currentVault: shownVault })) {
+					const b = sideButton({ label: v.name, sub: v.sub, ic: v.locked ? 'lock' : 'vault', on: v.current, cls: ` dv-vault-item${v.locked ? ' is-locked' : ''}`, onClick: () => { refs.search.value = ''; S.query = ''; loadFolder(v.nodeId); } });
+					b.setAttribute('data-vault', v.vaultId);
+					b.setAttribute('data-key', `v:${v.vaultId}`);
+					box.appendChild(b);
+				}
+				scroll.appendChild(box);
 			}
+			refs.side.appendChild(scroll);
+			// the bar of icons (each with its tooltip)
+			const tools = el('div', { class: 'dv-tools', role: 'group', 'aria-label': t('drive.menu.tools') });
+			const items = MS.toolItems({ me: S.me, photos: extraAvailable('photos'), storage: extraAvailable('storage'), sync: !!syncView, deadlines: !!docs, importer: typeof api.openImport === 'function', settings: !!settingsView }, t);
+			for (const it of items) {
+				const on = S.view === it.key;
+				tools.appendChild(el('button', {
+					type: 'button', class: `dv-ib dv-tool${on ? ' is-on' : ''}`, title: it.key === 'sync' && S.syncSummary ? `${it.label} · ${S.syncSummary}` : it.label, 'aria-label': it.label,
+					'aria-current': on ? 'page' : null, 'data-view': it.key, 'data-key': `tool:${it.key}`, on: { click: () => openTool(it.key) },
+				}, [icon(it.icon, 17)]));
+			}
+			refs.side.appendChild(tools);
+			scroll.scrollTop = scrollTop;
+			for (const id of needs) loadTree(id);
+			if (focusKey) {
+				const back = refs.side.querySelector(`[data-key="${CSS.escape(focusKey)}"]`);
+				if (back) back.focus();
+			}
+		}
+
+		function openTool(key) {
+			refs.search.value = '';
+			S.query = '';
+			if (key === 'photos' || key === 'storage') openExtra(key);
+			else if (key === 'links') loadLinks();
+			else if (key === 'trash') loadTrash();
+			else if (key === 'sync') openSync();
+			else if (key === 'deadlines') openDeadlines();
+			else if (key === 'import') openImport();
+			else if (key === 'settings') openSettingsView();
+		}
+
+		/**
+		 * One group's tree (WAI-ARIA tree, flat rows with aria-level): the arrow folds / unfolds, the name opens;
+		 * keys: arrows, Home / End, Enter / Space (GCDriveMenuState.treeKey). One row is in the tab order.
+		 */
+		function treeEl(rows, labelId) {
+			const tree = el('div', { class: 'dv-tree', role: 'tree', 'aria-labelledby': labelId });
+			let tab = rows.findIndex((r) => r.key === S.treeFocus);
+			if (tab < 0) tab = rows.findIndex((r) => r.current);
+			if (tab < 0) tab = 0;
+			const els = rows.map((r, i) => {
+				const tw = r.expandable
+					? el('span', { class: `dv-tw${r.expanded ? ' is-open' : ''}`, 'aria-hidden': 'true', title: t(r.expanded ? 'drive.menu.fold' : 'drive.menu.unfold', { name: r.label }) }, [icon('chevron', 14, '2.4')])
+					: el('span', { class: 'dv-tw is-leaf', 'aria-hidden': 'true' });
+				tw.addEventListener('click', (e) => { if (!r.expandable) return; e.stopPropagation(); S.treeFocus = r.key; setOpen(r.id, !r.expanded); });
+				const ic = r.area ? el('span', { class: 'dv-area-ic' }, [icon(AREA_ICON[r.kind] || 'folder', 16)]) : el('span', { class: 'dv-tree-ic' }, [icon('folder', 15)]);
+				const item = el('div', {
+					class: `dv-tree-row${r.area ? ' is-area' : ''}${r.current ? ' is-on' : ''}${r.loading ? ' is-loading' : ''}`, role: 'treeitem',
+					'aria-level': String(r.level), 'aria-setsize': String(r.setsize), 'aria-posinset': String(r.posinset),
+					'aria-selected': r.current ? 'true' : 'false', 'aria-expanded': r.expandable ? (r.expanded ? 'true' : 'false') : null,
+					'aria-busy': r.loading ? 'true' : null, tabindex: i === tab ? '0' : '-1', 'data-key': r.key, 'data-node': String(r.id),
+					style: `--lvl:${r.level - 1}`, title: r.sub ? `${r.label} · ${r.sub}` : r.label,
+				}, [tw, ic, el('span', { class: 'dv-area-tx' }, [el('span', { class: 'dv-area-name', text: r.label }), r.sub ? el('span', { class: 'dv-area-sub', text: r.sub }) : null])]);
+				item.addEventListener('click', () => { S.treeFocus = r.key; openTreeNode(r); });
+				return item;
+			});
+			tree.append(...els);
+			tree.addEventListener('keydown', (e) => {
+				const idx = els.indexOf(document.activeElement);
+				if (idx < 0) return;
+				const act = MS.treeKey(e.key, rows, idx);
+				if (!act) return;
+				e.preventDefault();
+				e.stopPropagation();
+				if (act.focus !== undefined) {
+					els[idx].setAttribute('tabindex', '-1');
+					els[act.focus].setAttribute('tabindex', '0');
+					els[act.focus].focus();
+					S.treeFocus = rows[act.focus].key;
+				} else if (act.expand !== undefined) { S.treeFocus = rows[idx].key; setOpen(act.expand, true); }
+				else if (act.collapse !== undefined) { S.treeFocus = rows[idx].key; setOpen(act.collapse, false); }
+				else if (act.open !== undefined) { S.treeFocus = rows[idx].key; openTreeNode(rows[idx]); }
+			});
+			return tree;
+		}
+
+		function openTreeNode(r) {
+			refs.search.value = '';
+			S.query = '';
+			if (r.area) { S.areaId = r.area; keep('gc.drive.area', r.area); }
+			loadFolder(r.id);
 		}
 
 		function renderBar() {
@@ -1268,19 +1552,17 @@
 				for (const s of DS.SORTS) {
 					sort.appendChild(el('button', { type: 'button', role: 'radio', 'aria-checked': S.sort === s ? 'true' : 'false', class: S.sort === s ? 'on' : '', 'data-sort': s, text: t(`drive.sort.${s}`), on: { click: () => setSort(s) } }));
 				}
-				const ai = typeof api.setDocAi === 'function' ? DS.docAiSwitch(a, S.folder, S.me) : null;
 				const fv = S.folder && S.folder.vault;   // Drive 1.9: the vault this folder lies in
 				const w = canUpload();
 				const tt = S.folder && DS.actionsFor(S.folder.node, w, S.me).timeTravel;
-				const vaultNew = w && !fv && vaultOn();
 				const vInfo = fv ? vaultOf(fv.id) : null;
-				refs.bar.append(nav, el('span', { class: 'dv-grow' }), ai ? docAiToggle(a, ai) : null, sort,
+				const plus = w ? el('button', { type: 'button', class: 'btn btn-sec btn-sm dv-new', 'aria-haspopup': 'menu', on: { click: (e) => newMenu(e.currentTarget) } }, [icon('plus', 14), el('span', { text: t('drive.new.button') }), icon('chevDown', 13)]) : null;
+				refs.bar.append(...[nav, el('span', { class: 'dv-grow' }), sort,
 					tt ? el('button', { type: 'button', class: 'dv-ib dv-tt-btn', title: t('drive.tt.menu'), 'aria-label': t('drive.tt.menu'), on: { click: () => timeTravelDialog(S.folder.node) } }, [icon('restore', 16)]) : null,
 					fv && fv.state === 'open' && vaultUi ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-vault-devices', on: { click: () => vaultUi.devicesDialog(fv.id, { onRotate: () => vaultUi.rotateDialog(fv.id) }) } }, [icon('device', 14), el('span', { text: t('drive.vault.devices.button') }), vInfo && vInfo.pending ? el('span', { class: 'dv-count', text: String(vInfo.pending) }) : null]) : null,
-					vaultNew ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-vault-new', on: { click: () => vaultUi.createDialog(S.folder.node.id) } }, [icon('vault', 14), el('span', { text: t('drive.vault.create.button') })]) : null,
-					w ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: newFolder } }, [icon('plus', 14), el('span', { text: t('drive.newFolder') })]) : null,
-					w && typeof api.pickFolders === 'function' ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-up-folder', on: { click: pickFolderAndUpload } }, [icon('folder', 14), el('span', { text: t('drive.upload.folderButton') })]) : null,
-					w ? el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: pickAndUpload } }, [icon('upload', 14), el('span', { text: t('drive.upload.button') })]) : null);
+					fv && fv.state === 'open' && S.lock && S.lock.enforced && api.vault && typeof api.vault.lock === 'function' ? el('button', { type: 'button', class: 'dv-ib dv-vault-lock', title: t('drive.lock.now'), 'aria-label': t('drive.lock.now'), on: { click: () => Promise.resolve(api.vault.lock()).catch(() => {}) } }, [icon('lock', 16)]) : null,
+					plus,
+					w ? el('button', { type: 'button', class: 'btn btn-pri btn-sm dv-upload', on: { click: pickAndUpload } }, [icon('upload', 14), el('span', { text: t('drive.upload.button') })]) : null].filter(Boolean));
 				if (fv && fv.state === 'open') { refs.note.hidden = false; refs.note.textContent = root.GCDriveVaultState.folderNote(vInfo, { t }); refs.note.classList.toggle('is-warn', !!(vInfo && vInfo.needsRotation)); }
 				else if (a && a.kind === 'child' && a.via === 'parent') { refs.note.hidden = false; refs.note.textContent = t('drive.childNote'); }
 				else if (S.folder && !S.folder.writable) { refs.note.hidden = false; refs.note.textContent = t('drive.readOnly'); }
@@ -1316,25 +1598,6 @@
 			const q = DS.sortQuery(s);
 			if (q.sort === before.sort && q.order === before.order) render();
 			else loadFolder(S.folder.node.id, { quiet: true });
-		}
-
-		/** "KI für Dokumente" of the area (Drive 1.8 'docAi'): PATCH areas/<id> { docAi }. */
-		function docAiToggle(a, ai) {
-			const label = t('drive.docAi.label');
-			const sw = el('button', { type: 'button', class: `sw${ai.on ? ' on' : ''}`, role: 'switch', 'aria-checked': ai.on ? 'true' : 'false', 'aria-label': label }, [el('span')]);
-			sw.addEventListener('click', async () => {
-				sw.disabled = true;
-				const r = await Promise.resolve(api.setDocAi(ai.areaId, !ai.on)).catch(fail);
-				if (!r || !r.ok) { sw.disabled = false; toast(DS.errorText(r, t), 'error'); return; }
-				const on = r.area && typeof r.area.docAi === 'boolean' ? r.area.docAi : !ai.on;
-				S.areas = DS.withDocAi(S.areas, ai.areaId, on);
-				if (S.me && Array.isArray(S.me.areas)) S.me = { ...S.me, areas: DS.withDocAi(S.me.areas, ai.areaId, on) };
-				toast(t(on ? 'drive.docAi.onDone' : 'drive.docAi.offDone', { area: DS.areaLabel(a, t) }), 'success');
-				// what Drive recognised in the files changes with it (status 'off' / 'pending')
-				if (S.view === 'folder' && S.folder) loadFolder(S.folder.node.id, { quiet: true });
-				else render();
-			});
-			return el('label', { class: 'dv-ai', title: t('drive.docAi.hint') }, [el('span', { text: label }), sw]);
 		}
 
 		function emptyState(text) {

@@ -20,7 +20,7 @@ async function openSync(page) {
   await page.locator('#nav-drive').click();
   const root = page.locator('#page-drive');
   await expect(root).toHaveClass(/active/);
-  await root.locator('.dv-area').nth(6).click();
+  await root.locator('.dv-tool[data-view="sync"]').click();
   const card = root.locator('.dod');
   await expect(card).toBeVisible();
   return { root, card };
@@ -106,7 +106,7 @@ test.describe('drive on demand', () => {
     await expect(page.locator('.dv-dlg')).toContainText('Foto.jpg');
     await page.locator('.dv-dlg .dv-dlg-head .dv-ib').click();
     await expect(page.locator('.dv-dlg')).toHaveCount(0);
-    await root.locator('.dv-area').nth(6).click();
+    await root.locator('.dv-tool[data-view="sync"]').click();
 
     // switch off while Dokumente lies in the Drive → refused, stays on
     await sw.click();

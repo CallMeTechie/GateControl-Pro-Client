@@ -13,7 +13,8 @@ const { setupWithApiKey } = require('./support/ui');
 // recovery key shown once, a file uploaded only as ciphertext and opened decrypted, another device approved after
 // its safety number. Selectors by id/class, texts in both languages.
 
-const side = (root, re) => root.locator('.dv-area', { hasText: re });
+// Drive 1.11: "Fristen" / "Importieren" are icons at the bottom of the menu, the AI switch is in the Drive settings
+const tool = (root, view) => root.locator(`.dv-tool[data-view="${view}"]`);
 
 /** The core's vault format (the app's own core), for "another device" of the test. */
 function vaultCrypto() {
@@ -37,10 +38,16 @@ test.describe('drive 1.8 / 1.9', () => {
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
     await expect(root.locator('.dv-row[data-id="10"]')).toBeVisible();
-    await expect(side(root, /Fristen|Deadlines/)).toHaveCount(0);
-    await expect(side(root, /importieren|Import/)).toHaveCount(0);
-    await expect(root.locator('.dv-vault-new')).toHaveCount(0);
-    await expect(root.locator('.dv-ai')).toHaveCount(0);
+    await expect(tool(root, 'deadlines')).toHaveCount(0);
+    await expect(tool(root, 'import')).toHaveCount(0);
+    await root.locator('.dv-bar .dv-new').click();
+    await expect(page.locator('.dv-menu-item[data-item="folder"]')).toHaveCount(1);
+    await expect(page.locator('.dv-menu-item[data-item="vault"]')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await tool(root, 'settings').click();
+    await expect(root.locator('.dset [data-section="ai"]')).toHaveCount(0);
+    await expect(root.locator('.dset [data-section="vaults"]')).toHaveCount(0);
+    await root.locator('.dv-tree-row.is-area').first().click();
     await root.locator('.dv-row[data-id="10"] .dv-open').click();
     await root.locator('.dv-row[data-id="12"] .dv-more-btn').click();
     await expect(page.locator('.dv-menu-item', { hasText: /Details|Im Browser|in browser/ })).toHaveCount(0);
@@ -79,7 +86,7 @@ test.describe('drive 1.8 / 1.9', () => {
     await expect(dlg.locator('.dv-ins-status')).toHaveText(/erkannt|recognised/);
     await dlg.locator('.dv-dlg-foot .btn-pri').click();
     // "Fristen": the deadline with its file; the file opens its details
-    await side(root, /^(Fristen|Deadlines)$/).click();
+    await tool(root, 'deadlines').click();
     await expect(root.locator('.dv-dl')).toHaveCount(1);
     await expect(root.locator('.dv-dl .dv-dl-file')).toHaveText(/Stadtwerke Rechnung/);
     await expect(root.locator('.dv-dl-remind')).toHaveValue('7');
@@ -87,7 +94,7 @@ test.describe('drive 1.8 / 1.9', () => {
     await expect(page.locator('.dv-dlg.dv-docs .dv-dlg-h')).toHaveText(/Stadtwerke Rechnung/);
   });
 
-  test('"KI für Dokumente" per area (write right only) and sorting by type', async ({ launchApp, mock }) => {
+  test('"KI für Dokumente" per area in the Drive settings (write right only) and sorting by type', async ({ launchApp, mock }) => {
     const d = await mock.setDrive({ features: ['docAi'] });
     const doc = d.srv.mutate.file(1, 'Brief.docx', 'docx');
     const sheet = d.srv.mutate.file(1, 'Zahlen.xlsx', 'xlsx');
@@ -96,28 +103,34 @@ test.describe('drive 1.8 / 1.9', () => {
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
     await expect(root.locator('.dv-row[data-id="10"]')).toBeVisible();
-    // Meine Dateien (manage): the switch, on
-    const ai = root.locator('.dv-ai');
-    await expect(ai).toHaveText(/KI für Dokumente|AI for documents/);
-    const sw = ai.locator('.sw[role="switch"]');
+    // Drive 1.11: not in the bar any more; the Drive settings have a switch per area one may write to
+    await expect(root.locator('.dv-ai')).toHaveCount(0);
+    await tool(root, 'settings').click();
+    const ai = root.locator('.dset [data-section="ai"]');
+    await expect(ai.locator('.dsv-card-h')).toHaveText(/KI für Dokumente|AI for documents/);
+    await expect(ai).toContainText(/Tresore werden nie von der KI gelesen|Vaults are never read by the AI/);
+    // Meine Dateien (manage) and Familie (write); not Lena (read only) nor the archived team folder
+    await expect(ai.locator('.sw[role="switch"]')).toHaveCount(2);
+    const sw = ai.locator('[data-key="ai-mine:2"]');
     await expect(sw).toHaveAttribute('aria-checked', 'true');
     await sw.click();
     await expect.poll(() => d.srv.state.docAiOff.has('mine:2')).toBe(true);
-    await expect(root.locator('.dv-ai .sw')).toHaveAttribute('aria-checked', 'false');
+    await expect(ai.locator('[data-key="ai-mine:2"]')).toHaveAttribute('aria-checked', 'false');
     await page.screenshot({ path: test.info().outputPath('drive-docai-switch.png') });
-    await root.locator('.dv-ai .sw').click();
+    await ai.locator('[data-key="ai-mine:2"]').click();
     await expect.poll(() => d.srv.state.docAiOff.has('mine:2')).toBe(false);
-    await expect(root.locator('.dv-ai .sw')).toHaveAttribute('aria-checked', 'true');
+    await expect(ai.locator('[data-key="ai-mine:2"]')).toHaveAttribute('aria-checked', 'true');
+    await root.locator('.dv-tree-row.is-area').first().click();
+    await expect(root.locator('.dv-row[data-id="10"]')).toBeVisible();
     // "Typ": folders, documents, tables, PDF, images, others — remembered like the other sorts
     const ids = () => root.locator('.dv-row[data-id]').evaluateAll((rows) => rows.map((r) => r.getAttribute('data-id')));
     await root.locator('.dv-seg [data-sort="type"]').click();
     await expect(root.locator('.dv-seg [data-sort="type"]')).toHaveAttribute('aria-checked', 'true');
     await expect.poll(ids).toEqual(['10', String(doc.id), String(sheet.id), String(pdf.id), '11', '13']);
     expect(await page.evaluate(() => localStorage.getItem('gc.drive.sort'))).toBe('type');
-    // a child's folder the parent only reads: no switch
-    await side(root, /Lena/).click();
+    // a child's folder the parent only reads: the note
+    await root.locator('.dv-tree-row.is-area', { hasText: /Lena/ }).click();
     await expect(root.locator('.dv-note')).toBeVisible();
-    await expect(root.locator('.dv-ai')).toHaveCount(0);
   });
 
   test('cloudImport and office: the portal\'s import page and the editor in the default browser', async ({ launchApp, mock }) => {
@@ -128,9 +141,9 @@ test.describe('drive 1.8 / 1.9', () => {
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
     const opened = () => events().filter((e) => e.type === 'shell.openExternal').map((e) => e.url);
-    await side(root, /importieren|Import/).click();
+    await tool(root, 'import').click();
     await expect.poll(opened).toContainEqual(`${d.srv.linksBase}/portal?drive=import#plg-gatecontrol-drive`);
-    await root.locator('.dv-area').first().click();
+    await root.locator('.dv-tree-row.is-area').first().click();
     await root.locator('.dv-row[data-id="10"] .dv-open').click();
     // a PDF has no office entry
     await root.locator('.dv-row[data-id="12"] .dv-more-btn').click();
@@ -149,9 +162,12 @@ test.describe('drive 1.8 / 1.9', () => {
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
     await expect(root.locator('.dv-row[data-id="10"]')).toBeVisible();
-    await root.locator('.dv-vault-new').click();
+    // Drive 1.11: "Neu" › "Neuer Tresor", "Nur ich" preselected
+    await root.locator('.dv-bar .dv-new').click();
+    await page.locator('.dv-menu-item[data-item="vault"]').click();
     const dlg = page.locator('.dv-dlg.dv-vault-dlg');
-    await dlg.locator('input').fill('Steuer');
+    await expect(dlg.locator('input[type="radio"][data-area="mine:2"]')).toBeChecked();
+    await dlg.locator('input[type="text"]').fill('Steuer');
     await dlg.locator('.dv-dlg-foot .btn-pri').click();
     // the recovery key: once, closing only after "notiert"
     await expect(dlg.locator('.dv-rk code')).toHaveCount(4);
@@ -165,10 +181,12 @@ test.describe('drive 1.8 / 1.9', () => {
     const [vault] = [...d.srv.state.vaults.values()];
     const vnode = d.srv.state.nodes.get(vault.nodeId);
     expect(vnode.name).toMatch(/^[0-9a-f]{32}$/);
-    // its name decrypted on this PC
-    const row = root.locator(`.dv-row[data-id="${vault.nodeId}"]`);
-    await expect(row.locator('.dv-name')).toHaveText('Steuer');
-    await row.locator('.dv-open').click();
+    // its name decrypted on this PC — in the menu under "Tresore", not among the files
+    expect(vnode.parentId).toBe(1);
+    await expect(root.locator(`.dv-row[data-id="${vault.nodeId}"]`)).toHaveCount(0);
+    const row = root.locator(`.dv-vault-item[data-vault="${vault.id}"]`);
+    await expect(row.locator('.dv-area-name')).toHaveText('Steuer');
+    await row.click();
     await expect(root.locator('.dv-note')).toHaveText(/Ende-zu-Ende|end-to-end/);
     // a file into it: only ciphertext reaches the server
     const SECRET = 'Kontoauszug IBAN DE02 1203 0000 0000 2020 51';

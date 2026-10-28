@@ -22,7 +22,7 @@
 .dv-search-in { flex-grow: 1; min-width: 0; height: 100%; border: 0; background: transparent; color: var(--text); font-size: 13.5px; outline: none; }
 .dv-ib { width: 36px; height: 36px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 10px; border: 1px solid var(--line2); background: var(--panel2); color: var(--text); cursor: pointer; }
 .dv-ib:hover { border-color: var(--faint); }
-.dv-ib:focus-visible, .dv-area:focus-visible, .dv-open:focus-visible, .dv-crumb:focus-visible, .dv-menu-item:focus-visible, .dv-pick-row:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.dv-ib:focus-visible, .dv-area:focus-visible, .dv-tree-row:focus-visible, .dv-open:focus-visible, .dv-crumb:focus-visible, .dv-menu-item:focus-visible, .dv-pick-row:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 .dv-banner { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); font-size: 12.5px; }
 .dv-banner[hidden], .dv-gate[hidden], .dv-main[hidden], .dv-note[hidden], .dv-transfers[hidden], .dv-guard[hidden] { display: none; }
 
@@ -50,6 +50,7 @@
 .dv-main { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 16px; flex-grow: 1; min-height: 0; padding-bottom: 16px; }
 @media (max-width: 860px) { .dv-main { grid-template-columns: minmax(0, 1fr); } .dv-side { max-height: 180px; } }
 .dv-side { display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+@media (max-width: 860px) { .dv-side { max-height: 260px; } }
 .dv-side-lbl { padding: 4px 10px 6px; }
 .dv-side-sep { height: 1px; margin: 8px 10px; background: var(--line); flex-shrink: 0; }
 .dv-area { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; text-align: left; cursor: pointer; }
@@ -432,3 +433,55 @@
 .dv-vdev-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); }
 .dv-vdev-row .dv-link-tx { gap: 6px; }
 .dv-vdev-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── Drive 1.11: the menu (tree, vaults, icons), "Neu", the vault lock, the Drive settings ── */
+.dv-me { display: flex; align-items: center; gap: 10px; padding: 2px 10px 8px; flex-shrink: 0; }
+.dv-me-av { width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%; background: var(--acc-bg); color: var(--acc-t); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+.dv-me-tx { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.dv-me-name { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-me-seat { font-size: 11.5px; color: var(--muted); }
+.dv-side-scroll { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
+.dv-side-scroll .dv-side-lbl { padding-top: 10px; }
+.dv-tree { display: flex; flex-direction: column; gap: 1px; }
+.dv-tree-row { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 32px; padding: 4px 8px 4px calc(4px + var(--lvl, 0) * 14px); border-radius: 10px; cursor: pointer; outline: none; }
+.dv-tree-row.is-area { padding-top: 6px; padding-bottom: 6px; gap: 8px; }
+.dv-tree-row:hover { background: var(--panel2); }
+.dv-tree-row.is-on { background: var(--acc-bg); }
+.dv-tree-row.is-on .dv-area-name, .dv-tree-row.is-on .dv-tree-ic { color: var(--acc-t); }
+.dv-tree-row.is-on .dv-area-ic { background: var(--panel); color: var(--acc-t); }
+.dv-tree-row.is-loading .dv-tw { opacity: .5; }
+.dv-tree-row:not(.is-area) .dv-area-name { font-weight: 500; font-size: 13px; }
+.dv-tw { width: 20px; height: 24px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted); transition: transform .12s; }
+.dv-tw:not(.is-leaf):hover { background: var(--panel); color: var(--text); }
+.dv-tw.is-open svg { transform: rotate(90deg); }
+.dv-tree-ic { width: 18px; flex-shrink: 0; display: inline-flex; color: var(--muted); }
+.dv-vaults { display: flex; flex-direction: column; gap: 2px; }
+.dv-vault-item .dv-area-ic { background: var(--pro-bg); color: var(--pro); }
+.dv-vault-item.is-locked .dv-area-name { color: var(--muted); }
+.dv-tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 6px 2px; margin-top: 6px; border-top: 1px solid var(--line); flex-shrink: 0; }
+.dv-tool { width: 34px; height: 34px; }
+.dv-tool.is-on { background: var(--acc-bg); color: var(--acc-t); border-color: transparent; }
+.dv-new svg:last-child { margin-left: -2px; opacity: .8; }
+.dv-menu-sep { height: 1px; margin: 5px 6px; background: var(--line); }
+.dv-menu-item.has-sub { height: auto; padding-top: 7px; padding-bottom: 7px; align-items: flex-start; }
+.dv-menu-tx { display: flex; flex-direction: column; gap: 2px; }
+.dv-menu-sub { font-size: 11.5px; color: var(--muted); }
+.dv-vwho { display: flex; flex-direction: column; gap: 6px; }
+.dv-vwho-opt { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line2); border-radius: 12px; cursor: pointer; }
+.dv-vwho-opt:has(input:checked) { border-color: var(--acc); background: var(--acc-bg); }
+.dv-vwho-opt input { width: 16px; height: 16px; margin: 0; accent-color: var(--acc); flex-shrink: 0; }
+.dv-vwho-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dv-vwho-name { font-size: 13.5px; font-weight: 600; }
+.dv-vault-dlg .dv-note { display: flex; align-items: center; gap: 6px; }
+.dv-vgate.is-locked .dv-vgate-ic { color: var(--warn); }
+.dv-hello-hint { margin-top: 4px; }
+.dset { display: flex; flex-direction: column; gap: 12px; flex-grow: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.dset[hidden] { display: none; }
+.dset-body { display: flex; flex-direction: column; gap: 12px; }
+.dset-card .dsv-card { padding: 0; }
+.dset-card .dsv-card .dsv-card-head { border-top: 1px solid var(--line); }
+.dset-extra { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.dset-extra:empty { display: none; }
+.dset-safety { font-size: 14px; white-space: nowrap; }
+.dset-count { min-width: 28px; text-align: right; font-weight: 600; color: var(--muted); }
+.dset-empty { padding: 4px 0 14px; }
