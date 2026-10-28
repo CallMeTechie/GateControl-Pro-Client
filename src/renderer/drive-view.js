@@ -5,7 +5,8 @@
  * Name, Team · Name with their storage), "Geteilt" (the person's links) and
  * "Papierkorb"; on the right the folder with breadcrumbs, sorting, "Neuer
  * Ordner" and "Hochladen" (button or files dropped on the page), the list
- * (preview pictures, name, date, size) and a menu per row: Öffnen, Speichern
+ * (preview pictures, name, date, size; sorted by name, date, size or type —
+ * "Typ" here: folders, then documents, tables, … by extension and name) and a menu per row: Öffnen, Speichern
  * unter …, Link teilen (rights, validity, PIN), Umbenennen, Verschieben,
  * Ältere Versionen, Im Portal öffnen (Drive 1.6 'links'), In den Papierkorb.
  * Search covers names and the recognised text of scans (with the words
@@ -39,7 +40,8 @@
  * Drive 1.8 / 1.9 (only with the features `me` reports): "Details" of a
  * file — what Drive recognised, its suggestion and deadlines ('docAi',
  * drive-docs-view.js) — and "Fristen" on the left; a symbol of the kind of
- * document in the list; "Aus Google Drive / OneDrive importieren (im
+ * document in the list; the switch "KI für Dokumente" of the area in the bar
+ * (write right, never in a vault folder); "Aus Google Drive / OneDrive importieren (im
  * Portal)" ('cloudImport'); "Im Browser bearbeiten / ansehen" for office
  * documents ('office'); vault folders ('vault', drive-vault-view.js): "Neuer
  * Tresor-Ordner", names decrypted on this PC, the card to ask for access or
@@ -1264,14 +1266,15 @@
 				});
 				const sort = el('div', { class: 'seg dv-seg', role: 'radiogroup', 'aria-label': t('drive.sort.label') });
 				for (const s of DS.SORTS) {
-					sort.appendChild(el('button', { type: 'button', role: 'radio', 'aria-checked': S.sort === s ? 'true' : 'false', class: S.sort === s ? 'on' : '', text: t(`drive.sort.${s}`), on: { click: () => { S.sort = s; keep('gc.drive.sort', s); if (S.folder) loadFolder(S.folder.node.id, { quiet: true }); } } }));
+					sort.appendChild(el('button', { type: 'button', role: 'radio', 'aria-checked': S.sort === s ? 'true' : 'false', class: S.sort === s ? 'on' : '', 'data-sort': s, text: t(`drive.sort.${s}`), on: { click: () => setSort(s) } }));
 				}
+				const ai = typeof api.setDocAi === 'function' ? DS.docAiSwitch(a, S.folder, S.me) : null;
 				const fv = S.folder && S.folder.vault;   // Drive 1.9: the vault this folder lies in
 				const w = canUpload();
 				const tt = S.folder && DS.actionsFor(S.folder.node, w, S.me).timeTravel;
 				const vaultNew = w && !fv && vaultOn();
 				const vInfo = fv ? vaultOf(fv.id) : null;
-				refs.bar.append(nav, el('span', { class: 'dv-grow' }), sort,
+				refs.bar.append(nav, el('span', { class: 'dv-grow' }), ai ? docAiToggle(a, ai) : null, sort,
 					tt ? el('button', { type: 'button', class: 'dv-ib dv-tt-btn', title: t('drive.tt.menu'), 'aria-label': t('drive.tt.menu'), on: { click: () => timeTravelDialog(S.folder.node) } }, [icon('restore', 16)]) : null,
 					fv && fv.state === 'open' && vaultUi ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-vault-devices', on: { click: () => vaultUi.devicesDialog(fv.id, { onRotate: () => vaultUi.rotateDialog(fv.id) }) } }, [icon('device', 14), el('span', { text: t('drive.vault.devices.button') }), vInfo && vInfo.pending ? el('span', { class: 'dv-count', text: String(vInfo.pending) }) : null]) : null,
 					vaultNew ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-vault-new', on: { click: () => vaultUi.createDialog(S.folder.node.id) } }, [icon('vault', 14), el('span', { text: t('drive.vault.create.button') })]) : null,
@@ -1304,6 +1307,36 @@
 			}
 		}
 
+		/** "Name" / "Datum" / "Größe" / "Typ": Drive is asked again only when its order changes ("Typ" is sorted here). */
+		function setSort(s) {
+			const before = DS.sortQuery(S.sort);
+			S.sort = s;
+			keep('gc.drive.sort', s);
+			if (!S.folder) return;
+			const q = DS.sortQuery(s);
+			if (q.sort === before.sort && q.order === before.order) render();
+			else loadFolder(S.folder.node.id, { quiet: true });
+		}
+
+		/** "KI für Dokumente" of the area (Drive 1.8 'docAi'): PATCH areas/<id> { docAi }. */
+		function docAiToggle(a, ai) {
+			const label = t('drive.docAi.label');
+			const sw = el('button', { type: 'button', class: `sw${ai.on ? ' on' : ''}`, role: 'switch', 'aria-checked': ai.on ? 'true' : 'false', 'aria-label': label }, [el('span')]);
+			sw.addEventListener('click', async () => {
+				sw.disabled = true;
+				const r = await Promise.resolve(api.setDocAi(ai.areaId, !ai.on)).catch(fail);
+				if (!r || !r.ok) { sw.disabled = false; toast(DS.errorText(r, t), 'error'); return; }
+				const on = r.area && typeof r.area.docAi === 'boolean' ? r.area.docAi : !ai.on;
+				S.areas = DS.withDocAi(S.areas, ai.areaId, on);
+				if (S.me && Array.isArray(S.me.areas)) S.me = { ...S.me, areas: DS.withDocAi(S.me.areas, ai.areaId, on) };
+				toast(t(on ? 'drive.docAi.onDone' : 'drive.docAi.offDone', { area: DS.areaLabel(a, t) }), 'success');
+				// what Drive recognised in the files changes with it (status 'off' / 'pending')
+				if (S.view === 'folder' && S.folder) loadFolder(S.folder.node.id, { quiet: true });
+				else render();
+			});
+			return el('label', { class: 'dv-ai', title: t('drive.docAi.hint') }, [el('span', { text: label }), sw]);
+		}
+
 		function emptyState(text) {
 			return el('div', { class: 'dv-empty' }, [icon(S.view === 'trash' ? 'trash' : S.view === 'links' ? 'link' : S.view === 'search' ? 'search' : 'folder', 28, '1.6'), el('span', { text })]);
 		}
@@ -1323,7 +1356,7 @@
 				refs.list.appendChild(vaultUi.gate(fv.id, fv.state || 'none', { safetyNumber: fv.state === 'pending' && S.vaultStatus && S.vaultStatus.device ? S.vaultStatus.device.safetyNumber : null }));
 				return;
 			}
-			const items = S.view === 'folder' ? (S.folder ? S.folder.items : []) : S.view === 'search' ? (S.results || []) : (S.trash || []);
+			const items = S.view === 'folder' ? (S.folder ? DS.sortRows(S.folder.items, S.sort, { locale: locale() }) : []) : S.view === 'search' ? (S.results || []) : (S.trash || []);
 			const mode = S.view;
 			refs.list.appendChild(el('div', { class: 'dv-row dv-row-head', 'aria-hidden': 'true' }, [
 				el('span', { class: 'dv-c-name', text: t('drive.col.name') }),

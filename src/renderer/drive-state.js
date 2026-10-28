@@ -23,7 +23,7 @@
 	'use strict';
 
 	const APP_ROUTE = 'plg-gatecontrol-drive';
-	const SORTS = ['name', 'mtime', 'size'];
+	const SORTS = ['name', 'mtime', 'size', 'type'];
 	const LINK_EXPIRES = ['1d', '7d', '30d', 'never'];
 	const CONFLICT_CHOICES = ['version', 'rename', null];
 	const PIN_RE = /^\d{4,12}$/;
@@ -232,10 +232,63 @@
 		return writable ? 'edit' : 'view';
 	}
 
-	/** Sort keys of the list → { sort, order } for drive.folder(). */
+	/**
+	 * Sort keys of the list → { sort, order } for drive.folder(). "Typ" is sorted here (sortRows): Drive is asked by
+	 * name, ascending like "Name".
+	 */
 	function sortQuery(sort) {
 		const s = SORTS.includes(sort) ? sort : 'name';
+		if (s === 'type') return { sort: 'name', order: 'asc' };
 		return { sort: s, order: s === 'name' ? 'asc' : 'desc' };
+	}
+
+	// "Typ": folders first, then documents, tables, presentations, PDF, images, videos, text, archives, audio, others
+	const TYPE_ORDER = ['folder', 'doc', 'sheet', 'slides', 'pdf', 'image', 'video', 'text', 'archive', 'audio', 'other'];
+	const collators = new Map();
+	const collatorOf = (locale) => {
+		const tag = localeTag(locale);
+		if (!collators.has(tag)) collators.set(tag, new Intl.Collator(tag, { numeric: true, sensitivity: 'base' }));
+		return collators.get(tag);
+	};
+
+	/** The group of a node for "Typ" (0 = folder … 10 = other). */
+	function typeRank(node) {
+		const i = TYPE_ORDER.indexOf(kindOf(node));
+		return i < 0 ? TYPE_ORDER.length - 1 : i;
+	}
+
+	/**
+	 * The rows of a folder in the order shown. Only "Typ" is sorted here (Drive sorts the others): folders first, then
+	 * the group, within it by extension, then by name; order 'desc' turns groups, extensions and names round (folders
+	 * stay first). A new array; the others come back as they are.
+	 */
+	function sortRows(items, sort, { order, locale } = {}) {
+		const list = Array.isArray(items) ? items : [];
+		if (sort !== 'type') return list;
+		const c = collatorOf(locale);
+		const dir = (order || sortQuery(sort).order) === 'desc' ? -1 : 1;
+		return list.slice().sort((a, b) => {
+			const da = a && a.isDir ? 0 : 1;
+			const db = b && b.isDir ? 0 : 1;
+			if (da !== db) return da - db;
+			return dir * ((typeRank(a) - typeRank(b)) || c.compare(extOf(a && a.name), extOf(b && b.name)) || c.compare(str(a && a.name), str(b && b.name)));
+		});
+	}
+
+	/**
+	 * The switch "KI für Dokumente" of an area (Drive 1.8 'docAi', PATCH areas/<id> { docAi }) → { areaId, on } | null:
+	 * only while the Drive reports the feature and says the area's state, with the write right, never in a vault folder.
+	 */
+	function docAiSwitch(area, folder, me) {
+		if (!area || !hasFeature(me, 'docAi') || typeof area.docAi !== 'boolean') return null;
+		if (!area.writable || area.archived) return null;
+		if (folder && (folder.vault || (folder.node && folder.node.encrypted))) return null;
+		return { areaId: area.id, on: area.docAi };
+	}
+
+	/** The areas after the switch: area `id` gets `docAi` (a new list, the others unchanged). */
+	function withDocAi(areas, id, on) {
+		return (Array.isArray(areas) ? areas : []).map((a) => (a && a.id === id ? { ...a, docAi: !!on } : a));
 	}
 
 	/**
@@ -582,7 +635,7 @@
 		plural, extOf, kindOf, badgeOf, formatBytes, when,
 		validName, nameError,
 		sortAreas, areaLabel, areaHint, usage, currentArea, accessOf,
-		crumbs, rowView, sortQuery, actionsFor, officeMode, OFFICE_EXTS, hasPortalLinks, hasFeature,
+		crumbs, rowView, sortQuery, TYPE_ORDER, typeRank, sortRows, docAiSwitch, withDocAi, actionsFor, officeMode, OFFICE_EXTS, hasPortalLinks, hasFeature,
 		localInputValue, parseLocalInput, timeTravelPresets, timeTravelError, longWhen, timeTravelView, timeTravelLinked, timeTravelResultText,
 		liveRelevant, throttle, guardView, folderQueuedText,
 		linkModes, pinOk, linkRequest, linkView,
