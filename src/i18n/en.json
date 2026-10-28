@@ -1690,7 +1690,16 @@
       "done": "Restored: {{what}}",
       "undone": "Undone: {{what}}",
       "undoHint": "“Undo” brings back the state from right before the restore.",
-      "undo": "Undo"
+      "undo": "Undo",
+      "tooMany": "That would be {{ops}} steps – Drive does at most {{max}} at once. Please pick a later time or a subfolder.",
+      "lost": {
+        "one": "The content from then of 1 file is gone already – it stays as it is.",
+        "other": "The content from then of {{count}} files is gone already – they stay as they are."
+      },
+      "lostDone": {
+        "one": "1 without an earlier content",
+        "other": "{{count}} without an earlier content"
+      }
     },
     "photos": {
       "title": "Photos",
@@ -1813,7 +1822,20 @@
       "trashFailed": {
         "one": "1 file did not go to the trash: {{reason}}",
         "other": "{{count}} files did not go to the trash: {{reason}}"
-      }
+      },
+      "prune": "Clean up versions",
+      "pruneTitle": "Clean up older versions in “{{name}}”",
+      "pruneText": "Older versions take {{size}} here. Only as many per file as you choose here stay; the rest is gone for good.",
+      "pruneKeep": "Keep per file",
+      "keep": {
+        "one": "1 older version",
+        "other": "{{count}} older versions"
+      },
+      "pruned": {
+        "one": "1 version removed, {{size}} freed",
+        "other": "{{count}} versions removed, {{size}} freed"
+      },
+      "prunedMore": "There is more – please clean up again."
     }
   }
 }

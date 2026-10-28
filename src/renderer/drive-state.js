@@ -301,8 +301,13 @@
 			name: str(s.name),
 			path: str(s.path),
 		}));
+		const ops = Number(x.ops) || Number(x.total) || 0;
 		return {
 			empty: !lines.length,
+			// more steps than Drive does at once (400 invalid { field: 'at' }): a later time or a subfolder
+			tooMany: Number(x.max) > 0 && ops > Number(x.max) ? t('drive.tt.tooMany', { ops, max: x.max }) : null,
+			// files whose content of then is gone already: they stay as they are
+			lost: x.lost ? plural(t, 'drive.tt.lost', x.lost) : null,
 			lines,
 			sample,
 			more: Math.max(0, (Number(x.total) || 0) - sample.length),
@@ -331,6 +336,7 @@
 		if (x.trashed) parts.push(plural(t, 'drive.tt.trashed', x.trashed));
 		if (x.moved) parts.push(plural(t, 'drive.tt.moved', x.moved));
 		if (x.failed) parts.push(plural(t, 'drive.tt.failed', x.failed));
+		if (x.lost) parts.push(plural(t, 'drive.tt.lostDone', x.lost));
 		const what = parts.length ? parts.join(', ') : t('drive.tt.nothing');
 		return t(undo ? 'drive.tt.undone' : 'drive.tt.done', { what });
 	}

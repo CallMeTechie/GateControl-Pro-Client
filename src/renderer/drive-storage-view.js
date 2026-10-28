@@ -125,11 +125,17 @@
 			]));
 
 			const areaRows = SS.barsView(d.areas, { t, fmt, areaLabel: o.areaLabel });
-			body.appendChild(card(t('drive.storage.areas'), areaRows.length ? areaRows.map((r) => el('div', { class: 'dsg-row' }, [
-				el('div', { class: 'dsg-row-tx' }, [el('span', { class: 'dsg-name', text: r.label }), el('span', { class: 'dsg-sub', text: r.sub })]),
-				el('span', { class: 'dsg-val', text: r.text }),
-				bar(r.pct),
-			])) : [el('div', { class: 'dsv-empty', text: t('drive.storage.none') })]));
+			body.appendChild(card(t('drive.storage.areas'), areaRows.length ? areaRows.map((r, i) => {
+				const a = d.areas[i];
+				return el('div', { class: 'dsg-row', 'data-area': a.id }, [
+					el('div', { class: 'dsg-row-tx' }, [el('span', { class: 'dsg-name', text: r.label }), el('span', { class: 'dsg-sub', text: r.sub })]),
+					el('div', { class: 'dsg-row-end' }, [
+						SS.canPrune(a) ? el('button', { type: 'button', class: 'btn btn-ghost btn-xs dsg-prune', text: t('drive.storage.prune'), on: { click: () => pruneDialog(a, r.label) } }) : null,
+						el('span', { class: 'dsg-val', text: r.text }),
+					]),
+					bar(r.pct),
+				]);
+			}) : [el('div', { class: 'dsv-empty', text: t('drive.storage.none') })]));
 
 			if (d.people && d.people.length) {
 				body.appendChild(card(t('drive.storage.people'), SS.barsView(d.people, { t, fmt }).map((r) => el('div', { class: 'dsg-row' }, [
@@ -152,10 +158,31 @@
 			renderDuplicates(d);
 		}
 
-		/** May the largest file go into the trash (writable area)? */
+		/** May the largest file go into the trash (Drive 1.7.0 `canDelete`, else a writable area)? */
 		function canTrash(f) {
+			if (f.canDelete === true) return true;
 			const a = o.getAreas().find((x) => x.id === f.areaId);
-			return !!(a && a.writable) || f.canDelete === true;
+			return !!(a && a.writable);
+		}
+
+		/** "Ältere Versionen aufräumen" of an area (administrators and managers of the area: `canPrune`). */
+		function pruneDialog(area, label) {
+			const dlg = openDialog({ title: t('drive.storage.pruneTitle', { name: label }), host, closeLabel: t('drive.close') });
+			const errEl = el('span', { class: 'dv-dlg-err', role: 'alert' });
+			const sel = el('select', { class: 'dv-input dsg-keep', 'aria-label': t('drive.storage.pruneKeep') });
+			for (const k of SS.KEEP) sel.appendChild(el('option', { value: String(k), text: pl('drive.storage.keep', k) }));
+			sel.value = '3';
+			const ok = el('button', { type: 'button', class: 'btn btn-danger', text: t('drive.storage.prune') });
+			ok.addEventListener('click', async () => {
+				ok.disabled = true;
+				const r = await Promise.resolve(api.pruneVersions(area.id, Number(sel.value))).catch(fail);
+				if (!r || !r.ok) { ok.disabled = false; errEl.textContent = err(r); return; }
+				dlg.close(r);
+				toast([pl('drive.storage.pruned', r.removed, { size: fmt(r.freedBytes) }), r.more ? t('drive.storage.prunedMore') : ''].filter(Boolean).join(' '), 'success');
+				load();
+			});
+			dlg.body.append(el('p', { class: 'dv-p', text: t('drive.storage.pruneText', { size: fmt(area.versionsBytes) }) }), el('span', { class: 'lbl', text: t('drive.storage.pruneKeep') }), sel);
+			dlg.foot.append(errEl, el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }), ok);
 		}
 
 		function renderDuplicates(d) {

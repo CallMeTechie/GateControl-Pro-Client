@@ -60,6 +60,11 @@ describe('time travel (drive-state.js)', () => {
     const e = DS.timeTravelView({ restore: 0, revert: 0, trash: 0, move: 0, total: 0, sample: [], limited: false }, { t, locale: 'de' });
     assert.equal(e.empty, true);
     assert.equal(e.limited, null);
+    assert.equal(e.tooMany, null);
+    assert.equal(e.lost, null);
+    const big = DS.timeTravelView({ restore: 2500, total: 2500, ops: 2500, max: 2000, lost: 3, sample: [] }, { t, locale: 'de' });
+    assert.equal(big.tooMany, 'drive.tt.tooMany(ops=2500,max=2000)');
+    assert.equal(big.lost, 'drive.tt.lost.other(count=3)');
     assert.deepEqual(DS.timeTravelLinked([{ mode: 'sync', name: 'Projekt' }, { mode: 'backup', path: 'C:\\Users\\a\\Bilder' }], t), [
       { mode: 'sync', name: 'Projekt', text: 'drive.tt.linkedSync(name=Projekt)' },
       { mode: 'backup', name: 'C:\\Users\\a\\Bilder', text: 'drive.tt.linkedBackup(name=C:\\Users\\a\\Bilder)' },
@@ -71,6 +76,7 @@ describe('time travel (drive-state.js)', () => {
     assert.equal(DS.timeTravelResultText({ restored: 1, reverted: 2, trashed: 3, moved: 0, failed: 1 }, t),
       'drive.tt.done(what=drive.tt.restored.one(count=1), drive.tt.reverted.other(count=2), drive.tt.trashed.other(count=3), drive.tt.failed.one(count=1))');
     assert.equal(DS.timeTravelResultText({}, t, { undo: true }), 'drive.tt.undone(what=drive.tt.nothing)');
+    assert.equal(DS.timeTravelResultText({ reverted: 1, lost: 1 }, t), 'drive.tt.done(what=drive.tt.reverted.one(count=1), drive.tt.lostDone.one(count=1))');
   });
 });
 
@@ -116,9 +122,10 @@ describe('Fotos (drive-photos-state.js)', () => {
     assert.equal(PS.albumNameError('  ', t), 'drive.photos.album.nameEmpty');
     assert.equal(PS.albumNameError('x'.repeat(201), t), 'drive.photos.album.nameLong');
     assert.equal(PS.albumNameError('Sommer', t), null);
-    assert.equal(PS.frameSwitch(a, { features: ['albums', 'frame'] }), true);
-    assert.equal(PS.frameSwitch(a, { features: ['albums'] }), false);
-    assert.equal(PS.frameSwitch({ ...a, canEdit: false }, { features: ['frame'] }), false);
+    // Drive decides who may switch the photo frame (canFrame); canEdit is not enough
+    assert.equal(PS.frameSwitch(a, { features: ['albums', 'frame'] }), false);
+    assert.equal(PS.frameSwitch({ ...a, canFrame: true }, { features: ['albums', 'frame'] }), true);
+    assert.equal(PS.frameSwitch({ ...a, canFrame: true }, { features: ['albums'] }), false);
   });
 
   it('selection, ranges, parts of 500', () => {
@@ -190,6 +197,10 @@ describe('Speicher (drive-storage-state.js)', () => {
     assert.deepEqual(SS.toTrash([g2], new Set([1, 2, 3])), [1, 2]);
     assert.deepEqual(SS.toTrash([g], new Set([3])), []);
     assert.equal(SS.freed([g2], [1, 3]), 20);
+    assert.equal(SS.canPrune({ canPrune: true, versionsBytes: 5 }), true);
+    assert.equal(SS.canPrune({ canPrune: true, versionsBytes: 0 }), false);
+    assert.equal(SS.canPrune({ canPrune: false, versionsBytes: 5 }), false);
+    assert.deepEqual(SS.KEEP, [0, 1, 3, 5, 10]);
     const v = SS.dupView(g, { t, fmt });
     assert.equal(v.title, 'a.jpg');
     assert.equal(v.sub, 'drive.storage.copies.other(count=3) · drive.storage.size(size=10B) · drive.storage.wasted(size=20B)');
@@ -224,6 +235,7 @@ describe('page wiring (Drive 1.7)', () => {
     for (const k of ['drive.tt.linkedSync', 'drive.tt.linkedBackup', 'drive.tt.linkedSyncH', 'drive.tt.linkedBackupH', 'drive.tt.done', 'drive.tt.undone', 'drive.storage.intro', 'drive.storage.introAll', 'drive.storage.all', 'drive.storage.mine', 'drive.photos.album.frameOnDone', 'drive.photos.album.frameOffDone']) keys.add(k);
     const plurals = ['drive.tt.restore', 'drive.tt.revert', 'drive.tt.trash', 'drive.tt.move', 'drive.tt.restored', 'drive.tt.reverted', 'drive.tt.trashed', 'drive.tt.moved', 'drive.tt.failed',
       'drive.photos.addTitle', 'drive.photos.added', 'drive.photos.yearsAgo', 'drive.photos.count', 'drive.photos.album.removed',
+      'drive.tt.lost', 'drive.tt.lostDone', 'drive.storage.keep', 'drive.storage.pruned',
       'drive.storage.files', 'drive.storage.copies', 'drive.storage.dupSelected', 'drive.storage.trashTitle', 'drive.storage.andMore', 'drive.storage.trashFailed'];
     for (const p of plurals) { keys.delete(p); keys.add(`${p}.one`); keys.add(`${p}.other`); }
     assert.ok(keys.size > 120, `only ${keys.size} keys found`);

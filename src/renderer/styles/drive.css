@@ -298,10 +298,10 @@
 .dpv { display: flex; flex-direction: column; gap: 10px; flex-grow: 1; min-height: 0; }
 .dpv[hidden], .dpv-selbar[hidden], .dsg[hidden] { display: none; }
 .dpv button { font: inherit; }
-.dpv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 36px; }
+.dpv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 36px; flex-shrink: 0; }
 .dpv-head .dsv-h { margin-right: 6px; }
 .dpv-select { width: auto; max-width: 220px; height: 30px; padding: 4px 8px; font-size: 12.5px; }
-.dpv-selbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-radius: 10px; background: var(--acc-bg); }
+.dpv-selbar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-radius: 10px; background: var(--acc-bg); }
 .dpv-sel-n { font-size: 13px; font-weight: 600; color: var(--acc-t); }
 .dpv .btn-pri { color: var(--acc-on); }
 .dpv-body { flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; padding: 2px 4px 16px 0; }
@@ -348,6 +348,7 @@
 /* ── Drive 1.7: "Speicher" (drive-storage-view.js) ─────────── */
 .dsg { display: flex; flex-direction: column; gap: 12px; flex-grow: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
 .dsg button { font: inherit; }
+.dsg > .dsv-head { flex-shrink: 0; }
 .dsg-body { display: flex; flex-direction: column; gap: 12px; }
 .dsg-total { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 2px 0 8px; }
 .dsg-big { font-family: var(--font-disp); font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -377,3 +378,5 @@
 .dsg-dup-row.is-on { background: var(--err-bg); }
 .dsg-dup-row input { width: 16px; height: 16px; accent-color: var(--err); flex-shrink: 0; }
 .dsg-trash-list { margin: 0; padding-left: 20px; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.dsg-row-end { display: flex; align-items: center; gap: 10px; }
+.dsg-keep { max-width: 260px; }

@@ -142,9 +142,9 @@
 		return null;
 	}
 
-	/** Shows the photo frame switch of an album: the Drive has 'frame' and one may change the album. */
+	/** Shows the photo frame switch of an album: the Drive has 'frame' and lets this person switch it (`canFrame`; canEdit is not enough). */
 	function frameSwitch(album, me) {
-		return !!album && !!album.canEdit && features(me).frame;
+		return !!album && !!album.canFrame && features(me).frame;
 	}
 
 	// ── Selection ────────────────────────────────────────

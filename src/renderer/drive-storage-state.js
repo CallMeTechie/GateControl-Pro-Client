@@ -135,5 +135,13 @@
 		return n;
 	}
 
-	return { pct, totalView, barsView, placeOf, dupView, suggest, canTick, toTrash, freed };
+	/** How many older versions "Aufräumen" can keep per file. */
+	const KEEP = [0, 1, 3, 5, 10];
+
+	/** Can the area's older versions be cleaned up here (`canPrune`, and there are some)? */
+	function canPrune(area) {
+		return !!area && area.canPrune === true && num(area.versionsBytes) > 0;
+	}
+
+	return { KEEP, canPrune, pct, totalView, barsView, placeOf, dupView, suggest, canTick, toTrash, freed };
 });

@@ -1690,7 +1690,16 @@
       "done": "Zurückgesetzt: {{what}}",
       "undone": "Rückgängig gemacht: {{what}}",
       "undoHint": "Mit „Rückgängig“ kommt der Stand von direkt vor dem Zurücksetzen wieder.",
-      "undo": "Rückgängig"
+      "undo": "Rückgängig",
+      "tooMany": "Das wären {{ops}} Schritte – Drive schafft höchstens {{max}} auf einmal. Bitte einen späteren Zeitpunkt oder einen Unterordner wählen.",
+      "lost": {
+        "one": "Von 1 Datei gibt es die damalige Fassung nicht mehr – sie bleibt, wie sie ist.",
+        "other": "Von {{count}} Dateien gibt es die damalige Fassung nicht mehr – sie bleiben, wie sie sind."
+      },
+      "lostDone": {
+        "one": "1 ohne alte Fassung",
+        "other": "{{count}} ohne alte Fassung"
+      }
     },
     "photos": {
       "title": "Fotos",
@@ -1813,7 +1822,20 @@
       "trashFailed": {
         "one": "1 Datei ging nicht in den Papierkorb: {{reason}}",
         "other": "{{count}} Dateien gingen nicht in den Papierkorb: {{reason}}"
-      }
+      },
+      "prune": "Versionen aufräumen",
+      "pruneTitle": "Ältere Versionen in „{{name}}“ aufräumen",
+      "pruneText": "Ältere Versionen belegen hier {{size}}. Pro Datei bleiben nur so viele erhalten, wie du hier wählst; der Rest ist danach endgültig weg.",
+      "pruneKeep": "Pro Datei behalten",
+      "keep": {
+        "one": "1 ältere Version",
+        "other": "{{count}} ältere Versionen"
+      },
+      "pruned": {
+        "one": "1 Version entfernt, {{size}} frei",
+        "other": "{{count}} Versionen entfernt, {{size}} frei"
+      },
+      "prunedMore": "Es gibt noch mehr – bitte noch einmal aufräumen."
     }
   }
 }

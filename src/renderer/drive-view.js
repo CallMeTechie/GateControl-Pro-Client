@@ -881,6 +881,12 @@
 					if (v.more) dlg.body.appendChild(el('span', { class: 'dv-pick-note', text: t('drive.tt.more', { count: v.more }) }));
 				}
 				if (v.limited) dlg.body.appendChild(el('div', { class: 'dv-note is-warn', text: v.limited }));
+				if (v.lost) dlg.body.appendChild(el('div', { class: 'dv-note is-warn', text: v.lost }));
+				if (v.tooMany) {
+					dlg.body.appendChild(el('div', { class: 'dv-dlg-err dv-tt-many', role: 'alert', text: v.tooMany }));
+					dlg.foot.append(el('span', { class: 'dv-grow' }), el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.back'), on: { click: back } }));
+					return;
+				}
 				for (const l of DS.timeTravelLinked(r.linked, t)) dlg.body.appendChild(el('div', { class: `dv-note${l.mode === 'sync' ? '' : ' is-muted'}` }, [el('b', { text: t(l.mode === 'sync' ? 'drive.tt.linkedSyncH' : 'drive.tt.linkedBackupH') }), ' ', l.text]));
 				dlg.body.appendChild(el('p', { class: 'dv-p', text: t('drive.tt.safe') }));
 				const ok = el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.tt.run') });

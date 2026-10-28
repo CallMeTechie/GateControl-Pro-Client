@@ -147,5 +147,13 @@ test.describe('drive 1.7', () => {
     await page.locator('.dv-dlg .btn-danger').click();
     await expect(sg.locator('.dsg-dup')).toHaveCount(0);
     expect([a, b].filter((n) => d.srv.state.nodes.get(n.id).deleted)).toHaveLength(1);
+    // older versions of Meine Dateien (Foto.jpg has one): cleaned up, keeping none
+    await sg.locator('.dsg-row[data-area="mine:2"] .dsg-prune').click();
+    const pd = page.locator('.dv-dlg');
+    await pd.locator('select').selectOption('0');
+    await pd.locator('.btn-danger').click();
+    await expect(page.locator('.dv-dlg')).toHaveCount(0);
+    await expect.poll(() => (d.srv.state.versions.get(11) || []).length).toBe(0);
+    await expect(sg.locator('.dsg-row[data-area="mine:2"] .dsg-prune')).toHaveCount(0);
   });
 });
