@@ -36,6 +36,16 @@
  * Schule: writable areas and folders only, it starts in the folder picked
  * last and remembers the new one.
  *
+ * Drive 1.8 / 1.9 (only with the features `me` reports): "Details" of a
+ * file — what Drive recognised, its suggestion and deadlines ('docAi',
+ * drive-docs-view.js) — and "Fristen" on the left; a symbol of the kind of
+ * document in the list; "Aus Google Drive / OneDrive importieren (im
+ * Portal)" ('cloudImport'); "Im Browser bearbeiten / ansehen" for office
+ * documents ('office'); vault folders ('vault', drive-vault-view.js): "Neuer
+ * Tresor-Ordner", names decrypted on this PC, the card to ask for access or
+ * open with the recovery key, "Geräte" (requests with safety numbers). A
+ * click on a deadline push opens the file's details (open(context)).
+ *
  * Data: window.gatecontrol.drive (core DriveService over IPC); texts: drive.*
  * of the app locales; view logic without DOM: drive-state.js
  * (window.GCDriveState).
@@ -86,8 +96,21 @@
 		pause: 'M8 5v14M16 5v14',
 		play: 'M7 5l12 7-12 7z',
 		sync: 'M4 12a8 8 0 0 1 14-5.3L20 9|M20 4v5h-5|M20 12a8 8 0 0 1-14 5.3L4 15|M4 20v-5h5',
+		// Drive 1.8 / 1.9
+		vault: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M10 13h4v3h-4z|M10.5 13v-1a1.5 1.5 0 0 1 3 0v1',
+		calendar: 'M4 6h16v14H4z|M4 10h16|M8 3v4M16 3v4',
+		receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2z|M9 8h6M9 12h6',
+		contract: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z|M14 3v5h5|M8 17c1-2 2-2 3 0s2 2 3 0',
+		stamp: 'M9 4h6l-1 7h-4z|M5 14h14v3H5z|M7 20h10',
+		medical: 'M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z',
+		award: 'M12 3a5 5 0 1 0 0 10a5 5 0 1 0 0-10|M9 12l-2 9 5-3 5 3-2-9',
+		bank: 'M3 10l9-6 9 6|M5 10v8M9 10v8M15 10v8M19 10v8|M3 20h18',
+		shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+		device: 'M3 5h18v11H3z|M8 20h8|M12 16v4',
+		globe: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M3 12h18|M12 3c3 3 3 15 0 18|M12 3c-3 3-3 15 0 18',
+		import: 'M12 3v12|M7 10l5 5 5-5|M5 21h14|M17 3h3v3',
 	};
-	const KIND_ICON = { folder: 'folder', image: 'image', video: 'video', audio: 'audio', pdf: 'pdf', archive: 'archive' };
+	const KIND_ICON = { folder: 'folder', image: 'image', video: 'video', audio: 'audio', pdf: 'pdf', archive: 'archive', vault: 'vault' };
 	const AREA_ICON = { mine: 'user', family: 'users', child: 'child', team: 'team' };
 
 	function icon(name, size = 16, stroke = '2') {
@@ -347,6 +370,8 @@
 			syncSummary: '',
 			guard: null,       // Drive 1.6: { locked, incident, portal }
 			livePending: false,
+			vaultStatus: null, // Drive 1.9: { supported, device } of this PC
+			vaults: [],        // Drive 1.9: the vaults (pending requests, needsRotation)
 		};
 
 		// ── Skeleton ─────────────────────────────────────
@@ -387,6 +412,19 @@
 		const photosView = root.GCDrivePhotosView && typeof api.photos === 'function' ? root.GCDrivePhotosView.mount(extra) : null;
 		const storageView = root.GCDriveStorageView && typeof api.storage === 'function' ? root.GCDriveStorageView.mount(extra) : null;
 		const VIEWS = { sync: syncView, photos: photosView, storage: storageView };
+		// Drive 1.8 'docAi' (drive-docs-view.js) and 1.9 'vault' (drive-vault-view.js)
+		const docs = root.GCDriveDocsView && typeof api.insight === 'function' ? root.GCDriveDocsView.create({
+			api, t, getLocale: o.getLocale, ui: { el, icon, clear, openDialog }, host, toast, now, errorText: DS.errorText,
+			areaLabel: (areaId) => DS.areaLabel(S.areas.find((a) => a.id === areaId), t),
+			writable: (n) => !!(S.areas.find((a) => a.id === n.areaId) || {}).writable,
+			openFile: (n) => openNode(n),
+			changed: () => refreshView(),
+		}) : null;
+		const vaultUi = root.GCDriveVaultView && api.vault ? root.GCDriveVaultView.create({
+			api, t, ui: { el, icon, clear, openDialog }, host, toast, errorText: DS.errorText,
+			changed: () => { loadVaults().then(() => refreshView()); },
+		}) : null;
+		const vaultOn = () => !!vaultUi && root.GCDriveVaultState.vaultAvailable(S.me, S.vaultStatus);
 		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.listWrap, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null]);
 		refs.empty = el('div', { class: 'dv-gate', hidden: true });
 		refs.main = el('div', { class: 'dv-main' }, [refs.side, refs.pane]);
@@ -449,11 +487,27 @@
 		}
 		// Drive 1.6 'guard'
 		if (typeof api.onGuard === 'function') api.onGuard((g) => { S.guard = g || null; renderGuard(); });
+		// Drive 1.9: a request, an approval, a new key of a vault folder
+		if (api.vault && typeof api.vault.onEvent === 'function') {
+			api.vault.onEvent(() => { if (S.shown && vaultOn()) loadVaults().then(() => { if (S.view === 'folder') live.request(); }); });
+		}
 		Promise.resolve(api.transfers()).then((r) => { if (r && r.ok) { S.transfers = r.transfers; renderTransfers(); } }).catch(() => {});
 
 		// ── Loading ──────────────────────────────────────
 		const area = () => S.areas.find((a) => a.id === (S.folder ? S.folder.node.areaId : S.areaId)) || null;
-		const canUpload = () => S.view === 'folder' && !!S.folder && S.folder.writable;
+		// a vault folder only while this PC has its key
+		const canUpload = () => S.view === 'folder' && !!S.folder && S.folder.writable && !(S.folder.vault && S.folder.vault.state !== 'open');
+
+		/** Drive 1.9: this PC's vault state and the vaults (requests waiting, a new key needed). */
+		async function loadVaults() {
+			if (!vaultUi || !DS.hasFeature(S.me, 'vault')) { S.vaultStatus = null; S.vaults = []; return; }
+			const st = await Promise.resolve(api.vault.status()).catch(() => null);
+			S.vaultStatus = st && st.ok ? st : null;
+			if (!vaultOn()) { S.vaults = []; return; }
+			const r = await Promise.resolve(api.vault.list()).catch(() => null);
+			S.vaults = r && r.ok ? r.vaults : [];
+		}
+		const vaultOf = (id) => S.vaults.find((v) => v.id === id) || null;
 
 		async function reload() {
 			S.dirty = false;
@@ -473,6 +527,7 @@
 			if (S.access.usable) {
 				const ar = await Promise.resolve(api.areas()).catch(fail);
 				S.areas = DS.sortAreas(ar && ar.ok ? ar.areas : me.areas);
+				await loadVaults();
 			} else {
 				S.areas = [];
 			}
@@ -486,7 +541,19 @@
 			else if (S.view === 'trash') await loadTrash();
 			else if (S.view === 'links') await loadLinks();
 			else if (S.view === 'search') await runSearch();
+			else if (S.view === 'deadlines') openDeadlines();
 			else render();
+		}
+
+		/** "Fristen" (Drive 1.8 'docAi'): the deadlines of every file the person reads. */
+		function openDeadlines() {
+			if (!docs || !DS.hasFeature(S.me, 'docAi')) { S.view = 'folder'; const a = DS.currentArea(S.areas, S.areaId); loadFolder(S.folderId || (a && a.rootId)); return; }
+			S.view = 'deadlines';
+			S.loading = false;
+			S.error = null;
+			refs.search.value = '';
+			S.query = '';
+			render();
 		}
 
 		async function loadFolder(id, { quiet = false, fallback = null } = {}) {
@@ -604,7 +671,7 @@
 			toast(DS.errorText(r, t), 'error');
 			return false;
 		}
-		const refreshView = () => (S.view === 'folder' && S.folder ? loadFolder(S.folder.node.id, { quiet: true }) : S.view === 'trash' ? loadTrash() : S.view === 'search' ? runSearch() : S.view === 'links' ? loadLinks() : S.view === 'sync' ? openSync() : VIEWS[S.view] ? VIEWS[S.view].refresh() : null);
+		const refreshView = () => (S.view === 'folder' && S.folder ? loadFolder(S.folder.node.id, { quiet: true }) : S.view === 'trash' ? loadTrash() : S.view === 'search' ? runSearch() : S.view === 'links' ? loadLinks() : S.view === 'deadlines' ? openDeadlines() : S.view === 'sync' ? openSync() : VIEWS[S.view] ? VIEWS[S.view].refresh() : null);
 
 		/**
 		 * Live reload (push `changed`, back in the window): without "loading", scroll position and
@@ -631,7 +698,9 @@
 		}
 
 		async function openNode(n) {
+			// Drive 1.9: a vault this PC has no key for opens on its card ("Zugriff anfragen")
 			if (n.isDir) { refs.search.value = ''; S.query = ''; loadFolder(n.id); return; }
+			if (n.encrypted && n.locked) { toast(t('drive.err.vaultLocked'), 'error'); return; }
 			const r = await Promise.resolve(api.open(n.id)).catch(fail);
 			if (r && r.ok) return;
 			if (r && r.code === 'unsafe') {
@@ -639,6 +708,20 @@
 				return;
 			}
 			done(r);
+		}
+
+		/** "Im Browser bearbeiten / ansehen" (Drive 1.9 'office'): the office address in the default browser. */
+		async function openOffice(n) {
+			const r = await Promise.resolve(api.office(n.id)).catch(fail);
+			if (r && r.ok) toast(t(r.mode === 'edit' ? 'drive.office.openedEdit' : 'drive.office.openedView'), 'info');
+			else done(r);
+		}
+
+		/** "Aus Google Drive / OneDrive importieren (im Portal)" (Drive 1.8 'cloudImport') */
+		async function openImport() {
+			const r = await Promise.resolve(api.openImport()).catch(fail);
+			if (r && r.ok) toast(t('drive.import.opened'), 'info');
+			else done(r);
 		}
 
 		async function openInPortal(n) {
@@ -1042,6 +1125,9 @@
 			if (acts.move) item('move', t('drive.move'), () => moveNode(n));
 			if (acts.versions) item('history', t('drive.versions.menu'), () => versionsDialog(n));
 			if (acts.timeTravel) item('restore', t('drive.tt.menu'), () => timeTravelDialog(n));
+			// Drive 1.8 'docAi' / 1.9 'office'
+			if (acts.details && docs) item('calendar', t('drive.doc.details'), () => docs.details(n));
+			if (acts.office) item('globe', t(acts.office === 'edit' ? 'drive.office.edit' : 'drive.office.view'), () => openOffice(n));
 			if (acts.portal) item('cloud', t('drive.portal.open'), () => openInPortal(n));
 			if (acts.remove) item('trash', t('drive.remove'), () => trashNode(n), true);
 			const menu = el('div', { class: 'dv-menu', role: 'menu' }, items);
@@ -1076,7 +1162,8 @@
 		}
 
 		function thumb(v) {
-			const box = el('span', { class: `dv-thumb dv-k-${v.kind}` }, [icon(KIND_ICON[v.kind] || 'file', 18), v.badge && !v.isDir && !KIND_ICON[v.kind] ? el('span', { class: 'dv-badge', text: v.badge }) : null]);
+			const ic = v.locked && !v.isDir ? 'lock' : (KIND_ICON[v.kind] || 'file');
+			const box = el('span', { class: `dv-thumb dv-k-${v.kind}${v.encrypted ? ' is-enc' : ''}` }, [icon(ic, 18), v.badge && !v.isDir && !KIND_ICON[v.kind] && !v.locked ? el('span', { class: 'dv-badge', text: v.badge }) : null]);
 			if (v.preview && v.mediaId) {
 				previewUrl(v.mediaId).then((u) => {
 					if (u && box.isConnected !== false) {
@@ -1153,7 +1240,9 @@
 			refs.side.appendChild(el('span', { class: 'dv-side-sep' }));
 			if (extraAvailable('photos')) refs.side.appendChild(sideButton({ label: t('drive.photos.title'), sub: null, ic: 'image', on: S.view === 'photos', onClick: () => openExtra('photos') }));
 			refs.side.appendChild(sideButton({ label: t('drive.links.title'), sub: t('drive.links.sub'), ic: 'link', on: S.view === 'links', onClick: () => { refs.search.value = ''; loadLinks(); } }));
+			if (docs && DS.hasFeature(S.me, 'docAi')) refs.side.appendChild(sideButton({ label: t('drive.deadline.title'), sub: null, ic: 'calendar', on: S.view === 'deadlines', onClick: () => openDeadlines() }));
 			refs.side.appendChild(sideButton({ label: t('drive.trash.title'), sub: null, ic: 'trash', on: S.view === 'trash', onClick: () => { refs.search.value = ''; loadTrash(); } }));
+			if (typeof api.openImport === 'function' && DS.hasFeature(S.me, 'cloudImport')) refs.side.appendChild(sideButton({ label: t('drive.import.menu'), sub: t('drive.import.sub'), ic: 'import', on: false, onClick: () => openImport() }));
 			if (extraAvailable('storage')) refs.side.appendChild(sideButton({ label: t('drive.storage.title'), sub: null, ic: 'disk', on: S.view === 'storage', onClick: () => openExtra('storage') }));
 			if (syncView) {
 				refs.side.appendChild(el('span', { class: 'dv-side-sep' }));
@@ -1164,6 +1253,7 @@
 		function renderBar() {
 			clear(refs.bar);
 			refs.note.hidden = true;
+			refs.note.classList.remove('is-warn');
 			const a = area();
 			if (S.view === 'folder') {
 				const cr = DS.crumbs(S.folder, a, t);
@@ -1176,15 +1266,21 @@
 				for (const s of DS.SORTS) {
 					sort.appendChild(el('button', { type: 'button', role: 'radio', 'aria-checked': S.sort === s ? 'true' : 'false', class: S.sort === s ? 'on' : '', text: t(`drive.sort.${s}`), on: { click: () => { S.sort = s; keep('gc.drive.sort', s); if (S.folder) loadFolder(S.folder.node.id, { quiet: true }); } } }));
 				}
-				const w = !!(S.folder && S.folder.writable);
+				const fv = S.folder && S.folder.vault;   // Drive 1.9: the vault this folder lies in
+				const w = canUpload();
 				const tt = S.folder && DS.actionsFor(S.folder.node, w, S.me).timeTravel;
+				const vaultNew = w && !fv && vaultOn();
+				const vInfo = fv ? vaultOf(fv.id) : null;
 				refs.bar.append(nav, el('span', { class: 'dv-grow' }), sort,
 					tt ? el('button', { type: 'button', class: 'dv-ib dv-tt-btn', title: t('drive.tt.menu'), 'aria-label': t('drive.tt.menu'), on: { click: () => timeTravelDialog(S.folder.node) } }, [icon('restore', 16)]) : null,
+					fv && fv.state === 'open' && vaultUi ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-vault-devices', on: { click: () => vaultUi.devicesDialog(fv.id, { onRotate: () => vaultUi.rotateDialog(fv.id) }) } }, [icon('device', 14), el('span', { text: t('drive.vault.devices.button') }), vInfo && vInfo.pending ? el('span', { class: 'dv-count', text: String(vInfo.pending) }) : null]) : null,
+					vaultNew ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-vault-new', on: { click: () => vaultUi.createDialog(S.folder.node.id) } }, [icon('vault', 14), el('span', { text: t('drive.vault.create.button') })]) : null,
 					w ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: newFolder } }, [icon('plus', 14), el('span', { text: t('drive.newFolder') })]) : null,
 					w && typeof api.pickFolders === 'function' ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-up-folder', on: { click: pickFolderAndUpload } }, [icon('folder', 14), el('span', { text: t('drive.upload.folderButton') })]) : null,
 					w ? el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: pickAndUpload } }, [icon('upload', 14), el('span', { text: t('drive.upload.button') })]) : null);
-				if (a && a.kind === 'child' && a.via === 'parent') { refs.note.hidden = false; refs.note.textContent = t('drive.childNote'); }
-				else if (S.folder && !w) { refs.note.hidden = false; refs.note.textContent = t('drive.readOnly'); }
+				if (fv && fv.state === 'open') { refs.note.hidden = false; refs.note.textContent = root.GCDriveVaultState.folderNote(vInfo, { t }); refs.note.classList.toggle('is-warn', !!(vInfo && vInfo.needsRotation)); }
+				else if (a && a.kind === 'child' && a.via === 'parent') { refs.note.hidden = false; refs.note.textContent = t('drive.childNote'); }
+				else if (S.folder && !S.folder.writable) { refs.note.hidden = false; refs.note.textContent = t('drive.readOnly'); }
 				refs.sub.textContent = a ? [DS.areaLabel(a, t), DS.usage(a, t, locale())].filter(Boolean).join(' · ') : '';
 			} else if (S.view === 'search') {
 				refs.bar.append(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { refs.search.value = ''; backToFolder(); } } }, [icon('back', 14), el('span', { text: t('drive.back') })]),
@@ -1198,6 +1294,9 @@
 				refs.sub.textContent = '';
 			} else if (VIEWS[S.view]) {
 				refs.sub.textContent = '';
+			} else if (S.view === 'deadlines') {
+				refs.bar.append(el('span', { class: 'dv-bar-h', text: t('drive.deadline.title') }));
+				refs.sub.textContent = t('drive.deadline.sub');
 			} else if (S.view === 'links') {
 				refs.bar.append(el('span', { class: 'dv-bar-h', text: t('drive.links.title') }));
 				if (S.links && S.links.enabled === false) { refs.note.hidden = false; refs.note.textContent = t('drive.err.linksDisabled'); }
@@ -1217,6 +1316,13 @@
 				return;
 			}
 			if (S.view === 'links') { renderLinks(); return; }
+			if (S.view === 'deadlines') { if (docs) docs.renderDeadlines(refs.list); return; }
+			// Drive 1.9: a vault folder this PC cannot open yet → its card instead of the (unreadable) list
+			const fv = S.view === 'folder' && S.folder && S.folder.vault;
+			if (fv && fv.state !== 'open' && vaultUi) {
+				refs.list.appendChild(vaultUi.gate(fv.id, fv.state || 'none', { safetyNumber: fv.state === 'pending' && S.vaultStatus && S.vaultStatus.device ? S.vaultStatus.device.safetyNumber : null }));
+				return;
+			}
 			const items = S.view === 'folder' ? (S.folder ? S.folder.items : []) : S.view === 'search' ? (S.results || []) : (S.trash || []);
 			const mode = S.view;
 			refs.list.appendChild(el('div', { class: 'dv-row dv-row-head', 'aria-hidden': 'true' }, [
@@ -1238,9 +1344,15 @@
 			const more = el('button', { type: 'button', class: 'dv-ib dv-more-btn', title: t('drive.actions'), 'aria-label': t('drive.actionsFor', { name: v.name }), 'aria-haspopup': 'menu', on: { click: (e) => { e.stopPropagation(); openMenu(n, more); } } }, [icon('more', 16)]);
 			const main = el('button', { type: 'button', class: 'dv-c-name dv-open', title: v.isDir ? t('drive.openFolder') : t('drive.openFile'), on: { click: () => openNode(n) } }, [
 				thumb(v),
-				el('span', { class: 'dv-name-tx' }, [el('span', { class: 'dv-name', text: v.name }), v.sub ? el('span', { class: 'dv-row-sub', text: v.sub }) : null]),
+				el('span', { class: 'dv-name-tx' }, [
+					el('span', { class: `dv-name${v.locked ? ' is-locked' : ''}`, text: v.name }),
+					v.sub ? el('span', { class: 'dv-row-sub', text: v.sub }) : null,
+					// Drive 1.8: the kind of document Drive recognised
+					v.doc && root.GCDriveDocsState ? el('span', { class: 'dv-doc', 'data-doc': v.doc }, [icon(root.GCDriveDocsState.docIcon(v.doc), 12), el('span', { text: root.GCDriveDocsState.docKindLabel(v.doc, t) })]) : null,
+					v.vault ? el('span', { class: 'dv-doc dv-enc' }, [icon('lock', 12), el('span', { text: t('drive.vault.badge') })]) : null,
+				]),
 			]);
-			const row = el('div', { class: 'dv-row', role: 'listitem', 'data-id': String(v.id) }, [
+			const row = el('div', { class: `dv-row${v.encrypted ? ' is-enc' : ''}`, role: 'listitem', 'data-id': String(v.id) }, [
 				main,
 				el('span', { class: 'dv-c-date', text: v.date }),
 				el('span', { class: 'dv-c-size', text: v.size }),
@@ -1326,6 +1438,27 @@
 			available: () => !!(S.status && S.status.state === 'available'),
 			relabel,
 			pickFolder: (opts) => pickFolder({ api, t, host, ...(opts || {}) }),
+			/**
+			 * A push click (Drive 1.8 / 1.9): { kind: 'deadline', nodeId, deadlineId } opens the file's details in its
+			 * folder; { kind: 'vault', vaultId, nodeId } the vault (its "Geräte" on a request).
+			 */
+			async open(context) {
+				const c = context && typeof context === 'object' ? context : null;
+				S.shown = true;
+				if (!S.me) await reload();
+				if (!c) return;
+				if (c.kind === 'deadline' && docs) {
+					const r = await Promise.resolve(api.deadlines()).catch(fail);
+					const d = r && r.ok ? r.deadlines.find((x) => (c.deadlineId && x.id === c.deadlineId) || (x.node && x.node.id === c.nodeId)) : null;
+					if (!d) { openDeadlines(); return; }
+					if (d.node.parentId) await loadFolder(d.node.parentId);
+					docs.details(d.node);
+				} else if (c.kind === 'vault' && c.nodeId) {
+					await loadVaults();
+					await loadFolder(c.nodeId);
+					if (c.event === 'request' && vaultUi && S.folder && S.folder.vault && S.folder.vault.state === 'open') vaultUi.devicesDialog(c.vaultId, { onRotate: () => vaultUi.rotateDialog(c.vaultId) });
+				}
+			},
 			/**
 			 * Explorer-Kontextmenü (Dateien bei Bedarf): „Link teilen …“ / „Ältere
 			 * Versionen“ für einen Knoten. `code`: der Knoten ist nicht abrufbar.

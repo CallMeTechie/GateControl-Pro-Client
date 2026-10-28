@@ -90,6 +90,10 @@ pub struct Node {
     pub created_at: Option<String>,
     #[serde(default)]
     pub deleted: bool,
+    /// Drive 1.9: Knoten eines Tresor-Ordners (Ende-zu-Ende verschlüsselt; `name` ist opak, der Inhalt
+    /// Chiffretext). „Dateien bei Bedarf“ lässt sie aus – nie Platzhalter, nie ein Upload hinein.
+    #[serde(default)]
+    pub encrypted: bool,
 }
 
 impl Node {

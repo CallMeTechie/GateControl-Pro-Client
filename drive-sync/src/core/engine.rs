@@ -549,7 +549,8 @@ impl Engine {
         for _ in 0..100_000 {
             let page = self.remote.children(dir_id, offset)?;
             let n = page.items.len() as u64;
-            out.extend(page.items);
+            // Drive 1.9: Tresor-Ordner (verschlüsselt) gibt es hier nicht
+            out.extend(page.items.into_iter().filter(|x| !x.encrypted));
             match page.next {
                 Some(next) if next > offset && n > 0 => offset = next,
                 _ => break,
@@ -773,7 +774,8 @@ impl Engine {
             return Ok(());
         }
         match &c.node {
-            Some(n) if !n.deleted && n.area_id == c.area_id => self.remote_upsert(n),
+            // Drive 1.9: ein Knoten eines Tresor-Ordners zählt wie nicht vorhanden
+            Some(n) if !n.deleted && !n.encrypted && n.area_id == c.area_id => self.remote_upsert(n),
             _ => self.remote_gone(c.node_id, &c.area_id),
         }
     }
@@ -1207,7 +1209,8 @@ impl Engine {
                 .map(|b| *b)
                 .or_else(|| self.list_all(parent_id).ok().and_then(|v| v.into_iter().find(|n| names::same_name(&n.name, name))))
             {
-                Some(c) if c.is_dir => c,
+                // nie in einen Tresor-Ordner (Drive 1.9) – dann wie eine Datei im Weg: lokal umbenennen
+                Some(c) if c.is_dir && !c.encrypted => c,
                 _ => {
                     // eine Datei dieses Namens auf dem Server: Ordner lokal umbenennen
                     let l = self.fs.stat(path).map_err(io_err)?.ok_or_else(|| ApiError::new(None, "local_io", "gone"))?;

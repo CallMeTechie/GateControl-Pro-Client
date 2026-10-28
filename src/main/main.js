@@ -980,6 +980,11 @@ function initializeServices() {
     tempDir: () => path.join(app.getPath('temp'), 'gatecontrol-drive'),
     getLang: () => getLocale(),
     pushClient: notifications?.pushClient,
+    // Drive 1.8 / 1.9: ein Klick auf eine Fristen- oder Tresor-Mitteilung öffnet die Drive-Seite
+    notificationCenter: notifications?.notificationCenter,
+    // Drive 1.9 Tresor-Ordner: der private Geräteschlüssel nur unter DPAPI (safeStorage), nie im Klartext
+    protect: typeof DriveService.safeStorageProtect === 'function' ? DriveService.safeStorageProtect(safeStorage) : null,
+    deviceName: () => _os.hostname().slice(0, 80) || 'PC',
     // Drive 1.6 'links': „Im Portal öffnen“ nur auf dem Host des Servers oder des Portals
     allowedHosts: () => [store.get('server.url', ''), portalUrl].map((u) => { try { return u ? new URL(u).hostname : null; } catch { return null; } }).filter(Boolean),
   }) : null;

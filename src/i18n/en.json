@@ -1229,7 +1229,17 @@
       "inDrive": "Lies in the folder “GateControl Drive” (files on demand).",
       "generic": "That did not work ({{code}}).",
       "locked": "Drive stopped this device after unusual changes – please decide above.",
-      "unsupported": "This Drive does not offer that yet."
+      "unsupported": "This Drive does not offer that yet.",
+      "featureOff": "This is switched off on this server.",
+      "encrypted": "Not possible for files in vault folders.",
+      "officeUnavailable": "No office in the browser is available for this file.",
+      "vaultLocked": "This PC has no key for the vault – ask for access.",
+      "vaultUnsupported": "This PC cannot store keys protected – vault folders do not work here.",
+      "recoveryKey": "The recovery key is not correct.",
+      "safety": "The safety number does not match – do not approve.",
+      "staleKey": "The vault has a new key – please try again.",
+      "vaultDecrypt": "The file cannot be decrypted (damaged or another key).",
+      "recoveryRequired": "The new key needs a new recovery key."
     },
     "sync": {
       "title": "Back up folders",
@@ -1836,6 +1846,169 @@
         "other": "{{count}} versions removed, {{size}} freed"
       },
       "prunedMore": "There is more – please clean up again."
+    },
+    "vault": {
+      "badge": "Vault",
+      "note": "Vault folder – end-to-end encrypted, readable on approved devices only",
+      "lockedFolder": "Encrypted folder",
+      "lockedFile": "Encrypted file",
+      "lockedVault": "Vault folder (locked)",
+      "pending": {
+        "one": "1 device waiting for approval",
+        "other": "{{count}} devices waiting for approval"
+      },
+      "needsRotation": "A new key is needed",
+      "opened": "Vault opened",
+      "gate": {
+        "title": "Vault folder",
+        "none": "This folder is end-to-end encrypted. This PC has no key for it yet. Ask for access – an approved device confirms it – or open the vault with its recovery key.",
+        "revoked": "This PC's access was removed. You can ask again or enter the recovery key.",
+        "pending": "Access requested. Confirm it on an approved device (e.g. in the portal or the app) and compare this safety number there:",
+        "unsupported": "This PC cannot store keys protected (Windows data protection/DPAPI not available) – vault folders cannot be opened here.",
+        "ask": "Ask for access",
+        "check": "Check again",
+        "stillPending": "Not approved yet.",
+        "recover": "Open with recovery key"
+      },
+      "safety": {
+        "mine": "Safety number of this PC",
+        "other": "Safety number of the device",
+        "same": "The number matches the one on the other device"
+      },
+      "recovery": {
+        "title": "Recovery key",
+        "intro": "“{{name}}” has been created. Write down this recovery key and keep it safe. It is shown only now.",
+        "newIntro": "The vault has a new key and a new recovery key. Write it down – it is shown only now; the old one no longer works.",
+        "label": "Recovery key",
+        "warn": "Without it nobody can reach the files once every approved device is lost – not even an administrator.",
+        "kept": "I have written the key down"
+      },
+      "create": {
+        "title": "New vault folder",
+        "intro": "Contents and names are encrypted on your devices. The server never sees them. No previews, search, links or office for this folder.",
+        "ok": "Create",
+        "button": "New vault folder"
+      },
+      "recover": {
+        "title": "Open with recovery key",
+        "intro": "Enter the 56 characters shown when the vault was created. This PC is approved with it.",
+        "ok": "Open"
+      },
+      "devices": {
+        "title": "Devices of the vault",
+        "button": "Devices",
+        "pending": "Requests",
+        "noPending": "No open requests.",
+        "approvedH": "Approved devices",
+        "approve": "Approve",
+        "decline": "Decline",
+        "approved": "Device approved",
+        "declined": "Request declined"
+      },
+      "device": {
+        "unnamed": "Unnamed device",
+        "portal": "Portal",
+        "viaRecovery": "via recovery key",
+        "this": "{{name}} (this PC)"
+      },
+      "rotate": {
+        "button": "Create a new key",
+        "why": "Someone no longer has access to this area. A new key protects new files.",
+        "title": "Create a new key",
+        "intro": "New files and names are then encrypted with the new key; every approved device gets it. Older files stay readable.",
+        "ok": "Create",
+        "done": "New key created"
+      }
+    },
+    "doc": {
+      "details": "Details …",
+      "title": "Details: {{name}}",
+      "recognised": "Recognised",
+      "kind": {
+        "invoice": "Invoice",
+        "contract": "Contract",
+        "notice": "Official notice",
+        "medical": "Medical letter / finding",
+        "certificate": "Certificate",
+        "statement": "Bank statement",
+        "insurance": "Insurance",
+        "warranty": "Warranty",
+        "other": "Other"
+      },
+      "field": {
+        "kind": "Kind",
+        "title": "Title",
+        "date": "Date",
+        "sender": "Sender",
+        "amount": "Amount"
+      },
+      "pending": "Being recognised …",
+      "none": "Not recognised yet.",
+      "off": "Recognition is switched off for this area.",
+      "failed": "Recognition failed: {{reason}}",
+      "nothing": "Nothing recognised.",
+      "reason": {
+        "no_text": "The file has no readable text.",
+        "media_disabled": "Pictures may not be sent to the AI.",
+        "ai_budget": "The AI budget is used up.",
+        "ai_capability": "The AI provider cannot read this.",
+        "ai_invalid": "The AI's answer was unusable.",
+        "ai_timeout": "The AI did not answer in time.",
+        "ai_provider": "The AI provider reported an error.",
+        "other": "unknown reason"
+      },
+      "suggestion": "Suggestion",
+      "takeName": "Rename",
+      "takeFolder": "Move",
+      "takeBoth": "Apply both",
+      "applied": "Suggestion applied",
+      "run": "Recognise again",
+      "queued": "Being recognised again."
+    },
+    "deadline": {
+      "title": "Deadlines",
+      "sub": "Deadlines from your documents",
+      "none": "No deadlines recognised.",
+      "empty": "No deadlines in the next 12 months.",
+      "kind": {
+        "payment": "Payment deadline",
+        "cancellation": "Cancellation deadline",
+        "objection": "Objection deadline",
+        "other": "Deadline"
+      },
+      "today": "today",
+      "tomorrow": "tomorrow",
+      "inDays": "in {{count}} days",
+      "ago": {
+        "one": "1 day ago",
+        "other": "{{count}} days ago"
+      },
+      "reminded": "Reminder sent",
+      "remind": {
+        "none": "No reminder",
+        "day": "Remind on the day",
+        "one": "Remind 1 day before",
+        "other": "Remind {{count}} days before",
+        "label": "Reminder for {{what}}",
+        "off": "Reminder removed",
+        "set": "Reminder saved"
+      },
+      "group": {
+        "soon": "Next 30 days",
+        "later": "Later",
+        "past": "Expired"
+      }
+    },
+    "office": {
+      "edit": "Edit in browser",
+      "view": "View in browser",
+      "openedEdit": "Opening in the browser for editing …",
+      "openedView": "Opening in the browser …"
+    },
+    "import": {
+      "menu": "Import from Google Drive / OneDrive",
+      "sub": "in the portal",
+      "opened": "The import opens in the portal."
     }
   }
 }
