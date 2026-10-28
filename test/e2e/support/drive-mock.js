@@ -9,6 +9,10 @@
  * fake's device token instead of the app's).
  *
  *   const d = await mock.setDrive({ seat, licence });   // d.srv → the core fake (state.nodes, links, requests)
+ *   mock.setDrive({ features: ['vault', 'vaultsApart'] })   // Drive 1.11: vault folders left out of children,
+ *                                                           // children?dirs=1 with hasDirs (d.srv.state.dirCalls),
+ *                                                           // a new vault always in the area's top folder
+ *   mock.setDrive({ version: '1.11.0' })                    // the version the plugin list reports
  */
 
 const http = require('http');
@@ -31,7 +35,7 @@ async function createDrive(opts = {}) {
   const srv = await driveServer(opts);
   return {
     srv,
-    entry: () => ({ id: 'gatecontrol-drive', name: 'Drive', version: '1.4.0', tab: null }),
+    entry: () => ({ id: 'gatecontrol-drive', name: 'Drive', version: opts.version || '1.4.0', tab: null }),
     /** → true when the request was ours (answered asynchronously). */
     handle({ method, url, raw, headers }, res) {
       if (!url.pathname.startsWith(PREFIX)) return false;

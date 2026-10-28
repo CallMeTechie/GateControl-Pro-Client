@@ -211,11 +211,12 @@ describe('"KI für Dokumente" of an area (drive-state.js docAiSwitch)', () => {
     assert.deepEqual(DS.withDocAi(null, 'x', true), []);
   });
 
-  it('the bar shows it and sends PATCH areas/<id> { docAi } (setDocAi), texts in de and en', () => {
-    const v = read('src', 'renderer', 'drive-view.js');
-    assert.match(v, /DS\.docAiSwitch\(a, S\.folder, S\.me\)/);
-    assert.match(v, /api\.setDocAi\(ai\.areaId, !ai\.on\)/);
+  it('Drive 1.11: the Drive settings show it per area and send PATCH areas/<id> { docAi } (setDocAi), texts in de and en', () => {
+    const v = read('src', 'renderer', 'drive-settings-view.js');
+    assert.match(v, /MS\.docAiAreas\(p\.areas, p\.me\)/);
+    assert.match(v, /api\.setDocAi\(x\.areaId, !x\.on\)/);
     assert.match(v, /role: 'switch'/);
+    assert.doesNotMatch(read('src', 'renderer', 'drive-view.js'), /docAiToggle/, 'no longer in the bar');
     const de = JSON.parse(read('src', 'i18n', 'de.json')).drive.docAi;
     const en = JSON.parse(read('src', 'i18n', 'en.json')).drive.docAi;
     assert.equal(de.label, 'KI für Dokumente');

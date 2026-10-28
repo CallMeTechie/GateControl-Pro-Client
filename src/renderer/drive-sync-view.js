@@ -21,6 +21,10 @@
  * Windows folder moved into the Drive cannot be backed up here as well, and
  * one backed up here cannot be moved (both views lock it).
  *
+ * Drive 1.11: the settings card (node_modules / .git, size, upload / download
+ * limit, home network, VPN) lives in the Drive settings (drive-settings-view.js
+ * shows `settingsCard`); here a line leads there (`openSettings`).
+ *
  * Mounted by drive-view.js (it hands over its helpers el / icon / clear /
  * openDialog and its folder picker). Data: window.gatecontrol.drive.sync;
  * texts: drive.sync.*; view logic without DOM: drive-sync-state.js
@@ -47,6 +51,7 @@
 	 * @param {Function} o.pickDriveFolder - (opts) → Promise<{ folderId, path } | null>
 	 * @param {Function} [o.onSummary] - (summary) after every status
 	 * @param {object} [o.onDemandApi] - window.gatecontrol.driveOnDemand (Dateien bei Bedarf)
+	 * @param {Function} [o.openSettings] - Drive 1.11: the Drive settings show the settings card (then a link here)
 	 */
 	function mount(o) {
 		const api = o.api;
@@ -59,6 +64,8 @@
 		let st = null;
 		let shown = false;
 		let settingsKey = '';
+		let settingsShown = false;
+		const moved = typeof o.openSettings === 'function';
 
 		const wrap = el('div', { class: 'dsv', hidden: true });
 		const head = el('div', { class: 'dsv-head' });
@@ -71,7 +78,21 @@
 			api: o.onDemandApi, t, getLocale: o.getLocale, toast, host, ui: o.ui,
 			onKnown: () => { if (shown && st) keepFocus(renderKnown); },
 		}) : null;
-		wrap.append(head, asks, ...(od ? [od.el] : []), knownCard, moreCard, setCard);
+		// Drive 1.11: the settings are in the Drive settings; a line leads there
+		const setLink = moved ? el('section', { class: 'card dsv-card dsv-set-link' }, [
+			el('div', { class: 'dsv-card-head' }, [
+				el('div', { class: 'dsv-card-tx' }, [el('h3', { class: 'dsv-card-h', 'data-i18n-key': 'drive.sync.set.title' }), el('p', { class: 'dv-p dsv-set-link-tx' })]),
+				el('button', { type: 'button', class: 'btn btn-sec btn-sm', 'data-key': 'open-settings', on: { click: () => o.openSettings('backup') } }, [icon('gear', 14), el('span', { class: 'dsv-set-link-btn' })]),
+			]),
+		]) : null;
+		const relabelLink = () => {
+			if (!setLink) return;
+			setLink.querySelector('.dsv-card-h').textContent = t('drive.sync.set.title');
+			setLink.querySelector('.dsv-set-link-tx').textContent = t('drive.sync.set.moved');
+			setLink.querySelector('.dsv-set-link-btn').textContent = t('drive.settings.open');
+		};
+		relabelLink();
+		wrap.append(head, asks, ...(od ? [od.el] : []), knownCard, moreCard, moved ? setLink : setCard);
 
 		function apply(s) {
 			if (!s || !s.ok) return;
@@ -79,6 +100,14 @@
 			if (od) od.setSync(st);
 			if (typeof o.onSummary === 'function') o.onSummary(SS.summary(st, ctx()));
 			if (shown) render();
+			else if (settingsShown) settingsNow();
+		}
+
+		/** The settings card alone (shown in the Drive settings). */
+		function settingsNow() {
+			if (!st) return;
+			const key = JSON.stringify([st.settings, st.network, st.device, locale()]);
+			if (key !== settingsKey) { settingsKey = key; keepFocus(renderSettings); }
 		}
 		api.onChange(apply);
 		Promise.resolve(api.status()).then(apply).catch(() => {});
@@ -99,10 +128,12 @@
 		/** Re-renders a part and puts the focus back on the control it was on. */
 		function keepFocus(fn) {
 			const a = document.activeElement;
-			const key = a && wrap.contains(a) ? a.getAttribute('data-key') : null;
+			// the settings card may sit in the Drive settings (Drive 1.11)
+			const box = a && wrap.contains(a) ? wrap : a && setCard.contains(a) ? setCard : null;
+			const key = box ? a.getAttribute('data-key') : null;
 			fn();
 			if (key) {
-				const back = wrap.querySelector(`[data-key="${CSS.escape(key)}"]`);
+				const back = box.querySelector(`[data-key="${CSS.escape(key)}"]`);
 				if (back) back.focus();
 			}
 		}
@@ -115,8 +146,7 @@
 				renderKnown();
 				renderMore();
 			});
-			const key = JSON.stringify([st.settings, st.network, st.device, locale()]);
-			if (key !== settingsKey) { settingsKey = key; keepFocus(renderSettings); }
+			if (!moved) settingsNow();
 		}
 
 		function renderHead() {
@@ -384,7 +414,18 @@
 				wrap.hidden = true;
 				if (od) od.hide();
 			},
-			relabel() { settingsKey = ''; if (od) od.relabel(); if (shown) render(); },
+			relabel() { settingsKey = ''; relabelLink(); if (od) od.relabel(); if (shown) render(); else if (settingsShown) settingsNow(); },
+			/** Drive 1.11: the settings card for the Drive settings; show / hide it there. */
+			settingsCard: setCard,
+			showSettings() {
+				settingsShown = true;
+				settingsKey = '';
+				Promise.resolve(api.status()).then(apply).catch(() => {});
+				settingsNow();
+			},
+			hideSettings() { settingsShown = false; },
+			/** "Ordner sichern" / "GateControl Drive im Explorer" in one line for the Drive settings. */
+			onDemandText: () => (od && typeof od.summary === 'function' ? od.summary() : null),
 			summary: () => (st ? SS.summary(st, ctx()) : null),
 			addDialog,
 		};

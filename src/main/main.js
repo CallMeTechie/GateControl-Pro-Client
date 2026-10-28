@@ -544,8 +544,9 @@ function createWindow() {
   });
 
   // Vault auto-lock "immediately" (0): the window goes to the tray / taskbar.
-  mainWindow.on('hide', () => vault?.windowHidden());
-  mainWindow.on('minimize', () => vault?.windowHidden());
+  // Drive 1.11: "Beim Verlassen sperren" locks the Drive vaults the same way.
+  mainWindow.on('hide', () => { vault?.windowHidden(); drive?.windowHidden?.(); });
+  mainWindow.on('minimize', () => { vault?.windowHidden(); drive?.windowHidden?.(); });
 }
 
 /** The app's theme resolved to dark / light (Vault quick search window). */
@@ -985,6 +986,10 @@ function initializeServices() {
     // Drive 1.9 Tresor-Ordner: der private Geräteschlüssel nur unter DPAPI (safeStorage), nie im Klartext
     protect: typeof DriveService.safeStorageProtect === 'function' ? DriveService.safeStorageProtect(safeStorage) : null,
     deviceName: () => _os.hostname().slice(0, 80) || 'PC',
+    // Drive 1.11 Tresor-Sperre: Windows Hello (UserConsentVerifier über WinRT/koffi) vor dem Entsperren; sperrt bei
+    // Sitzungssperre / Standby (powerMonitor), nach Inaktivität und beim Verlassen (windowHidden oben)
+    consent: windowsHello && typeof windowsHello.createConsentVerifier === 'function' ? windowsHello.createConsentVerifier({ log }) : null,
+    powerMonitor,
     // Drive 1.6 'links': „Im Portal öffnen“ nur auf dem Host des Servers oder des Portals
     allowedHosts: () => [store.get('server.url', ''), portalUrl].map((u) => { try { return u ? new URL(u).hostname : null; } catch { return null; } }).filter(Boolean),
   }) : null;

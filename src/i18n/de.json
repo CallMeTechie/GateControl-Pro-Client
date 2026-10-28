@@ -1234,13 +1234,20 @@
       "featureOff": "Das ist auf diesem Server ausgeschaltet.",
       "encrypted": "Für Dateien in Tresor-Ordnern geht das nicht.",
       "officeUnavailable": "Für diese Datei steht kein Office im Browser bereit.",
-      "vaultLocked": "Dieser PC hat keinen Schlüssel für den Tresor – frag den Zugriff an.",
+      "vaultLocked": "Der Tresor ist gesperrt oder dieser PC hat noch keinen Schlüssel dafür.",
       "vaultUnsupported": "Dieser PC kann keine Schlüssel geschützt speichern – Tresor-Ordner gehen hier nicht.",
       "recoveryKey": "Der Wiederherstellungsschlüssel stimmt nicht.",
       "safety": "Die Sicherheitszahl passt nicht – nicht freigeben.",
       "staleKey": "Der Tresor hat einen neuen Schlüssel – bitte noch einmal versuchen.",
       "vaultDecrypt": "Die Datei lässt sich nicht entschlüsseln (beschädigt oder ein anderer Schlüssel).",
-      "recoveryRequired": "Für den neuen Schlüssel ist ein neuer Wiederherstellungsschlüssel nötig."
+      "recoveryRequired": "Für den neuen Schlüssel ist ein neuer Wiederherstellungsschlüssel nötig.",
+      "helloCancelled": "Windows Hello wurde abgebrochen.",
+      "helloNotSetUp": "Windows Hello ist auf diesem PC nicht eingerichtet.",
+      "helloPolicy": "Windows Hello ist durch eine Richtlinie abgeschaltet.",
+      "helloBusy": "Windows Hello ist gerade beschäftigt – bitte gleich noch einmal.",
+      "helloRetries": "Zu viele Versuche – melde dich bei Windows neu an und versuch es dann noch einmal.",
+      "helloUnavailable": "Windows Hello steht hier nicht zur Verfügung.",
+      "helloFailed": "Windows Hello hat nicht bestätigt."
     },
     "sync": {
       "title": "Ordner sichern",
@@ -1397,7 +1404,8 @@
         "forgetHome": "Heimnetze vergessen",
         "vpnOnly": "Nur mit verbundenem VPN",
         "vpnOnlyDesc": "Sonst auch, wann immer der Server erreichbar ist",
-        "always": "Immer ausgelassen: temporäre Dateien (~$…, *.tmp), Thumbs.db, desktop.ini, .DS_Store, leere Dateien und Namen, die Drive nicht annimmt."
+        "always": "Immer ausgelassen: temporäre Dateien (~$…, *.tmp), Thumbs.db, desktop.ini, .DS_Store, leere Dateien und Namen, die Drive nicht annimmt.",
+        "moved": "Bandbreite, Heimnetz, VPN und Ausnahmen findest du jetzt in den Drive-Einstellungen."
       },
       "done": {
         "run": "Abgleich gestartet.",
@@ -1885,10 +1893,24 @@
         "kept": "Ich habe den Schlüssel notiert"
       },
       "create": {
-        "title": "Neuer Tresor-Ordner",
+        "title": "Neuer Tresor",
         "intro": "Inhalte und Namen werden auf deinen Geräten verschlüsselt. Der Server sieht sie nie. Keine Vorschau, keine Suche, keine Links und kein Office für diesen Ordner.",
         "ok": "Anlegen",
-        "button": "Neuer Tresor-Ordner"
+        "button": "Neuer Tresor",
+        "menuHint": "Erscheint im Menü unter „Tresore“, nicht hier",
+        "who": "Wer darf ihn öffnen?",
+        "onlyMe": "Nur ich",
+        "onlyMeHint": "Privat, liegt in „Meine Dateien“",
+        "family": "Mit der Familie teilen",
+        "familyHint": "Jedes Familienmitglied braucht deine Freigabe für sein Gerät",
+        "teamHint": "Für das Team – jedes Gerät braucht eine Freigabe",
+        "noArea": "Du hast keinen Bereich, in dem du einen Tresor anlegen darfst.",
+        "lockHint": {
+          "one": "Öffnen nur mit Windows Hello. Der Tresor sperrt sich nach 1 Minute ohne Nutzung. Du findest ihn links unter „Tresore“.",
+          "other": "Öffnen nur mit Windows Hello. Der Tresor sperrt sich nach {{count}} Minuten ohne Nutzung. Du findest ihn links unter „Tresore“."
+        },
+        "lockHintNever": "Öffnen nur mit Windows Hello. Du findest ihn links unter „Tresore“.",
+        "lockHintNoHello": "Du findest ihn links unter „Tresore“. „Mit Windows Hello öffnen“ ist aus – dann schützt ihn nur die Freigabe dieses PCs."
       },
       "recover": {
         "title": "Mit Wiederherstellungsschlüssel öffnen",
@@ -2016,6 +2038,122 @@
       "menu": "Aus Google Drive / OneDrive importieren",
       "sub": "im Portal",
       "opened": "Der Import öffnet sich im Portal."
+    },
+    "menu": {
+      "label": "Drive-Menü",
+      "personal": "Persönlich",
+      "shared": "Gemeinsam",
+      "vaults": "Tresore",
+      "tools": "Weitere Bereiche von Drive",
+      "links": "Geteilt (deine Links)",
+      "fold": "Zuklappen: {{name}}",
+      "unfold": "Aufklappen: {{name}}",
+      "seat": {
+        "family": "Familien-Platz",
+        "business": "Business-Platz"
+      },
+      "vault": {
+        "private": "Privat",
+        "family": "Mit Familie geteilt",
+        "lockedName": "Tresor vom {{date}}",
+        "lockedNameNoDate": "Tresor",
+        "state": {
+          "open": "entsperrt",
+          "locked": "gesperrt",
+          "pending": "wartet auf Freigabe",
+          "none": "kein Zugriff",
+          "unsupported": "nicht auf diesem PC"
+        }
+      }
+    },
+    "new": {
+      "button": "Neu",
+      "files": "Dateien hochladen …"
+    },
+    "lock": {
+      "card": {
+        "title": "Tresor gesperrt",
+        "text": "Entsperre ihn mit Windows Hello – Gesicht, Fingerabdruck oder PIN –, um Namen und Dateien zu sehen.",
+        "textNoHello": "Entsperre ihn, um Namen und Dateien zu sehen."
+      },
+      "unlockHello": "Mit Windows Hello entsperren",
+      "unlock": "Entsperren",
+      "now": "Tresore jetzt sperren",
+      "locked": "Tresore gesperrt",
+      "hello": {
+        "label": "Mit Windows Hello öffnen",
+        "desc": "Gesicht, Fingerabdruck oder Windows-Hello-PIN, bevor ein Tresor entsperrt wird",
+        "offWarn": "Aus: Dann schützt nur die Freigabe dieses PCs die Tresore – wer an diesem Windows-Konto sitzt, kann sie öffnen.",
+        "notSetUp": "Windows Hello ist auf diesem PC nicht eingerichtet. Richte PIN, Gesicht oder Fingerabdruck in den Windows-Einstellungen ein – oder schalte in den Drive-Einstellungen „Mit Windows Hello öffnen“ aus.",
+        "policy": "Windows Hello ist auf diesem PC durch eine Richtlinie abgeschaltet. Frag die IT – oder schalte in den Drive-Einstellungen „Mit Windows Hello öffnen“ aus.",
+        "busy": "Windows Hello ist gerade beschäftigt – versuch es gleich noch einmal.",
+        "unavailable": "Windows Hello steht hier nicht zur Verfügung (zum Beispiel in einer Remotedesktop-Sitzung). Öffne den Tresor direkt am PC – oder schalte in den Drive-Einstellungen „Mit Windows Hello öffnen“ aus.",
+        "setup": "Windows Hello einrichten"
+      },
+      "after": {
+        "one": "nach 1 Minute",
+        "other": "nach {{count}} Minuten",
+        "never": "Nie"
+      },
+      "auto": {
+        "label": "Automatisch sperren",
+        "desc": "Wenn kein Tresor benutzt wird"
+      },
+      "leave": {
+        "label": "Beim Verlassen sperren",
+        "desc": "Wenn das Fenster minimiert oder geschlossen wird. Wird Windows gesperrt, sperren die Tresore immer."
+      },
+      "state": {
+        "label": "Tresore auf diesem PC",
+        "open": "Entsperrt",
+        "locked": "Gesperrt"
+      }
+    },
+    "settings": {
+      "title": "Drive-Einstellungen",
+      "intro": "Gilt für diesen PC – außer „KI für Dokumente“, das gilt für den ganzen Bereich.",
+      "open": "Drive-Einstellungen",
+      "backup": {
+        "title": "Sicherung",
+        "open": "Öffnen",
+        "syncDesc": "Ordner dieses PCs in Drive sichern oder abgleichen",
+        "explorer": "GateControl Drive im Explorer",
+        "explorerDesc": "Dateien bei Bedarf und Windows-Ordner im Drive – in „Ordner sichern“"
+      },
+      "vaults": {
+        "title": "Tresore",
+        "safety": "Sicherheitszahl dieses PCs",
+        "safetyDesc": "Zum Vergleichen, wenn ein anderes Gerät diesen PC freigibt",
+        "noDevice": "noch keine",
+        "approved": "Freigegeben für",
+        "none": "Noch kein Tresor auf diesem PC"
+      },
+      "ai": {
+        "vaults": "Tresore werden nie von der KI gelesen."
+      },
+      "view": {
+        "title": "Ansicht",
+        "sort": "Sortieren nach",
+        "sortDesc": "Für die Ordnerlisten"
+      },
+      "data": {
+        "title": "Daten auf diesem Gerät"
+      },
+      "cache": {
+        "label": "Zwischenspeicher",
+        "size": "{{size}} für Vorschaubilder und geöffnete Dateien",
+        "clear": "Leeren",
+        "never": "Tresor-Schlüssel und laufende Uploads werden dabei nie gelöscht.",
+        "cleared": "Zwischenspeicher geleert",
+        "clearedKept": "Geleert – {{count}} geöffnete Dateien sind noch in Benutzung"
+      },
+      "notify": {
+        "title": "Benachrichtigungen",
+        "desc": "Mitteilungen von Drive auf diesem PC",
+        "deadline": "Erinnerungen an Fristen",
+        "vault": "Anfragen zur Tresor-Freigabe",
+        "none": "Dieser Server meldet keine Mitteilungen von Drive."
+      }
     }
   }
 }

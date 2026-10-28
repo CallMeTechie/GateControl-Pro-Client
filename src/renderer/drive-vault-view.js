@@ -10,9 +10,17 @@
  * comparing, decline) and "Neuen Schlüssel erzeugen" when Drive asks for one.
  * Keys and crypto stay in the main process (core services/drive-vault.js).
  *
+ * Drive 1.11: "Neuer Tresor" only from the page's "Neu" menu, with "Wer darf
+ * ihn öffnen?" (Nur ich / Mit der Familie teilen / a team folder): the vault
+ * always goes into the top folder of that area and shows in the menu under
+ * "Tresore". A vault this PC has a key for but that is locked shows the card
+ * "Tresor gesperrt" with "Mit Windows Hello entsperren" (core vault lock); when
+ * Windows Hello is not set up, the card says so and offers Windows' sign-in
+ * options.
+ *
  * Data: window.gatecontrol.drive.vault; logic: drive-vault-state.js
- * (window.GCDriveVaultState); texts: drive.vault.*. Server text only via
- * textContent.
+ * (window.GCDriveVaultState) and drive-menu-state.js; texts: drive.vault.*,
+ * drive.lock.*. Server text only via textContent.
  */
 (function (root) {
 	'use strict';
@@ -29,6 +37,9 @@
 	 * @param {Function} o.toast
 	 * @param {Function} o.errorText
 	 * @param {() => void} o.changed - the page reloads what it shows
+	 * @param {() => object|null} [o.getLock] - the vault lock's last status (Drive 1.11)
+	 * @param {(vaultId: string) => void} [o.unlocked] - after "Entsperren": the page opens the vault
+	 * @param {() => void} [o.openSettings] - the Drive settings (switch "Mit Windows Hello öffnen")
 	 */
 	function create(o) {
 		const { el, icon, openDialog } = o.ui;
@@ -61,19 +72,25 @@
 			setTimeout(() => check.focus(), 0);
 		}
 
-		/** "Neuer Tresor-Ordner" in folder `parentId`. */
-		function createDialog(parentId) {
+		/**
+		 * "Neuer Tresor" (Drive 1.11): a name and "Wer darf ihn öffnen?" (choices: [{ areaId, label, hint }] of
+		 * GCDriveMenuState.vaultChoices) — the vault goes into the top folder of the area picked, whatever folder is
+		 * shown. Then the recovery key, once.
+		 */
+		function createDialog(choices, { autoLock = 3, hello = true } = {}) {
+			const list = Array.isArray(choices) ? choices : [];
 			const dlg = openDialog({ title: t('drive.vault.create.title'), host: o.host, closeLabel: t('drive.close') });
 			dlg.box.classList.add('dv-vault-dlg');
 			const id = nextId('dv-vname');
 			const input = el('input', { id, type: 'text', class: 'dv-input', maxlength: '255', spellcheck: 'false' });
 			const errEl = el('span', { class: 'dv-field-err', role: 'alert' });
 			const ok = el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.vault.create.ok'), disabled: true });
-			const check = () => { const e = DS.nameError(input.value, t); errEl.textContent = input.value ? (e || '') : ''; ok.disabled = !!e; return !e; };
+			let areaId = list.length ? list[0].areaId : null;
+			const check = () => { const e = DS.nameError(input.value, t); errEl.textContent = input.value ? (e || '') : ''; ok.disabled = !!e || !areaId; return !e && !!areaId; };
 			const submit = async () => {
 				if (!check()) return;
 				ok.disabled = true;
-				const r = await Promise.resolve(vapi.create(parentId, input.value.trim())).catch(fail);
+				const r = await Promise.resolve(vapi.create(input.value.trim(), { areaId })).catch(fail);
 				if (!r || !r.ok) { ok.disabled = false; errEl.textContent = o.errorText(r, t); return; }
 				o.changed();
 				dlg.setTitle(t('drive.vault.recovery.title'));
@@ -82,9 +99,24 @@
 			input.addEventListener('input', check);
 			input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 			ok.addEventListener('click', submit);
+			const group = nextId('dv-vwho');
+			const who = el('div', { class: 'dv-vwho', role: 'radiogroup', 'aria-labelledby': group });
+			list.forEach((c, i) => {
+				const rid = nextId('dv-vwho-r');
+				const radio = el('input', { id: rid, type: 'radio', name: group, value: c.areaId, 'data-area': c.areaId });
+				if (i === 0) radio.checked = true;
+				radio.addEventListener('change', () => { if (radio.checked) { areaId = c.areaId; check(); } });
+				who.appendChild(el('label', { class: 'dv-vwho-opt', for: rid }, [radio, el('span', { class: 'dv-vwho-tx' }, [el('span', { class: 'dv-vwho-name', text: c.label }), c.hint ? el('span', { class: 'dv-row-sub', text: c.hint }) : null])]));
+			});
+			if (!list.length) who.appendChild(el('p', { class: 'dv-p', text: t('drive.vault.create.noArea') }));
+			const lockText = hello
+				? (autoLock ? t(autoLock === 1 ? 'drive.vault.create.lockHint.one' : 'drive.vault.create.lockHint.other', { count: autoLock }) : t('drive.vault.create.lockHintNever'))
+				: t('drive.vault.create.lockHintNoHello');
 			dlg.body.append(
 				el('p', { class: 'dv-p', text: t('drive.vault.create.intro') }),
 				el('label', { class: 'lbl', for: id, text: t('drive.name.label') }), input, errEl,
+				el('span', { class: 'lbl', id: group, text: t('drive.vault.create.who') }), who,
+				el('div', { class: 'dv-note' }, [icon('lock', 14), ' ', lockText]),
 			);
 			dlg.foot.append(el('span', { class: 'dv-grow' }), el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }), ok);
 			setTimeout(() => input.focus(), 0);
@@ -121,6 +153,8 @@
 			const box = el('div', { class: 'dv-vgate', role: 'status' });
 			const draw = (st, sn) => {
 				while (box.firstChild) box.removeChild(box.firstChild);
+				// Drive 1.11: approved here, locked → Windows Hello first
+				if (st === 'locked' || st === 'approved') { drawLocked(); return; }
 				const v = VS.gateView(st, { t, safetyNumber: sn });
 				box.append(
 					el('span', { class: 'dv-vgate-ic' }, [icon('vault', 22)]),
@@ -156,6 +190,43 @@
 				if (v.recover) acts.appendChild(el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-vault-recover', text: t('drive.vault.gate.recover'), on: { click: () => recoverDialog(vaultId) } }));
 				box.appendChild(acts);
 			};
+			/** "Tresor gesperrt": "Mit Windows Hello entsperren" — or why it cannot be (Hello not set up …). */
+			function drawLocked(err = null) {
+				while (box.firstChild) box.removeChild(box.firstChild);
+				const lock = typeof o.getLock === 'function' ? o.getLock() : null;
+				const MS = root.GCDriveMenuState;
+				const helloOn = !lock || !lock.enforced || !(lock.settings && lock.settings.hello === false);
+				const hint = lock && lock.enforced && helloOn && MS ? MS.helloHint(lock.hello, t) : null;
+				const can = !MS || MS.canUnlock(lock);
+				box.classList.add('is-locked');
+				box.append(
+					el('span', { class: 'dv-vgate-ic' }, [icon('lock', 22)]),
+					el('div', { class: 'dv-vgate-tx' }, [
+						el('b', { text: t('drive.lock.card.title') }),
+						el('p', { class: 'dv-p', text: t(helloOn && lock && lock.enforced ? 'drive.lock.card.text' : 'drive.lock.card.textNoHello') }),
+						hint ? el('div', { class: 'dv-note is-warn dv-hello-hint', text: hint.text }) : null,
+						err ? el('div', { class: 'dv-dlg-err', role: 'alert', text: err }) : null,
+					]),
+				);
+				const acts = el('div', { class: 'dv-vgate-acts' });
+				if (can) {
+					const go = el('button', { type: 'button', class: 'btn btn-pri btn-sm dv-vault-unlock' }, [icon('lock', 14), el('span', { text: t(helloOn && lock && lock.enforced ? 'drive.lock.unlockHello' : 'drive.lock.unlock') })]);
+					go.addEventListener('click', async () => {
+						go.disabled = true;
+						const r = await Promise.resolve(vapi.unlock(vaultId)).catch(fail);
+						if (r && r.ok) { if (typeof o.unlocked === 'function') o.unlocked(vaultId); else o.changed(); return; }
+						go.disabled = false;
+						if (r && r.code === 'hello_cancelled') return;
+						drawLocked(o.errorText(r, t));
+					});
+					acts.appendChild(go);
+				}
+				if (hint && hint.setup && typeof vapi.helloSettings === 'function') {
+					acts.appendChild(el('button', { type: 'button', class: 'btn btn-sec btn-sm dv-hello-setup', text: t('drive.lock.hello.setup'), on: { click: () => Promise.resolve(vapi.helloSettings()).catch(() => {}) } }));
+				}
+				if (hint && typeof o.openSettings === 'function') acts.appendChild(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: t('drive.settings.title'), on: { click: () => o.openSettings() } }));
+				box.appendChild(acts);
+			}
 			draw(state, safetyNumber);
 			return box;
 		}
