@@ -175,3 +175,51 @@ describe('push targets and the page', () => {
     }
   });
 });
+
+describe('"KI für Dokumente" of an area (drive-state.js docAiSwitch)', () => {
+  const me = { features: ['docAi'] };
+  const ar = (o = {}) => ({ id: 'family:1', kind: 'family', label: 'Familie', writable: true, archived: false, docAi: true, ...o });
+  const folder = { node: { id: 2, areaId: 'family:1', encrypted: false }, vault: null };
+
+  it('with the write right while the Drive reports docAi and the area\'s state', () => {
+    assert.deepEqual(DS.docAiSwitch(ar(), folder, me), { areaId: 'family:1', on: true });
+    assert.deepEqual(DS.docAiSwitch(ar({ docAi: false }), folder, me), { areaId: 'family:1', on: false });
+    assert.deepEqual(DS.docAiSwitch(ar(), null, me), { areaId: 'family:1', on: true });
+  });
+
+  it('not without the feature, the write right or the area\'s state; archived areas neither', () => {
+    assert.equal(DS.docAiSwitch(ar(), folder, { features: ['office'] }), null);
+    assert.equal(DS.docAiSwitch(ar(), folder, null), null);
+    assert.equal(DS.docAiSwitch(ar({ writable: false }), folder, me), null);
+    assert.equal(DS.docAiSwitch(ar({ archived: true }), folder, me), null);
+    assert.equal(DS.docAiSwitch(ar({ docAi: null }), folder, me), null);
+    assert.equal(DS.docAiSwitch(null, folder, me), null);
+  });
+
+  it('never in a vault folder', () => {
+    assert.equal(DS.docAiSwitch(ar(), { node: { id: 30, encrypted: true }, vault: { id: 'v', state: 'open' } }, me), null);
+    assert.equal(DS.docAiSwitch(ar(), { node: { id: 30, encrypted: true }, vault: null }, me), null);
+    assert.equal(DS.docAiSwitch(ar(), { node: { id: 31 }, vault: { id: 'v', state: 'none' } }, me), null);
+  });
+
+  it('the areas after the switch: only that one changes', () => {
+    const list = [ar({ id: 'mine:2', kind: 'mine' }), ar()];
+    const next = DS.withDocAi(list, 'family:1', false);
+    assert.deepEqual(next.map((a) => a.docAi), [true, false]);
+    assert.equal(next[0], list[0]);
+    assert.equal(list[1].docAi, true);
+    assert.deepEqual(DS.withDocAi(null, 'x', true), []);
+  });
+
+  it('the bar shows it and sends PATCH areas/<id> { docAi } (setDocAi), texts in de and en', () => {
+    const v = read('src', 'renderer', 'drive-view.js');
+    assert.match(v, /DS\.docAiSwitch\(a, S\.folder, S\.me\)/);
+    assert.match(v, /api\.setDocAi\(ai\.areaId, !ai\.on\)/);
+    assert.match(v, /role: 'switch'/);
+    const de = JSON.parse(read('src', 'i18n', 'de.json')).drive.docAi;
+    const en = JSON.parse(read('src', 'i18n', 'en.json')).drive.docAi;
+    assert.equal(de.label, 'KI für Dokumente');
+    assert.equal(en.label, 'AI for documents');
+    for (const k of ['hint', 'onDone', 'offDone']) assert.ok(de[k] && en[k], k);
+  });
+});

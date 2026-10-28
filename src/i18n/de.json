@@ -1027,7 +1027,8 @@
       "label": "Sortieren",
       "name": "Name",
       "mtime": "Datum",
-      "size": "Größe"
+      "size": "Größe",
+      "type": "Typ"
     },
     "time": {
       "today": "heute {{time}}",
@@ -1919,6 +1920,12 @@
         "ok": "Erzeugen",
         "done": "Neuer Schlüssel erzeugt"
       }
+    },
+    "docAi": {
+      "label": "KI für Dokumente",
+      "hint": "Drive erkennt in diesem Bereich Rechnungen, Verträge und Bescheide, schlägt Namen und Ordner vor und findet Fristen.",
+      "onDone": "KI für Dokumente in „{{area}}“ eingeschaltet",
+      "offDone": "KI für Dokumente in „{{area}}“ ausgeschaltet"
     },
     "doc": {
       "details": "Details …",

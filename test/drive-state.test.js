@@ -331,3 +331,57 @@ describe('Drive 1.5 / 1.6: live, portal, guard, folders', () => {
     assert.equal(DS.guardView({ locked: true, incident: null }, { t, locale: 'de', now: NOW }).id, null);
   });
 });
+
+describe('sorting by type ("Typ")', () => {
+  const f = (name, o = {}) => ({ id: name, name, isDir: false, ...o });
+  const names = (list) => list.map((n) => n.name);
+  const items = [
+    f('zeta.mp3'), f('Bild.JPG'), f('b.docx'), f('a.doc'), f('Plan.xlsx'), f('Folien.pptx'), f('Brief.pdf'), f('Clip.mp4'),
+    f('notiz.txt'), f('pack.zip'), f('ohne'), f('Belege', { isDir: true }), f('Archiv', { isDir: true }), f('a.docx'), f('Scan', { mime: 'application/pdf' }),
+  ];
+
+  it('"Typ" is one of the sorts; Drive is asked by name, ascending', () => {
+    assert.ok(DS.SORTS.includes('type'));
+    assert.deepEqual(DS.sortQuery('type'), { sort: 'name', order: 'asc' });
+  });
+
+  it('folders first, then documents, tables, presentations, PDF, images, videos, text, archives, audio, others', () => {
+    assert.deepEqual(DS.TYPE_ORDER, ['folder', 'doc', 'sheet', 'slides', 'pdf', 'image', 'video', 'text', 'archive', 'audio', 'other']);
+    assert.deepEqual(names(DS.sortRows(items, 'type', { locale: 'de' })), [
+      'Archiv', 'Belege', 'a.doc', 'a.docx', 'b.docx', 'Plan.xlsx', 'Folien.pptx', 'Scan', 'Brief.pdf', 'Bild.JPG', 'Clip.mp4', 'notiz.txt', 'pack.zip', 'zeta.mp3', 'ohne',
+    ]);
+  });
+
+  it('within a group by extension, then by name (numbers as numbers)', () => {
+    const list = [f('b.png'), f('a10.jpg'), f('a2.jpg'), f('A1.jpg')];
+    assert.deepEqual(names(DS.sortRows(list, 'type', { locale: 'en' })), ['A1.jpg', 'a2.jpg', 'a10.jpg', 'b.png']);
+  });
+
+  it('descending turns groups and names round, folders stay first', () => {
+    assert.deepEqual(names(DS.sortRows(items, 'type', { order: 'desc', locale: 'de' })), [
+      'Belege', 'Archiv', 'ohne', 'zeta.mp3', 'pack.zip', 'notiz.txt', 'Clip.mp4', 'Bild.JPG', 'Brief.pdf', 'Scan', 'Folien.pptx', 'Plan.xlsx', 'b.docx', 'a.docx', 'a.doc',
+    ]);
+  });
+
+  it('the other sorts keep Drive\'s order; a new array, the input untouched', () => {
+    const before = names(items);
+    assert.equal(DS.sortRows(items, 'name'), items);
+    assert.equal(DS.sortRows(items, 'size'), items);
+    const sorted = DS.sortRows(items, 'type');
+    assert.notEqual(sorted, items);
+    assert.deepEqual(names(items), before);
+    assert.deepEqual(DS.sortRows(null, 'type'), []);
+  });
+
+  it('a vault folder counts as a folder, a locked file (no name) as other', () => {
+    const list = [f('c'.repeat(32), { encrypted: true, locked: true }), f('Tresor', { isDir: true, encrypted: true, vaultRoot: true }), f('x.pdf')];
+    assert.deepEqual(names(DS.sortRows(list, 'type')), ['Tresor', 'x.pdf', 'c'.repeat(32)]);
+  });
+
+  it('the view sorts the folder\'s rows and asks Drive again only when its order changes', () => {
+    const v = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'drive-view.js'), 'utf8');
+    assert.match(v, /DS\.sortRows\(S\.folder\.items, S\.sort/);
+    assert.match(v, /function setSort\(s\)/);
+    assert.match(v, /keep\('gc\.drive\.sort', s\)/);
+  });
+});

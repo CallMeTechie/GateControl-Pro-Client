@@ -40,6 +40,7 @@ test.describe('drive 1.8 / 1.9', () => {
     await expect(side(root, /Fristen|Deadlines/)).toHaveCount(0);
     await expect(side(root, /importieren|Import/)).toHaveCount(0);
     await expect(root.locator('.dv-vault-new')).toHaveCount(0);
+    await expect(root.locator('.dv-ai')).toHaveCount(0);
     await root.locator('.dv-row[data-id="10"] .dv-open').click();
     await root.locator('.dv-row[data-id="12"] .dv-more-btn').click();
     await expect(page.locator('.dv-menu-item', { hasText: /Details|Im Browser|in browser/ })).toHaveCount(0);
@@ -84,6 +85,39 @@ test.describe('drive 1.8 / 1.9', () => {
     await expect(root.locator('.dv-dl-remind')).toHaveValue('7');
     await root.locator('.dv-dl .dv-dl-file').click();
     await expect(page.locator('.dv-dlg.dv-docs .dv-dlg-h')).toHaveText(/Stadtwerke Rechnung/);
+  });
+
+  test('"KI für Dokumente" per area (write right only) and sorting by type', async ({ launchApp, mock }) => {
+    const d = await mock.setDrive({ features: ['docAi'] });
+    const doc = d.srv.mutate.file(1, 'Brief.docx', 'docx');
+    const sheet = d.srv.mutate.file(1, 'Zahlen.xlsx', 'xlsx');
+    const pdf = d.srv.mutate.file(1, 'Angebot.pdf', 'pdf');
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openDrive(page);
+    await expect(root.locator('.dv-row[data-id="10"]')).toBeVisible();
+    // Meine Dateien (manage): the switch, on
+    const ai = root.locator('.dv-ai');
+    await expect(ai).toHaveText(/KI für Dokumente|AI for documents/);
+    const sw = ai.locator('.sw[role="switch"]');
+    await expect(sw).toHaveAttribute('aria-checked', 'true');
+    await sw.click();
+    await expect.poll(() => d.srv.state.docAiOff.has('mine:2')).toBe(true);
+    await expect(root.locator('.dv-ai .sw')).toHaveAttribute('aria-checked', 'false');
+    await page.screenshot({ path: test.info().outputPath('drive-docai-switch.png') });
+    await root.locator('.dv-ai .sw').click();
+    await expect.poll(() => d.srv.state.docAiOff.has('mine:2')).toBe(false);
+    await expect(root.locator('.dv-ai .sw')).toHaveAttribute('aria-checked', 'true');
+    // "Typ": folders, documents, tables, PDF, images, others — remembered like the other sorts
+    const ids = () => root.locator('.dv-row[data-id]').evaluateAll((rows) => rows.map((r) => r.getAttribute('data-id')));
+    await root.locator('.dv-seg [data-sort="type"]').click();
+    await expect(root.locator('.dv-seg [data-sort="type"]')).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(ids).toEqual(['10', String(doc.id), String(sheet.id), String(pdf.id), '11', '13']);
+    expect(await page.evaluate(() => localStorage.getItem('gc.drive.sort'))).toBe('type');
+    // a child's folder the parent only reads: no switch
+    await side(root, /Lena/).click();
+    await expect(root.locator('.dv-note')).toBeVisible();
+    await expect(root.locator('.dv-ai')).toHaveCount(0);
   });
 
   test('cloudImport and office: the portal\'s import page and the editor in the default browser', async ({ launchApp, mock }) => {

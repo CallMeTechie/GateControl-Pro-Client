@@ -1027,7 +1027,8 @@
       "label": "Sort",
       "name": "Name",
       "mtime": "Date",
-      "size": "Size"
+      "size": "Size",
+      "type": "Type"
     },
     "time": {
       "today": "today {{time}}",
@@ -1919,6 +1920,12 @@
         "ok": "Create",
         "done": "New key created"
       }
+    },
+    "docAi": {
+      "label": "AI for documents",
+      "hint": "In this area Drive recognises invoices, contracts and notices, suggests names and folders and finds deadlines.",
+      "onDone": "AI for documents switched on in “{{area}}”",
+      "offDone": "AI for documents switched off in “{{area}}”"
     },
     "doc": {
       "details": "Details …",
