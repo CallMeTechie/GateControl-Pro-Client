@@ -280,3 +280,100 @@
 .dod-paths { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 12px; word-break: break-all; }
 .dod-agree { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; cursor: pointer; }
 .dod-off-err:empty { display: none; }
+
+/* ── Drive 1.7: time travel (drive-view.js) ────────────────── */
+.dv-note.is-warn { background: var(--warn-bg); color: var(--warn); }
+.dv-note.is-muted { background: var(--panel2); color: var(--muted); }
+.dv-tt-presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.dv-tt-at { max-width: 260px; }
+.dv-tt-when { color: var(--text); font-weight: 600; }
+.dv-tt-sum { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
+.dv-tt-sample { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.dv-tt-row { display: flex; align-items: baseline; gap: 10px; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 12.5px; }
+.dv-tt-row:first-child { border-top: 0; }
+.dv-tt-op { flex-shrink: 0; min-width: 96px; color: var(--muted); }
+.dv-tt-name { min-width: 0; overflow-wrap: anywhere; }
+
+/* ── Drive 1.7: "Fotos" (drive-photos-view.js) ─────────────── */
+.dpv { display: flex; flex-direction: column; gap: 10px; flex-grow: 1; min-height: 0; }
+.dpv[hidden], .dpv-selbar[hidden], .dsg[hidden] { display: none; }
+.dpv button { font: inherit; }
+.dpv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 36px; }
+.dpv-head .dsv-h { margin-right: 6px; }
+.dpv-select { width: auto; max-width: 220px; height: 30px; padding: 4px 8px; font-size: 12.5px; }
+.dpv-selbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-radius: 10px; background: var(--acc-bg); }
+.dpv-sel-n { font-size: 13px; font-weight: 600; color: var(--acc-t); }
+.dpv .btn-pri { color: var(--acc-on); }
+.dpv-body { flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; padding: 2px 4px 16px 0; }
+.dpv-month-h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.dpv-month-name { font-size: 15px; font-weight: 600; }
+.dpv-month-n { font-size: 12px; color: var(--muted); }
+.dpv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.dpv-tile { position: relative; aspect-ratio: 1 / 1; padding: 0; border: 0; border-radius: 10px; overflow: hidden; background: var(--panel2); cursor: pointer; }
+.dpv-tile:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.dpv-tile.is-sel { outline: 3px solid var(--acc); outline-offset: -3px; }
+.dpv-tile.is-selecting:not(.is-sel) .dpv-img { opacity: .82; }
+.dpv-img, .dpv-cover, .dpv-big { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.dpv-img img, .dpv-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.dpv-img.has-img svg, .dpv-cover.has-img svg, .dpv-big.has-img svg { visibility: hidden; }
+.dpv-play { position: absolute; right: 6px; bottom: 6px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0, 0, 0, .55); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
+.dpv-check { position: absolute; top: 6px; left: 6px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; background: rgba(0, 0, 0, .35); color: var(--acc-on); display: inline-flex; align-items: center; justify-content: center; }
+.dpv-tile.is-sel .dpv-check { background: var(--acc); border-color: var(--acc); }
+.dpv-more { display: flex; justify-content: center; padding: 6px 0; }
+.dpv-sentinel { height: 1px; }
+.dpv-mem { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; }
+.dpv-mem-h { display: flex; align-items: center; gap: 8px; color: var(--acc-t); font-size: 14px; }
+.dpv-mem .dpv-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.dpv-albums { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.dpv-album { position: relative; display: flex; flex-direction: column; gap: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); text-align: left; cursor: pointer; }
+.dpv-album:hover { border-color: var(--line2); }
+.dpv-album:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.dpv-cover { aspect-ratio: 4 / 3; height: auto; background: var(--info-bg); color: var(--info); }
+.dpv-album .dpv-album-tx { padding: 10px 12px; }
+.dpv-album-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dpv-album-name, .dpv-album-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dpv-album-title { font-size: 16px; }
+.dpv-album-sub { font-size: 12px; color: var(--muted); }
+.dpv-frame-badge { position: absolute; top: 8px; right: 8px; padding: 2px 8px; border-radius: 999px; background: var(--acc); color: var(--acc-on); font-size: 11px; font-weight: 600; }
+.dpv-album-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dpv-frame { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.dv-dlg.dpv-light { width: 900px; }
+.dpv-stage-wrap { display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; align-items: center; gap: 8px; }
+.dpv-stage { display: flex; align-items: center; justify-content: center; min-height: 300px; height: min(62vh, 640px); border-radius: 12px; background: var(--panel2); overflow: hidden; }
+.dpv-big { color: var(--faint); }
+.dpv-big img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.dpv-nav:disabled { opacity: .35; cursor: default; }
+.dpv-meta { font-size: 12.5px; color: var(--muted); text-align: center; }
+
+/* ── Drive 1.7: "Speicher" (drive-storage-view.js) ─────────── */
+.dsg { display: flex; flex-direction: column; gap: 12px; flex-grow: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.dsg button { font: inherit; }
+.dsg-body { display: flex; flex-direction: column; gap: 12px; }
+.dsg-total { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 2px 0 8px; }
+.dsg-big { font-family: var(--font-disp); font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dsg-bar { height: 8px; border-radius: 4px; background: var(--panel2); overflow: hidden; }
+.dsg-bar span { display: block; height: 100%; background: var(--acc); }
+.dsg-bar.is-warn span { background: var(--warn); }
+.dsg-bar.is-err span { background: var(--err); }
+.dsg-parts { display: flex; gap: 18px; flex-wrap: wrap; padding: 12px 0 6px; font-size: 13px; }
+.dsg-part { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+.dsg-part b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.dsg-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--acc); }
+.dsg-part.is-versions .dsg-dot { background: var(--info); }
+.dsg-part.is-trash .dsg-dot { background: var(--faint); }
+.dsg-foot { padding: 0 0 10px; }
+.dsg-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.dsg-row .dsg-bar { grid-column: 1 / -1; height: 6px; }
+.dsg-row-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex-grow: 1; }
+.dsg-name { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsg-sub { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.dsg-val { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dsg-file { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); }
+.dsg-dup-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0 10px; }
+.dsg-dup { display: flex; flex-direction: column; padding: 8px 0; border-top: 1px solid var(--line); }
+.dsg-dup-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding-bottom: 4px; }
+.dsg-dup-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 9px; cursor: pointer; }
+.dsg-dup-row:hover { background: var(--panel2); }
+.dsg-dup-row.is-on { background: var(--err-bg); }
+.dsg-dup-row input { width: 16px; height: 16px; accent-color: var(--err); flex-shrink: 0; }
+.dsg-trash-list { margin: 0; padding-left: 20px; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }

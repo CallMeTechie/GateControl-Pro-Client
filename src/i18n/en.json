@@ -1614,6 +1614,206 @@
       "releaseText": "Only if you changed the files yourself (for example encrypted or compressed them). Drive keeps them as they are and syncing goes on.",
       "undone": "Undone: {{restored}} restored, {{trashed}} moved to the trash",
       "released": "Released – syncing goes on"
+    },
+    "tt": {
+      "menu": "Restore to an earlier state …",
+      "title": "Restore “{{name}}” to an earlier state",
+      "intro": "The folder becomes what it was at that time: deleted files come back, changed files get the content they had then, files new since then go to the trash. You see a preview first, then you decide.",
+      "quick": "Quick choice",
+      "when": "Date and time",
+      "preset": {
+        "hour": "1 hour ago",
+        "day": "1 day ago",
+        "week": "1 week ago",
+        "month": "1 month ago"
+      },
+      "err": {
+        "when": "Please pick a date and time.",
+        "future": "The time must be in the past."
+      },
+      "preview": "Preview",
+      "checking": "Drive is checking what would change …",
+      "backTo": "Back to how it was on {{when}}:",
+      "nothingToDo": "Nothing in this folder changed since then.",
+      "restore": {
+        "one": "1 deleted file comes back",
+        "other": "{{count}} deleted files come back"
+      },
+      "revert": {
+        "one": "1 file gets its content from then",
+        "other": "{{count}} files get their content from then"
+      },
+      "trash": {
+        "one": "1 file new since then goes to the trash",
+        "other": "{{count}} files new since then go to the trash"
+      },
+      "move": {
+        "one": "1 file gets its name or place from then",
+        "other": "{{count}} files get their name or place from then"
+      },
+      "op": {
+        "restore": "comes back",
+        "revert": "old content",
+        "trash": "trash",
+        "move": "name/place"
+      },
+      "examples": "Examples",
+      "more": "and {{count}} more",
+      "limited": "Drive does not know renames and moves before {{since}} – they stay as they are now.",
+      "linkedSyncH": "Synced with this PC:",
+      "linkedSync": "“{{name}}” syncs afterwards and gets the earlier state. What you changed there since the last sync stays next to it as a conflict copy; files new since then go to the Windows recycle bin.",
+      "linkedBackupH": "Backup of this PC:",
+      "linkedBackup": "“{{name}}” is only backed up: the files on this PC stay as they are. The next backup brings the PC's state to Drive again – the contents from then stay there as older versions.",
+      "safe": "Nothing is deleted for good: new files go to the trash, replaced contents stay as older versions.",
+      "run": "Restore",
+      "restored": {
+        "one": "1 brought back",
+        "other": "{{count}} brought back"
+      },
+      "reverted": {
+        "one": "1 earlier content",
+        "other": "{{count}} earlier contents"
+      },
+      "trashed": {
+        "one": "1 to the trash",
+        "other": "{{count}} to the trash"
+      },
+      "moved": {
+        "one": "1 moved",
+        "other": "{{count}} moved"
+      },
+      "failed": {
+        "one": "1 not possible",
+        "other": "{{count}} not possible"
+      },
+      "nothing": "nothing to do",
+      "done": "Restored: {{what}}",
+      "undone": "Undone: {{what}}",
+      "undoHint": "“Undo” brings back the state from right before the restore.",
+      "undo": "Undo"
+    },
+    "photos": {
+      "title": "Photos",
+      "timeline": "Timeline",
+      "albums": "Albums",
+      "area": "Area",
+      "allAreas": "All areas",
+      "jump": "Jump to month",
+      "select": "Select",
+      "selectHint": "Click photos to select them (Shift: a range).",
+      "selected": "{{count}} selected",
+      "addTo": "Add to album",
+      "addTitle": {
+        "one": "Add 1 photo to an album",
+        "other": "Add {{count}} photos to an album"
+      },
+      "added": {
+        "one": "1 photo added to “{{name}}”",
+        "other": "{{count}} photos added to “{{name}}”"
+      },
+      "memories": "A year ago and earlier",
+      "yearsAgo": {
+        "one": "1 year ago",
+        "other": "{{count}} years ago"
+      },
+      "count": {
+        "one": "1 photo",
+        "other": "{{count}} photos"
+      },
+      "noDate": "Without a date",
+      "empty": "No photos or videos yet.",
+      "more": "Load more",
+      "prev": "Previous",
+      "next": "Next",
+      "video": "Video",
+      "album": {
+        "new": "New album",
+        "name": "Album name",
+        "nameEmpty": "Please enter a name.",
+        "nameLong": "The name is too long.",
+        "area": "Belongs to",
+        "areaHint": "Everyone who sees this area also sees the album.",
+        "created": "Album “{{name}}” created",
+        "none": "No albums yet. Create one, or select photos in the timeline.",
+        "noneEditable": "No album you may change – create a new one.",
+        "empty": "This album is empty.",
+        "howToAdd": "Add photos in the timeline: “Select”, click photos, “Add to album”.",
+        "cover": "Use as cover",
+        "coverDone": "Cover changed",
+        "removeItems": "Remove from album",
+        "removed": {
+          "one": "1 photo removed from the album",
+          "other": "{{count}} photos removed from the album"
+        },
+        "frame": "Show in the photo frame",
+        "frameOn": "Shown in the photo frame",
+        "frameBadge": "Photo frame",
+        "frameOnDone": "The album now plays in the photo frame.",
+        "frameOffDone": "The album no longer plays in the photo frame.",
+        "renameTitle": "Rename album “{{name}}”",
+        "delete": "Delete album",
+        "deleteTitle": "Delete album “{{name}}”?",
+        "deleteText": "Only the album is deleted – the photos stay in their folders.",
+        "deleted": "Album deleted"
+      }
+    },
+    "storage": {
+      "title": "Storage",
+      "intro": "What your areas take in Drive – with older versions and the trash.",
+      "introAll": "What all areas on this server take.",
+      "scope": "Scope",
+      "mine": "My areas",
+      "all": "All",
+      "total": "Used",
+      "ofLimit": "of {{limit}} ({{pct}} %)",
+      "part": {
+        "files": "Files",
+        "versions": "Older versions",
+        "trash": "Trash"
+      },
+      "files": {
+        "one": "1 file",
+        "other": "{{count}} files"
+      },
+      "versionsOf": "versions {{size}}",
+      "trashOf": "trash {{size}}",
+      "ofQuota": "{{used}} of {{quota}}",
+      "areas": "By area",
+      "people": "By person",
+      "largest": "Largest files",
+      "none": "Nothing here.",
+      "duplicates": "Duplicate files",
+      "noDuplicates": "No duplicate files found.",
+      "wastedAll": "{{size}} could be freed",
+      "copies": {
+        "one": "1 copy",
+        "other": "{{count}}× the same"
+      },
+      "size": "{{size}} each",
+      "wasted": "{{size}} duplicated",
+      "dupHint": "Tick the copies to delete – one always stays.",
+      "dupSelected": {
+        "one": "1 copy selected ({{size}})",
+        "other": "{{count}} copies selected ({{size}})"
+      },
+      "suggest": "Suggest: all but the oldest",
+      "clearSel": "Clear selection",
+      "dupTrash": "Move to trash",
+      "dupTick": "Delete “{{name}}”",
+      "readOnly": "read only",
+      "trashTitle": {
+        "one": "Move 1 file to the trash?",
+        "other": "Move {{count}} files to the trash?"
+      },
+      "trashText": "{{size}} in all.",
+      "andMore": {
+        "one": "and 1 more",
+        "other": "and {{count}} more"
+      },
+      "trashFailed": {
+        "one": "1 file did not go to the trash: {{reason}}",
+        "other": "{{count}} files did not go to the trash: {{reason}}"
+      }
     }
   }
 }

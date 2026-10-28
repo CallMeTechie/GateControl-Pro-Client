@@ -1614,6 +1614,206 @@
       "releaseText": "Nur, wenn du die Dateien selbst geändert hast (zum Beispiel verschlüsselt oder gepackt). Drive behält sie dann so und der Abgleich geht weiter.",
       "undone": "Rückgängig gemacht: {{restored}} wiederhergestellt, {{trashed}} in den Papierkorb",
       "released": "Freigegeben – der Abgleich geht weiter"
+    },
+    "tt": {
+      "menu": "Auf früheren Stand zurücksetzen …",
+      "title": "„{{name}}“ auf einen früheren Stand zurücksetzen",
+      "intro": "Der Ordner wird so, wie er zu diesem Zeitpunkt war: Gelöschte Dateien kommen zurück, geänderte bekommen ihre damalige Fassung, seitdem neue Dateien gehen in den Papierkorb. Erst kommt eine Vorschau, dann entscheidest du.",
+      "quick": "Schnellauswahl",
+      "when": "Datum und Uhrzeit",
+      "preset": {
+        "hour": "Vor 1 Stunde",
+        "day": "Vor 1 Tag",
+        "week": "Vor 1 Woche",
+        "month": "Vor 1 Monat"
+      },
+      "err": {
+        "when": "Bitte Datum und Uhrzeit wählen.",
+        "future": "Der Zeitpunkt muss in der Vergangenheit liegen."
+      },
+      "preview": "Vorschau",
+      "checking": "Drive prüft, was sich ändern würde …",
+      "backTo": "Zurück auf den Stand vom {{when}}:",
+      "nothingToDo": "Seit diesem Zeitpunkt hat sich in diesem Ordner nichts geändert.",
+      "restore": {
+        "one": "1 gelöschte Datei kommt zurück",
+        "other": "{{count}} gelöschte Dateien kommen zurück"
+      },
+      "revert": {
+        "one": "1 Datei bekommt ihre damalige Fassung",
+        "other": "{{count}} Dateien bekommen ihre damalige Fassung"
+      },
+      "trash": {
+        "one": "1 seitdem neue Datei geht in den Papierkorb",
+        "other": "{{count}} seitdem neue Dateien gehen in den Papierkorb"
+      },
+      "move": {
+        "one": "1 Datei bekommt ihren damaligen Namen oder Ort",
+        "other": "{{count}} Dateien bekommen ihren damaligen Namen oder Ort"
+      },
+      "op": {
+        "restore": "kommt zurück",
+        "revert": "alte Fassung",
+        "trash": "Papierkorb",
+        "move": "Name/Ort"
+      },
+      "examples": "Beispiele",
+      "more": "und {{count}} weitere",
+      "limited": "Umbenennungen und Verschiebungen vor dem {{since}} kennt Drive nicht – sie bleiben, wie sie jetzt sind.",
+      "linkedSyncH": "Abgleich mit diesem PC:",
+      "linkedSync": "„{{name}}“ wird danach abgeglichen und bekommt den alten Stand. Was du dort seit dem letzten Abgleich geändert hast, bleibt als Konfliktkopie daneben liegen; seitdem neue Dateien kommen in den Windows-Papierkorb.",
+      "linkedBackupH": "Sicherung dieses PCs:",
+      "linkedBackup": "„{{name}}“ wird nur gesichert: Die Dateien auf diesem PC bleiben unverändert. Bei der nächsten Sicherung kommt wieder der Stand des PCs nach Drive – die Fassungen von damals bleiben dort als ältere Versionen erhalten.",
+      "safe": "Es wird nichts endgültig gelöscht: Neue Dateien landen im Papierkorb, ersetzte Fassungen bleiben als ältere Versionen erhalten.",
+      "run": "Zurücksetzen",
+      "restored": {
+        "one": "1 zurückgeholt",
+        "other": "{{count}} zurückgeholt"
+      },
+      "reverted": {
+        "one": "1 alte Fassung",
+        "other": "{{count}} alte Fassungen"
+      },
+      "trashed": {
+        "one": "1 in den Papierkorb",
+        "other": "{{count}} in den Papierkorb"
+      },
+      "moved": {
+        "one": "1 verschoben",
+        "other": "{{count}} verschoben"
+      },
+      "failed": {
+        "one": "1 nicht möglich",
+        "other": "{{count}} nicht möglich"
+      },
+      "nothing": "nichts zu tun",
+      "done": "Zurückgesetzt: {{what}}",
+      "undone": "Rückgängig gemacht: {{what}}",
+      "undoHint": "Mit „Rückgängig“ kommt der Stand von direkt vor dem Zurücksetzen wieder.",
+      "undo": "Rückgängig"
+    },
+    "photos": {
+      "title": "Fotos",
+      "timeline": "Zeitleiste",
+      "albums": "Alben",
+      "area": "Bereich",
+      "allAreas": "Alle Bereiche",
+      "jump": "Zu Monat springen",
+      "select": "Auswählen",
+      "selectHint": "Fotos antippen, um sie auszuwählen (Umschalt: Bereich).",
+      "selected": "{{count}} ausgewählt",
+      "addTo": "Zu Album hinzufügen",
+      "addTitle": {
+        "one": "1 Foto zu einem Album hinzufügen",
+        "other": "{{count}} Fotos zu einem Album hinzufügen"
+      },
+      "added": {
+        "one": "1 Foto zu „{{name}}“ hinzugefügt",
+        "other": "{{count}} Fotos zu „{{name}}“ hinzugefügt"
+      },
+      "memories": "Vor einem Jahr und früher",
+      "yearsAgo": {
+        "one": "Vor 1 Jahr",
+        "other": "Vor {{count}} Jahren"
+      },
+      "count": {
+        "one": "1 Foto",
+        "other": "{{count}} Fotos"
+      },
+      "noDate": "Ohne Datum",
+      "empty": "Noch keine Fotos oder Videos.",
+      "more": "Weitere laden",
+      "prev": "Vorheriges",
+      "next": "Nächstes",
+      "video": "Video",
+      "album": {
+        "new": "Neues Album",
+        "name": "Name des Albums",
+        "nameEmpty": "Bitte einen Namen eingeben.",
+        "nameLong": "Der Name ist zu lang.",
+        "area": "Gehört zu",
+        "areaHint": "Alle, die diesen Bereich sehen, sehen auch das Album.",
+        "created": "Album „{{name}}“ angelegt",
+        "none": "Noch keine Alben. Lege eins an oder wähle in der Zeitleiste Fotos aus.",
+        "noneEditable": "Kein Album, das du ändern darfst – lege ein neues an.",
+        "empty": "Dieses Album ist leer.",
+        "howToAdd": "Fotos fügst du in der Zeitleiste hinzu: „Auswählen“, Fotos antippen, „Zu Album hinzufügen“.",
+        "cover": "Als Titelbild",
+        "coverDone": "Titelbild geändert",
+        "removeItems": "Aus Album entfernen",
+        "removed": {
+          "one": "1 Foto aus dem Album entfernt",
+          "other": "{{count}} Fotos aus dem Album entfernt"
+        },
+        "frame": "Im Fotorahmen zeigen",
+        "frameOn": "Wird im Fotorahmen gezeigt",
+        "frameBadge": "Fotorahmen",
+        "frameOnDone": "Das Album läuft jetzt im Fotorahmen.",
+        "frameOffDone": "Das Album läuft nicht mehr im Fotorahmen.",
+        "renameTitle": "Album „{{name}}“ umbenennen",
+        "delete": "Album löschen",
+        "deleteTitle": "Album „{{name}}“ löschen?",
+        "deleteText": "Nur das Album wird gelöscht – die Fotos bleiben in ihren Ordnern.",
+        "deleted": "Album gelöscht"
+      }
+    },
+    "storage": {
+      "title": "Speicher",
+      "intro": "Was deine Bereiche in Drive belegen – mit älteren Versionen und Papierkorb.",
+      "introAll": "Was alle Bereiche auf diesem Server belegen.",
+      "scope": "Umfang",
+      "mine": "Meine Bereiche",
+      "all": "Alle",
+      "total": "Belegt",
+      "ofLimit": "von {{limit}} ({{pct}} %)",
+      "part": {
+        "files": "Dateien",
+        "versions": "Ältere Versionen",
+        "trash": "Papierkorb"
+      },
+      "files": {
+        "one": "1 Datei",
+        "other": "{{count}} Dateien"
+      },
+      "versionsOf": "Versionen {{size}}",
+      "trashOf": "Papierkorb {{size}}",
+      "ofQuota": "{{used}} von {{quota}}",
+      "areas": "Nach Bereich",
+      "people": "Nach Person",
+      "largest": "Größte Dateien",
+      "none": "Nichts da.",
+      "duplicates": "Doppelte Dateien",
+      "noDuplicates": "Keine doppelten Dateien gefunden.",
+      "wastedAll": "{{size}} könnten frei werden",
+      "copies": {
+        "one": "1 Kopie",
+        "other": "{{count}}× gleich"
+      },
+      "size": "je {{size}}",
+      "wasted": "{{size}} doppelt",
+      "dupHint": "Kopien zum Löschen ankreuzen – eine bleibt immer.",
+      "dupSelected": {
+        "one": "1 Kopie ausgewählt ({{size}})",
+        "other": "{{count}} Kopien ausgewählt ({{size}})"
+      },
+      "suggest": "Vorschlag: alle außer der ältesten",
+      "clearSel": "Auswahl aufheben",
+      "dupTrash": "In den Papierkorb",
+      "dupTick": "„{{name}}“ löschen",
+      "readOnly": "nur lesen",
+      "trashTitle": {
+        "one": "1 Datei in den Papierkorb?",
+        "other": "{{count}} Dateien in den Papierkorb?"
+      },
+      "trashText": "Zusammen {{size}}.",
+      "andMore": {
+        "one": "und 1 weitere",
+        "other": "und {{count}} weitere"
+      },
+      "trashFailed": {
+        "one": "1 Datei ging nicht in den Papierkorb: {{reason}}",
+        "other": "{{count}} Dateien gingen nicht in den Papierkorb: {{reason}}"
+      }
     }
   }
 }

@@ -218,7 +218,7 @@
 		return { sort: s, order: s === 'name' ? 'asc' : 'desc' };
 	}
 
-	/** What a row's menu offers: { open, saveAs, share, rename, move, versions, remove, portal }. */
+	/** What a row's menu offers: { open, saveAs, share, rename, move, versions, remove, portal, timeTravel }. */
 	function actionsFor(node, writable, me) {
 		const n = node || {};
 		return {
@@ -231,7 +231,108 @@
 			remove: !!writable,
 			// Drive 1.6 'links': "Im Portal öffnen"
 			portal: hasPortalLinks(me),
+			// Drive 1.7 'timeTravel': "Auf früheren Stand zurücksetzen …" (folders one may write to)
+			timeTravel: !!n.isDir && !!writable && hasFeature(me, 'timeTravel'),
 		};
+	}
+
+	/** Does this Drive report `name` in me.features (Drive 1.5+)? */
+	function hasFeature(me, name) {
+		return !!(me && Array.isArray(me.features) && me.features.includes(name));
+	}
+
+	// ── Time travel (Drive 1.7) ─────────────────────────
+
+	const TT_PRESETS = [
+		{ key: 'hour', ms: 3600000 },
+		{ key: 'day', ms: 86400000 },
+		{ key: 'week', ms: 7 * 86400000 },
+		{ key: 'month', ms: 30 * 86400000 },
+	];
+
+	/** ms → the value of an <input type="datetime-local"> ("2026-10-27T14:05", local time). */
+	function localInputValue(ms) {
+		if (!Number.isFinite(ms)) return '';
+		const d = new Date(ms);
+		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+	}
+
+	/** The value of an <input type="datetime-local"> → ms (local time) or null. */
+	function parseLocalInput(v) {
+		const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(str(v).trim());
+		if (!m) return null;
+		const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6] || 0));
+		if (d.getMonth() !== Number(m[2]) - 1 || d.getDate() !== Number(m[3])) return null;
+		return d.getTime();
+	}
+
+	/** The quick choices "vor 1 Stunde" … "vor einem Monat" → [{ key, at, label }] */
+	function timeTravelPresets(now, t) {
+		return TT_PRESETS.map((p) => ({ key: p.key, at: now - p.ms, label: t(`drive.tt.preset.${p.key}`) }));
+	}
+
+	/** null when `at` can be asked for, else the text: not a time, in the future. */
+	function timeTravelError(at, now, t) {
+		if (!Number.isFinite(at)) return t('drive.tt.err.when');
+		if (at >= now) return t('drive.tt.err.future');
+		return null;
+	}
+
+	/** "Montag, 27.10.2026, 14:05" */
+	function longWhen(ms, locale) {
+		if (!Number.isFinite(ms)) return '';
+		const d = new Date(ms);
+		return `${d.toLocaleDateString(localeTag(locale), { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+	}
+
+	/**
+	 * The preview → { empty, lines: [string], sample: [{ op, name, path }], limited: string|null }:
+	 * what comes back, gets the old content, goes into the trash, is moved.
+	 */
+	function timeTravelView(p, { t, locale } = {}) {
+		const x = p || {};
+		const lines = [];
+		if (x.restore) lines.push(plural(t, 'drive.tt.restore', x.restore));
+		if (x.revert) lines.push(plural(t, 'drive.tt.revert', x.revert));
+		if (x.trash) lines.push(plural(t, 'drive.tt.trash', x.trash));
+		if (x.move) lines.push(plural(t, 'drive.tt.move', x.move));
+		const sample = (Array.isArray(x.sample) ? x.sample : []).slice(0, 8).map((s) => ({
+			op: ['restore', 'revert', 'trash', 'move'].includes(s.op) ? t(`drive.tt.op.${s.op}`) : '',
+			name: str(s.name),
+			path: str(s.path),
+		}));
+		return {
+			empty: !lines.length,
+			lines,
+			sample,
+			more: Math.max(0, (Number(x.total) || 0) - sample.length),
+			limited: x.limited ? t('drive.tt.limited', { since: Number.isFinite(x.historySince) ? longWhen(x.historySince, locale) : '—' }) : null,
+		};
+	}
+
+	/**
+	 * The folders of this PC the time travel touches ("Ordner sichern") → [{ name, text, mode }]:
+	 * "Abgleichen" gets Drive's old state (PC changes stay as conflict copies), "Nur sichern" keeps the PC as it is.
+	 */
+	function timeTravelLinked(linked, t) {
+		return (Array.isArray(linked) ? linked : []).map((l) => ({
+			mode: l.mode === 'sync' ? 'sync' : 'backup',
+			name: str(l.name || l.path),
+			text: t(l.mode === 'sync' ? 'drive.tt.linkedSync' : 'drive.tt.linkedBackup', { name: str(l.name || l.path) }),
+		}));
+	}
+
+	/** The result → "Zurückgesetzt: 3 zurückgeholt, …" (undo: "Rückgängig gemacht: …"). */
+	function timeTravelResultText(r, t, { undo = false } = {}) {
+		const x = r || {};
+		const parts = [];
+		if (x.restored) parts.push(plural(t, 'drive.tt.restored', x.restored));
+		if (x.reverted) parts.push(plural(t, 'drive.tt.reverted', x.reverted));
+		if (x.trashed) parts.push(plural(t, 'drive.tt.trashed', x.trashed));
+		if (x.moved) parts.push(plural(t, 'drive.tt.moved', x.moved));
+		if (x.failed) parts.push(plural(t, 'drive.tt.failed', x.failed));
+		const what = parts.length ? parts.join(', ') : t('drive.tt.nothing');
+		return t(undo ? 'drive.tt.undone' : 'drive.tt.done', { what });
 	}
 
 	/** Does this Drive give direct portal links (me.features 'links', me.links.node)? */
@@ -440,7 +541,8 @@
 		plural, extOf, kindOf, badgeOf, formatBytes, when,
 		validName, nameError,
 		sortAreas, areaLabel, areaHint, usage, currentArea, accessOf,
-		crumbs, rowView, sortQuery, actionsFor, hasPortalLinks,
+		crumbs, rowView, sortQuery, actionsFor, hasPortalLinks, hasFeature,
+		localInputValue, parseLocalInput, timeTravelPresets, timeTravelError, longWhen, timeTravelView, timeTravelLinked, timeTravelResultText,
 		liveRelevant, throttle, guardView, folderQueuedText,
 		linkModes, pinOk, linkRequest, linkView,
 		transferView, transfersSummary,
