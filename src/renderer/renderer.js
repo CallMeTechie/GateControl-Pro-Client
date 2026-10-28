@@ -2534,6 +2534,13 @@ function openVault(context) {
 	vaultView.open(context || null);
 }
 
+/** Drive on a push target (Drive 1.8 deadline: the file's details; 1.9 vault: the vault), e.g. from a toast click. */
+function openDrive(context) {
+	if (!driveView) return;
+	navigateTo('drive');
+	driveView.open(context || null);
+}
+
 /** GateDrop on a push target (Empfangen / Links, a send), e.g. from a toast click. */
 function openGateDrop(context) {
 	if (!gatedropView) return;
@@ -2608,6 +2615,8 @@ if (notifyAvailable()) {
 			openGateDrop(target.context);
 		} else if (target.page === 'vault') {
 			openVault(target.context);
+		} else if (target.page === 'drive') {
+			openDrive(target.context);
 		} else {
 			navigateTo(target.page);
 		}

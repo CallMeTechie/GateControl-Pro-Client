@@ -448,10 +448,11 @@
 	function navigateTarget(evt, pages) {
 		const route = evt && evt.route;
 		const id = evt && Number.isSafeInteger(evt.id) ? evt.id : null;
-		const map = { vpn: 'status', services: 'services', inbox: 'inbox', 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule', 'plg-gatecontrol-gatedrop': 'gatedrop', 'plg-gatecontrol-vault': 'vault' };
+		const map = { vpn: 'status', services: 'services', inbox: 'inbox', 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule', 'plg-gatecontrol-gatedrop': 'gatedrop', 'plg-gatecontrol-vault': 'vault', 'plg-gatecontrol-drive': 'drive' };
 		const page = map[route];
 		if (page && (!pages || pages.includes(page))) {
-			if (page === 'schule' || page === 'gatedrop' || page === 'vault') return { page, id: null, context: evt.context && typeof evt.context === 'object' ? evt.context : null };
+			// Drive 1.8 / 1.9: a deadline reminder opens its file, a vault request the vault (core DriveService.clickContext)
+			if (page === 'schule' || page === 'gatedrop' || page === 'vault' || page === 'drive') return { page, id: null, context: evt.context && typeof evt.context === 'object' ? evt.context : null };
 			return { page, id: page === 'inbox' ? id : null };
 		}
 		return { page: 'inbox', id };

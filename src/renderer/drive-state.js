@@ -182,13 +182,19 @@
 	/** Breadcrumbs of a folder: the top one named like its area. */
 	function crumbs(folder, area, t) {
 		const list = folder && Array.isArray(folder.crumbs) ? folder.crumbs : [];
-		return list.map((c, i) => ({ id: c.id, name: i === 0 && area ? areaLabel(area, t) : c.name, current: i === list.length - 1 }));
+		// a vault folder this PC has no key for (Drive 1.9): no name
+		return list.map((c, i) => ({ id: c.id, name: i === 0 && area ? areaLabel(area, t) : c.locked ? t('drive.vault.lockedFolder') : c.name, current: i === list.length - 1 }));
 	}
 
-	/** One row of a list: { id, name, kind, badge, sub, date, size, isDir, preview, mediaId }. */
+	/**
+	 * One row of a list: { id, name, kind, badge, sub, date, size, isDir, preview, mediaId, doc, encrypted, locked, vault }.
+	 * doc (Drive 1.8 'docAi'): the kind of document Drive recognised ('invoice' …) while insight.status is ready;
+	 * vault (Drive 1.9): the folder is a vault folder; locked: a vault node without a key on this PC (no name).
+	 */
 	function rowView(node, { t, locale, now = Date.now(), mode = 'folder' } = {}) {
 		const n = node || {};
 		const sub = [];
+		const locked = !!(n.encrypted && n.locked);
 		if (mode === 'search') {
 			if (n.path) sub.push(t('drive.search.in', { path: n.path }));
 			if (n.match === 'text' && n.snippet) sub.push(n.snippet);
@@ -199,17 +205,31 @@
 		const stamp = mode === 'trash' && Number.isFinite(n.deletedAt) ? n.deletedAt : (Number.isFinite(n.mtime) ? n.mtime : n.updatedAt);
 		return {
 			id: n.id,
-			name: str(n.name),
-			kind: kindOf(n),
-			badge: badgeOf(n),
+			name: locked ? t(n.vaultRoot ? 'drive.vault.lockedVault' : n.isDir ? 'drive.vault.lockedFolder' : 'drive.vault.lockedFile') : str(n.name),
+			kind: n.encrypted && n.vaultRoot ? 'vault' : kindOf(n),
+			badge: locked ? '' : badgeOf(n),
 			sub: sub.join(' · '),
 			snippet: mode === 'search' && n.match === 'text' ? str(n.snippet) : '',
 			date: when(stamp, now, locale, t),
 			size: n.isDir ? '' : formatBytes(n.size || 0, locale),
 			isDir: !!n.isDir,
-			preview: !!n.preview && !!n.mediaId,
+			preview: !!n.preview && !!n.mediaId && !n.encrypted,
 			mediaId: n.mediaId || null,
+			doc: !n.isDir && !n.encrypted && n.insight && n.insight.status === 'ready' && n.insight.kind ? n.insight.kind : null,
+			encrypted: !!n.encrypted,
+			locked,
+			vault: !!(n.encrypted && n.vaultRoot),
 		};
+	}
+
+	// Drive 1.9 'office': the documents "Im Browser bearbeiten" offers (never a vault's)
+	const OFFICE_EXTS = ['docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp', 'csv'];
+
+	/** 'edit' | 'view' | null — "Im Browser bearbeiten" (write right) / "Im Browser ansehen" (read only). */
+	function officeMode(node, writable, me) {
+		const n = node || {};
+		if (n.isDir || n.encrypted || !hasFeature(me, 'office') || !OFFICE_EXTS.includes(extOf(n.name))) return null;
+		return writable ? 'edit' : 'view';
 	}
 
 	/** Sort keys of the list → { sort, order } for drive.folder(). */
@@ -218,21 +238,31 @@
 		return { sort: s, order: s === 'name' ? 'asc' : 'desc' };
 	}
 
-	/** What a row's menu offers: { open, saveAs, share, rename, move, versions, remove, portal, timeTravel }. */
+	/**
+	 * What a row's menu offers: { open, saveAs, share, rename, move, versions, remove, portal, timeTravel, details, office }.
+	 * A vault's nodes (Drive 1.9): no links, no moves, no time travel, no AI, no office; without the key only "In den
+	 * Papierkorb".
+	 */
 	function actionsFor(node, writable, me) {
 		const n = node || {};
+		const enc = !!n.encrypted;
+		const locked = enc && !!n.locked;
 		return {
-			open: true,
-			saveAs: !n.isDir,
-			share: !!writable,
-			rename: !!writable,
-			move: !!writable,
-			versions: !n.isDir,
+			open: !locked,
+			saveAs: !n.isDir && !locked,
+			share: !!writable && !enc,
+			rename: !!writable && !locked,
+			move: !!writable && !enc,
+			versions: !n.isDir && !locked,
 			remove: !!writable,
 			// Drive 1.6 'links': "Im Portal öffnen"
 			portal: hasPortalLinks(me),
 			// Drive 1.7 'timeTravel': "Auf früheren Stand zurücksetzen …" (folders one may write to)
-			timeTravel: !!n.isDir && !!writable && hasFeature(me, 'timeTravel'),
+			timeTravel: !!n.isDir && !!writable && !enc && hasFeature(me, 'timeTravel'),
+			// Drive 1.8 'docAi': "Details" (what Drive recognised, its deadlines)
+			details: !n.isDir && !enc && hasFeature(me, 'docAi'),
+			// Drive 1.9 'office': 'edit' | 'view' | null
+			office: officeMode(n, writable, me),
 		};
 	}
 
@@ -489,14 +519,15 @@
 		return Number.isSafeInteger(lastFolderId) && lastFolderId > 0 ? lastFolderId : null;
 	}
 
-	/** May the picker take this folder (its own root for "Verschieben" excluded by the caller)? */
+	/** May the picker take this folder (its own root for "Verschieben" excluded by the caller; never a vault folder)? */
 	function canPick(folder) {
-		return !!(folder && folder.writable);
+		return !!(folder && folder.writable && !(folder.node && folder.node.encrypted));
 	}
 
 	/** Subfolders of a folder the picker shows (not `exclude`, e.g. the node being moved). */
 	function pickerFolders(folder, exclude) {
-		return (folder && Array.isArray(folder.items) ? folder.items : []).filter((n) => n && n.isDir && n.id !== exclude);
+		// vault folders (Drive 1.9) take nothing from outside: not offered
+		return (folder && Array.isArray(folder.items) ? folder.items : []).filter((n) => n && n.isDir && n.id !== exclude && !n.encrypted);
 	}
 
 	/** "Meine Dateien › Belege" of a folder in the picker. */
@@ -533,6 +564,10 @@
 		SCHULE_MESSAGE_NOT_FOUND: 'notFound', SCHULE_ATTACHMENT_TOO_LARGE: 'tooLarge', SCHULE_UNTIS_UNAVAILABLE: 'schoolOffline',
 		SCHULE_ATTACHMENT_FAILED: 'schoolOffline', empty_file: 'emptyFile', in_drive: 'inDrive',
 		device_locked: 'locked', guard_locked: 'locked', unsupported: 'unsupported',
+		// Drive 1.8 / 1.9
+		feature_off: 'featureOff', encrypted: 'encrypted', office_unavailable: 'officeUnavailable',
+		vault_locked: 'vaultLocked', vault_unsupported: 'vaultUnsupported', recovery_key: 'recoveryKey', safety: 'safety',
+		stale_key: 'staleKey', vault_decrypt: 'vaultDecrypt', vault_invalid: 'vaultDecrypt', recovery_required: 'recoveryRequired',
 	};
 
 	/** The text of a failed answer ({ ok: false, code }) — Drive's codes and those of the plugins passing them on. */
@@ -547,7 +582,7 @@
 		plural, extOf, kindOf, badgeOf, formatBytes, when,
 		validName, nameError,
 		sortAreas, areaLabel, areaHint, usage, currentArea, accessOf,
-		crumbs, rowView, sortQuery, actionsFor, hasPortalLinks, hasFeature,
+		crumbs, rowView, sortQuery, actionsFor, officeMode, OFFICE_EXTS, hasPortalLinks, hasFeature,
 		localInputValue, parseLocalInput, timeTravelPresets, timeTravelError, longWhen, timeTravelView, timeTravelLinked, timeTravelResultText,
 		liveRelevant, throttle, guardView, folderQueuedText,
 		linkModes, pinOk, linkRequest, linkView,

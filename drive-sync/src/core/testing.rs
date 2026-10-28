@@ -198,6 +198,24 @@ impl FakeDrive {
         self.inner.lock().unwrap().features = f.iter().map(|s| s.to_string()).collect();
     }
 
+    /// Drive 1.9: `id` und alles darunter werden Knoten eines Tresor-Ordners (opake Namen, `encrypted`).
+    pub fn make_vault(&self, id: u64) {
+        let mut d = self.inner.lock().unwrap();
+        let mut stack = vec![id];
+        let mut i = 0u64;
+        while let Some(x) = stack.pop() {
+            let kids: Vec<u64> = d.nodes.values().filter(|n| n.parent_id == Some(x)).map(|n| n.id).collect();
+            stack.extend(kids);
+            if let Some(n) = d.nodes.get_mut(&x) {
+                n.encrypted = true;
+                n.name = format!("{:032x}", 0xabc0_u64 + i);
+                n.rev += 1;
+            }
+            i += 1;
+        }
+        d.record("move", id);
+    }
+
     pub fn rename(&self, id: u64, name: &str) -> Node {
         self.as_admin(|| self.update_node(id, Some(name), None).unwrap())
     }
@@ -482,6 +500,7 @@ impl Remote for FakeDrive {
                 updated_at: Some(now.clone()),
                 created_at: Some(now),
                 deleted: false,
+                encrypted: false,
             },
         );
         d.record("create", id);

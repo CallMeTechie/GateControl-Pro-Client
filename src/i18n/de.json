@@ -1229,7 +1229,17 @@
       "inDrive": "Liegt im Ordner „GateControl Drive“ (Dateien bei Bedarf).",
       "generic": "Das hat nicht geklappt ({{code}}).",
       "locked": "Drive hat dieses Gerät nach ungewöhnlichen Änderungen gestoppt – bitte oben entscheiden.",
-      "unsupported": "Dieses Drive bietet das noch nicht an."
+      "unsupported": "Dieses Drive bietet das noch nicht an.",
+      "featureOff": "Das ist auf diesem Server ausgeschaltet.",
+      "encrypted": "Für Dateien in Tresor-Ordnern geht das nicht.",
+      "officeUnavailable": "Für diese Datei steht kein Office im Browser bereit.",
+      "vaultLocked": "Dieser PC hat keinen Schlüssel für den Tresor – frag den Zugriff an.",
+      "vaultUnsupported": "Dieser PC kann keine Schlüssel geschützt speichern – Tresor-Ordner gehen hier nicht.",
+      "recoveryKey": "Der Wiederherstellungsschlüssel stimmt nicht.",
+      "safety": "Die Sicherheitszahl passt nicht – nicht freigeben.",
+      "staleKey": "Der Tresor hat einen neuen Schlüssel – bitte noch einmal versuchen.",
+      "vaultDecrypt": "Die Datei lässt sich nicht entschlüsseln (beschädigt oder ein anderer Schlüssel).",
+      "recoveryRequired": "Für den neuen Schlüssel ist ein neuer Wiederherstellungsschlüssel nötig."
     },
     "sync": {
       "title": "Ordner sichern",
@@ -1836,6 +1846,169 @@
         "other": "{{count}} Versionen entfernt, {{size}} frei"
       },
       "prunedMore": "Es gibt noch mehr – bitte noch einmal aufräumen."
+    },
+    "vault": {
+      "badge": "Tresor",
+      "note": "Tresor-Ordner – Ende-zu-Ende verschlüsselt, nur auf freigegebenen Geräten lesbar",
+      "lockedFolder": "Verschlüsselter Ordner",
+      "lockedFile": "Verschlüsselte Datei",
+      "lockedVault": "Tresor-Ordner (gesperrt)",
+      "pending": {
+        "one": "1 Gerät wartet auf Freigabe",
+        "other": "{{count}} Geräte warten auf Freigabe"
+      },
+      "needsRotation": "Ein neuer Schlüssel ist nötig",
+      "opened": "Tresor geöffnet",
+      "gate": {
+        "title": "Tresor-Ordner",
+        "none": "Dieser Ordner ist Ende-zu-Ende verschlüsselt. Dieser PC hat noch keinen Schlüssel dafür. Frag den Zugriff an – ein freigegebenes Gerät bestätigt ihn – oder öffne den Tresor mit dem Wiederherstellungsschlüssel.",
+        "revoked": "Der Zugriff dieses PCs wurde entzogen. Du kannst ihn neu anfragen oder den Wiederherstellungsschlüssel eingeben.",
+        "pending": "Zugriff angefragt. Bestätige ihn auf einem freigegebenen Gerät (z. B. im Portal oder in der App) und vergleiche dort diese Sicherheitszahl:",
+        "unsupported": "Dieser PC kann keine Schlüssel geschützt speichern (Windows-Datenschutz/DPAPI nicht verfügbar) – Tresor-Ordner lassen sich hier nicht öffnen.",
+        "ask": "Zugriff anfragen",
+        "check": "Erneut prüfen",
+        "stillPending": "Noch nicht freigegeben.",
+        "recover": "Mit Wiederherstellungsschlüssel öffnen"
+      },
+      "safety": {
+        "mine": "Sicherheitszahl dieses PCs",
+        "other": "Sicherheitszahl des Geräts",
+        "same": "Die Zahl stimmt mit der auf dem anderen Gerät überein"
+      },
+      "recovery": {
+        "title": "Wiederherstellungsschlüssel",
+        "intro": "„{{name}}“ ist angelegt. Schreib dir diesen Wiederherstellungsschlüssel auf und bewahre ihn sicher auf. Er wird nur jetzt angezeigt.",
+        "newIntro": "Der Tresor hat einen neuen Schlüssel und einen neuen Wiederherstellungsschlüssel. Schreib ihn auf – er wird nur jetzt angezeigt; der alte gilt nicht mehr.",
+        "label": "Wiederherstellungsschlüssel",
+        "warn": "Ohne ihn kommt niemand mehr an die Dateien, wenn alle freigegebenen Geräte verloren sind – auch kein Administrator.",
+        "kept": "Ich habe den Schlüssel notiert"
+      },
+      "create": {
+        "title": "Neuer Tresor-Ordner",
+        "intro": "Inhalte und Namen werden auf deinen Geräten verschlüsselt. Der Server sieht sie nie. Keine Vorschau, keine Suche, keine Links und kein Office für diesen Ordner.",
+        "ok": "Anlegen",
+        "button": "Neuer Tresor-Ordner"
+      },
+      "recover": {
+        "title": "Mit Wiederherstellungsschlüssel öffnen",
+        "intro": "Gib die 56 Zeichen ein, die beim Anlegen des Tresors angezeigt wurden. Dieser PC wird damit freigegeben.",
+        "ok": "Öffnen"
+      },
+      "devices": {
+        "title": "Geräte des Tresors",
+        "button": "Geräte",
+        "pending": "Anfragen",
+        "noPending": "Keine offenen Anfragen.",
+        "approvedH": "Freigegebene Geräte",
+        "approve": "Freigeben",
+        "decline": "Ablehnen",
+        "approved": "Gerät freigegeben",
+        "declined": "Anfrage abgelehnt"
+      },
+      "device": {
+        "unnamed": "Unbenanntes Gerät",
+        "portal": "Portal",
+        "viaRecovery": "per Wiederherstellungsschlüssel",
+        "this": "{{name}} (dieser PC)"
+      },
+      "rotate": {
+        "button": "Neuen Schlüssel erzeugen",
+        "why": "Jemand hat keinen Zugriff mehr auf diesen Bereich. Ein neuer Schlüssel schützt neue Dateien.",
+        "title": "Neuen Schlüssel erzeugen",
+        "intro": "Neue Dateien und Namen werden danach mit dem neuen Schlüssel verschlüsselt; alle freigegebenen Geräte bekommen ihn. Ältere Dateien bleiben lesbar.",
+        "ok": "Erzeugen",
+        "done": "Neuer Schlüssel erzeugt"
+      }
+    },
+    "doc": {
+      "details": "Details …",
+      "title": "Details: {{name}}",
+      "recognised": "Erkannt",
+      "kind": {
+        "invoice": "Rechnung",
+        "contract": "Vertrag",
+        "notice": "Bescheid",
+        "medical": "Arztbrief / Befund",
+        "certificate": "Zeugnis",
+        "statement": "Kontoauszug",
+        "insurance": "Versicherung",
+        "warranty": "Garantie",
+        "other": "Sonstiges"
+      },
+      "field": {
+        "kind": "Art",
+        "title": "Titel",
+        "date": "Datum",
+        "sender": "Absender",
+        "amount": "Betrag"
+      },
+      "pending": "Wird gerade erkannt …",
+      "none": "Noch nicht erkannt.",
+      "off": "Die Erkennung ist für diesen Bereich ausgeschaltet.",
+      "failed": "Erkennen hat nicht geklappt: {{reason}}",
+      "nothing": "Nichts erkannt.",
+      "reason": {
+        "no_text": "In der Datei ist kein lesbarer Text.",
+        "media_disabled": "Bilder dürfen nicht an die KI gehen.",
+        "ai_budget": "Das KI-Budget ist aufgebraucht.",
+        "ai_capability": "Der KI-Anbieter kann das nicht lesen.",
+        "ai_invalid": "Die Antwort der KI war unbrauchbar.",
+        "ai_timeout": "Die KI hat nicht rechtzeitig geantwortet.",
+        "ai_provider": "Der KI-Anbieter hat einen Fehler gemeldet.",
+        "other": "unbekannter Grund"
+      },
+      "suggestion": "Vorschlag",
+      "takeName": "Umbenennen",
+      "takeFolder": "Verschieben",
+      "takeBoth": "Beides übernehmen",
+      "applied": "Vorschlag übernommen",
+      "run": "Erneut erkennen",
+      "queued": "Wird neu erkannt."
+    },
+    "deadline": {
+      "title": "Fristen",
+      "sub": "Fristen aus deinen Dokumenten",
+      "none": "Keine Fristen erkannt.",
+      "empty": "Keine Fristen in den nächsten 12 Monaten.",
+      "kind": {
+        "payment": "Zahlungsfrist",
+        "cancellation": "Kündigungsfrist",
+        "objection": "Widerspruchsfrist",
+        "other": "Frist"
+      },
+      "today": "heute",
+      "tomorrow": "morgen",
+      "inDays": "in {{count}} Tagen",
+      "ago": {
+        "one": "vor 1 Tag",
+        "other": "vor {{count}} Tagen"
+      },
+      "reminded": "Erinnerung verschickt",
+      "remind": {
+        "none": "Nicht erinnern",
+        "day": "Am Tag selbst erinnern",
+        "one": "Erinnern 1 Tag vorher",
+        "other": "Erinnern {{count}} Tage vorher",
+        "label": "Erinnerung für {{what}}",
+        "off": "Erinnerung entfernt",
+        "set": "Erinnerung gespeichert"
+      },
+      "group": {
+        "soon": "Nächste 30 Tage",
+        "later": "Später",
+        "past": "Abgelaufen"
+      }
+    },
+    "office": {
+      "edit": "Im Browser bearbeiten",
+      "view": "Im Browser ansehen",
+      "openedEdit": "Wird im Browser zum Bearbeiten geöffnet …",
+      "openedView": "Wird im Browser geöffnet …"
+    },
+    "import": {
+      "menu": "Aus Google Drive / OneDrive importieren",
+      "sub": "im Portal",
+      "opened": "Der Import öffnet sich im Portal."
     }
   }
 }

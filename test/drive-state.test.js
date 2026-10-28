@@ -102,7 +102,7 @@ describe('areas and access', () => {
 describe('rows, crumbs, menu', () => {
   it('folder, search (path and snippet) and trash rows', () => {
     const r = DS.rowView(node({ preview: true, mime: 'image/jpeg', name: 'Foto.jpg' }), { t, locale: 'de', now: NOW });
-    assert.deepEqual(r, { id: 12, name: 'Foto.jpg', kind: 'image', badge: 'JPG', sub: '', snippet: '', date: '20.10.2026', size: '2 KB', isDir: false, preview: true, mediaId: 'docMedia00000001' });
+    assert.deepEqual(r, { id: 12, name: 'Foto.jpg', kind: 'image', badge: 'JPG', sub: '', snippet: '', date: '20.10.2026', size: '2 KB', isDir: false, preview: true, mediaId: 'docMedia00000001', doc: null, encrypted: false, locked: false, vault: false });
     const dir = DS.rowView(node({ isDir: true, name: 'Belege', size: 0, mediaId: null }), { t, locale: 'de', now: NOW });
     assert.equal(dir.size, '');
     assert.equal(dir.preview, false);
@@ -125,8 +125,8 @@ describe('rows, crumbs, menu', () => {
     assert.deepEqual(DS.sortQuery('name'), { sort: 'name', order: 'asc' });
     assert.deepEqual(DS.sortQuery('size'), { sort: 'size', order: 'desc' });
     assert.deepEqual(DS.sortQuery('weird'), { sort: 'name', order: 'asc' });
-    assert.deepEqual(DS.actionsFor(node(), true), { open: true, saveAs: true, share: true, rename: true, move: true, versions: true, remove: true, portal: false, timeTravel: false });
-    assert.deepEqual(DS.actionsFor(node({ isDir: true }), false), { open: true, saveAs: false, share: false, rename: false, move: false, versions: false, remove: false, portal: false, timeTravel: false });
+    assert.deepEqual(DS.actionsFor(node(), true), { open: true, saveAs: true, share: true, rename: true, move: true, versions: true, remove: true, portal: false, timeTravel: false, details: false, office: null });
+    assert.deepEqual(DS.actionsFor(node({ isDir: true }), false), { open: true, saveAs: false, share: false, rename: false, move: false, versions: false, remove: false, portal: false, timeTravel: false, details: false, office: null });
   });
 });
 

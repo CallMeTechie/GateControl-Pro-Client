@@ -380,3 +380,54 @@
 .dsg-trash-list { margin: 0; padding-left: 20px; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .dsg-row-end { display: flex; align-items: center; gap: 10px; }
 .dsg-keep { max-width: 260px; }
+
+/* ── Drive 1.8: AI for documents, deadlines ─────────────── */
+.dv-doc { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; max-width: 100%; padding: 1px 7px 1px 5px; border-radius: 999px; background: var(--acc-bg); color: var(--acc-t); font-size: 11px; font-weight: 600; line-height: 1.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-doc.dv-enc { background: var(--pro-bg); color: var(--pro); }
+.dv-dlg.dv-docs { width: 600px; }
+.dv-ins { display: flex; flex-direction: column; gap: 10px; }
+.dv-ins-h { margin: 4px 0 0; font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.dv-ins-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; font-size: 13.5px; }
+.dv-ins-grid dt { color: var(--muted); }
+.dv-ins-grid dd { margin: 0; display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.dv-ins-status { font-size: 13px; }
+.dv-ins-sug { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line); }
+.dv-ins-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dv-ins-row.is-end { justify-content: flex-end; }
+.dv-ins-val { flex-grow: 1; min-width: 0; font-size: 13.5px; font-weight: 500; overflow-wrap: anywhere; }
+.dv-dl { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.dv-ins .dv-dl { border: 1px solid var(--line); border-radius: 12px; }
+.dv-dl-ic { background: var(--info-bg); color: var(--info); }
+.dv-dl.is-urgent .dv-dl-ic { background: var(--warn-bg); color: var(--warn); }
+.dv-dl.is-past { opacity: .65; }
+.dv-dl-tx { display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0; font-size: 13.5px; }
+.dv-dl-date { color: var(--muted); font-size: 12.5px; }
+.dv-dl.is-urgent .dv-dl-date { color: var(--warn); }
+.dv-dl-remind { width: auto; max-width: 220px; flex-shrink: 0; padding: 6px 8px; font-size: 12.5px; }
+.dv-dl-group { padding: 12px 12px 4px; }
+.dv-dl-file { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; max-width: 100%; padding: 2px 0; border: 0; background: transparent; color: var(--info); font-size: 12.5px; cursor: pointer; }
+.dv-dl-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-dl-file:hover span { text-decoration: underline; }
+.dv-dl-file:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 4px; }
+
+/* ── Drive 1.9: vault folders ────────────────────────────── */
+.dv-k-vault { background: var(--pro-bg); color: var(--pro); }
+.dv-thumb.is-enc:not(.dv-k-vault) { background: var(--panel2); color: var(--muted); }
+.dv-name.is-locked { color: var(--muted); font-style: italic; }
+.dv-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: var(--panel); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.dv-vgate { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; margin: 16px; padding: 16px; border-radius: 14px; background: var(--pro-bg); border: 1px solid var(--line); }
+.dv-vgate-ic { width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; background: var(--panel); color: var(--pro); display: inline-flex; align-items: center; justify-content: center; }
+.dv-vgate-tx { display: flex; flex-direction: column; gap: 6px; flex: 1 1 320px; min-width: 0; font-size: 14px; }
+.dv-vgate-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; flex-basis: 100%; padding-left: 58px; }
+.dv-safety { display: flex; flex-direction: column; gap: 2px; }
+.dv-safety-n { font-family: var(--font-mono, ui-monospace, monospace); font-size: 17px; font-weight: 600; letter-spacing: .08em; color: var(--text); }
+.dv-rk { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line2); }
+.dv-rk code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 15px; font-weight: 600; letter-spacing: .06em; user-select: all; }
+.dv-rk-in { resize: vertical; font-family: var(--font-mono, ui-monospace, monospace); letter-spacing: .04em; text-transform: uppercase; }
+.dv-check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; }
+.dv-check input { margin-top: 2px; }
+.dv-vault-dlg .dv-dlg-body { gap: 10px; }
+.dv-vdev { display: flex; flex-direction: column; gap: 8px; }
+.dv-vdev-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); }
+.dv-vdev-row .dv-link-tx { gap: 6px; }
+.dv-vdev-acts { display: flex; gap: 8px; flex-wrap: wrap; }

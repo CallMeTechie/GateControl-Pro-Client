@@ -831,3 +831,29 @@ fn changes_bit_by_bit_count_together() {
     assert_eq!(t.d.commits().len(), before + 3);
     assert_eq!(t.e.shared.suspect.read().unwrap().as_ref().map(|s| s.count), Some(6));
 }
+
+#[test]
+fn vault_folders_never_come_down_and_nothing_goes_into_them() {
+    let mut t = setup();
+    let tresor = t.d.add_dir(t.mine, "Tresor");
+    t.d.add_file(tresor.id, "geheim.pdf", b"chiffre");
+    t.d.make_vault(tresor.id);
+    let opaque = t.d.get(tresor.id).unwrap().name;
+    t.d.add_file(t.mine, "offen.txt", b"x");
+    t.e.sync().unwrap();
+    assert!(t.fs.get(&t.path(&["Meine Dateien", "offen.txt"])).is_some());
+    assert!(t.fs.get(&t.path(&["Meine Dateien", &opaque])).is_none(), "kein Platzhalter für den Tresor");
+    assert!(t.fs.get(&t.path(&["Meine Dateien", "Tresor"])).is_none());
+    // eine Änderung im Tresor (anderes Gerät) kommt nicht an
+    let neu = t.d.add_file(tresor.id, "neu.bin", b"chiffre2");
+    t.d.make_vault(neu.id);
+    t.e.sync().unwrap();
+    assert!(t.fs.get(&t.path(&["Meine Dateien", &opaque])).is_none());
+    // ein lokaler Ordner mit dem opaken Namen wird nie in den Tresor geladen
+    t.fs.user_mkdir(&t.path(&["Meine Dateien", &opaque]));
+    t.fs.user_write(&t.path(&["Meine Dateien", &opaque, "a.txt"]), b"klartext");
+    t.local_change(&["Meine Dateien", &opaque]);
+    let kids = t.d.live_children(tresor.id);
+    assert!(kids.iter().all(|n| n.encrypted), "nichts Unverschlüsseltes im Tresor");
+    assert!(!kids.iter().any(|n| n.name == "a.txt"));
+}
