@@ -157,3 +157,14 @@ describe('the page', () => {
     }
   });
 });
+
+describe('Drive 1.6 guard', () => {
+  it('stopped by Drive, the local check and held-back files', () => {
+    assert.deepEqual([OS.summary(on({ state: 'locked', locked: true }), { t }).cls, OS.summary(on({ state: 'locked', locked: true }), { t }).text], ['err', 'drive.od.state.locked']);
+    const s = OS.summary(on({ state: 'suspect', suspect: { count: 60, sample: ['C:\\x\\a.docx'], why: 'entropy' }, held: 2 }), { t });
+    assert.deepEqual([s.cls, s.text], ['ask', 'drive.od.state.suspect']);
+    assert.ok(s.detail.includes('drive.sync.held.other(count=2)'));
+    assert.deepEqual(OS.suspect(on({ suspect: { count: 60, sample: ['C:\\x\\a.docx', 'C:\\x\\b.xlsx'], why: 'extension' } })), { count: 60, sample: ['a.docx', 'b.xlsx'], why: 'extension' });
+    assert.equal(OS.suspect(on()), null);
+  });
+});

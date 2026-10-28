@@ -130,6 +130,19 @@
 			if (pct !== null) card.appendChild(el('div', { class: 'dv-tr-bar dsv-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct), 'aria-label': sum.text }, [el('span', { style: `width:${pct}%` })]));
 			if (sum.detail.length) card.appendChild(el('div', { class: 'dsv-detail dod-detail', text: sum.detail.join(' · ') }));
 
+			const sus = OS.suspect(s);
+			if (sus && typeof api.suspect === 'function') {
+				card.appendChild(el('div', { class: 'dsv-ask dod-ask is-guard', role: 'alert' }, [
+					el('span', { class: 'dsv-ask-ic' }, [icon('lock', 18)]),
+					el('div', { class: 'dsv-ask-tx' }, [
+						el('div', { class: 'dsv-ask-h', text: t('drive.od.suspect.title', { count: sus.count }) }),
+						el('div', { class: 'dv-p', text: [t(sus.why === 'extension' ? 'drive.sync.suspect.textExtension' : 'drive.sync.suspect.textEntropy'), sus.sample.join(', ')].filter(Boolean).join(' ') }),
+					]),
+					el('button', { type: 'button', class: 'btn btn-pri btn-sm', 'data-key': 'od-sus-keep', text: t('drive.sync.suspect.keep'), on: { click: () => call(() => api.suspect('keep')) } }),
+					el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-danger', 'data-key': 'od-sus-upload', text: t('drive.sync.suspect.upload'), on: { click: () => call(() => api.suspect('upload')) } }),
+				]));
+			}
+
 			const md = OS.massDelete(s);
 			if (md) {
 				card.appendChild(el('div', { class: 'dsv-ask dod-ask', role: 'alert' }, [

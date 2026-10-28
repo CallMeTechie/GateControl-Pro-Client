@@ -125,8 +125,8 @@ describe('rows, crumbs, menu', () => {
     assert.deepEqual(DS.sortQuery('name'), { sort: 'name', order: 'asc' });
     assert.deepEqual(DS.sortQuery('size'), { sort: 'size', order: 'desc' });
     assert.deepEqual(DS.sortQuery('weird'), { sort: 'name', order: 'asc' });
-    assert.deepEqual(DS.actionsFor(node(), true), { open: true, saveAs: true, share: true, rename: true, move: true, versions: true, remove: true });
-    assert.deepEqual(DS.actionsFor(node({ isDir: true }), false), { open: true, saveAs: false, share: false, rename: false, move: false, versions: false, remove: false });
+    assert.deepEqual(DS.actionsFor(node(), true), { open: true, saveAs: true, share: true, rename: true, move: true, versions: true, remove: true, portal: false });
+    assert.deepEqual(DS.actionsFor(node({ isDir: true }), false), { open: true, saveAs: false, share: false, rename: false, move: false, versions: false, remove: false, portal: false });
   });
 });
 
@@ -266,12 +266,67 @@ describe('page wiring', () => {
     for (const m of ['view', 'download', 'upload']) keys.add(`drive.link.mode.${m}`);
     for (const k of Object.values(DS.ERROR_CODES)) keys.add(`drive.err.${k}`);
     keys.add('drive.err.generic');
-    const plurals = new Set(['drive.trash.files', 'drive.upload.rejected']);
+    const plurals = new Set(['drive.trash.files', 'drive.upload.rejected', 'drive.guard.more', 'drive.guard.files', 'drive.upload.folders', 'drive.upload.files', 'drive.upload.skipped', 'drive.transfer.folderDone']);
     for (const p of plurals) { keys.delete(p); keys.add(`${p}.one`); keys.add(`${p}.other`); }
     assert.ok(keys.size > 150, `only ${keys.size} keys found`);
     for (const k of keys) {
       assert.ok(k in de, `de: ${k}`);
       assert.ok(k in en, `en: ${k}`);
     }
+  });
+});
+
+describe('Drive 1.5 / 1.6: live, portal, guard, folders', () => {
+  it('a change elsewhere reloads what it touches', () => {
+    assert.equal(DS.liveRelevant({ areas: ['mine:2'], seq: 4 }, { view: 'folder', areaId: 'mine:2' }), true);
+    assert.equal(DS.liveRelevant({ areas: ['family:1'] }, { view: 'folder', areaId: 'mine:2' }), false);
+    assert.equal(DS.liveRelevant({ areas: null }, { view: 'folder', areaId: 'mine:2' }), true);
+    assert.equal(DS.liveRelevant({ areas: ['family:1'] }, { view: 'trash' }), true);
+    assert.equal(DS.liveRelevant({ areas: ['mine:2'] }, { view: 'sync' }), false);
+  });
+
+  it('throttles to one call per interval, the last request wins', () => {
+    let t0 = 1000;
+    const timers = [];
+    let calls = 0;
+    const th = DS.throttle(() => { calls++; }, 2000, { now: () => t0, setTimer: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimer: () => {} });
+    th.request();
+    assert.equal(calls, 1);
+    th.request();
+    th.request();
+    assert.equal(calls, 1);
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0].ms, 2000);
+    t0 += 2000;
+    timers[0].fn();
+    assert.equal(calls, 2);
+    t0 += 5000;
+    th.request();
+    assert.equal(calls, 3);
+  });
+
+  it('"Im Portal öffnen" only with links; folder rows and the device_locked error', () => {
+    const me = { features: ['links'], links: { node: 'https://gc.example.com/x/{id}' } };
+    assert.equal(DS.actionsFor(node(), true, me).portal, true);
+    assert.equal(DS.actionsFor(node(), true, { features: [], links: null }).portal, false);
+    assert.equal(DS.actionsFor(node(), true, { features: ['links'], links: null }).portal, false);
+    assert.equal(DS.transferView({ id: 'f1', dir: 'up', folder: true, state: 'running', total: 0, sent: 0 }, t, 'de').text, 'drive.transfer.folderMaking');
+    assert.equal(DS.transferView({ id: 'f1', dir: 'up', folder: true, state: 'done', files: 3, total: 0, sent: 0 }, t, 'de').text, 'drive.transfer.folderDone.other(count=3)');
+    assert.equal(DS.errorText({ code: 'device_locked' }, t), 'drive.err.locked');
+    assert.equal(DS.folderQueuedText({ ok: true, folders: 2, queued: ['u1', 'u2', 'u3'], skipped: 1 }, t),
+      'drive.upload.folderQueued(what=drive.upload.folders.other(count=2), drive.upload.files.other(count=3), drive.upload.skipped.one(count=1))');
+    assert.equal(DS.folderQueuedText({ ok: true, folders: 0, queued: ['u1'] }, t), null);
+  });
+
+  it('the guard banner while Drive keeps the device stopped', () => {
+    assert.equal(DS.guardView(null, { t, locale: 'de', now: NOW }), null);
+    assert.equal(DS.guardView({ locked: false, incident: { id: 1 } }, { t, locale: 'de', now: NOW }), null);
+    const v = DS.guardView({ locked: true, portal: true, incident: { id: 7001, files: 63, at: at(2026, 10, 27, 8, 5), deviceName: 'Büro-PC', sample: ['a.docx', 'b.xlsx', '', 'c', 'd', 'e', 'f'] } }, { t, locale: 'de', now: NOW });
+    assert.equal(v.id, 7001);
+    assert.deepEqual(v.sample, ['a.docx', 'b.xlsx', 'c', 'd', 'e']);
+    assert.equal(v.more, 58);
+    assert.equal(v.portal, true);
+    assert.equal(v.text, 'drive.guard.text drive.guard.files.other(count=63) · drive.guard.at(when=drive.time.today(time=08:05)) · drive.guard.device(name=Büro-PC)');
+    assert.equal(DS.guardView({ locked: true, incident: null }, { t, locale: 'de', now: NOW }).id, null);
   });
 });

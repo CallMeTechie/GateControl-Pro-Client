@@ -7,10 +7,16 @@
  * Ordner" and "Hochladen" (button or files dropped on the page), the list
  * (preview pictures, name, date, size) and a menu per row: Öffnen, Speichern
  * unter …, Link teilen (rights, validity, PIN), Umbenennen, Verschieben,
- * Ältere Versionen, In den Papierkorb. Search covers names and the
- * recognised text of scans (with the words around the hit). Uploads and
- * downloads show in a list at the bottom; a taken name asks "Neue Version" /
- * "Beide behalten" / "Überspringen".
+ * Ältere Versionen, Im Portal öffnen (Drive 1.6 'links'), In den Papierkorb.
+ * Search covers names and the recognised text of scans (with the words
+ * around the hit). Uploads and downloads show in a list at the bottom; a
+ * taken name asks "Neue Version" / "Beide behalten" / "Überspringen". Whole
+ * folders go up too ("Ordner hochladen" or dropped). What changes elsewhere
+ * (push `changed`) and coming back to the window reload the folder, search,
+ * trash or links shown (at most every 2 s, scroll position and focus kept).
+ * Drive 1.6 'guard': while Drive keeps this device stopped, a banner on top
+ * ("Von Drive gestoppt: ungewöhnliche Änderungen") offers "Rückgängig
+ * machen", "War ich – freigeben" and "Im Portal prüfen".
  *
  * "Ordner sichern" (folders of this PC backed up / synced, core DriveSync)
  * is a view of the page too: drive-sync-view.js, shown by the last entry on
@@ -180,9 +186,29 @@
 			const list = el('div', { class: 'dv-pick-list', role: 'list' });
 			const err = el('span', { class: 'dv-dlg-err', role: 'alert' });
 			const ok = el('button', { type: 'button', class: 'btn btn-pri', text: o.confirm || t('drive.picker.here'), on: { click: () => pick() } });
-			dlg.body.append(path, list);
+			// "Neuer Ordner" in the folder shown: made, then entered (it can be picked right away)
+			const nfId = nextId('dv-pick-nf');
+			const nfInput = el('input', { id: nfId, type: 'text', class: 'dv-input', maxlength: '255', spellcheck: 'false', 'aria-label': t('drive.name.label'), placeholder: t('drive.picker.newName') });
+			const nfErr = el('span', { class: 'dv-field-err', role: 'alert' });
+			const nfOk = el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('drive.create'), on: { click: () => makeFolder() } });
+			const nfRow = el('div', { class: 'dv-pick-new', hidden: true }, [nfInput, nfOk, nfErr]);
+			const nfBtn = el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { nfRow.hidden = !nfRow.hidden; if (!nfRow.hidden) { nfInput.value = ''; nfErr.textContent = ''; nfInput.focus(); } } } }, [icon('plus', 14), el('span', { text: t('drive.newFolder') })]);
+			nfInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); makeFolder(); } else if (e.key === 'Escape') { e.stopPropagation(); nfRow.hidden = true; } });
+			nfInput.addEventListener('input', () => { nfErr.textContent = nfInput.value ? (DS.nameError(nfInput.value, t) || '') : ''; });
+			async function makeFolder() {
+				if (!P.folder || !DS.canPick(P.folder)) return;
+				const e = DS.nameError(nfInput.value, t);
+				if (e) { nfErr.textContent = e; return; }
+				nfOk.disabled = true;
+				const r = await Promise.resolve(api.mkdir(P.folder.node.id, nfInput.value.trim())).catch(fail);
+				nfOk.disabled = false;
+				if (!r || !r.ok) { nfErr.textContent = DS.errorText(r, t); return; }
+				nfRow.hidden = true;
+				await browse(r.node.id);
+			}
+			dlg.body.append(path, nfRow, list);
 			const std = o.fallback ? el('button', { type: 'button', class: 'btn btn-ghost', title: o.fallback, text: t('drive.picker.default'), on: { click: () => dlg.close({ folderId: null, path: o.fallback }) } }) : null;
-			dlg.foot.append(err, std, el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }), ok);
+			dlg.foot.append(err, nfBtn, std, el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }), ok);
 
 			async function pick() {
 				if (!DS.canPick(P.folder) || P.folder.node.id === o.exclude) return;
@@ -241,6 +267,8 @@
 					for (const n of subs) list.appendChild(row(n.name, null, 'folder', () => browse(n.id)));
 				}
 				ok.disabled = !P.folder || !DS.canPick(P.folder) || P.folder.node.id === o.exclude || P.loading;
+				nfBtn.hidden = !P.folder || !DS.canPick(P.folder) || typeof api.mkdir !== 'function';
+				if (nfBtn.hidden) nfRow.hidden = true;
 			}
 
 			(async () => {
@@ -306,6 +334,8 @@
 			menu: null,
 			previews: new Map(),
 			syncSummary: '',
+			guard: null,       // Drive 1.6: { locked, incident, portal }
+			livePending: false,
 		};
 
 		// ── Skeleton ─────────────────────────────────────
@@ -318,6 +348,7 @@
 		refs.search = el('input', { id: refs.searchLabel.getAttribute('for'), type: 'search', class: 'dv-search-in', maxlength: '100', on: { input: onSearchInput, keydown: onSearchKey } });
 		refs.refresh = el('button', { type: 'button', class: 'dv-ib', on: { click: () => reload() } }, [icon('refresh', 16)]);
 		refs.banner = el('div', { class: 'dv-banner', role: 'status', hidden: true });
+		refs.guard = el('div', { class: 'dv-guard', role: 'alert', hidden: true });
 		refs.side = el('nav', { class: 'dv-side scroll' });
 		refs.bar = el('div', { class: 'dv-bar' });
 		refs.note = el('div', { class: 'dv-note', hidden: true });
@@ -347,6 +378,7 @@
 				refs.refresh,
 			]),
 			refs.banner,
+			refs.guard,
 			refs.empty,
 			refs.main,
 		);
@@ -384,6 +416,19 @@
 			if (S.shown && S.view === 'folder' && S.folder && c && c.folderId === S.folder.node.id) loadFolder(S.folder.node.id, { quiet: true });
 			else S.dirty = true;
 		});
+		// Drive changed elsewhere (push `changed`) / back in the window: what is shown loads again
+		const live = DS.throttle(() => liveRefresh(), 2000);
+		if (typeof api.onRemote === 'function') {
+			api.onRemote((ev) => {
+				if (S.shown && DS.liveRelevant(ev, { view: S.view, areaId: S.folder ? S.folder.node.areaId : S.areaId })) live.request();
+				else if (!S.shown) S.dirty = true;
+			});
+		}
+		if (typeof root.addEventListener === 'function') {
+			root.addEventListener('focus', () => { if (S.shown && S.me) live.request(); });
+		}
+		// Drive 1.6 'guard'
+		if (typeof api.onGuard === 'function') api.onGuard((g) => { S.guard = g || null; renderGuard(); });
 		Promise.resolve(api.transfers()).then((r) => { if (r && r.ok) { S.transfers = r.transfers; renderTransfers(); } }).catch(() => {});
 
 		// ── Loading ──────────────────────────────────────
@@ -398,6 +443,7 @@
 			const me = await Promise.resolve(api.me()).catch(fail);
 			S.me = me && me.ok ? me : null;
 			S.access = DS.accessOf(S.me);
+			if (S.me && S.me.guard) S.guard = { locked: !!S.me.guard.locked, incident: S.me.guard.incident || null, portal: !!(S.me.links && S.me.links.drive) };
 			if (!me || !me.ok) {
 				S.loading = false;
 				S.error = me;
@@ -454,10 +500,9 @@
 			syncView.show();
 		}
 
-		async function loadTrash() {
+		async function loadTrash({ quiet = false } = {}) {
 			S.view = 'trash';
-			S.loading = true;
-			render();
+			if (!quiet || !S.trash) { S.loading = true; render(); }
 			const r = await Promise.resolve(api.trash()).catch(fail);
 			S.loading = false;
 			if (S.view !== 'trash') return;
@@ -466,10 +511,9 @@
 			render();
 		}
 
-		async function loadLinks() {
+		async function loadLinks({ quiet = false } = {}) {
 			S.view = 'links';
-			S.loading = true;
-			render();
+			if (!quiet || !S.links) { S.loading = true; render(); }
 			const r = await Promise.resolve(api.links()).catch(fail);
 			S.loading = false;
 			if (S.view !== 'links') return;
@@ -497,11 +541,10 @@
 				backToFolder();
 			}
 		}
-		async function runSearch() {
+		async function runSearch({ quiet = false } = {}) {
 			const q = S.query;
 			S.view = 'search';
-			S.loading = true;
-			render();
+			if (!quiet || !S.results) { S.loading = true; render(); }
 			const r = await Promise.resolve(api.search(q)).catch(fail);
 			if (S.view !== 'search' || S.query !== q) return;
 			S.loading = false;
@@ -524,6 +567,30 @@
 		}
 		const refreshView = () => (S.view === 'folder' && S.folder ? loadFolder(S.folder.node.id, { quiet: true }) : S.view === 'trash' ? loadTrash() : S.view === 'search' ? runSearch() : S.view === 'links' ? loadLinks() : S.view === 'sync' ? openSync() : null);
 
+		/**
+		 * Live reload (push `changed`, back in the window): without "loading", scroll position and
+		 * the focused row kept; waits while a menu or dialog is open.
+		 */
+		async function liveRefresh() {
+			if (!S.shown || S.loading || S.view === 'sync') return;
+			if (S.menu || host.querySelector('.dv-scrim')) { S.livePending = true; return; }
+			S.livePending = false;
+			const top = refs.listWrap.scrollTop;
+			const a = document.activeElement;
+			const row = a && refs.list.contains(a) ? a.closest('[data-id]') : null;
+			const focusId = row ? row.getAttribute('data-id') : null;
+			const focusMore = !!(a && a.classList && a.classList.contains('dv-more-btn'));
+			if (S.view === 'folder' && S.folder) await loadFolder(S.folder.node.id, { quiet: true });
+			else if (S.view === 'trash') await loadTrash({ quiet: true });
+			else if (S.view === 'search' && S.query) await runSearch({ quiet: true });
+			else if (S.view === 'links') await loadLinks({ quiet: true });
+			refs.listWrap.scrollTop = top;
+			if (focusId) {
+				const back = refs.list.querySelector(`[data-id="${CSS.escape(focusId)}"] ${focusMore ? '.dv-more-btn' : '.dv-open'}`);
+				if (back) back.focus();
+			}
+		}
+
 		async function openNode(n) {
 			if (n.isDir) { refs.search.value = ''; S.query = ''; loadFolder(n.id); return; }
 			const r = await Promise.resolve(api.open(n.id)).catch(fail);
@@ -533,6 +600,49 @@
 				return;
 			}
 			done(r);
+		}
+
+		async function openInPortal(n) {
+			const r = await Promise.resolve(api.openInPortal(n ? n.id : null)).catch(fail);
+			if (!r || !r.ok) done(r);
+		}
+
+		// ── Guard (Drive 1.6) ────────────────────────────
+		function renderGuard() {
+			clear(refs.guard);
+			const v = DS.guardView(S.guard, { t, locale: locale(), now: now() });
+			refs.guard.hidden = !v;
+			if (!v) return;
+			const list = v.sample.length ? el('ul', { class: 'dv-guard-list' }, v.sample.map((x) => el('li', { text: x }))) : null;
+			const more = v.more ? el('span', { class: 'dv-guard-more', text: DS.plural(t, 'drive.guard.more', v.more) }) : null;
+			refs.guard.append(
+				el('span', { class: 'dv-guard-ic' }, [icon('lock', 18)]),
+				el('div', { class: 'dv-guard-tx' }, [el('b', { text: v.title }), el('p', { class: 'dv-p', text: v.text }), list, more]),
+				el('div', { class: 'dv-guard-acts' }, [
+					v.id !== null ? el('button', { type: 'button', class: 'btn btn-pri btn-sm', text: t('drive.guard.undo'), on: { click: () => decideGuard(v.id, 'undo') } }) : null,
+					v.id !== null ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('drive.guard.release'), on: { click: () => decideGuard(v.id, 'release') } }) : null,
+					v.portal ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: t('drive.guard.portal'), on: { click: () => openInPortal(null) } }) : null,
+				]),
+			);
+		}
+
+		function decideGuard(id, decision) {
+			confirmDialog({
+				title: t(decision === 'undo' ? 'drive.guard.undoTitle' : 'drive.guard.releaseTitle'),
+				text: t(decision === 'undo' ? 'drive.guard.undoText' : 'drive.guard.releaseText'),
+				confirm: t(decision === 'undo' ? 'drive.guard.undo' : 'drive.guard.release'),
+				danger: decision === 'release',
+				run: async () => {
+					const r = await api.guardDecide(id, decision);
+					if (r && r.ok) {
+						S.guard = r.guard || null;
+						renderGuard();
+						toast(decision === 'undo' ? t('drive.guard.undone', { restored: r.restored || 0, trashed: r.trashed || 0 }) : t('drive.guard.released'), 'success');
+						refreshView();
+					}
+					return r;
+				},
+			});
 		}
 
 		async function saveAs(n, versionId) {
@@ -549,8 +659,18 @@
 			afterQueue(r);
 		}
 
+		async function pickFolderAndUpload() {
+			if (!canUpload() || typeof api.pickFolders !== 'function') return;
+			const p = await Promise.resolve(api.pickFolders()).catch(fail);
+			if (!p || !p.ok) { if (p && p.code !== 'cancelled') done(p); return; }
+			const r = await Promise.resolve(api.upload(S.folder.node.id, p.paths)).catch(fail);
+			afterQueue(r);
+		}
+
 		function afterQueue(r) {
 			if (!r || !r.ok) { done(r); return; }
+			const ft = DS.folderQueuedText(r, t);
+			if (ft) toast(ft, 'info');
 			if (r.rejected && r.rejected.length) toast(DS.plural(t, 'drive.upload.rejected', r.rejected.length, { names: r.rejected.map((x) => x.name).slice(0, 3).join(', ') }), 'error');
 		}
 
@@ -758,12 +878,13 @@
 		// ── Row menu ─────────────────────────────────────
 		function closeMenu() {
 			if (S.menu) { S.menu.remove(); S.menu = null; }
+			if (S.livePending) setTimeout(() => { if (S.livePending) live.request(); }, 0);
 		}
 
 		function openMenu(n, anchor, at) {
 			closeMenu();
 			const writable = S.view === 'folder' ? !!(S.folder && S.folder.writable) : !!(S.areas.find((a) => a.id === n.areaId) || {}).writable;
-			const acts = DS.actionsFor(n, writable);
+			const acts = DS.actionsFor(n, writable, S.me);
 			const items = [];
 			const item = (ic, label, fn, danger) => items.push(el('button', { type: 'button', role: 'menuitem', class: `dv-menu-item${danger ? ' is-danger' : ''}`, on: { click: () => { closeMenu(); fn(); } } }, [icon(ic, 15), el('span', { text: label })]));
 			item(n.isDir ? 'folder' : 'open', t('drive.open'), () => openNode(n));
@@ -773,6 +894,7 @@
 			if (acts.rename) item('pen', t('drive.rename'), () => renameNode(n));
 			if (acts.move) item('move', t('drive.move'), () => moveNode(n));
 			if (acts.versions) item('history', t('drive.versions.menu'), () => versionsDialog(n));
+			if (acts.portal) item('cloud', t('drive.portal.open'), () => openInPortal(n));
 			if (acts.remove) item('trash', t('drive.remove'), () => trashNode(n), true);
 			const menu = el('div', { class: 'dv-menu', role: 'menu' }, items);
 			const layer = el('div', { class: 'dv-menu-layer', on: { mousedown: (e) => { if (e.target === layer) closeMenu(); }, contextmenu: (e) => { e.preventDefault(); closeMenu(); } } }, [menu]);
@@ -831,6 +953,7 @@
 
 		function render() {
 			closeMenu();
+			renderGuard();
 			const st = S.status;
 			const offline = st && st.state === 'error';
 			refs.banner.hidden = !offline && !(S.error && ['offline', 'network', 'timeout'].includes(S.error.code));
@@ -906,6 +1029,7 @@
 				const w = !!(S.folder && S.folder.writable);
 				refs.bar.append(nav, el('span', { class: 'dv-grow' }), sort,
 					w ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: newFolder } }, [icon('plus', 14), el('span', { text: t('drive.newFolder') })]) : null,
+					w && typeof api.pickFolders === 'function' ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: pickFolderAndUpload } }, [icon('folder', 14), el('span', { text: t('drive.upload.folderButton') })]) : null,
 					w ? el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: pickAndUpload } }, [icon('upload', 14), el('span', { text: t('drive.upload.button') })]) : null);
 				if (a && a.kind === 'child' && a.via === 'parent') { refs.note.hidden = false; refs.note.textContent = t('drive.childNote'); }
 				else if (S.folder && !w) { refs.note.hidden = false; refs.note.textContent = t('drive.readOnly'); }

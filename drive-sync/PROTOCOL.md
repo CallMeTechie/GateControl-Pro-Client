@@ -1,8 +1,9 @@
 # Pipe-Protokoll Pro-Client ↔ gc-drive-sync
 
-Version 2. Der Pro-Client (`src/main/drive-ondemand.js`) startet `gc-drive-sync.exe` und spricht mit ihm über eine
+Version 3. Der Pro-Client (`src/main/drive-ondemand.js`) startet `gc-drive-sync.exe` und spricht mit ihm über eine
 benannte Pipe. (Version 1 → 2: `launch`, `unregister` mit Prüfung, `deletes`, `known-folders`, `relocate`, `restore`,
-`usage`, `action`, Ereignisse `progress` und `action`, Status `massDelete`/`elevated`, Fehler mit `data`.) Server-Adresse und Geräte-Token gehen **nur** über diese Pipe – nie über die Kommandozeile, die Umgebung
+`usage`, `action`, Ereignisse `progress` und `action`, Status `massDelete`/`elevated`, Fehler mit `data`. Version 2 → 3:
+`guard`, `suspect`, Zustände `locked`/`suspect`, Status `locked`/`suspect`/`held`, `entropy` im Commit an Drives mit `guard`.) Server-Adresse und Geräte-Token gehen **nur** über diese Pipe – nie über die Kommandozeile, die Umgebung
 oder eine Datei. gc-drive-sync hält das Token nur im Speicher; nach einem Neustart schickt der Pro-Client es erneut.
 
 ## Start und Verbindung
@@ -16,7 +17,7 @@ Wächter, bis das Kind endet; `run --parent-pid …` geht weiter direkt (dann mi
 **erste Zeile auf stdout** nennt die Pipe:
 
 ```json
-{"event":"ready","pipe":"\\\\.\\pipe\\gatecontrol-drive-sync-S-1-5-21-…-1001-3f9c…e1","pid":4242,"version":"0.1.0","protocol":2,"launch":"token","elevated":false}
+{"event":"ready","pipe":"\\\\.\\pipe\\gatecontrol-drive-sync-S-1-5-21-…-1001-3f9c…e1","pid":4242,"version":"0.1.0","protocol":3,"launch":"token","elevated":false}
 ```
 
 `launch`: `token` (CreateProcessWithTokenW), `parent` (Explorer als Elternprozess), `inprocess` (im Starter);
@@ -74,6 +75,8 @@ Programm mit `bad_json`, unbekannte Befehle mit `unknown_command`.
 | `restore` | `folder` (key) | `{folder, from, to, moved}` | `not_running`, `not_relocated`, `hydrate_failed` (nichts geändert), `revert_failed`, `move_failed`, `set_failed`, `target_taken` |
 | `usage` | – | `{localBytes, totalBytes, files, localFiles, pinnedFiles}` | – |
 | `action` | `action` (`share` \| `portal` \| `versions`), `path` (im Sync-Root) | `{queued: true}` + Ereignis `action` (Pro-Client mit `--drive-action` gestartet) | `invalid` |
+| `guard` | `locked` (bool), `undo` (bool, optional) | `{locked, undo}`: Drive 1.6 – Drive hat das Gerät gestoppt (`locked: true`: sofort nichts mehr hochladen/löschen) bzw. freigegeben; `undo`: Drive hat die Änderungen rückgängig gemacht – der nächste Vollabgleich holt die Fassungen aus Drive, lokal abweichende bleiben als Konfliktkopie **zurückgehalten** (nicht hochgeladen), ebenso neue lokale Dateien | `not_running`, `invalid` |
+| `suspect` | `decision`: `upload` \| `keep` | `{upload}`: Antwort auf die lokale Prüfung – hochladen bzw. pausiert lassen (wie `pause`) | `not_running`, `invalid` |
 | `shutdown` | – | `{shutdown: true}`, danach endet das Programm | – |
 
 ## Status
@@ -90,7 +93,10 @@ Als Antwort auf `status`/`start` und als Ereignis `{"event":"status", …}` bei 
   "syncRoot": "C:\\Users\\max\\GateControl Drive",
   "registered": true,
   "massDelete": {"files": 640, "items": 1, "offline": false, "sample": ["C:\\Users\\max\\GateControl Drive\\Meine Dateien\\Fotos"]},
-  "elevated": false
+  "elevated": false,
+  "locked": false,
+  "suspect": {"count": 63, "sample": ["Brief.docx", "Steuer.xlsx"], "why": "entropy"},
+  "held": 0
 }
 ```
 
@@ -103,14 +109,27 @@ Als Antwort auf `status`/`start` und als Ereignis `{"event":"status", …}` bei 
 | `idle` | abgeglichen |
 | `paused` | pausiert |
 | `offline` | Server nicht erreichbar oder Token abgelehnt (401) – neuer Versuch nach 15 s … 5 min |
+| `locked` | Drive 1.6 `guard`: Drive hat das Gerät gestoppt (423 `device_locked`, `me.guard.locked` oder `guard {locked: true}`) – nichts geht hoch, nichts wird gelöscht; Öffnen geht weiter; alle 5 min `me`, bis frei |
+| `suspect` | lokale Prüfung angeschlagen (s. u.) – wartet auf `suspect` |
 | `error` | anderer Fehler (siehe `errors`) |
 
 `massDelete`: zurückgehaltene Massenlöschung (sonst `null`), Antwort mit `deletes`. `elevated`: läuft mit
 Administratorrechten.
 
+`suspect` (lokale Prüfung vor dem Hochladen, `src/core/guard.rs`, dieselben Regeln wie core `utils/drive-guard.js`):
+viele **bestehende** Dateien wurden zu hoch-entropischem Inhalt (Entropie der ersten 64 KB > 7,5, vorher < 7,0 bzw.
+unbekannt bei Dateitypen, die nicht ohnehin komprimiert sind) oder bekamen eine Ransomware-Endung – mindestens 50 oder
+mindestens 20 % eines Ordners mit mindestens 20 Dateien (verdächtige Änderungen der letzten 10 Minuten zählen mit). Dann
+geht nichts hoch, `why`: `entropy` | `extension`, `sample`: bis zu 5 Namen. `held`: nach `guard {undo}` zurückgehaltene
+Dateien. Die Entropie jeder hochgeladenen Fassung geht als `entropy` im Commit mit (nur an Drives mit `guard`) und bleibt im
+Zustand als Vergleich.
+
+Die Textebene von PDFs liest gc-drive-sync **nicht** aus (kein PDF-Parser im Dienst mit Benutzerrechten, Größe der
+Exe); der Pro-Client schickt den Text bei Uploads über die Drive-Seite und „Ordner sichern“ mit.
+
 `pending`: wartende lokale Änderungen und Löschungen. `transferring`: laufende Uploads und Downloads (Öffnen).
 Fehlercodes in `errors` u. a.: `network`, `timeout`, `http_<status>`, Codes des Plugins (`forbidden`, `quota`, …),
-`read_only`, `outside_area`, `name_unsupported`, `empty_file`, `mass_delete`, `local_io`, `hydrate`, `dehydrate`.
+`read_only`, `outside_area`, `name_unsupported`, `empty_file`, `mass_delete`, `suspect`, `local_io`, `hydrate`, `dehydrate`.
 
 ## Weitere Aufrufe
 

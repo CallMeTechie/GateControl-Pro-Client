@@ -75,6 +75,13 @@
 		if (st.busy) {
 			out.cls = 'run';
 			out.text = busyText(st, t);
+		} else if (st.locked || st.state === 'locked') {
+			// Drive 1.6 guard: Drive hat das Gerät gestoppt
+			out.cls = 'err';
+			out.text = t('drive.od.state.locked');
+		} else if (st.suspect || st.state === 'suspect') {
+			out.cls = 'ask';
+			out.text = t('drive.od.state.suspect');
 		} else if (st.massDelete) {
 			out.cls = 'ask';
 			out.text = t('drive.od.state.ask');
@@ -104,6 +111,7 @@
 			else out.detail.push(plural(t, 'drive.od.state.loading', n));
 		}
 		if (num(st.pending) > 0) out.detail.push(plural(t, 'drive.od.pending', st.pending));
+		if (num(st.held) > 0) out.detail.push(plural(t, 'drive.sync.held', st.held));
 		// Fehler einzelner Dateien (mit Pfad) – die ersten zwei
 		for (const e of errs.filter((x) => x && x.path && x.code !== 'mass_delete').slice(-2)) {
 			out.detail.push(t('drive.od.fileError', { name: baseName(e.path), reason: reasonText(e.code, t) }));
@@ -150,6 +158,13 @@
 		const m = st && st.massDelete;
 		if (!m) return null;
 		return { files: num(m.files), items: num(m.items), offline: m.offline === true, sample: (Array.isArray(m.sample) ? m.sample : []).map(baseName).slice(0, 3) };
+	}
+
+	/** The question after the local ransomware check → { count, sample, why } | null */
+	function suspect(st) {
+		const m = st && st.suspect;
+		if (!m) return null;
+		return { count: num(m.count), sample: (Array.isArray(m.sample) ? m.sample : []).map(baseName).filter(Boolean).slice(0, 5), why: m.why === 'extension' ? 'extension' : 'entropy' };
 	}
 
 	/** Paths overlap (one in the other, Windows paths, case-insensitive)? */
@@ -232,6 +247,7 @@
 		progressPct,
 		usageText,
 		massDelete,
+		suspect,
 		overlaps,
 		knownRows,
 		w2Lock,

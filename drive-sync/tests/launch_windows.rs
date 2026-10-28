@@ -128,7 +128,7 @@ fn run(force: Option<&str>) {
         r.read_line(&mut line).unwrap();
         let v: Value = serde_json::from_str(line.trim()).unwrap();
         if v["id"] == 1 {
-            assert_eq!(v["result"]["protocol"], 2);
+            assert_eq!(v["result"]["protocol"], 3);
             println!("LAUNCH-INFO: hello elevated={} knownFolders={}", v["result"]["elevated"], v["result"]["knownFolders"]);
             break;
         }

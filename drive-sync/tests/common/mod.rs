@@ -214,6 +214,7 @@ impl FakeServer {
                                     base_rev: b["baseRev"].as_u64(),
                                     mtime: b["mtime"].as_i64(),
                                     on_conflict: b["onConflict"].as_str().map(str::to_string),
+                                    entropy: b["entropy"].as_f64(),
                                 };
                                 ok(json!({ "node": d.commit(&req)?, "created": true }))
                             }

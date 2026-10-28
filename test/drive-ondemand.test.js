@@ -338,6 +338,38 @@ describe('drive-ondemand', () => {
     await dod.stop();
   });
 
+  it('Drive 1.6 guard: Sperre gleich nach dem Start, frei mit undo; lokale Prüfung im Status und Antwort', async () => {
+    let locked = true;
+    const { dod, prog } = make({
+      opts: { getGuard: () => ({ locked }) },
+      program: { handlers: {
+        guard: (m, reply, fail, ev) => { reply({ locked: m.locked, undo: !!m.undo }); ev({ event: 'status', state: m.locked ? 'locked' : 'idle', locked: m.locked }); },
+        suspect: (m, reply, fail, ev) => { reply({ upload: m.decision === 'upload' }); ev({ event: 'status', state: m.decision === 'upload' ? 'idle' : 'paused', suspect: null }); },
+        'sync-now': (m, reply, fail, ev) => { reply({ queued: true }); ev({ event: 'status', state: 'suspect', suspect: { count: 63, sample: ['Brief.docx'], why: 'entropy' }, held: 2 }); },
+      } },
+    });
+    await dod.start();
+    await waitFor(() => prog.received.some((m) => m.cmd === 'guard'));
+    assert.deepEqual(prog.received.find((m) => m.cmd === 'guard'), { id: prog.received.find((m) => m.cmd === 'guard').id, cmd: 'guard', locked: true });
+    await waitFor(() => dod.status().locked === true);
+    assert.equal(dod.status().state, 'locked');
+    locked = false;
+    await dod.guard(false, true);
+    assert.deepEqual(prog.received.filter((m) => m.cmd === 'guard').map((m) => [m.locked, m.undo]), [[true, undefined], [false, true]]);
+    await waitFor(() => dod.status().locked === false);
+    await dod.syncNow();
+    await waitFor(() => dod.status().state === 'suspect');
+    assert.deepEqual(dod.status().suspect, { count: 63, sample: ['Brief.docx'], why: 'entropy' });
+    assert.equal(dod.status().held, 2);
+    await assert.rejects(dod.suspect('maybe'), (e) => e.code === 'invalid');
+    await dod.suspect('keep');
+    await waitFor(() => dod.status().suspect === null);
+    assert.ok(prog.received.some((m) => m.cmd === 'suspect' && m.decision === 'keep'));
+    await dod.stop();
+    // läuft nichts: guard ist nichts zu tun
+    assert.equal(await dod.guard(true), null);
+  });
+
   it('Start mit Administratorrechten wird angezeigt; falsches Konto ist ein Fehler', async () => {
     let t = make({ program: { readyExtra: { launch: 'inprocess', elevated: true } } });
     await t.dod.start();
@@ -432,5 +464,9 @@ describe('drive-ondemand IPC', () => {
     assert.deepEqual(await ch['drive-ondemand:disable']({}, { force: true }), { ok: true, result: { unregistered: true } });
     assert.deepEqual(await ch['drive-ondemand:relocate']({}, 'music', { evil: 1 }), { ok: true, result: { moved: 1 } });
     assert.deepEqual(calls.slice(1), [['disable', false], ['disable', true], ['relocate', 'music', null]]);
+    dod.suspect = async (d) => { calls.push(['suspect', d]); return { upload: d === 'upload' }; };
+    assert.deepEqual(await ch['drive-ondemand:suspect']({}, 'upload'), { ok: true, result: { upload: true } });
+    assert.deepEqual(await ch['drive-ondemand:suspect']({}, { evil: 1 }), { ok: true, result: { upload: false } });
+    assert.deepEqual(calls.slice(-2), [['suspect', 'upload'], ['suspect', '']]);
   });
 });

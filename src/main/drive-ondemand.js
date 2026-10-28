@@ -27,6 +27,11 @@
  *     solche Dateien als normale Dateien im Ordner (nichts wird gelöscht).
  *   - Windows-Ordner verlegen / zurücklegen, Massenlöschung (Nachfrage),
  *     belegter Platz, Kontextmenü (Ereignis `action` → `onAction`).
+ *   - Drive 1.6 `guard`: hat Drive das Gerät gestoppt (Ereignis guard /
+ *     me.guard im Pro-Client), geht `guard {locked}` an gc-drive-sync – es lädt
+ *     sofort nichts mehr hoch; nach „War ich – freigeben“ / „Rückgängig machen“
+ *     `guard {locked: false, undo}`. Die lokale Prüfung von gc-drive-sync
+ *     (Zustand `suspect`) beantwortet `suspect('upload' | 'keep')`.
  *   - Status, Fortschritt und Logzeilen gehen an `onStatus` / das Log; die
  *     IPC-Kanäle drive-ondemand:* (ipc-pro.js) und die Preload-Brücke
  *     `gatecontrol.driveOnDemand` reichen sie weiter.
@@ -117,13 +122,14 @@ const err = (code, message, data) => Object.assign(new Error(message || code), {
  * @param {RegExp} [o.pipePattern] - Tests: erlaubte Pipe-Namen
  * @param {(status: object) => void} [o.onStatus]
  * @param {{ setTimeout: Function, clearTimeout: Function }} [o.timers]
+ * @param {() => ({ locked: boolean } | null)} [o.getGuard] - Drive 1.6: ist das Gerät gerade gestoppt? (nach dem Start gemeldet)
  */
 function createDriveOnDemand({
   store, log = noopLog(), getServer, getHeaders = () => ({}), getDeviceName = () => require('os').hostname(),
   exePath, appVersion = '', appExe = null, getLang = () => 'de', relocateBlocked = () => null, openPath = null, onAction = () => {},
   spawn = require('child_process').spawn, connect = require('net').connect,
   exists = require('fs').existsSync, platform = process.platform, parentPid = process.pid,
-  pipePattern = PIPE_RE, onStatus = () => {}, timers = { setTimeout, clearTimeout },
+  pipePattern = PIPE_RE, onStatus = () => {}, timers = { setTimeout, clearTimeout }, getGuard = () => null,
 }) {
   const events = new EventEmitter();
   let child = null;
@@ -131,7 +137,7 @@ function createDriveOnDemand({
   let buf = '';
   let nextId = 1;
   const pending = new Map();
-  let status = { state: 'disabled', pending: 0, transferring: 0, errors: [], lastSync: null, massDelete: null, progress: null, busy: null };
+  let status = { state: 'disabled', pending: 0, transferring: 0, errors: [], lastSync: null, massDelete: null, suspect: null, locked: false, held: 0, progress: null, busy: null };
   let restartTimer = null;
   let restarts = 0;
   let stopping = false;
@@ -194,7 +200,7 @@ function createDriveOnDemand({
     if (!msg || typeof msg !== 'object') return;
     if (msg.event === 'status') {
       const { event, ...st } = msg; // eslint-disable-line no-unused-vars
-      setStatus({ ...st, massDelete: st.massDelete || null });
+      setStatus({ ...st, massDelete: st.massDelete || null, suspect: st.suspect || null, locked: st.locked === true, held: Number(st.held) || 0 });
       return;
     }
     if (msg.event === 'progress') {
@@ -294,6 +300,10 @@ function createDriveOnDemand({
       const st = await request('start');
       // Ein Status-Ereignis kann schon vor der Antwort angekommen sein – dann gilt es.
       if (st && typeof st === 'object' && status.state === 'starting') setStatus(st);
+      // Drive hat das Gerät schon gestoppt: sofort melden
+      let g = null;
+      try { g = getGuard(); } catch { g = null; }
+      if (g && g.locked) await request('guard', { locked: true }).catch(() => {});
       restarts = 0;
       log.info(`Drive „Dateien bei Bedarf“ gestartet (${launchInfo.launch})`);
       return true;
@@ -435,6 +445,19 @@ function createDriveOnDemand({
       lastConfig = JSON.stringify(cfg);
     },
     syncNow: () => request('sync-now'),
+    /**
+     * Drive 1.6 `guard`: gestoppt / frei (`undo`: Drive hat die Änderungen rückgängig gemacht).
+     * Läuft gc-drive-sync nicht, gibt es nichts zu tun.
+     */
+    guard(locked, undo = false) {
+      if (!sock) return Promise.resolve(null);
+      return request('guard', { locked: locked === true, undo: undo === true });
+    },
+    /** Antwort auf die lokale Prüfung: 'upload' (hochladen) | 'keep' (pausiert lassen). */
+    suspect: (decision) => {
+      if (!['upload', 'keep'].includes(decision)) return Promise.reject(err('invalid', 'decision'));
+      return request('suspect', { decision });
+    },
     pause: () => request('pause'),
     resume: () => request('resume'),
     /** Antwort auf die Massenlöschung: 'apply' (Löschen übertragen) | 'restore'. */
@@ -513,6 +536,7 @@ function driveOnDemandChannels(dod, log) {
     'drive-ondemand:resume': call(() => dod.resume()),
     'drive-ondemand:unregister': call(() => dod.disable({ force: false })),
     'drive-ondemand:deletes': call((_, decision) => dod.deletes(str(decision))),
+    'drive-ondemand:suspect': call((_, decision) => dod.suspect(str(decision))),
     'drive-ondemand:usage': call(() => dod.usage()),
     'drive-ondemand:known-folders': call(() => dod.knownFolders()),
     'drive-ondemand:relocate': call((_, folder, name) => dod.relocate(str(folder), typeof name === 'string' ? name : null)),

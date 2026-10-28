@@ -118,6 +118,16 @@ pub struct MeAnswer {
     /// Drive 1.5: Fähigkeiten (`emptyFiles`, `devices`, `deleteAfter`, …); ältere Drives: leer.
     #[serde(default)]
     pub features: Vec<String>,
+    /// Drive 1.6 `guard`: hat Drive dieses Gerät gestoppt?
+    #[serde(default)]
+    pub guard: Option<GuardInfo>,
+}
+
+/// `me.guard` (Drive 1.6).
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+pub struct GuardInfo {
+    #[serde(default)]
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -204,7 +214,7 @@ pub struct Content {
 }
 
 /// `POST uploads/commit`.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitRequest {
     /// `None` nur für leere Dateien (Drive 1.5 `emptyFiles`, dann `size: 0`).
@@ -220,6 +230,9 @@ pub struct CommitRequest {
     pub mtime: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_conflict: Option<String>,
+    /// Drive 1.6 `guard`: Entropie der ersten 64 KB (0 … 8), nur an solche Drives.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entropy: Option<f64>,
 }
 
 #[cfg(test)]
@@ -261,7 +274,20 @@ mod tests {
 
     #[test]
     fn commit_body_skips_empty() {
-        let c = CommitRequest { media_id: Some("m".into()), size: None, parent_id: 1, name: "a".into(), base_rev: None, mtime: Some(5), on_conflict: None };
+        let c = CommitRequest {
+            media_id: Some("m".into()),
+            size: None,
+            parent_id: 1,
+            name: "a".into(),
+            base_rev: None,
+            mtime: Some(5),
+            on_conflict: None,
+            entropy: None,
+        };
         assert_eq!(serde_json::to_string(&c).unwrap(), r#"{"mediaId":"m","parentId":1,"name":"a","mtime":5}"#);
+        let c = CommitRequest { entropy: Some(7.25), ..c };
+        assert_eq!(serde_json::to_string(&c).unwrap(), r#"{"mediaId":"m","parentId":1,"name":"a","mtime":5,"entropy":7.25}"#);
+        let m: MeAnswer = serde_json::from_str(r#"{"features":["guard"],"guard":{"locked":true,"incident":{"id":4}}}"#).unwrap();
+        assert_eq!(m.guard, Some(GuardInfo { locked: true }));
     }
 }

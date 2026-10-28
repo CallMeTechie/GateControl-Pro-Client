@@ -1053,6 +1053,20 @@
       "rejected": {
         "one": "{{count}} Datei nicht hochgeladen: {{names}}",
         "other": "{{count}} Dateien nicht hochgeladen: {{names}}"
+      },
+      "folderButton": "Ordner hochladen",
+      "folderQueued": "Wird hochgeladen: {{what}}",
+      "folders": {
+        "one": "1 Ordner",
+        "other": "{{count}} Ordner"
+      },
+      "files": {
+        "one": "1 Datei",
+        "other": "{{count}} Dateien"
+      },
+      "skipped": {
+        "one": "1 Eintrag ausgelassen",
+        "other": "{{count}} Einträge ausgelassen"
       }
     },
     "transfer": {
@@ -1069,7 +1083,12 @@
       "same": "schon vorhanden",
       "skipped": "übersprungen",
       "failed": "fehlgeschlagen: {{reason}}",
-      "show": "Im Ordner zeigen"
+      "show": "Im Ordner zeigen",
+      "folderDone": {
+        "one": "Ordner angelegt · 1 Datei",
+        "other": "Ordner angelegt · {{count}} Dateien"
+      },
+      "folderMaking": "Ordner werden angelegt …"
     },
     "conflict": {
       "title": "„{{name}}“ gibt es hier schon",
@@ -1157,7 +1176,8 @@
       "here": "Hier ablegen",
       "none": "Du hast keinen Bereich, in dem du schreiben darfst.",
       "noFolders": "Keine Unterordner – du kannst hier ablegen.",
-      "default": "Standardort"
+      "default": "Standardort",
+      "newName": "Name des neuen Ordners"
     },
     "save": {
       "menu": "In Drive speichern",
@@ -1207,7 +1227,9 @@
       "copy": "Kopieren hat nicht geklappt.",
       "emptyFile": "Leere Dateien nimmt dieser Server erst ab Drive 1.5 an.",
       "inDrive": "Liegt im Ordner „GateControl Drive“ (Dateien bei Bedarf).",
-      "generic": "Das hat nicht geklappt ({{code}})."
+      "generic": "Das hat nicht geklappt ({{code}}).",
+      "locked": "Drive hat dieses Gerät nach ungewöhnlichen Änderungen gestoppt – bitte oben entscheiden.",
+      "unsupported": "Dieses Drive bietet das noch nicht an."
     },
     "sync": {
       "title": "Ordner sichern",
@@ -1250,7 +1272,9 @@
         "exists": "eine Datei steht im Weg",
         "too_many_files": "zu viele Dateien",
         "mass_delete": "viele Dateien gelöscht",
-        "generic": "Fehler ({{code}})"
+        "generic": "Fehler ({{code}})",
+        "guard_locked": "von Drive gestoppt",
+        "suspect": "ungewöhnliche Änderungen"
       },
       "mode": {
         "backup": "Nur sichern",
@@ -1271,7 +1295,9 @@
         },
         "error": "Fehler: {{reason}}",
         "idleSince": "Aktuell · {{when}}",
-        "idle": "Aktuell"
+        "idle": "Aktuell",
+        "suspect": "Ungewöhnliche Änderungen – bitte entscheiden",
+        "locked": "Von Drive gestoppt: ungewöhnliche Änderungen"
       },
       "failure": "„{{name}}“: {{code}}",
       "last": "zuletzt gesichert {{when}}",
@@ -1300,7 +1326,8 @@
         "error": "Fehler",
         "waiting": "Wartet: {{reason}}",
         "okSince": "Alles aktuell · {{when}}",
-        "ok": "Alles aktuell"
+        "ok": "Alles aktuell",
+        "locked": "Von Drive gestoppt"
       },
       "known": {
         "title": "Windows-Ordner",
@@ -1386,6 +1413,21 @@
       "tray": {
         "pause": "Drive-Sicherung pausieren",
         "resume": "Drive-Sicherung fortsetzen"
+      },
+      "pendingDeletesAt": {
+        "one": "1 hier gelöschte Datei wird im Drive am {{date}} gelöscht",
+        "other": "{{count}} hier gelöschte Dateien werden im Drive am {{date}} gelöscht"
+      },
+      "held": {
+        "one": "1 Datei nach „Rückgängig machen“ zurückgehalten (nicht hochgeladen)",
+        "other": "{{count}} Dateien nach „Rückgängig machen“ zurückgehalten (nicht hochgeladen)"
+      },
+      "suspect": {
+        "title": "„{{name}}“: {{count}} Dateien ungewöhnlich geändert",
+        "textEntropy": "Ihr Inhalt sieht plötzlich verschlüsselt aus – das kann ein Erpressungstrojaner sein. Es wurde nichts hochgeladen.",
+        "textExtension": "Sie haben eine Endung bekommen, die Erpressungstrojaner verwenden. Es wurde nichts hochgeladen.",
+        "keep": "Pausiert lassen",
+        "upload": "Hochladen"
       }
     },
     "od": {
@@ -1416,7 +1458,9 @@
         "loading": {
           "one": "Lädt 1 Datei",
           "other": "Lädt {{count}} Dateien"
-        }
+        },
+        "locked": "Von Drive gestoppt: ungewöhnliche Änderungen",
+        "suspect": "Ungewöhnliche Änderungen – bitte entscheiden"
       },
       "busy": {
         "relocate": "{{name}} wird in den Drive verlegt …",
@@ -1540,7 +1584,36 @@
         "launch": "Das Sync-Programm startet nicht",
         "wrong_user": "Der Pro-Client läuft unter einem anderen Konto als der angemeldete Benutzer",
         "generic": "Fehler ({{code}})"
+      },
+      "suspect": {
+        "title": "{{count}} Dateien ungewöhnlich geändert"
       }
+    },
+    "portal": {
+      "open": "Im Portal öffnen"
+    },
+    "guard": {
+      "title": "Von Drive gestoppt: ungewöhnliche Änderungen",
+      "text": "Auf diesem PC haben sich viele Dateien ungewöhnlich verändert (zum Beispiel verschlüsselt). Bis du entscheidest, lädt dieser PC nichts hoch und löscht nichts im Drive.",
+      "files": {
+        "one": "1 Datei betroffen",
+        "other": "{{count}} Dateien betroffen"
+      },
+      "at": "seit {{when}}",
+      "device": "Gerät: {{name}}",
+      "more": {
+        "one": "und 1 weitere",
+        "other": "und {{count}} weitere"
+      },
+      "undo": "Rückgängig machen",
+      "release": "War ich – freigeben",
+      "portal": "Im Portal prüfen",
+      "undoTitle": "Änderungen rückgängig machen?",
+      "undoText": "Drive stellt die Dateien so wieder her, wie sie vor den Änderungen waren, und legt neu entstandene in den Papierkorb. Dieser PC holt sie danach aus Drive; Dateien, die hier abweichen, bleiben als Konfliktkopie liegen und werden nicht hochgeladen.",
+      "releaseTitle": "Änderungen freigeben?",
+      "releaseText": "Nur, wenn du die Dateien selbst geändert hast (zum Beispiel verschlüsselt oder gepackt). Drive behält sie dann so und der Abgleich geht weiter.",
+      "undone": "Rückgängig gemacht: {{restored}} wiederhergestellt, {{trashed}} in den Papierkorb",
+      "released": "Freigegeben – der Abgleich geht weiter"
     }
   }
 }

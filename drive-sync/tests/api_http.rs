@@ -95,6 +95,7 @@ fn small_upload_commit_conflict_and_download() {
             base_rev: None,
             mtime: Some(1_700_000_000_000),
             on_conflict: None,
+            entropy: None,
         })
         .unwrap();
     assert_eq!(node.size, Some(11));
@@ -111,6 +112,7 @@ fn small_upload_commit_conflict_and_download() {
             base_rev: None,
             mtime: None,
             on_conflict: None,
+            entropy: None,
         })
         .unwrap_err();
     assert_eq!(e.code, "conflict");
@@ -124,6 +126,7 @@ fn small_upload_commit_conflict_and_download() {
             base_rev: Some(node.rev),
             mtime: None,
             on_conflict: None,
+            entropy: None,
         })
         .unwrap();
     assert_eq!(v2.rev, node.rev + 1);

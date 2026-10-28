@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 pub const MAX_LINE: usize = 64 * 1024;
 
 /// Kopfzeilen, die der Pro-Client zusätzlich zum Token mitgeben darf
@@ -117,6 +117,16 @@ pub enum Command {
         action: String,
         path: String,
     },
+    /// Drive 1.6 `guard` (vom Pro-Client): `locked` – Drive hat das Gerät gestoppt;
+    /// `undo` – Drive hat die Änderungen rückgängig gemacht (Fassungen aus Drive holen).
+    Guard {
+        locked: bool,
+        undo: bool,
+    },
+    /// Antwort auf die lokale Prüfung: `upload` (hochladen) | `keep` (pausiert lassen).
+    Suspect {
+        upload: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -207,6 +217,15 @@ pub fn parse_request(line: &str) -> Result<Request, (Value, ProtoError)> {
             let path = obj.get("path").and_then(Value::as_str).filter(|p| !p.is_empty() && p.len() <= 4096).ok_or_else(|| fail("invalid", "path"))?;
             Command::Action { action: action.to_string(), path: path.to_string() }
         }
+        "guard" => Command::Guard {
+            locked: obj.get("locked").and_then(Value::as_bool).ok_or_else(|| fail("invalid", "locked"))?,
+            undo: obj.get("undo").and_then(Value::as_bool).unwrap_or(false),
+        },
+        "suspect" => match obj.get("decision").and_then(Value::as_str) {
+            Some("upload") => Command::Suspect { upload: true },
+            Some("keep") => Command::Suspect { upload: false },
+            _ => return Err(fail("invalid", "decision")),
+        },
         "sync-now" => Command::SyncNow,
         "shutdown" => Command::Shutdown,
         _ => return Err(fail("unknown_command", "unknown cmd")),
@@ -281,6 +300,26 @@ pub struct Status {
     pub mass_delete: Option<MassDelete>,
     /// Läuft mit Administratorrechten (kein Start mit Benutzerrechten möglich).
     pub elevated: bool,
+    /// Drive 1.6 `guard`: Drive hat dieses Gerät gestoppt (Zustand `locked`).
+    #[serde(default)]
+    pub locked: bool,
+    /// Lokale Prüfung angeschlagen (Zustand `suspect`) oder `null`.
+    #[serde(default)]
+    pub suspect: Option<Suspect>,
+    /// Nach „Rückgängig machen“ zurückgehaltene Dateien.
+    #[serde(default)]
+    pub held: u64,
+}
+
+/// Viele Dateien ungewöhnlich geändert (guard.rs) – nichts hochgeladen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Suspect {
+    pub count: u64,
+    /// Bis zu 5 Dateinamen.
+    pub sample: Vec<String>,
+    /// `entropy` | `extension`
+    pub why: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -375,6 +414,12 @@ mod tests {
         assert_eq!(parse(r#"{"cmd":"restore","folder":"music"}"#), Ok(Command::Restore { folder: KnownFolder::Music }));
         assert_eq!(parse(r#"{"cmd":"action","action":"share","path":"C:\\x"}"#), Ok(Command::Action { action: "share".into(), path: "C:\\x".into() }));
         assert_eq!(parse(r#"{"cmd":"action","action":"delete","path":"C:\\x"}"#).unwrap_err().code, "invalid");
+        assert_eq!(parse(r#"{"cmd":"guard","locked":true}"#), Ok(Command::Guard { locked: true, undo: false }));
+        assert_eq!(parse(r#"{"cmd":"guard","locked":false,"undo":true}"#), Ok(Command::Guard { locked: false, undo: true }));
+        assert_eq!(parse(r#"{"cmd":"guard"}"#).unwrap_err().code, "invalid");
+        assert_eq!(parse(r#"{"cmd":"suspect","decision":"upload"}"#), Ok(Command::Suspect { upload: true }));
+        assert_eq!(parse(r#"{"cmd":"suspect","decision":"keep"}"#), Ok(Command::Suspect { upload: false }));
+        assert_eq!(parse(r#"{"cmd":"suspect","decision":"x"}"#).unwrap_err().code, "invalid");
     }
 
     #[test]

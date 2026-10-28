@@ -30,6 +30,9 @@ pub struct Entry {
     pub mtime_ms: i64,
     #[serde(default)]
     pub ctime_ms: i64,
+    /// Entropie der zuletzt hochgeladenen Fassung (Tausendstel Bit je Byte), für den Schutz vor Erpressungstrojanern.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ent: Option<u16>,
 }
 
 impl Entry {
@@ -46,6 +49,7 @@ impl Entry {
             sha256: n.sha256.clone(),
             mtime_ms: n.mtime_ms(),
             ctime_ms: n.created_ms(),
+            ent: None,
         }
     }
 }
@@ -85,6 +89,10 @@ pub struct State {
     pub areas: Vec<AreaDir>,
     #[serde(default)]
     entries: Vec<Entry>,
+    /// Nach „Rückgängig machen“ (Drive 1.6 `guard`) zurückgehaltene lokale Dateien:
+    /// Pfad (klein) → (Größe, Änderungszeit). Sie gehen nicht hoch, solange sie unverändert sind.
+    #[serde(default)]
+    pub held: std::collections::BTreeMap<String, (u64, i64)>,
     #[serde(skip)]
     by_id: HashMap<u64, Entry>,
     #[serde(skip)]
@@ -155,8 +163,12 @@ impl State {
     }
 
     /// Eintrag setzen oder ändern (Name/Elternteil ändern den Index mit).
-    pub fn upsert(&mut self, e: Entry) {
+    pub fn upsert(&mut self, mut e: Entry) {
         if let Some(old) = self.by_id.get(&e.id) {
+            // dieselbe Fassung: die gemerkte Entropie bleibt
+            if e.ent.is_none() && old.media == e.media {
+                e.ent = old.ent;
+            }
             if old.parent != e.parent || old.name != e.name {
                 let (p, k) = (old.parent, names::key(&old.name));
                 if let Some(m) = self.children.get_mut(&p) {
@@ -252,7 +264,20 @@ mod tests {
     use super::*;
 
     fn e(id: u64, parent: u64, name: &str, dir: bool) -> Entry {
-        Entry { id, parent, area: "mine:1".into(), name: name.into(), is_dir: dir, rev: 1, size: 0, media: None, sha256: None, mtime_ms: 0, ctime_ms: 0 }
+        Entry {
+            id,
+            parent,
+            area: "mine:1".into(),
+            name: name.into(),
+            is_dir: dir,
+            rev: 1,
+            size: 0,
+            media: None,
+            sha256: None,
+            mtime_ms: 0,
+            ctime_ms: 0,
+            ent: None,
+        }
     }
 
     fn sample() -> State {

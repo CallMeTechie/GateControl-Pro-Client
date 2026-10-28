@@ -86,6 +86,8 @@ api.driveOnDemand = {
   resume: () => ipcRenderer.invoke('drive-ondemand:resume'),
   /** Massenlöschung: 'apply' (Löschen übertragen) | 'restore' (Wiederherstellen). */
   deletes: (decision) => ipcRenderer.invoke('drive-ondemand:deletes', decision),
+  // lokale Prüfung (viele Dateien ungewöhnlich geändert): 'upload' | 'keep'
+  suspect: (decision) => ipcRenderer.invoke('drive-ondemand:suspect', decision),
   /** { localBytes, totalBytes, files, localFiles, pinnedFiles } */
   usage: () => ipcRenderer.invoke('drive-ondemand:usage'),
   /** { folders: [{ key, path, inDrive, from }], syncRoot } */

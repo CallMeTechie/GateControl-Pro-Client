@@ -24,7 +24,22 @@
 .dv-ib:hover { border-color: var(--faint); }
 .dv-ib:focus-visible, .dv-area:focus-visible, .dv-open:focus-visible, .dv-crumb:focus-visible, .dv-menu-item:focus-visible, .dv-pick-row:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 .dv-banner { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); font-size: 12.5px; }
-.dv-banner[hidden], .dv-gate[hidden], .dv-main[hidden], .dv-note[hidden], .dv-transfers[hidden] { display: none; }
+.dv-banner[hidden], .dv-gate[hidden], .dv-main[hidden], .dv-note[hidden], .dv-transfers[hidden], .dv-guard[hidden] { display: none; }
+
+/* Drive 1.6 guard: "Von Drive gestoppt" */
+.dv-guard { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px; background: var(--err-bg); border: 1px solid var(--err); }
+.dv-guard-ic { color: var(--err); display: inline-flex; padding-top: 2px; }
+.dv-guard-tx { display: flex; flex-direction: column; gap: 4px; flex: 1 1 320px; min-width: 0; font-size: 13px; }
+.dv-guard-list { margin: 2px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); }
+.dv-guard-list li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-guard-more { font-size: 12px; color: var(--faint); }
+.dv-guard-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* Folder picker: "Neuer Ordner" */
+.dv-pick-new { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.dv-pick-new[hidden] { display: none; }
+.dv-pick-new .dv-input { flex: 1 1 200px; }
+.dv-pick-new .dv-field-err { flex-basis: 100%; }
 
 /* Not switched on / no licence */
 .dv-gate { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; flex-grow: 1; padding: 40px 24px; text-align: center; }
