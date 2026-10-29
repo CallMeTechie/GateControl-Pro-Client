@@ -485,3 +485,90 @@
 .dset-safety { font-size: 14px; white-space: nowrap; }
 .dset-count { min-width: 28px; text-align: right; font-weight: 600; color: var(--muted); }
 .dset-empty { padding: 4px 0 14px; }
+
+/* Drive 1.12: the selection (check boxes, the green bar, its menu, the shortcuts, dragging onto a folder) */
+.dv-row.has-cb { grid-template-columns: 28px minmax(0, 1fr) 150px 96px 52px; user-select: none; }
+.dv-c-cb { display: flex; align-items: center; justify-content: center; }
+.dv-cb { width: 16px; height: 16px; margin: 0; accent-color: var(--acc); cursor: pointer; }
+.dv-cb:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.dv-row.is-sel, .dv-row.is-sel:hover:not(.dv-row-head) { background: var(--acc-bg); }
+.dv-row.is-cut { opacity: .5; }
+.dv-row.is-new:not(.is-sel) { box-shadow: inset 3px 0 0 var(--acc); }
+.dv-new { align-self: flex-start; padding: 1px 8px; border-radius: 999px; background: var(--acc-bg); color: var(--acc-t); font-size: 10.5px; font-weight: 600; }
+.dv-row.is-drop-target, .dv-tree-row.is-drop-target, .dv-crumb.is-drop-target { outline: 2px dashed var(--info); outline-offset: -2px; background: var(--info-bg); }
+.dv-drop-hint { position: fixed; z-index: 60; pointer-events: none; padding: 4px 10px; border-radius: 8px; background: var(--info); color: var(--bg); font-size: 12px; font-weight: 700; white-space: nowrap; box-shadow: var(--shadow); }
+.dv-drop-hint[hidden], .dv-selbar[hidden], .dv-keys[hidden] { display: none; }
+
+.dv-selbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: var(--acc-bg); border: 1px solid var(--acc); flex-shrink: 0; }
+.dv-sel-n { margin-right: 6px; font-size: 13.5px; }
+.dv-sel-d { font-weight: 500; font-size: 13px; color: var(--muted); }
+.dv-tb { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line2); background: var(--panel); color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.dv-tb:hover { border-color: var(--faint); }
+.dv-tb:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.dv-tb.is-icon { width: 34px; padding: 0; justify-content: center; }
+.dv-tb.is-danger { color: var(--err); border-color: var(--err); }
+.dv-tb.is-off { opacity: .5; cursor: default; }
+.dv-tb.is-off:hover { border-color: var(--line2); }
+
+.dv-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; flex-shrink: 0; font-size: 12px; color: var(--muted); }
+.dv-keys-i { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.dv-key { padding: 1px 6px; border-radius: 5px; border: 1px solid var(--line2); background: var(--panel2); color: var(--text); font-family: var(--font-mono); font-size: 11px; }
+.dv.is-dragging .dv-keys-i.is-drag { color: var(--info); }
+
+.dv-menu-h { padding: 6px 10px 4px; font-size: 12px; color: var(--muted); }
+.dv-menu-kbd { margin-left: auto; padding-left: 16px; font-family: var(--font-mono); font-size: 11px; color: var(--faint); }
+.dv-menu-item.is-off, .dv-menu-item.is-off svg { color: var(--faint); cursor: default; }
+.dv-menu-item.is-off:hover { background: transparent; }
+
+/* "Ziel wählen" */
+.dv-target .dv-dlg-head { flex-wrap: wrap; row-gap: 2px; }
+.dv-target-sub { order: 3; flex-basis: 100%; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.dv-target-mode { align-self: stretch; display: flex; }
+.dv-target-mode button { flex: 1 1 0; }
+.dv-target-mode button:disabled { opacity: .5; cursor: default; }
+.dv-target-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dv-target-chips[hidden] { display: none; }
+.dv-chip { height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line2); background: transparent; color: var(--text); font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.dv-chip:hover { border-color: var(--faint); }
+.dv-chip:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.dv-chip.is-on { border-color: var(--acc); background: var(--acc-bg); color: var(--acc-t); }
+.dv-chip:disabled { color: var(--faint); cursor: default; }
+.dv-chip:disabled:hover { border-color: var(--line2); }
+.dv-target-path { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.dv-target-new { color: var(--acc-t); }
+.dv-target-new .dv-pick-ic { background: var(--acc-bg); color: var(--acc-t); }
+.dv-target-recent { display: flex; flex-direction: column; gap: 6px; }
+.dv-target-recent:empty { display: none; }
+.dv-target-to { flex: 1 1 100%; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* names the target has already */
+.dv-cf-list { margin: 0; padding: 10px 12px; list-style: none; display: flex; flex-direction: column; gap: 8px; border-radius: 12px; background: var(--panel2); }
+.dv-cf-list li { display: flex; flex-direction: column; gap: 2px; }
+.dv-cf-name { font-size: 13.5px; font-weight: 500; overflow-wrap: anywhere; }
+.dv-cf-sub { font-size: 12px; color: var(--muted); }
+.dv-choices { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 6px; }
+.dv-choice { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border: 1px solid var(--line2); border-radius: 12px; cursor: pointer; }
+.dv-choice.is-on { border-color: var(--acc); background: var(--acc-bg); }
+.dv-choice input { margin: 2px 0 0; flex-shrink: 0; accent-color: var(--acc); }
+.dv-choice:has(input:disabled) { opacity: .55; cursor: default; }
+.dv-choice-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dv-choice-h { font-size: 13.5px; font-weight: 600; }
+.dv-choice-sub { font-size: 12px; color: var(--muted); }
+.dv-cf-hint { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.dv-cf-hint svg { flex-shrink: 0; color: var(--acc-t); margin-top: 1px; }
+
+/* a job in the transfer list, the note when it ended */
+.dv-tr-note { font-size: 11.5px; color: var(--faint); }
+.dv-snack { --snack-act: #08724C; position: fixed; left: 50%; bottom: 24px; z-index: 40; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; min-height: 48px; max-width: min(640px, calc(100vw - 48px)); padding: 4px 6px 4px 16px; border-radius: 12px; background: var(--text); color: var(--bg); box-shadow: var(--shadow); font-size: 13.5px; font-weight: 500; }
+[data-theme="light"] .dv-snack { --snack-act: #46E0A0; }
+.dv-snack[hidden], .dv-snack-act[hidden] { display: none; }
+.dv-snack-tx { flex-grow: 1; min-width: 0; overflow-wrap: anywhere; }
+.dv-snack-act { height: 36px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--snack-act); font: inherit; font-weight: 700; cursor: pointer; }
+.dv-snack-x { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; opacity: .7; cursor: pointer; }
+.dv-snack-act:focus-visible, .dv-snack-x:focus-visible { outline: 2px solid var(--info); outline-offset: 1px; }
+
+/* "Fotos": Alle / Keine per month */
+.dpv-month-sel { margin-left: auto; display: inline-flex; gap: 4px; }
+.dpv-month-h .dpv-month-sel { align-self: center; color: var(--acc-t); font-weight: 600; }
+.dpv-tile.is-sel { background: var(--acc-bg); }
+.dpv-tile.is-sel .dpv-img { inset: 0; transform: scale(.86); border-radius: 8px; transition: transform .12s; }

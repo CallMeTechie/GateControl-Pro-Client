@@ -6,8 +6,9 @@
  * with "Vor einem Jahr" on top (photos of this day of earlier years); a
  * month can be jumped to. A photo opens large (arrows for the next one) with
  * "Öffnen", "Speichern unter …", "Im Ordner zeigen" and "Im Portal öffnen".
- * "Auswählen" picks several photos (Shift for a range) to add them to an
- * album. "Alben": the albums one can see (cover, count, area, photo frame),
+ * "Auswählen" picks several photos (Shift for a range, "Alle" / "Keine" per
+ * month) to add them to an album and — Drive 1.12 — to download them as a
+ * ZIP, move them, share one link or delete them. "Alben": the albums one can see (cover, count, area, photo frame),
  * new album, rename, delete (the photos stay), photos out of an album, the
  * cover, and the switch "Im Fotorahmen zeigen" for those one may change.
  *
@@ -21,6 +22,7 @@
 	'use strict';
 
 	const PS = root.GCDrivePhotosState;
+	const BS = root.GCDriveBulkState;
 	const fail = (err) => ({ ok: false, code: (err && err.code) || 'failed', error: err && err.message });
 	let uid = 0;
 	const nextId = (p) => `${p}-${++uid}`;
@@ -38,6 +40,8 @@
 	 * @param {Function} o.areaLabel - GCDriveState.areaLabel
 	 * @param {Function} o.errorText - GCDriveState.errorText
 	 * @param {(folderId: number) => void} o.openFolder - "Im Ordner zeigen"
+	 * @param {object} [o.bulk] - Drive 1.12: { actions(items), zip(items), move(items, mode), trash(items), link(items) }
+	 *   of drive-view.js for the photos selected
 	 */
 	function mount(o) {
 		const api = o.api;
@@ -211,6 +215,19 @@
 			return P.tab === 'albums' && P.album ? P.album.items : P.items;
 		}
 
+		/** The photos selected (of the timeline, "Vor einem Jahr" or the album shown). */
+		function selPhotos() {
+			const all = new Map();
+			for (const p of [...P.items, ...P.memories.flatMap((g) => g.items || []), ...(P.album ? P.album.items : [])]) if (p && !all.has(p.id)) all.set(p.id, p);
+			return [...P.sel].map((id) => all.get(id)).filter(Boolean);
+		}
+
+		/** Drive 1.12: a job for the photos selected; the selection ends once it started. */
+		async function bulkRun(fn) {
+			const r = await Promise.resolve(fn()).catch(() => null);
+			if (r) { clearSel(); keepScroll(render); }
+		}
+
 		function renderSel() {
 			clear(selBar);
 			selBar.hidden = !P.selecting;
@@ -218,14 +235,28 @@
 			const n = P.sel.size;
 			const inAlbum = P.tab === 'albums' && P.album;
 			const f = feats();
-			selBar.append(
+			const items = o.bulk && n ? selPhotos() : [];
+			const acts = o.bulk && n ? o.bulk.actions(items) : null;
+			// Drive 1.12: greyed with the reason when not possible
+			const bulkBtn = (key, ic, label, fn, danger) => {
+				const a = acts ? acts[key] : { on: false, why: null };
+				return el('button', {
+					type: 'button', class: `btn btn-sec btn-sm${danger ? ' dv-danger' : ''}`, 'data-act': key, disabled: !n || null, 'aria-disabled': n && !a.on ? 'true' : null,
+					title: a.on || !a.why ? label : `${label} – ${t(a.why)}`, on: { click: () => (a.on ? fn() : (a.why ? toast(t(a.why), 'info') : null)) },
+				}, [icon(ic, 14), el('span', { text: label })]);
+			};
+			selBar.append(...[
 				el('span', { class: 'dpv-sel-n', text: n ? t('drive.photos.selected', { count: n }) : t('drive.photos.selectHint') }),
 				el('span', { class: 'dv-grow' }),
 				!inAlbum && f.albums ? el('button', { type: 'button', class: 'btn btn-pri btn-sm', disabled: !n, on: { click: () => addDialog(Array.from(P.sel)) } }, [icon('plus', 14), el('span', { text: t('drive.photos.addTo') })]) : null,
+				!inAlbum && o.bulk ? bulkBtn('zip', 'down', t('drive.bulk.zip'), () => o.bulk.zip(items)) : null,
+				!inAlbum && o.bulk ? bulkBtn('move', 'move', t('drive.bulk.moveTo'), () => bulkRun(() => o.bulk.move(items, 'move'))) : null,
+				!inAlbum && o.bulk ? bulkBtn('link', 'link', t('drive.bulk.link'), () => o.bulk.link(items)) : null,
+				!inAlbum && o.bulk ? bulkBtn('trash', 'trash', t('drive.bulk.trash'), () => bulkRun(() => o.bulk.trash(items)), true) : null,
 				inAlbum && P.album.album.canEdit ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', disabled: n !== 1, on: { click: () => setCover(Array.from(P.sel)[0]) } }, [el('span', { text: t('drive.photos.album.cover') })]) : null,
 				inAlbum && P.album.album.canEdit ? el('button', { type: 'button', class: 'btn btn-sec btn-sm dv-danger', disabled: !n, on: { click: () => removeFromAlbum(Array.from(P.sel)) } }, [el('span', { text: t('drive.photos.album.removeItems') })]) : null,
 				el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: t('drive.cancel'), on: { click: () => { clearSel(); render(); } } }),
-			);
+			].filter(Boolean));
 		}
 
 		function onTile(e, p, list, i) {
@@ -329,8 +360,15 @@
 				return;
 			}
 			for (const g of PS.groupByMonth(P.items, P.months, locale(), t)) {
+				// Drive 1.12: "Alle" / "Keine" of a month while selecting
+				const mst = P.selecting && BS ? BS.monthState(P.sel, g.items) : null;
+				const monthSel = mst ? el('button', {
+					type: 'button', class: 'btn btn-ghost btn-xs dpv-month-sel', 'data-month': g.key, text: t(mst === 'all' ? 'drive.bulk.photos.none' : 'drive.bulk.photos.all'),
+					'aria-label': t(mst === 'all' ? 'drive.bulk.photos.noneLabel' : 'drive.bulk.photos.allLabel', { month: g.label }),
+					on: { click: () => { P.sel = BS.selectMonth(P.sel, g.items, mst !== 'all'); keepScroll(render); } },
+				}) : null;
 				body.appendChild(el('section', { class: 'dpv-month', 'data-month': g.key }, [
-					el('div', { class: 'dpv-month-h' }, [el('span', { class: 'dpv-month-name', text: g.label }), el('span', { class: 'dpv-month-n', text: DSPlural('drive.photos.count', g.count) })]),
+					el('div', { class: 'dpv-month-h' }, [el('span', { class: 'dpv-month-name', text: g.label }), el('span', { class: 'dpv-month-n', text: DSPlural('drive.photos.count', g.count) }), monthSel]),
 					grid(g.items),
 				]));
 			}

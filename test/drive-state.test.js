@@ -259,8 +259,9 @@ describe('page wiring', () => {
     const en = flat(JSON.parse(read('src', 'i18n', 'en.json')));
     const keys = new Set();
     const files = ['drive-view.js', 'drive-state.js', 'chat-view.js', 'school-view.js', 'gatedrop-view.js', 'gatedrop-state.js', 'renderer.js', 'index.html'].map((f) => read('src', 'renderer', f)).join('\n');
-    // drive.tt / drive.photos / drive.storage (Drive 1.7, with their plurals): test/drive-17-state.test.js
-    for (const m of files.matchAll(/['"`](drive\.[A-Za-z0-9_.]+)['"`]/g)) if (!m[1].endsWith('.') && !/^drive\.(tt|photos|storage)\./.test(m[1])) keys.add(m[1]);
+    // drive.tt / drive.photos / drive.storage (Drive 1.7, with their plurals): test/drive-17-state.test.js;
+    // drive.bulk (Drive 1.12): test/drive-bulk-state.test.js
+    for (const m of files.matchAll(/['"`](drive\.[A-Za-z0-9_.]+)['"`]/g)) if (!m[1].endsWith('.') && !/^drive\.(tt|photos|storage|bulk)\./.test(m[1])) keys.add(m[1]);
     // built at runtime
     for (const s of DS.SORTS) keys.add(`drive.sort.${s}`);
     for (const x of DS.LINK_EXPIRES) keys.add(`drive.share.expires.${x}`);

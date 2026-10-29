@@ -263,6 +263,21 @@ function install({ app, env }) {
     return { canceled: false, filePaths: [p] };
   };
 
+  // "Speichern unter …" (Drive: a file, the ZIP of a selection): answered from a queue of paths the test fills
+  // (state.saveDialogPaths), the options asked with kept in state.saveDialogs; without a queued path the real
+  // dialog is shown.
+  const realShowSaveDialog = dialog.showSaveDialog.bind(dialog);
+  state.saveDialogPaths = [];
+  state.saveDialogs = [];
+  dialog.showSaveDialog = async (...args) => {
+    if (!state.saveDialogPaths.length) return realShowSaveDialog(...args);
+    const opts = args[args.length - 1] || {};
+    state.saveDialogs.push({ defaultPath: opts.defaultPath || null, filters: opts.filters || null });
+    const p = state.saveDialogPaths.shift();
+    record('dialog.save', { path: p });
+    return { canceled: false, filePath: p };
+  };
+
   // Notifications: recorded (still shown); a test "clicks" one by emitting
   // the event Electron emits for a click on the toast.
   const { Notification } = require('electron');

@@ -1247,7 +1247,10 @@
       "helloBusy": "Windows Hello ist gerade beschäftigt – bitte gleich noch einmal.",
       "helloRetries": "Zu viele Versuche – melde dich bei Windows neu an und versuch es dann noch einmal.",
       "helloUnavailable": "Windows Hello steht hier nicht zur Verfügung.",
-      "helloFailed": "Windows Hello hat nicht bestätigt."
+      "helloFailed": "Windows Hello hat nicht bestätigt.",
+      "tooMany": "Das sind zu viele auf einmal – bitte in kleineren Teilen.",
+      "tooManyJobs": "Es laufen schon mehrere Aufträge – bitte warte, bis einer fertig ist.",
+      "intoItself": "Ein Ordner kann nicht in sich selbst."
     },
     "sync": {
       "title": "Ordner sichern",
@@ -2153,6 +2156,238 @@
         "deadline": "Erinnerungen an Fristen",
         "vault": "Anfragen zur Tresor-Freigabe",
         "none": "Dieser Server meldet keine Mitteilungen von Drive."
+      }
+    },
+    "bulk": {
+      "selected": "{{count}} ausgewählt",
+      "files": {
+        "one": "1 Datei",
+        "other": "{{count}} Dateien"
+      },
+      "folders": {
+        "one": "1 Ordner",
+        "other": "{{count}} Ordner"
+      },
+      "selectAll": "Alle auswählen",
+      "selectRow": "„{{name}}“ auswählen",
+      "clear": "Auswahl aufheben",
+      "clearKey": "Auswahl aufheben (Esc)",
+      "bar": "Aktionen für die Auswahl",
+      "zip": "Herunterladen (ZIP)",
+      "zipMenu": "Herunterladen als ZIP",
+      "moveTo": "Verschieben nach …",
+      "copyTo": "Kopieren nach …",
+      "link": "Link teilen",
+      "linkTitle": {
+        "one": "Ein Link für 1 Datei",
+        "other": "Ein Link für {{count}} Dateien"
+      },
+      "trash": "Löschen",
+      "trashMenu": "In den Papierkorb",
+      "trashConfirm": {
+        "one": "1 Element in den Papierkorb?",
+        "other": "{{count}} Elemente in den Papierkorb?"
+      },
+      "cut": "Ausschneiden",
+      "copy": "Kopieren",
+      "menuTitle": {
+        "one": "1 Element (Rechtsklick)",
+        "other": "{{count}} Elemente (Rechtsklick)"
+      },
+      "menuLabel": {
+        "one": "Kontextmenü für 1 Element",
+        "other": "Kontextmenü für {{count}} Elemente"
+      },
+      "newHere": "neu hier",
+      "dropHint": "Ziehen auf einen Ordner verschiebt, mit Strg beim Loslassen: kopieren",
+      "drop": {
+        "move": {
+          "one": "1 Element hierher verschieben",
+          "other": "{{count}} Elemente hierher verschieben"
+        },
+        "copy": {
+          "one": "1 Element hierher kopieren",
+          "other": "{{count}} Elemente hierher kopieren"
+        }
+      },
+      "key": {
+        "ctrl": "Strg",
+        "shift": "Umschalt",
+        "del": "Entf"
+      },
+      "keys": {
+        "label": "Tastenkürzel",
+        "all": "alle",
+        "range": "Bereich",
+        "single": "einzeln",
+        "cutPaste": "verschieben",
+        "copyPaste": "kopieren",
+        "trash": "Papierkorb",
+        "clear": "Auswahl aufheben",
+        "click": "Klick"
+      },
+      "clip": {
+        "cut": {
+          "one": "1 Element ausgeschnitten – Strg+V fügt es im Zielordner ein",
+          "other": "{{count}} Elemente ausgeschnitten – Strg+V fügt sie im Zielordner ein"
+        },
+        "copied": {
+          "one": "1 Element kopiert – Strg+V fügt es im Zielordner ein",
+          "other": "{{count}} Elemente kopiert – Strg+V fügt sie im Zielordner ein"
+        },
+        "nothing": "Nichts zum Einfügen – erst mit Strg+X oder Strg+C auswählen."
+      },
+      "why": {
+        "needs112": "Braucht Drive 1.12",
+        "readOnly": "Hier hast du nur Leserecht",
+        "vault": "In Tresor-Ordnern nicht möglich",
+        "mixed": "Ein Link für mehrere geht nur mit Dateien, ohne Ordner",
+        "one": "Nur bei einem Element",
+        "locked": "Der Tresor ist gesperrt",
+        "here": "Liegt schon hier",
+        "needsGc": "Braucht GateControl 1.215",
+        "linksOff": "Links sind ausgeschaltet",
+        "zipLimit": "ZIP geht für einen Ordner oder bis zu 20 Dateien",
+        "linkLimit": "Ein Link geht für bis zu 20 Dateien"
+      },
+      "target": {
+        "title": "Ziel wählen",
+        "from": {
+          "one": "1 Element aus „{{folder}}“",
+          "other": "{{count}} Elemente aus „{{folder}}“"
+        },
+        "fromOne": "„{{name}}“ aus „{{folder}}“",
+        "count": {
+          "one": "1 Element",
+          "other": "{{count}} Elemente"
+        },
+        "one": "„{{name}}“",
+        "mode": "Was passiert",
+        "move": "Verschieben",
+        "copy": "Kopieren",
+        "readOnlyArea": "{{name}} (nur ansehen)",
+        "readOnly": "Hier hast du nur Leserecht",
+        "itself": "Wird verschoben – nicht in sich selbst",
+        "itselfCopy": "Wird kopiert – nicht in sich selbst",
+        "newFolder": "Neuer Ordner hier",
+        "recent": "Zuletzt benutzt",
+        "to": "Ziel: {{path}}",
+        "moveHere": "Hierher verschieben ({{count}})",
+        "copyHere": "Hierher kopieren ({{count}})"
+      },
+      "conflict": {
+        "title": {
+          "one": "1 Name gibt es dort schon",
+          "other": "{{count}} Namen gibt es dort schon"
+        },
+        "intro": "Im Ordner „{{folder}}“ liegen bereits:",
+        "there": "Dort: {{what}}",
+        "new": "Neu: {{what}}",
+        "same": "gleicher Inhalt",
+        "folder": "Ordner",
+        "merge": "Ordner gibt es dort schon – der Inhalt kommt hinein",
+        "more": "… und {{count}} weitere",
+        "question": "Was soll passieren?",
+        "version": "Als neue Version speichern",
+        "versionSub": "Die bisherige Datei bleibt unter „Ältere Versionen“",
+        "rename": "Beide behalten",
+        "renameSub": "Die neue heißt dann „{{example}}“",
+        "skip": "Überspringen",
+        "skipSub": {
+          "one": "Diese 1 bleibt, wo sie ist",
+          "other": "Diese {{count}} bleiben, wo sie sind"
+        },
+        "skipSubCopy": {
+          "one": "Diese 1 wird nicht kopiert",
+          "other": "Diese {{count}} werden nicht kopiert"
+        },
+        "sameHint": "Gleicher Inhalt wird nie doppelt gespeichert – „{{names}}“ wird in jedem Fall nur einmal behalten.",
+        "sameHintAny": "Gleicher Inhalt wird nie doppelt gespeichert.",
+        "merges": {
+          "one": "1 Ordner gibt es dort schon – er wird zusammengeführt",
+          "other": "{{count}} Ordner gibt es dort schon – sie werden zusammengeführt"
+        }
+      },
+      "blocked": {
+        "one": "1 Element kann nicht mit: {{why}}",
+        "other": "{{count}} Elemente können nicht mit: {{why}}"
+      },
+      "reason": {
+        "forbidden": "keine Berechtigung",
+        "into_itself": "nicht in sich selbst",
+        "encrypted": "nicht über die Tresor-Grenze",
+        "locked": "gerade gesperrt",
+        "not_found": "gibt es nicht mehr",
+        "failed": "geht nicht",
+        "same_folder": "liegt schon dort",
+        "root": "oberster Ordner eines Bereichs"
+      },
+      "op": {
+        "moveOne": "Verschiebe „{{name}}“ nach {{target}}",
+        "move": {
+          "one": "Verschiebe 1 Element nach {{target}}",
+          "other": "Verschiebe {{count}} Elemente nach {{target}}"
+        },
+        "copyOne": "Kopiere „{{name}}“ nach {{target}}",
+        "copy": {
+          "one": "Kopiere 1 Element nach {{target}}",
+          "other": "Kopiere {{count}} Elemente nach {{target}}"
+        },
+        "trashOne": "„{{name}}“ in den Papierkorb",
+        "trash": {
+          "one": "1 Element in den Papierkorb",
+          "other": "{{count}} Elemente in den Papierkorb"
+        },
+        "restoreOne": "Stelle „{{name}}“ wieder her",
+        "restore": {
+          "one": "Stelle 1 Element wieder her",
+          "other": "Stelle {{count}} Elemente wieder her"
+        },
+        "purgeOne": "Lösche „{{name}}“ endgültig",
+        "purge": {
+          "one": "Lösche 1 Element endgültig",
+          "other": "Lösche {{count}} Elemente endgültig"
+        },
+        "undo": "Mache rückgängig …",
+        "files": "{{done}} von {{total}} Dateien",
+        "bytes": "{{done}} von {{total}}",
+        "starting": "wird vorbereitet …",
+        "server": "Läuft auf dem Server weiter, auch wenn du die App schließt.",
+        "cancel": "Abbrechen",
+        "cancelled": "Abgebrochen – was fertig war, bleibt",
+        "done": "fertig",
+        "failed": "fehlgeschlagen: {{reason}}",
+        "skipped": "{{count}} übersprungen",
+        "failedSome": "{{count}} nicht geschafft"
+      },
+      "snack": {
+        "move": {
+          "one": "1 Element nach „{{target}}“ verschoben",
+          "other": "{{count}} Elemente nach „{{target}}“ verschoben"
+        },
+        "copy": {
+          "one": "1 Element nach „{{target}}“ kopiert",
+          "other": "{{count}} Elemente nach „{{target}}“ kopiert"
+        },
+        "trash": {
+          "one": "1 Element in den Papierkorb",
+          "other": "{{count}} Elemente in den Papierkorb"
+        },
+        "restore": {
+          "one": "1 Element wiederhergestellt",
+          "other": "{{count}} Elemente wiederhergestellt"
+        },
+        "undo": "Rückgängig",
+        "undone": "Rückgängig gemacht",
+        "undoExpired": "Das lässt sich nicht mehr rückgängig machen.",
+        "undoRunning": "Der Auftrag läuft noch – Rückgängig geht erst danach.",
+        "undoNothing": "Da gibt es nichts rückgängig zu machen."
+      },
+      "photos": {
+        "all": "Alle",
+        "none": "Keine",
+        "allLabel": "Alle aus {{month}} auswählen",
+        "noneLabel": "Keine aus {{month}} auswählen"
       }
     }
   }

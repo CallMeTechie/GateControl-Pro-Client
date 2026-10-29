@@ -57,6 +57,14 @@
  * open with the recovery key, "Geräte" (requests with safety numbers). A
  * click on a deadline push opens the file's details (open(context)).
  *
+ * Drive 1.12 (several at once, drive-bulk-view.js / drive-bulk-state.js): a check box per row and the tri-state
+ * one of the head; a click on a row selects it (the name still opens, a double click on the row opens), Strg+click
+ * one more, Umschalt+click a range, Strg+A all, Esc none; the green bar of the selection (Herunterladen (ZIP),
+ * Verschieben nach …, Kopieren nach …, Link teilen, Löschen — greyed with the reason when not possible), the menu of
+ * a selection on a right click, Strg+X / Strg+C / Strg+V inside Drive, Entf, F2, dragging rows onto a folder of the
+ * list, the menu's tree or the breadcrumbs (Strg: copy; files from the Explorer still go up as before), the shortcuts
+ * below the list; jobs show in the transfer list (progress, "Abbrechen", "Rückgängig"), new ones "neu hier".
+ *
  * Data: window.gatecontrol.drive (core DriveService over IPC); texts: drive.*
  * of the app locales; view logic without DOM: drive-state.js
  * (window.GCDriveState).
@@ -69,6 +77,7 @@
 
 	const DS = root.GCDriveState;
 	const MS = root.GCDriveMenuState;
+	const BS = root.GCDriveBulkState;
 	const NS = 'http://www.w3.org/2000/svg';
 	const ICONS = {
 		cloud: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z',
@@ -395,6 +404,14 @@
 			treeFocus: null,
 			lock: null,
 			lastTouch: 0,
+			// Drive 1.12: the selection (node ids of the list shown; `selKey` the list it belongs to), its anchor for
+			// Umschalt+click, Strg+X / Strg+C inside Drive, the nodes being dragged, what a job brought ("neu hier")
+			sel: new Set(),
+			anchor: null,
+			selKey: null,
+			clip: null,
+			drag: null,
+			fresh: null,
 		};
 		const keepOpen = () => keep(MS.OPEN_KEY, MS.serializeOpen(S.open));
 
@@ -414,6 +431,10 @@
 		refs.note = el('div', { class: 'dv-note', hidden: true });
 		refs.list = el('div', { class: 'dv-list card', role: 'list' });
 		refs.listWrap = el('div', { class: 'dv-list-wrap scroll' }, [refs.list]);
+		// Drive 1.12: the green bar of the selection, the shortcuts below the list, the hint while dragging
+		refs.selBar = el('div', { class: 'dv-selbar', role: 'toolbar', hidden: true });
+		refs.keys = el('div', { class: 'dv-keys', role: 'group', hidden: true });
+		refs.dropHint = el('div', { class: 'dv-drop-hint', 'aria-hidden': 'true', hidden: true });
 		refs.transfers = el('div', { class: 'dv-transfers card', hidden: true });
 		// "Ordner sichern" (drive-sync-view.js): only with the core's DriveSync
 		const syncView = root.GCDriveSyncView && api.sync ? root.GCDriveSyncView.mount({
@@ -429,11 +450,35 @@
 				if (S.shown && !refs.main.hidden) renderSide();
 			},
 		}) : null;
+		// Drive 1.12: jobs for the selection (drive-bulk-view.js) — "Ziel wählen", the question for names there already,
+		// the note "… verschoben · Rückgängig" when a job ended
+		const bulkUi = root.GCDriveBulkView && BS && api.ops ? root.GCDriveBulkView.create({
+			api, t, getLocale: o.getLocale, ui: { el, icon, clear, openDialog }, host, toast, now, DS,
+			getMe: () => S.me, getAreas: () => S.areas, copyText: (text) => copy(text),
+			onFresh: (f) => { S.fresh = f; },
+			onDone: () => {
+				if (!S.shown) { S.dirty = true; return; }
+				// "Fotos" draws again itself; the folder, the search and the menu's tree load again
+				if (VIEWS[S.view] && S.view === 'photos') VIEWS[S.view].refresh();
+				else live.request();
+			},
+		}) : null;
 		// Drive 1.7: "Fotos" (drive-photos-view.js) and "Speicher" (drive-storage-view.js)
 		const extra = {
 			api, t, getLocale: o.getLocale, toast, host, ui: { el, icon, clear, openDialog },
 			getMe: () => S.me, getAreas: () => S.areas, areaLabel: DS.areaLabel, errorText: DS.errorText, formatBytes: DS.formatBytes,
 			openFolder: (id) => { refs.search.value = ''; S.query = ''; loadFolder(id); },
+			// Drive 1.12: the selection of photos (ZIP, Verschieben / Kopieren nach …, Link, Löschen)
+			bulk: bulkUi ? {
+				actions: (items) => BS.actions(items, { me: S.me, writable: items.every((n) => !!(S.areas.find((a) => a.id === n.areaId) || {}).writable), vault: false }),
+				zip: (items) => bulkUi.zip(items, null),
+				move: (items, mode) => {
+					const a = BS.actions(items, { me: S.me, writable: items.every((n) => !!(S.areas.find((x) => x.id === n.areaId) || {}).writable), vault: false });
+					return bulkUi.run({ op: mode, items, canMove: a.move.on, canCopy: a.copy.on });
+				},
+				trash: (items) => bulkUi.run({ op: 'trash', items, confirm: !DS.hasFeature(S.me, 'bulk') }),
+				link: (items) => (items.length === 1 ? shareDialog(items[0]) : bulkUi.linkDialog(items)),
+			} : null,
 		};
 		const photosView = root.GCDrivePhotosView && typeof api.photos === 'function' ? root.GCDrivePhotosView.mount(extra) : null;
 		const storageView = root.GCDriveStorageView && typeof api.storage === 'function' ? root.GCDriveStorageView.mount(extra) : null;
@@ -473,7 +518,7 @@
 			openSettings: () => openSettingsView('vaults'),
 		}) : null;
 		const vaultOn = () => !!vaultUi && root.GCDriveVaultState.vaultAvailable(S.me, S.vaultStatus);
-		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.listWrap, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null]);
+		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.selBar, refs.listWrap, refs.keys, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null]);
 		refs.empty = el('div', { class: 'dv-gate', hidden: true });
 		refs.main = el('div', { class: 'dv-main' }, [refs.side, refs.pane]);
 		rootEl.append(
@@ -487,6 +532,7 @@
 			refs.guard,
 			refs.empty,
 			refs.main,
+			...[refs.dropHint, bulkUi ? bulkUi.el : null].filter(Boolean),
 		);
 
 		// Files dropped on the page go into the folder shown.
@@ -1043,6 +1089,8 @@
 		}
 
 		async function moveNode(n) {
+			// Drive 1.12: "Ziel wählen" with the question for a name there already (and "Rückgängig")
+			if (bulkUi) { doMove([n], 'move'); return; }
 			const to = await pickFolder({ api, t, host, title: t('drive.moveTitle', { name: n.name }), confirm: t('drive.moveHere'), exclude: n.isDir ? n.id : null, remember: false, startId: S.folder ? S.folder.node.id : null });
 			if (!to) return;
 			if (S.folder && to.folderId === n.parentId) return;
@@ -1309,6 +1357,9 @@
 			if (acts.share) item('link', t('drive.share.menu'), () => shareDialog(n));
 			if (acts.rename) item('pen', t('drive.rename'), () => renameNode(n));
 			if (acts.move) item('move', t('drive.move'), () => moveNode(n));
+			// Drive 1.12: "Kopieren nach …" and the ZIP of a folder
+			if (bulkUi && !n.encrypted && BS.actions([n], { me: S.me }).copy.on) item('copy', t('drive.bulk.copyTo'), () => doMove([n], 'copy'));
+			if (bulkUi && n.isDir && !n.encrypted && BS.actions([n], { me: S.me }).zip.on) item('down', t('drive.bulk.zipMenu'), () => bulkUi.zip([n], n.name));
 			if (acts.versions) item('history', t('drive.versions.menu'), () => versionsDialog(n));
 			if (acts.timeTravel) item('restore', t('drive.tt.menu'), () => timeTravelDialog(n));
 			// Drive 1.8 'docAi' / 1.9 'office'
@@ -1333,6 +1384,307 @@
 			const first = menu.querySelector('button');
 			if (first) first.focus();
 		}
+
+		// ── The selection (Drive 1.12) ───────────────────
+		/** The list shown can be selected in: a folder (an open vault too) or the search. */
+		const selectable = () => !!bulkUi && ((S.view === 'folder' && !!S.folder && !(S.folder.vault && S.folder.vault.state !== 'open')) || S.view === 'search');
+		const selKeyNow = () => (S.view === 'folder' ? `f:${S.folder ? S.folder.node.id : S.folderId}` : S.view === 'search' ? `s:${S.query}` : S.view);
+		/** The rows shown, in their order. */
+		function shownItems() {
+			if (S.view === 'folder') return S.folder ? DS.sortRows(S.folder.items, S.sort, { locale: locale() }) : [];
+			if (S.view === 'search') return S.results || [];
+			return [];
+		}
+		const selItems = () => shownItems().filter((n) => S.sel.has(n.id));
+		const currentVault = () => (S.view === 'folder' && S.folder && S.folder.vault ? S.folder.vault.id : null);
+		/** Where the selection may be written: the folder shown, or (search) every node's area. */
+		function selWritable(items) {
+			if (S.view === 'folder') return !!(S.folder && S.folder.writable);
+			return items.every((n) => !!(S.areas.find((a) => a.id === n.areaId) || {}).writable);
+		}
+		const selActions = (items) => BS.actions(items, { me: S.me, writable: selWritable(items), vault: !!currentVault() });
+		/** The name of the folder shown ("Dokumente", the area's for its top folder). */
+		const folderName = () => (S.view === 'folder' && S.folder ? (S.folder.node.parentId ? S.folder.node.name : DS.areaLabel(area(), t) || S.folder.node.name) : '');
+
+		function setSel(sel, anchor) {
+			S.sel = sel;
+			if (anchor !== undefined) S.anchor = anchor;
+			paintSel();
+		}
+		function clearSel() {
+			if (!S.sel.size) return;
+			setSel(new Set(), null);
+		}
+
+		/** A click on a row (not its name, ⋯ or check box) / Strg / Umschalt on it. */
+		function selectClick(n, e) {
+			const ids = shownItems().map((x) => x.id);
+			const r = BS.click(S.sel, ids, n.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey, anchor: S.anchor });
+			setSel(r.sel, r.anchor);
+		}
+
+		/** The check box of a row (Umschalt: the range). */
+		function checkClick(n, e) {
+			if (e.shiftKey && S.anchor !== null) {
+				const r = BS.click(S.sel, shownItems().map((x) => x.id), n.id, { ctrl: true, shift: true, anchor: S.anchor });
+				setSel(r.sel, r.anchor);
+			} else setSel(BS.toggle(S.sel, n.id), n.id);
+		}
+
+		/** Classes and check boxes of the rows, the head's tri-state, the bar — without drawing the list again. */
+		function paintSel() {
+			for (const row of refs.list.querySelectorAll('.dv-row[data-id]')) {
+				const on = S.sel.has(Number(row.getAttribute('data-id')));
+				row.classList.toggle('is-sel', on);
+				const cb = row.querySelector('.dv-cb');
+				if (cb) cb.checked = on;
+			}
+			const head = refs.list.querySelector('.dv-cb-all');
+			if (head) {
+				const st = BS.headState(S.sel, shownItems().map((n) => n.id));
+				head.checked = st === 'all';
+				head.indeterminate = st === 'some';
+			}
+			paintClip();
+			renderSelBar();
+		}
+
+		/** Strg+X: the rows cut are shown faded until they are pasted. */
+		function paintClip() {
+			const cut = S.clip && S.clip.mode === 'cut' ? new Set(S.clip.items.map((x) => x.id)) : null;
+			for (const row of refs.list.querySelectorAll('.dv-row[data-id]')) row.classList.toggle('is-cut', !!cut && cut.has(Number(row.getAttribute('data-id'))));
+		}
+
+		/** The green bar: ✕, "3 ausgewählt · 2 Dateien, 1 Ordner", ZIP, Verschieben nach …, Kopieren nach …, Link, Löschen. */
+		function renderSelBar() {
+			clear(refs.selBar);
+			const items = selectable() ? selItems() : [];
+			refs.selBar.hidden = !items.length;
+			if (!items.length) return;
+			const sum = BS.summary(items, t, locale());
+			const acts = selActions(items);
+			refs.selBar.setAttribute('aria-label', t('drive.bulk.bar'));
+			const btn = (key, ic, label, fn, danger) => {
+				const a = acts[key];
+				return el('button', {
+					type: 'button', class: `dv-tb${danger ? ' is-danger' : ''}${a.on ? '' : ' is-off'}`, 'data-act': key, 'aria-disabled': a.on ? null : 'true',
+					title: a.on ? label : `${label} – ${t(a.why)}`, on: { click: () => (a.on ? fn() : toast(t(a.why), 'info')) },
+				}, [icon(ic, 15), el('span', { text: label })]);
+			};
+			refs.selBar.append(
+				el('button', { type: 'button', class: 'dv-tb is-icon dv-sel-clear', 'aria-label': t('drive.bulk.clear'), title: t('drive.bulk.clearKey'), on: { click: () => clearSel() } }, [icon('close', 15)]),
+				el('span', { class: 'dv-sel-n' }, [el('b', { text: sum.title }), sum.detail ? el('span', { class: 'dv-sel-d', text: ` · ${sum.detail}` }) : null]),
+				btn('zip', 'down', t('drive.bulk.zip'), () => doZip(selItems())),
+				btn('move', 'move', t('drive.bulk.moveTo'), () => doMove(selItems(), 'move')),
+				btn('copy', 'copy', t('drive.bulk.copyTo'), () => doMove(selItems(), 'copy')),
+				btn('link', 'link', t('drive.bulk.link'), () => doLink(selItems())),
+				btn('trash', 'trash', t('drive.bulk.trash'), () => doTrash(selItems()), true),
+			);
+		}
+
+		/** The shortcuts below the list (folder / search). */
+		function renderKeys() {
+			clear(refs.keys);
+			refs.keys.hidden = !selectable();
+			if (refs.keys.hidden) return;
+			const k = (x) => el('kbd', { class: 'dv-key', text: x });
+			const ctrl = t('drive.bulk.key.ctrl');
+			const click = t('drive.bulk.keys.click');
+			const item = (parts, text) => el('span', { class: 'dv-keys-i' }, [...parts, ` ${text}`]);
+			refs.keys.setAttribute('aria-label', t('drive.bulk.keys.label'));
+			refs.keys.append(
+				item([k(ctrl), '+', k('A')], t('drive.bulk.keys.all')),
+				item([k(t('drive.bulk.key.shift')), `+${click}`], t('drive.bulk.keys.range')),
+				item([k(ctrl), `+${click}`], t('drive.bulk.keys.single')),
+				item([k(ctrl), '+', k('X'), ' / ', k('V')], t('drive.bulk.keys.cutPaste')),
+				item([k(ctrl), '+', k('C'), ' / ', k('V')], t('drive.bulk.keys.copyPaste')),
+				item([k(t('drive.bulk.key.del'))], t('drive.bulk.keys.trash')),
+				item([k('Esc')], t('drive.bulk.keys.clear')),
+				el('span', { class: 'dv-keys-i is-drag', text: t('drive.bulk.dropHint') }),
+			);
+		}
+
+		// ── What the selection does ──────────────────────
+		async function doMove(items, mode) {
+			if (!bulkUi || !items.length) return;
+			const fv = currentVault();
+			const a = selActions(items);
+			const v = fv ? vaultOf(fv) : null;
+			const row = await bulkUi.run({
+				op: mode, items, from: folderName() || null, startId: S.view === 'folder' && S.folder ? S.folder.node.id : null,
+				vault: fv, vaultRoot: v ? v.nodeId : null, canMove: a.move.on, canCopy: a.copy.on,
+			});
+			if (row && row.kind !== 'copy') clearSel();
+		}
+
+		async function doTrash(items) {
+			if (!bulkUi || !items.length) return;
+			const row = await bulkUi.run({ op: 'trash', items, confirm: !DS.hasFeature(S.me, 'bulk') });
+			if (row) clearSel();
+		}
+
+		function doZip(items) {
+			if (bulkUi && items.length) bulkUi.zip(items, items.length > 1 ? folderName() || null : null);
+		}
+
+		function doLink(items) {
+			if (!items.length) return;
+			if (items.length === 1) shareDialog(items[0]);
+			else if (bulkUi) bulkUi.linkDialog(items);
+		}
+
+		/** Strg+X / Strg+C: kept inside Drive (never the files themselves on the Windows clipboard). */
+		function clipSet(mode, items) {
+			if (!items.length) return;
+			const a = selActions(items);
+			const ok = mode === 'cut' ? a.cut : a.copyClip;
+			if (!ok.on) { toast(t(ok.why), 'info'); return; }
+			S.clip = { mode, items: items.map((n) => ({ id: n.id, name: n.name, isDir: n.isDir, parentId: n.parentId, size: n.size })), vault: currentVault() };
+			paintClip();
+			toast(DS.plural(t, mode === 'cut' ? 'drive.bulk.clip.cut' : 'drive.bulk.clip.copied', items.length), 'info');
+		}
+
+		/** Strg+V into the folder shown. */
+		async function paste() {
+			if (!bulkUi || S.view !== 'folder' || !S.folder) return;
+			const st = BS.pasteState(S.clip, S.folder, S.me);
+			if (!st.on) { toast(t(st.why), 'info'); return; }
+			const target = { folderId: S.folder.node.id, path: DS.pickerPath(S.folder, area(), t), name: folderName() };
+			const row = await bulkUi.run({ op: st.op, items: S.clip.items, target });
+			if (row && st.op === 'move') { S.clip = null; paintClip(); }
+		}
+
+		/** The keys of the selection (not while typing, a menu or a dialog is open, nor in the menu's tree). */
+		function onSelKey(e) {
+			if (!S.shown || refs.main.hidden || !selectable() || S.menu || host.querySelector('.dv-scrim')) return;
+			const tg = e.target;
+			if (tg && tg !== document.body && tg !== document.documentElement && !rootEl.contains(tg)) return;
+			if (tg && refs.side.contains(tg)) return;
+			const tag = tg && tg.tagName ? tg.tagName.toUpperCase() : '';
+			const editable = !!(tg && tg.isContentEditable) || tag === 'TEXTAREA' || tag === 'SELECT' || (tag === 'INPUT' && !['checkbox', 'radio', 'button'].includes(String(tg.type || '').toLowerCase()));
+			const act = BS.keyAction(e, { target: { editable } });
+			if (!act) return;
+			const items = selItems();
+			if (act === 'all') { e.preventDefault(); setSel(new Set(shownItems().map((n) => n.id)), null); return; }
+			if (act === 'clear') {
+				if (S.sel.size) { e.preventDefault(); clearSel(); } else if (S.clip) { S.clip = null; paintClip(); }
+				return;
+			}
+			if (act === 'paste') { e.preventDefault(); paste(); return; }
+			if (!items.length) return;
+			if (act === 'copy' && root.getSelection && String(root.getSelection() || '')) return;
+			e.preventDefault();
+			if (act === 'trash') { const a = selActions(items); if (a.trash.on) doTrash(items); else toast(t(a.trash.why), 'info'); }
+			else if (act === 'rename') { const a = selActions(items); if (a.rename.on) renameNode(items[0]); else toast(t(a.rename.why), 'info'); }
+			else if (act === 'cut') clipSet('cut', items);
+			else if (act === 'copy') clipSet('copy', items);
+		}
+		document.addEventListener('keydown', onSelKey);
+
+		/** Right click into a selection of several: its menu (the mockup's) at the pointer. */
+		function openSelMenu(at, anchor) {
+			const items = selItems();
+			const a = selActions(items);
+			const entries = [
+				{ key: 'zip', icon: 'down', label: t('drive.bulk.zipMenu'), act: a.zip, run: () => doZip(items) },
+				{ key: 'cut', icon: 'move', label: t('drive.bulk.cut'), kbd: `${t('drive.bulk.key.ctrl')}+X`, act: a.cut, run: () => clipSet('cut', items) },
+				{ key: 'copy', icon: 'copy', label: t('drive.bulk.copy'), kbd: `${t('drive.bulk.key.ctrl')}+C`, act: a.copyClip, run: () => clipSet('copy', items) },
+				{ key: 'moveTo', icon: 'folder', label: t('drive.bulk.moveTo'), act: a.move, run: () => doMove(items, 'move') },
+				{ key: 'copyTo', icon: 'copy', label: t('drive.bulk.copyTo'), act: a.copy, run: () => doMove(items, 'copy') },
+				'sep',
+				{ key: 'rename', icon: 'pen', label: t('drive.rename'), kbd: 'F2', act: a.rename, run: () => renameNode(items[0]) },
+				{ key: 'link', icon: 'link', label: t('drive.bulk.link'), act: a.link, run: () => doLink(items) },
+				'sep',
+				{ key: 'trash', icon: 'trash', label: t('drive.bulk.trashMenu'), kbd: t('drive.bulk.key.del'), act: a.trash, run: () => doTrash(items), danger: true },
+			];
+			closeMenu();
+			const els = entries.map((x) => (x === 'sep' ? el('div', { class: 'dv-menu-sep', role: 'separator' }) : el('button', {
+				type: 'button', role: 'menuitem', class: `dv-menu-item${x.danger ? ' is-danger' : ''}${x.act.on ? '' : ' is-off'}`, 'data-item': x.key,
+				'aria-disabled': x.act.on ? null : 'true', title: x.act.on ? null : t(x.act.why),
+				on: { click: () => { if (!x.act.on) return; closeMenu(); x.run(); } },
+			}, [icon(x.icon, 15), el('span', { text: x.label }), x.kbd ? el('span', { class: 'dv-menu-kbd', text: x.kbd }) : null])));
+			const menu = el('div', { class: 'dv-menu dv-sel-menu', role: 'menu', 'aria-label': DS.plural(t, 'drive.bulk.menuLabel', items.length) }, [
+				el('div', { class: 'dv-menu-h', text: DS.plural(t, 'drive.bulk.menuTitle', items.length) }), ...els,
+			]);
+			const layer = el('div', { class: 'dv-menu-layer', on: { mousedown: (e) => { if (e.target === layer) closeMenu(); }, contextmenu: (e) => { e.preventDefault(); closeMenu(); } } }, [menu]);
+			const buttons = els.filter((x) => x.tagName === 'BUTTON');
+			layer.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape') { e.stopPropagation(); closeMenu(); if (anchor && anchor.focus) anchor.focus(); return; }
+				if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+					e.preventDefault();
+					const i = buttons.indexOf(document.activeElement);
+					const n = buttons.length;
+					buttons[(i + (e.key === 'ArrowDown' ? 1 : n - 1) + n) % n].focus();
+				}
+			});
+			host.appendChild(layer);
+			S.menu = layer;
+			const mr = menu.getBoundingClientRect();
+			menu.style.left = `${Math.max(8, Math.min(window.innerWidth - mr.width - 8, at.left))}px`;
+			menu.style.top = `${at.top + mr.height + 8 < window.innerHeight ? at.top : Math.max(8, at.top - mr.height)}px`;
+			const first = buttons.find((b) => !b.classList.contains('is-off')) || buttons[0];
+			if (first) first.focus();
+		}
+
+		// ── Dragging onto a folder (Drive 1.12) ──────────
+		function endDrag() {
+			S.drag = null;
+			rootEl.classList.remove('is-dragging');
+			refs.dropHint.hidden = true;
+			for (const x of rootEl.querySelectorAll('.is-drop-target')) x.classList.remove('is-drop-target');
+		}
+
+		/** `node` takes dragged rows: tg() → { id, crumbs, vault, name, path } of the folder or null. */
+		function dropTarget(node, tg) {
+			const allowed = (e) => {
+				if (!S.drag) return null;
+				const x = tg();
+				if (!x || (x.vault || null) !== (S.drag.vault || null)) return null;
+				return BS.canDrop(S.drag, x.id, { copy: e.ctrlKey, crumbs: x.crumbs || [] }) ? x : null;
+			};
+			node.addEventListener('dragover', (e) => {
+				const x = allowed(e);
+				if (!x) return;
+				e.preventDefault();
+				e.stopPropagation();
+				if (e.dataTransfer) e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
+				node.classList.add('is-drop-target');
+				refs.dropHint.textContent = BS.dropText(S.drag.items.length, e.ctrlKey, t);
+				refs.dropHint.hidden = false;
+				refs.dropHint.style.left = `${e.clientX + 16}px`;
+				refs.dropHint.style.top = `${e.clientY + 12}px`;
+			});
+			node.addEventListener('dragleave', (e) => {
+				if (e.relatedTarget && node.contains(e.relatedTarget)) return;
+				node.classList.remove('is-drop-target');
+				refs.dropHint.hidden = true;
+			});
+			node.addEventListener('drop', (e) => {
+				const x = allowed(e);
+				if (!x) return;
+				e.preventDefault();
+				e.stopPropagation();
+				const copyIt = e.ctrlKey;
+				const items = S.drag.items;
+				endDrag();
+				const cp = BS.actions(items, { me: S.me }).copy;
+				if (copyIt && !cp.on) { toast(t(cp.why), 'error'); return; }
+				bulkUi.run({ op: copyIt ? 'copy' : 'move', items, target: { folderId: x.id, path: x.path || x.name, name: x.name } }).then((row) => { if (row && !copyIt) clearSel(); });
+			});
+		}
+
+		function dragStart(n, e) {
+			if (!selectable()) { e.preventDefault(); return; }
+			if (!S.sel.has(n.id)) setSel(new Set([n.id]), n.id);
+			const items = selItems();
+			S.drag = { items: items.map((x) => ({ id: x.id, name: x.name, isDir: x.isDir, parentId: x.parentId })), vault: currentVault() };
+			if (e.dataTransfer) {
+				e.dataTransfer.setData(BS.DRAG_TYPE, JSON.stringify(items.map((x) => x.id)));
+				e.dataTransfer.effectAllowed = 'copyMove';
+			}
+			rootEl.classList.add('is-dragging');
+		}
+		document.addEventListener('dragend', () => { if (S.drag) endDrag(); });
 
 		// ── Previews ─────────────────────────────────────
 		function previewUrl(mediaId, tries = 0) {
@@ -1401,6 +1753,8 @@
 			renderSide();
 			renderBar();
 			if (!inSync) renderList();
+			if (inSync || !selectable()) { refs.selBar.hidden = true; clear(refs.selBar); }
+			renderKeys();
 			renderTransfers();
 		}
 
@@ -1490,6 +1844,13 @@
 		 */
 		function treeEl(rows, labelId) {
 			const tree = el('div', { class: 'dv-tree', role: 'tree', 'aria-labelledby': labelId });
+			/** The ids above row `i` of the flat tree (by aria-level). */
+			const ancestorsAt = (i) => {
+				const out = [];
+				let lvl = rows[i].level;
+				for (let j = i - 1; j >= 0 && lvl > 1; j--) if (rows[j].level < lvl) { out.push(rows[j].id); lvl = rows[j].level; }
+				return out;
+			};
 			let tab = rows.findIndex((r) => r.key === S.treeFocus);
 			if (tab < 0) tab = rows.findIndex((r) => r.current);
 			if (tab < 0) tab = 0;
@@ -1507,6 +1868,11 @@
 					style: `--lvl:${r.level - 1}`, title: r.sub ? `${r.label} · ${r.sub}` : r.label,
 				}, [tw, ic, el('span', { class: 'dv-area-tx' }, [el('span', { class: 'dv-area-name', text: r.label }), r.sub ? el('span', { class: 'dv-area-sub', text: r.sub }) : null])]);
 				item.addEventListener('click', () => { S.treeFocus = r.key; openTreeNode(r); });
+				// Drive 1.12: dragged rows go into this folder (with Strg: copied)
+				if (bulkUi) {
+					const ar = r.area ? S.areas.find((a) => a.id === r.area) : null;
+					if (!ar || (ar.writable && !ar.archived)) dropTarget(item, () => ({ id: r.id, name: r.label, crumbs: ancestorsAt(i), vault: null, path: r.label }));
+				}
 				return item;
 			});
 			tree.append(...els);
@@ -1536,6 +1902,14 @@
 			loadFolder(r.id);
 		}
 
+		/** The vault a breadcrumb lies in (from the vault's own folder on), else null. */
+		function crumbVault(cr, i) {
+			const fv = S.folder && S.folder.vault ? S.folder.vault.id : null;
+			const v = fv ? vaultOf(fv) : null;
+			const at = v ? cr.findIndex((x) => x.id === v.nodeId) : -1;
+			return fv && at >= 0 && i >= at ? fv : null;
+		}
+
 		function renderBar() {
 			clear(refs.bar);
 			refs.note.hidden = true;
@@ -1546,7 +1920,10 @@
 				const nav = el('nav', { class: 'dv-crumbs', 'aria-label': t('drive.crumbs') });
 				cr.forEach((c, i) => {
 					if (i) nav.appendChild(el('span', { class: 'dv-crumb-sep', 'aria-hidden': 'true', text: '›' }));
-					nav.appendChild(c.current ? el('span', { class: 'dv-crumb is-current', 'aria-current': 'page', text: c.name }) : el('button', { type: 'button', class: 'dv-crumb', text: c.name, on: { click: () => loadFolder(c.id) } }));
+					const b = c.current ? el('span', { class: 'dv-crumb is-current', 'aria-current': 'page', text: c.name }) : el('button', { type: 'button', class: 'dv-crumb', text: c.name, on: { click: () => loadFolder(c.id) } });
+					// Drive 1.12: dragged rows go up into a folder above
+					if (!c.current && bulkUi) dropTarget(b, () => ({ id: c.id, name: c.name, crumbs: cr.slice(0, i).map((x) => x.id), vault: crumbVault(cr, i), path: c.name }));
+					nav.appendChild(b);
 				});
 				const sort = el('div', { class: 'seg dv-seg', role: 'radiogroup', 'aria-label': t('drive.sort.label') });
 				for (const s of DS.SORTS) {
@@ -1619,26 +1996,41 @@
 				refs.list.appendChild(vaultUi.gate(fv.id, fv.state || 'none', { safetyNumber: fv.state === 'pending' && S.vaultStatus && S.vaultStatus.device ? S.vaultStatus.device.safetyNumber : null }));
 				return;
 			}
-			const items = S.view === 'folder' ? (S.folder ? DS.sortRows(S.folder.items, S.sort, { locale: locale() }) : []) : S.view === 'search' ? (S.results || []) : (S.trash || []);
+			const items = S.view === 'folder' || S.view === 'search' ? shownItems() : (S.trash || []);
 			const mode = S.view;
-			refs.list.appendChild(el('div', { class: 'dv-row dv-row-head', 'aria-hidden': 'true' }, [
-				el('span', { class: 'dv-c-name', text: t('drive.col.name') }),
-				el('span', { class: 'dv-c-date', text: t(mode === 'trash' ? 'drive.col.deleted' : 'drive.col.date') }),
-				el('span', { class: 'dv-c-size', text: t('drive.col.size') }),
+			// Drive 1.12: the selection belongs to the list shown (another folder / search: none); after a reload only
+			// what is still there stays selected
+			const cbs = selectable();
+			if (S.selKey !== selKeyNow()) { S.selKey = selKeyNow(); S.sel = new Set(); S.anchor = null; } else S.sel = BS ? BS.prune(S.sel, items.map((n) => n.id)) : new Set();
+			renderSelBar();
+			const headCb = cbs && items.length ? el('input', { type: 'checkbox', class: 'dv-cb dv-cb-all', 'aria-label': t('drive.bulk.selectAll'), title: t('drive.bulk.selectAll'), on: { click: (e) => {
+				e.stopPropagation();
+				const ids = shownItems().map((n) => n.id);
+				setSel(BS.headState(S.sel, ids) === 'all' ? new Set() : new Set(ids), null);
+			} } }) : null;
+			refs.list.appendChild(el('div', { class: `dv-row dv-row-head${cbs ? ' has-cb' : ''}` }, [
+				cbs ? el('span', { class: 'dv-c-cb' }, [headCb]) : null,
+				el('span', { class: 'dv-c-name', 'aria-hidden': 'true', text: t('drive.col.name') }),
+				el('span', { class: 'dv-c-date', 'aria-hidden': 'true', text: t(mode === 'trash' ? 'drive.col.deleted' : 'drive.col.date') }),
+				el('span', { class: 'dv-c-size', 'aria-hidden': 'true', text: t('drive.col.size') }),
 				el('span', { class: 'dv-c-act' }),
 			]));
 			if (!items.length) {
 				refs.list.appendChild(emptyState(mode === 'search' ? t('drive.search.empty') : mode === 'trash' ? t('drive.trash.empty') : (S.folder && S.folder.writable ? t('drive.emptyWritable') : t('drive.empty'))));
 				return;
 			}
-			for (const n of items) refs.list.appendChild(mode === 'trash' ? trashRow(n) : nodeRow(n, mode));
+			for (const n of items) refs.list.appendChild(mode === 'trash' ? trashRow(n) : nodeRow(n, mode, cbs));
 			if (S.view === 'folder' && S.folder && S.folder.next) refs.list.appendChild(el('div', { class: 'dv-more', text: t('drive.more', { n: S.folder.total }) }));
+			if (cbs) paintSel();
 		}
 
-		function nodeRow(n, mode) {
+		function nodeRow(n, mode, cbs = false) {
 			const v = DS.rowView(n, { t, locale: locale(), now: now(), mode });
 			const more = el('button', { type: 'button', class: 'dv-ib dv-more-btn', title: t('drive.actions'), 'aria-label': t('drive.actionsFor', { name: v.name }), 'aria-haspopup': 'menu', on: { click: (e) => { e.stopPropagation(); openMenu(n, more); } } }, [icon('more', 16)]);
-			const main = el('button', { type: 'button', class: 'dv-c-name dv-open', title: v.isDir ? t('drive.openFolder') : t('drive.openFile'), on: { click: () => openNode(n) } }, [
+			// Drive 1.12: "neu hier" after a move / copy into this folder
+			const fresh = BS && S.view === 'folder' && S.folder && BS.isFresh(S.fresh, n, S.folder.node.id, now());
+			// the name opens (as before); with Strg / Umschalt it selects
+			const main = el('button', { type: 'button', class: 'dv-c-name dv-open', title: v.isDir ? t('drive.openFolder') : t('drive.openFile'), on: { click: (e) => { if (cbs && (e.ctrlKey || e.metaKey || e.shiftKey)) return; openNode(n); } } }, [
 				thumb(v),
 				el('span', { class: 'dv-name-tx' }, [
 					el('span', { class: `dv-name${v.locked ? ' is-locked' : ''}`, text: v.name }),
@@ -1646,15 +2038,41 @@
 					// Drive 1.8: the kind of document Drive recognised
 					v.doc && root.GCDriveDocsState ? el('span', { class: 'dv-doc', 'data-doc': v.doc }, [icon(root.GCDriveDocsState.docIcon(v.doc), 12), el('span', { text: root.GCDriveDocsState.docKindLabel(v.doc, t) })]) : null,
 					v.vault ? el('span', { class: 'dv-doc dv-enc' }, [icon('lock', 12), el('span', { text: t('drive.vault.badge') })]) : null,
+					fresh ? el('span', { class: 'dv-new', text: t('drive.bulk.newHere') }) : null,
 				]),
 			]);
-			const row = el('div', { class: `dv-row${v.encrypted ? ' is-enc' : ''}`, role: 'listitem', 'data-id': String(v.id) }, [
+			const cb = cbs ? el('input', { type: 'checkbox', class: 'dv-cb', 'aria-label': t('drive.bulk.selectRow', { name: v.name }), on: { click: (e) => { e.stopPropagation(); checkClick(n, e); } } }) : null;
+			const row = el('div', { class: `dv-row${cbs ? ' has-cb' : ''}${v.encrypted ? ' is-enc' : ''}${fresh ? ' is-new' : ''}`, role: 'listitem', 'data-id': String(v.id), draggable: cbs && !v.locked ? 'true' : null }, [
+				cbs ? el('span', { class: 'dv-c-cb' }, [cb]) : null,
 				main,
 				el('span', { class: 'dv-c-date', text: v.date }),
 				el('span', { class: 'dv-c-size', text: v.size }),
 				el('span', { class: 'dv-c-act' }, [more]),
 			]);
-			row.addEventListener('contextmenu', (e) => { e.preventDefault(); openMenu(n, more, { left: e.clientX, top: e.clientY }); });
+			row.addEventListener('contextmenu', (e) => {
+				e.preventDefault();
+				// in a selection of several: the menu of the selection; else this row is selected and gets its own menu
+				if (cbs && S.sel.has(n.id) && S.sel.size > 1) { openSelMenu({ left: e.clientX, top: e.clientY }, more); return; }
+				if (cbs) setSel(new Set([n.id]), n.id);
+				openMenu(n, more, { left: e.clientX, top: e.clientY });
+			});
+			if (cbs) {
+				// Drive 1.12: a click on the row selects (Strg: one more, Umschalt: a range), a double click opens
+				row.addEventListener('click', (e) => {
+					if (e.target.closest('.dv-more-btn, .dv-cb')) return;
+					if (e.target.closest('.dv-open') && !(e.ctrlKey || e.metaKey || e.shiftKey)) return;
+					if (e.shiftKey) e.preventDefault();
+					selectClick(n, e);
+					main.focus();
+				});
+				row.addEventListener('dblclick', (e) => { if (!e.target.closest('.dv-open, .dv-more-btn, .dv-cb')) openNode(n); });
+				row.addEventListener('mousedown', (e) => { if (e.shiftKey) e.preventDefault(); });
+				row.addEventListener('dragstart', (e) => dragStart(n, e));
+				if (v.isDir && !v.locked) {
+					const crumbIds = S.view === 'folder' && S.folder ? (S.folder.crumbs || []).map((c) => c.id).concat(S.folder.node.id) : [];
+					dropTarget(row, () => ({ id: n.id, name: v.name, crumbs: crumbIds, vault: n.encrypted ? n.vaultId || currentVault() : null, path: v.name }));
+				}
+			}
 			return row;
 		}
 
@@ -1699,6 +2117,7 @@
 			]));
 			const list = el('div', { class: 'dv-tr-list scroll' });
 			for (const r of rows.slice().reverse()) {
+				if (r.dir === 'op') { if (BS) list.appendChild(opRow(r)); continue; }
 				const v = DS.transferView(r, t, locale());
 				list.appendChild(el('div', { class: `dv-tr ${v.cls}` }, [
 					el('span', { class: 'dv-tr-ic' }, [icon(v.dir === 'down' ? 'down' : 'upload', 14)]),
@@ -1713,6 +2132,22 @@
 			refs.transfers.appendChild(list);
 		}
 
+		/** Drive 1.12: a job of the selection in the transfer list (progress, "Abbrechen", "Rückgängig"). */
+		function opRow(r) {
+			const v = BS.opView(r, { t, locale: locale(), now: now(), errorText: DS.errorText });
+			const ic = r.undo ? 'restore' : r.kind === 'copy' ? 'copy' : r.kind === 'trash' || r.kind === 'purge' ? 'trash' : r.kind === 'restore' ? 'restore' : 'move';
+			return el('div', { class: `dv-tr is-op ${v.cls}`, 'data-op': String(r.opId) }, [
+				el('span', { class: 'dv-tr-ic' }, [icon(ic, 14)]),
+				el('div', { class: 'dv-tr-tx' }, [
+					el('div', { class: 'dv-tr-top' }, [el('span', { class: 'dv-tr-name', text: v.title }), el('span', { class: 'dv-tr-state', text: v.text })]),
+					v.active ? el('div', { class: 'dv-tr-bar', role: 'progressbar', 'aria-label': v.title, 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(v.pct) }, [el('span', { style: `width:${v.pct}%` })]) : null,
+					v.server ? el('span', { class: 'dv-tr-note', text: t('drive.bulk.op.server') }) : null,
+				]),
+				v.cancel && bulkUi ? el('button', { type: 'button', class: 'btn btn-ghost btn-xs dv-op-cancel', text: t('drive.bulk.op.cancel'), on: { click: (e) => { e.currentTarget.disabled = true; bulkUi.cancel(r); } } }) : null,
+				v.undo && bulkUi ? el('button', { type: 'button', class: 'btn btn-sec btn-xs dv-op-undo', text: t('drive.bulk.snack.undo'), on: { click: (e) => { e.currentTarget.disabled = true; bulkUi.undo(r); } } }) : null,
+			]);
+		}
+
 		relabel();
 
 		return {
@@ -1725,6 +2160,8 @@
 			hide() {
 				S.shown = false;
 				closeMenu();
+				if (S.drag) endDrag();
+				if (bulkUi) bulkUi.hideSnack();
 				for (const v of Object.values(VIEWS)) if (v) v.hide();
 			},
 			/** Opens "Ordner sichern" (tray entry, links). */

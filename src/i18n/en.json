@@ -1247,7 +1247,10 @@
       "helloBusy": "Windows Hello is busy – please try again in a moment.",
       "helloRetries": "Too many attempts – sign in to Windows again and then retry.",
       "helloUnavailable": "Windows Hello is not available here.",
-      "helloFailed": "Windows Hello did not confirm."
+      "helloFailed": "Windows Hello did not confirm.",
+      "tooMany": "That is too many at once – please do it in smaller parts.",
+      "tooManyJobs": "Several jobs are running already – please wait until one is done.",
+      "intoItself": "A folder cannot go into itself."
     },
     "sync": {
       "title": "Back up folders",
@@ -2153,6 +2156,238 @@
         "deadline": "Deadline reminders",
         "vault": "Vault access requests",
         "none": "This server reports no Drive notifications."
+      }
+    },
+    "bulk": {
+      "selected": "{{count}} selected",
+      "files": {
+        "one": "1 file",
+        "other": "{{count}} files"
+      },
+      "folders": {
+        "one": "1 folder",
+        "other": "{{count}} folders"
+      },
+      "selectAll": "Select all",
+      "selectRow": "Select “{{name}}”",
+      "clear": "Clear selection",
+      "clearKey": "Clear selection (Esc)",
+      "bar": "Actions for the selection",
+      "zip": "Download (ZIP)",
+      "zipMenu": "Download as ZIP",
+      "moveTo": "Move to …",
+      "copyTo": "Copy to …",
+      "link": "Share link",
+      "linkTitle": {
+        "one": "One link for 1 file",
+        "other": "One link for {{count}} files"
+      },
+      "trash": "Delete",
+      "trashMenu": "Move to trash",
+      "trashConfirm": {
+        "one": "Move 1 item to the trash?",
+        "other": "Move {{count}} items to the trash?"
+      },
+      "cut": "Cut",
+      "copy": "Copy",
+      "menuTitle": {
+        "one": "1 item (right click)",
+        "other": "{{count}} items (right click)"
+      },
+      "menuLabel": {
+        "one": "Context menu for 1 item",
+        "other": "Context menu for {{count}} items"
+      },
+      "newHere": "new here",
+      "dropHint": "Drag onto a folder to move, hold Ctrl when dropping to copy",
+      "drop": {
+        "move": {
+          "one": "Move 1 item here",
+          "other": "Move {{count}} items here"
+        },
+        "copy": {
+          "one": "Copy 1 item here",
+          "other": "Copy {{count}} items here"
+        }
+      },
+      "key": {
+        "ctrl": "Ctrl",
+        "shift": "Shift",
+        "del": "Del"
+      },
+      "keys": {
+        "label": "Shortcuts",
+        "all": "all",
+        "range": "range",
+        "single": "single",
+        "cutPaste": "move",
+        "copyPaste": "copy",
+        "trash": "trash",
+        "clear": "clear selection",
+        "click": "click"
+      },
+      "clip": {
+        "cut": {
+          "one": "1 item cut – Ctrl+V pastes it into the target folder",
+          "other": "{{count}} items cut – Ctrl+V pastes them into the target folder"
+        },
+        "copied": {
+          "one": "1 item copied – Ctrl+V pastes it into the target folder",
+          "other": "{{count}} items copied – Ctrl+V pastes them into the target folder"
+        },
+        "nothing": "Nothing to paste – select items with Ctrl+X or Ctrl+C first."
+      },
+      "why": {
+        "needs112": "Needs Drive 1.12",
+        "readOnly": "You can only read here",
+        "vault": "Not possible in vault folders",
+        "mixed": "One link for several works with files only, without folders",
+        "one": "Only for one item",
+        "locked": "The vault is locked",
+        "here": "Already here",
+        "needsGc": "Needs GateControl 1.215",
+        "linksOff": "Links are switched off",
+        "zipLimit": "ZIP works for one folder or up to 20 files",
+        "linkLimit": "One link works for up to 20 files"
+      },
+      "target": {
+        "title": "Choose destination",
+        "from": {
+          "one": "1 item from “{{folder}}”",
+          "other": "{{count}} items from “{{folder}}”"
+        },
+        "fromOne": "“{{name}}” from “{{folder}}”",
+        "count": {
+          "one": "1 item",
+          "other": "{{count}} items"
+        },
+        "one": "“{{name}}”",
+        "mode": "What happens",
+        "move": "Move",
+        "copy": "Copy",
+        "readOnlyArea": "{{name}} (view only)",
+        "readOnly": "You can only read here",
+        "itself": "Being moved – not into itself",
+        "itselfCopy": "Being copied – not into itself",
+        "newFolder": "New folder here",
+        "recent": "Recently used",
+        "to": "Destination: {{path}}",
+        "moveHere": "Move here ({{count}})",
+        "copyHere": "Copy here ({{count}})"
+      },
+      "conflict": {
+        "title": {
+          "one": "1 name already exists there",
+          "other": "{{count}} names already exist there"
+        },
+        "intro": "The folder “{{folder}}” already has:",
+        "there": "There: {{what}}",
+        "new": "New: {{what}}",
+        "same": "same content",
+        "folder": "folder",
+        "merge": "This folder exists there – its content goes in",
+        "more": "… and {{count}} more",
+        "question": "What should happen?",
+        "version": "Save as a new version",
+        "versionSub": "The existing file stays under “Older versions”",
+        "rename": "Keep both",
+        "renameSub": "The new one is called “{{example}}”",
+        "skip": "Skip",
+        "skipSub": {
+          "one": "This 1 stays where it is",
+          "other": "These {{count}} stay where they are"
+        },
+        "skipSubCopy": {
+          "one": "This 1 is not copied",
+          "other": "These {{count}} are not copied"
+        },
+        "sameHint": "The same content is never stored twice – “{{names}}” is kept only once in any case.",
+        "sameHintAny": "The same content is never stored twice.",
+        "merges": {
+          "one": "1 folder exists there – it is merged",
+          "other": "{{count}} folders exist there – they are merged"
+        }
+      },
+      "blocked": {
+        "one": "1 item cannot go: {{why}}",
+        "other": "{{count}} items cannot go: {{why}}"
+      },
+      "reason": {
+        "forbidden": "no permission",
+        "into_itself": "not into itself",
+        "encrypted": "not across the vault border",
+        "locked": "locked right now",
+        "not_found": "no longer exists",
+        "failed": "not possible",
+        "same_folder": "already there",
+        "root": "top folder of an area"
+      },
+      "op": {
+        "moveOne": "Moving “{{name}}” to {{target}}",
+        "move": {
+          "one": "Moving 1 item to {{target}}",
+          "other": "Moving {{count}} items to {{target}}"
+        },
+        "copyOne": "Copying “{{name}}” to {{target}}",
+        "copy": {
+          "one": "Copying 1 item to {{target}}",
+          "other": "Copying {{count}} items to {{target}}"
+        },
+        "trashOne": "“{{name}}” to the trash",
+        "trash": {
+          "one": "1 item to the trash",
+          "other": "{{count}} items to the trash"
+        },
+        "restoreOne": "Restoring “{{name}}”",
+        "restore": {
+          "one": "Restoring 1 item",
+          "other": "Restoring {{count}} items"
+        },
+        "purgeOne": "Deleting “{{name}}” for good",
+        "purge": {
+          "one": "Deleting 1 item for good",
+          "other": "Deleting {{count}} items for good"
+        },
+        "undo": "Undoing …",
+        "files": "{{done}} of {{total}} files",
+        "bytes": "{{done}} of {{total}}",
+        "starting": "getting ready …",
+        "server": "Keeps running on the server, even if you close the app.",
+        "cancel": "Cancel",
+        "cancelled": "Cancelled – what was done stays",
+        "done": "done",
+        "failed": "failed: {{reason}}",
+        "skipped": "{{count}} skipped",
+        "failedSome": "{{count}} not done"
+      },
+      "snack": {
+        "move": {
+          "one": "1 item moved to “{{target}}”",
+          "other": "{{count}} items moved to “{{target}}”"
+        },
+        "copy": {
+          "one": "1 item copied to “{{target}}”",
+          "other": "{{count}} items copied to “{{target}}”"
+        },
+        "trash": {
+          "one": "1 item moved to the trash",
+          "other": "{{count}} items moved to the trash"
+        },
+        "restore": {
+          "one": "1 item restored",
+          "other": "{{count}} items restored"
+        },
+        "undo": "Undo",
+        "undone": "Undone",
+        "undoExpired": "This can no longer be undone.",
+        "undoRunning": "The job is still running – undo works once it is done.",
+        "undoNothing": "There is nothing to undo."
+      },
+      "photos": {
+        "all": "All",
+        "none": "None",
+        "allLabel": "Select all of {{month}}",
+        "noneLabel": "Select none of {{month}}"
       }
     }
   }
