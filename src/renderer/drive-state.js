@@ -624,6 +624,8 @@
 		// Drive 1.11: the vault lock (Windows Hello)
 		hello_cancelled: 'helloCancelled', hello_not_set_up: 'helloNotSetUp', hello_policy: 'helloPolicy', hello_busy: 'helloBusy',
 		hello_retries: 'helloRetries', hello_unavailable: 'helloUnavailable', hello_failed: 'helloFailed',
+		// Drive 1.12: jobs for many at once
+		too_many: 'tooMany', too_many_jobs: 'tooManyJobs', job_limit: 'tooManyJobs', into_itself: 'intoItself', http_413: 'quota', insufficient_storage: 'quota',
 	};
 
 	/** The text of a failed answer ({ ok: false, code }) — Drive's codes and those of the plugins passing them on. */

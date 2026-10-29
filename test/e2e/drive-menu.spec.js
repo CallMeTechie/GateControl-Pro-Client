@@ -119,13 +119,13 @@ test.describe('drive 1.11: menu, vaults, lock, settings', () => {
     await treeRow(root, 2).locator('.dv-area-name').click();
     await expect(root.locator('.dv-crumb.is-current')).toHaveText(/Familie/);
     await expect(root.locator(`.dv-row[data-id="${vault.nodeId}"]`)).toHaveCount(0);
-    // never in a folder picker ("Verschieben")
+    // never in a folder picker ("Verschieben" → "Ziel wählen", Drive 1.12)
     await treeRow(root, 1).locator('.dv-area-name').click();
     await root.locator('.dv-row[data-id="11"] .dv-more-btn').click();
     await page.locator('.dv-menu-item', { hasText: /^(Verschieben|Move)$/ }).click();
     const picker = page.locator('.dv-dlg').last();
-    await picker.locator('.dv-pick-row.is-back').click();
-    await picker.locator('.dv-pick-row', { hasText: /Familie/ }).click();
+    await expect(picker.locator(`.dv-pick-row[data-node="${vault.nodeId}"]`)).toHaveCount(0);
+    await picker.locator('.dv-chip[data-area="family:1"]').click();
     await expect(picker.locator('.dv-pick-note')).toHaveText(/Keine Unterordner|No subfolders/);
     await picker.locator('.dv-dlg-head .dv-ib').click();
 
