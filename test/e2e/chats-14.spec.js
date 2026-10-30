@@ -40,7 +40,10 @@ test.describe('chats – Messenger 1.4.0', () => {
     await expect(strip.locator('.cv-st[data-user="9"]')).toHaveAttribute('title', /Lena: (Im Homeoffice|Working from home)/);
     await shot(page, '14-list-strip');
 
-    // viewer: text, seen, reaction and reply
+    // viewer: text, seen, reaction and reply. A text story moves on by itself after ~6 s; the page's clock stands
+    // still while the viewer is checked, so a slow runner (a click that takes seconds) cannot miss it.
+    await page.clock.install();
+    await page.clock.pauseAt(Date.now() + 1000);
     await annaSt.click();
     const viewer = page.locator('#page-chats .cv-story');
     await expect(viewer.locator('.cv-story-text')).toHaveText('Mathe-Arbeit geschafft!');
@@ -54,6 +57,7 @@ test.describe('chats – Messenger 1.4.0', () => {
     expect(ms.log.sent.at(-1).replyStory).toEqual({ storyId: 300 });
     await page.keyboard.press('Escape');
     await expect(viewer).toBeHidden();
+    await page.clock.resume();
     await expect(annaSt).not.toHaveClass(/is-unseen/);
 
     // own status: own avatar in the list head → "Dein Status"
@@ -116,7 +120,10 @@ test.describe('chats – Messenger 1.4.0', () => {
     await expect(page.locator('#page-chats .cv-me')).toHaveAttribute('title', /(2 Storys aktiv|2 stories active)/);
     await shot(page, '141-own-ring');
 
-    // avatar → own stories in the viewer, with the viewers
+    // avatar → own stories in the viewer, with the viewers (the page's clock stands still meanwhile: a story moves on
+    // by itself after a few seconds, a slow runner must not miss it)
+    await page.clock.install();
+    await page.clock.pauseAt(Date.now() + 1000);
     await own.locator('.cv-st-av').click();
     const viewer = page.locator('#page-chats .cv-story');
     await expect(viewer.locator('.cv-story-text')).toHaveText('Schon unterwegs');
@@ -144,6 +151,7 @@ test.describe('chats – Messenger 1.4.0', () => {
     await expect(viewer.locator('.cv-story-text')).toHaveText('Schon unterwegs');
     await page.keyboard.press('Escape');
     await expect(viewer).toBeHidden();
+    await page.clock.resume();
   });
 
   test('story composer: duration (1.4.1), a failed post stays as an error, a posted story shows at once', async ({ launchApp, mock }) => {

@@ -19,7 +19,8 @@
 	'use strict';
 
 	const DOC_KINDS = ['invoice', 'contract', 'notice', 'medical', 'certificate', 'statement', 'insurance', 'warranty', 'other'];
-	const DEADLINE_KINDS = ['payment', 'cancellation', 'objection'];
+	// Drive 1.14: warranty (Garantieende), renewal (Vertragsverlängerung: the last day to cancel)
+	const DEADLINE_KINDS = ['payment', 'cancellation', 'objection', 'warranty', 'renewal'];
 	// "Erinnern N Tage vorher": the choices of the select (null: no reminder)
 	const REMIND_DAYS = [null, 0, 1, 3, 7, 14, 30];
 	// the icon of a kind of document (drive-view.js ICONS)

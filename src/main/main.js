@@ -39,7 +39,7 @@ let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsS
 let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
 let DriveService, DriveSync;
-let VaultService, windowsHello, setupVaultQuick;
+let VaultService, windowsHello, windowsOcr, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
 let createDriveOnDemand, driveOnDemandExePath, parseDriveActionArgv, drivePathsOverlap;
 let getMachineFingerprint, collectSupportBundle, shortDeviceId, withDeviceId;
@@ -101,6 +101,8 @@ try {
   // Drive (plugin gatecontrol-drive): the files of the person, the family and
   // the team on the own storage (core services/drive.js); absent in an older core.
   ({ DriveService, DriveSync } = require('@gatecontrol/client-core'));
+  // Drive 1.14: die Texterkennung von Windows für durchsuchbare PDFs aus Scans (fehlt in einem älteren Core)
+  ({ windowsOcr } = require('@gatecontrol/client-core'));
   // Vault (plugin gatecontrol-vault): end-to-end encrypted password manager
   // (core docs/vault.md); quick search window on Strg+Alt+P.
   ({ VaultService, windowsHello } = require('@gatecontrol/client-core'));
@@ -990,6 +992,9 @@ function initializeServices() {
     // Sitzungssperre / Standby (powerMonitor), nach Inaktivität und beim Verlassen (windowHidden oben)
     consent: windowsHello && typeof windowsHello.createConsentVerifier === 'function' ? windowsHello.createConsentVerifier({ log }) : null,
     powerMonitor,
+    // Drive 1.14 'scanDocs': gedruckter Text wird auf diesem PC zum durchsuchbaren PDF (Windows.Media.Ocr über
+    // WinRT/koffi, ohne KI); ohne OCR-Sprache macht Drive das PDF
+    ocr: windowsOcr && typeof windowsOcr.createWindowsOcr === 'function' ? windowsOcr.createWindowsOcr({ log }) : null,
     // Drive 1.6 'links': „Im Portal öffnen“ nur auf dem Host des Servers oder des Portals
     allowedHosts: () => [store.get('server.url', ''), portalUrl].map((u) => { try { return u ? new URL(u).hostname : null; } catch { return null; } }).filter(Boolean),
   }) : null;

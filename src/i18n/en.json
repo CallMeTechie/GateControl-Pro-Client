@@ -1250,7 +1250,11 @@
       "helloFailed": "Windows Hello did not confirm.",
       "tooMany": "That is too many at once – please do it in smaller parts.",
       "tooManyJobs": "Several jobs are running already – please wait until one is done.",
-      "intoItself": "A folder cannot go into itself."
+      "intoItself": "A folder cannot go into itself.",
+      "familieUnavailable": "The family calendar does not take entries from Drive right now (the Familie plugin does not allow Drive yet). Drive's reminder still works.",
+      "notPicture": "Only pictures can be converted into a document.",
+      "noOcr": "No language for text recognition is installed on this PC.",
+      "scanNoFile": "Drive made no document."
     },
     "sync": {
       "title": "Back up folders",
@@ -2006,6 +2010,8 @@
         "payment": "Payment deadline",
         "cancellation": "Cancellation deadline",
         "objection": "Objection deadline",
+        "warranty": "Warranty ends",
+        "renewal": "Contract renewal",
         "other": "Deadline"
       },
       "today": "today",
@@ -2388,6 +2394,132 @@
         "none": "None",
         "allLabel": "Select all of {{month}}",
         "noneLabel": "Select none of {{month}}"
+      }
+    },
+    "ki": {
+      "dl": {
+        "tag": {
+          "payment": "Payment",
+          "cancellation": "Cancellation",
+          "objection": "Objection",
+          "warranty": "Warranty ends",
+          "renewal": "Contract renewal",
+          "other": "Deadline"
+        },
+        "cancelBy": "cancel by {{day}}",
+        "toCalendar": "Add to family calendar",
+        "inCalendar": "In family calendar",
+        "added": "Added to the family calendar",
+        "note": "Found in your documents · only files you may read",
+        "autoTitle": "New deadlines into the family calendar",
+        "autoHint": "Newly found deadlines are added on their own.",
+        "autoOn": "New deadlines from {{area}} go into the family calendar",
+        "autoOff": "New deadlines from {{area}} no longer go into the family calendar on their own"
+      },
+      "file": {
+        "region": "Filing suggestion",
+        "suggestion": "Suggestion",
+        "as": "File as",
+        "in": "in",
+        "remind": "Remind me of the payment on {{day}}",
+        "take": "Apply",
+        "other": "Other folder",
+        "otherTitle": "File in …",
+        "dismiss": "Dismiss suggestion",
+        "done": "Filed"
+      },
+      "scan": {
+        "menu": "Convert to document …",
+        "menuMany": "Convert to one document ({{count}} pages) …",
+        "title": "Check scan",
+        "reading": "Reading and analysing the scan …",
+        "pages": "{{count}} pages",
+        "recognised": "Recognised: {{kind}}",
+        "unknown": "Not recognised",
+        "kind": {
+          "printed": "Printed text",
+          "handwriting": "Handwriting",
+          "table": "Table",
+          "whiteboard": "Whiteboard",
+          "other": "Picture only"
+        },
+        "words": "{{count}} words recognised",
+        "ask": {
+          "pdf": "Save as a searchable PDF?",
+          "docx": "Save as a structured Word file?",
+          "xlsx": "Save as an Excel file?",
+          "image": "Nothing recognised – keep it as a picture?"
+        },
+        "format": {
+          "label": "Format",
+          "pdf": "PDF",
+          "docx": "Word",
+          "xlsx": "Excel",
+          "image": "Picture only"
+        },
+        "preview": {
+          "label": "Preview",
+          "pdf": "The picture stays, the recognised text lies invisibly on top: searchable and copyable.",
+          "pdfLocal": "The picture stays, the recognised text lies invisibly on top: searchable and copyable. No AI, on this PC.",
+          "xlsx": "Numbers as numbers, dates as dates, header row frozen. A total row becomes a formula.",
+          "image": "As before: just the picture.",
+          "docx": {
+            "printed": "The recognised text as a Word document.",
+            "handwriting": "The transcribed text as a Word document, the scan as the last page.",
+            "table": "The table becomes a Word table in the document.",
+            "whiteboard": "Headings, bullet points and tasks as a list; the cleaned-up photo on top. Circled items become “Open”."
+          }
+        },
+        "cost": {
+          "none": "Nothing is analysed.",
+          "local": "Recognised on this PC, without AI.",
+          "ai": "Analysed by your GateControl's AI provider."
+        },
+        "save": {
+          "pdf": "Save as PDF",
+          "docx": "Save as Word file",
+          "xlsx": "Save as Excel file",
+          "image": "Save picture"
+        },
+        "name": "Name",
+        "noName": "Please enter a name.",
+        "folder": "File in",
+        "folderTitle": "File in …",
+        "change": "Change",
+        "keep": "Keep original scan",
+        "saved": "Saved: {{name}}",
+        "noPdf": "A PDF is not possible here: no language for text recognition is installed on this PC, and the pictures could not go to Drive. “Picture only” and the other formats still work."
+      },
+      "ask": {
+        "modes": "Search or ask",
+        "mode": {
+          "files": "Files",
+          "ask": "Ask"
+        },
+        "placeholder": "Ask your documents …",
+        "title": "Question: “{{q}}”",
+        "sub": "Answers only from your files",
+        "loading": "Drive is searching your files …",
+        "limited": "Too many questions right now – please try again later.",
+        "nothing": "I found nothing about this in your files.",
+        "searched": "Searched for: {{terms}} · in {{where}}",
+        "and": " and ",
+        "yourFiles": "your files",
+        "page": "page {{page}}",
+        "sources": {
+          "one": "1 source",
+          "other": "{{count}} sources"
+        },
+        "toCalendar": "Add deadline to family calendar",
+        "hint": "Answers only from your files. Vaults are never searched."
+      },
+      "photos": {
+        "label": "Search photos",
+        "placeholder": "Search photos by content (e.g. beach)",
+        "chips": "Terms of the hits",
+        "source": "Terms recognised on the phone",
+        "none": "No photos with these terms.",
+        "note": "Photos not backed up from a phone (e.g. from a PC) have no terms yet. They are added the next time the phone app is opened."
       }
     }
   }
