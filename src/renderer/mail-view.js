@@ -85,6 +85,8 @@
 		close: 'M6 6l12 12M18 6L6 18',
 		chevron: 'M9 6l6 6-6 6',
 		chevDown: 'M6 9l6 6 6-6',
+		back: 'M15 6l-6 6 6 6',
+		copy: 'M9 9h11v11H9z|M5 15H4V4h11v1',
 		more: 'M5 12h.01M12 12h.01M19 12h.01',
 		spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z|M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z',
 		calendar: 'M4 6h16v14H4z|M4 10h16|M8 3v4M16 3v4',
@@ -208,7 +210,12 @@
 		return { box, body, foot, close, setTitle: (s) => { h.textContent = s; }, get closed() { return closed; } };
 	}
 
-	/** A sandboxed frame for a mail's document (no scripts; same origin only so the page can size it / read the editor). */
+	/**
+	 * A sandboxed frame for a mail's document (no scripts; same origin only so the page can size it / read the editor).
+	 * A mail wider than the pane (a newsletter's table of a fixed width) is set smaller as a whole: the window
+	 * measures the frame's #gc-fit (core mailDocument) at zoom 1 and gives it CSS zoom (MS.fitZoom) — the frame
+	 * itself never runs a script.
+	 */
 	function mailFrame(doc, { title, editable = false } = {}) {
 		const f = el('iframe', {
 			class: editable ? 'ml-editor' : 'ml-frame',
@@ -222,11 +229,30 @@
 				try {
 					const d = f.contentDocument;
 					if (!d || !d.documentElement) return;
-					const h = Math.max(d.documentElement.scrollHeight, d.body ? d.body.scrollHeight : 0);
-					f.style.height = `${Math.min(Math.max(h, 60), 30000)}px`;
+					const root = d.documentElement;
+					const box = d.getElementById('gc-fit');
+					if (box) {
+						box.style.zoom = '';
+						const z = MS.fitZoom(box.clientWidth, box.scrollWidth);
+						if (z < 1) box.style.zoom = String(z);
+					}
+					const h = Math.max(root.scrollHeight, d.body ? d.body.scrollHeight : 0);
+					// the frame is as tall as the mail: no scrollbar of its own (a Windows scrollbar, shown for a
+					// rounded half pixel, would take width from the mail that was just made to fit)
+					root.style.overflowY = h < 30000 ? 'hidden' : '';
+					f.style.height = `${Math.min(Math.max(h + 1, 60), 30000)}px`;
 				} catch { /* not there yet */ }
 			};
-			f.addEventListener('load', () => { fit(); for (const ms of [120, 400, 1000, 2500, 6000]) setTimeout(fit, ms); });
+			f.addEventListener('load', () => {
+				fit();
+				for (const ms of [120, 400, 1000, 2500, 6000]) setTimeout(fit, ms);
+				// pictures that come later change the width; so does the pane
+				try { f.contentDocument.addEventListener('load', fit, true); } catch { /* gone */ }
+			});
+			if (typeof ResizeObserver === 'function') {
+				let w = 0;
+				new ResizeObserver(() => { if (f.clientWidth !== w) { w = f.clientWidth; fit(); } }).observe(f);
+			}
 		}
 		return f;
 	}
@@ -327,10 +353,12 @@
 			listError: null,
 			listSeq: 0,
 			selectedId: null,
-			pane: 'empty',          // 'empty' | 'read' | 'compose'
+			pane: 'empty',          // 'empty' | 'read' | 'compose' | 'sender'
 			read: null,             // { message, doc, ai, thread, aiError, suggest: Map(aid → { suggestion, duplicate }) }
 			readSeq: 0,
-			expanded: new Set(),
+			senderSeq: 0,
+			folds: new Map(),       // account id → its folders shown in the menu (this session)
+			sender: null,           // the sender's page: { email, name, accountId, contact, items, next, loading, error }
 			outbox: [],
 			filing: [],
 			undo: null,             // { outboxId, draftId, until, sendAt, timer }
@@ -507,17 +535,30 @@
 			if (S.outbox.length) side.append(menuItem({ label: t('mail.outbox.title'), ic: 'send', count: S.outbox.length, on: v.kind === 'outbox', onClick: () => go({ kind: 'outbox' }) }));
 			if (me.accounts.length) side.append(el('div', { class: 'ml-lab', text: t('mail.accountsLabel') }));
 			for (const a of me.accounts) {
-				const open = S.expanded.has(a.id) || (v.kind === 'box' && v.box === a.id);
+				// a tap on the account (or its arrow) opens or closes its folders; its inbox is the tree's first entry
+				const open = MS.foldOpen(S.folds, a.id, v);
+				const fold = () => { MS.toggleFold(S.folds, a.id, S.view); renderMenu(); };
+				const item = accountItem(a, { count: (me.unread.byAccount || {})[String(a.id)] || 0, on: !open && v.kind === 'box' && v.box === a.id, onClick: fold });
+				item.setAttribute('aria-expanded', open ? 'true' : 'false');
 				const row = el('div', { class: 'ml-acc' }, [
-					accountItem(a, { count: (me.unread.byAccount || {})[String(a.id)] || 0, on: v.kind === 'box' && v.box === a.id && !v.folderId, onClick: () => go({ kind: 'box', box: a.id, folderId: null }) }),
-					el('button', { type: 'button', class: `ml-fold${open ? ' open' : ''}`, 'aria-expanded': open ? 'true' : 'false', 'aria-label': t('mail.folders', { name: a.name }), on: { click: () => { if (open) S.expanded.delete(a.id); else S.expanded.add(a.id); if (open && v.kind === 'box' && v.box === a.id) S.expanded.delete(a.id); renderMenu(); } } }, [icon('chevDown', 14)]),
+					item,
+					el('button', { type: 'button', class: `ml-fold${open ? ' open' : ''}`, tabindex: '-1', 'aria-hidden': 'true', title: t('mail.folders', { name: a.name }), on: { click: fold } }, [icon('chevDown', 14)]),
 				]);
 				side.append(row);
 				if (open) {
 					const acc = ((S.folders && S.folders.accounts) || []).find((x) => x.accountId === a.id);
-					for (const { folder, depth } of MS.folderTree(acc ? acc.folders : [])) {
-						if (folder.role === 'inbox') continue;
-						side.append(menuItem({ label: MS.folderName(folder, t), sub: true, depth, count: folder.role === 'sent' || folder.role === 'trash' ? 0 : folder.unread, on: v.kind === 'box' && v.folderId === folder.id, onClick: () => go({ kind: 'box', box: a.id, folderId: folder.id }) }));
+					const tree = MS.folderTree(acc ? acc.folders : []);
+					const inboxOn = v.kind === 'box' && v.box === a.id && !v.folderId;
+					if (!tree.some(({ folder }) => folder.role === 'inbox')) {
+						side.append(menuItem({ label: t('mail.role.inbox'), sub: true, depth: 0, on: inboxOn, onClick: () => go({ kind: 'box', box: a.id, folderId: null }) }));
+					}
+					for (const { folder, depth } of tree) {
+						const inbox = folder.role === 'inbox';
+						side.append(menuItem({
+							label: MS.folderName(folder, t), sub: true, depth, count: folder.role === 'sent' || folder.role === 'trash' ? 0 : folder.unread,
+							on: inbox ? inboxOn : v.kind === 'box' && v.folderId === folder.id,
+							onClick: () => go({ kind: 'box', box: a.id, folderId: inbox ? null : folder.id }),
+						}));
 					}
 				}
 			}
@@ -795,7 +836,7 @@
 		function loadExtras(seq, m) {
 			const acc = MS.accountOf(S.me, m.accountId);
 			if (has('ai') && (!acc || acc.ai)) loadAi(seq, m.id);
-			if (S.me && S.me.settings.threads && m.threadCount > 1 && m.threadId) loadThread(seq, m.threadId, m.id);
+			if (S.me && S.me.settings.threads && m.threadCount > 1 && m.threadId) loadThread(seq, m.threadId);
 			if (has('drive')) loadSuggestions(seq, m);
 		}
 
@@ -873,10 +914,25 @@
 			renderPane();
 		}
 
-		async function loadThread(seq, threadId, id) {
+		/** The conversation's mails (GET threads/<id>, oldest first, the open one among them). */
+		async function loadThread(seq, threadId) {
+			const R = S.read;
+			if (!R || R.threadBusy) return;
+			R.threadBusy = true;
 			const r = await call(api.thread(threadId));
-			if (seq !== S.readSeq || !r || !r.ok) return;
-			S.read.thread = r.items.filter((m) => m.id !== id);
+			if (seq !== S.readSeq || S.read !== R) return;
+			R.threadBusy = false;
+			if (r && r.ok) R.thread = r.items;
+			else if (R.threadOpen) toast(errText(r), 'error');
+			renderPane();
+		}
+
+		/** "Unterhaltung · n Mails": all its mails show (loaded now when not yet) or fold again. */
+		function toggleThread() {
+			const R = S.read;
+			if (!R || !R.message) return;
+			R.threadOpen = !R.threadOpen;
+			if (R.threadOpen && !R.thread && R.message.threadId) loadThread(S.readSeq, R.message.threadId);
 			renderPane();
 		}
 
@@ -896,6 +952,7 @@
 			if (S.view.kind === 'filing' || S.view.kind === 'outbox') { pane.hidden = S.pane !== 'compose'; if (S.pane === 'compose') renderCompose(); return; }
 			pane.hidden = false;
 			if (S.pane === 'compose' && S.compose) { renderCompose(); return; }
+			if (S.pane === 'sender' && S.sender) { renderSender(); return; }
 			if (S.pane !== 'read' || !S.read) {
 				pane.append(el('div', { class: 'ml-empty ml-pane-empty' }, [icon('mail', 34, '1.6'), el('p', { class: 'ml-p', text: t('mail.pickOne') })]));
 				return;
@@ -930,10 +987,24 @@
 			const scroll = el('div', { class: 'ml-read' });
 			if (R.offline) scroll.append(el('div', { class: 'ml-banner' }, [icon('offline', 15), el('span', { text: t('mail.offlineMail') })]));
 			scroll.append(el('h2', { class: 'ml-read-subj', text: m.subject || t('mail.noSubject') }));
+			// the conversation: its line (a tap shows all its mails), the mails before this one above, those after it below
+			const conv = S.me && S.me.settings.threads && m.threadCount > 1 && m.threadId ? MS.conversation(R.thread || [], m.id) : null;
+			if (conv) {
+				const count = Math.max(m.threadCount, (R.thread || []).length);
+				const names = MS.participants(R.thread && R.thread.length ? R.thread : [m], t);
+				scroll.append(el('button', { type: 'button', class: `ml-conv${R.threadOpen ? ' open' : ''}`, 'aria-expanded': R.threadOpen ? 'true' : 'false', title: t(R.threadOpen ? 'mail.thread.hide' : 'mail.thread.show'), on: { click: toggleThread } }, [
+					el('span', { class: 'ml-conv-tx' }, [el('span', { class: 'ml-sub', text: t('mail.thread.count', { count }) }), el('span', { class: 'ml-conv-names', text: names.join(', ') })]),
+					R.threadOpen && R.threadBusy ? el('span', { class: 'ml-sub', text: t('mail.loading') }) : null,
+					el('span', { class: 'ml-conv-ic' }, [icon('chevDown', 14)]),
+				]));
+				if (R.threadOpen) for (const x of conv.older) scroll.append(threadCard(x));
+			}
 			const toLine = [...m.to, ...m.cc].map((a) => MS.senderName(a, t)).slice(0, 6).join(', ');
 			scroll.append(el('div', { class: 'ml-read-from' }, [
 				dot(acc ? acc.color : null),
-				el('span', { class: 'ml-read-name', text: MS.senderName(m.from, t) }),
+				m.from.email
+					? el('button', { type: 'button', class: 'ml-read-name ml-read-sender', title: t('mail.sender.show'), on: { click: () => openSender(m) } }, [el('span', { text: MS.senderName(m.from, t) })])
+					: el('span', { class: 'ml-read-name', text: MS.senderName(m.from, t) }),
 				m.from.email && m.from.name ? el('span', { class: 'ml-read-addr', text: `<${m.from.email}>` }) : null,
 				el('span', { class: 'ml-grow' }),
 				el('span', { class: 'ml-read-date', text: MS.fullDate(m.date, lang()) }),
@@ -959,8 +1030,6 @@
 					m.from.email ? el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('mail.images.sender'), on: { click: () => allowImages(m, 'sender') } }) : null,
 				]));
 			}
-			// the older mails of the conversation
-			for (const old of R.thread || []) scroll.append(threadCard(old));
 			if (m.bodyMissing) {
 				// the provider has not sent the body yet (the snippet below): it comes with the live event
 				scroll.append(el('div', { class: 'ml-banner is-info' }, [
@@ -987,6 +1056,7 @@
 				foot.append(el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('mail.unsubscribe'), title: m.listUnsubscribe.mail, on: { click: () => openCompose({ to: [{ name: null, email: m.listUnsubscribe.mail }], subject: 'unsubscribe', accountId: m.accountId }) } }));
 			}
 			if (foot.childNodes.length) scroll.append(foot);
+			if (conv && R.threadOpen) for (const x of conv.newer) scroll.append(threadCard(x));
 			// reply suggestions
 			const replies = R.ai && R.ai.status === 'done' ? R.ai.replies : [];
 			const bottom = el('div', { class: 'ml-read-bottom' });
@@ -1082,17 +1152,97 @@
 			return card;
 		}
 
-		function threadCard(old) {
-			const card = el('details', { class: 'ml-card ml-thread' });
+		/** Another mail of the conversation: sender, date and preview; unfolds to its body and "Mail öffnen". */
+		function threadCard(x) {
+			const card = el('details', { class: 'ml-card ml-thread', 'data-id': String(x.id) });
+			const acc = MS.accountOf(S.me, x.accountId);
+			const av = el('span', { class: 'ml-av ml-av-sm', text: MS.initials(x.from) });
+			av.style.background = acc ? acc.color : 'var(--faint)';
 			card.append(el('summary', { class: 'ml-thread-h' }, [
-				el('span', { class: 'ml-read-name', text: MS.senderName(old.from, t) }),
-				el('span', { class: 'ml-row-snip ml-grow', text: old.snippet || '' }),
-				el('span', { class: 'ml-read-date', text: MS.timeLabel(old.date, Date.now(), lang(), t) }),
+				av,
+				el('span', { class: 'ml-read-name', text: MS.senderName(x.from, t) }),
+				el('span', { class: 'ml-row-snip ml-grow', text: x.snippet || '' }),
+				el('span', { class: 'ml-read-date', text: MS.timeLabel(x.date, Date.now(), lang(), t) }),
 			]));
 			card.addEventListener('toggle', () => {
-				if (card.open && !card.querySelector('iframe')) card.append(mailFrame(old.doc, { title: old.subject || '' }));
+				if (card.open && !card.querySelector('iframe')) {
+					card.append(mailFrame(x.doc, { title: x.subject || '' }));
+					card.append(el('div', { class: 'ml-thread-foot' }, [el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('mail.thread.open'), on: { click: () => openMessage(x.id) } })]));
+				}
 			}, { once: false });
 			return card;
+		}
+
+		// ── A sender (a tap on the sender of a mail) ─────
+
+		/** The sender's page: who it is (the contacts' name when there is one), "Mail schreiben", "Adresse kopieren", their mails in the account. */
+		async function openSender(m) {
+			const email = m.from && m.from.email;
+			if (!email) return;
+			const seq = ++S.senderSeq;
+			S.sender = { email, name: m.from.name || null, accountId: m.accountId, contact: null, items: [], next: null, loading: true, error: null, back: S.read };
+			S.pane = 'sender';
+			renderPane();
+			call(api.contacts(email)).then((r) => {
+				if (seq !== S.senderSeq || !S.sender || !r || !r.ok) return;
+				S.sender.contact = MS.contactOf(r.items, email);
+				if (S.pane === 'sender') renderPane();
+			});
+			await loadSender(seq);
+		}
+
+		async function loadSender(seq, more = false) {
+			const P = S.sender;
+			if (!P) return;
+			P.loading = true;
+			const r = await call(api.search({ from: P.email, box: P.accountId || undefined, cursor: more ? P.next : undefined }));
+			if (seq !== S.senderSeq || S.sender !== P) return;
+			P.loading = false;
+			if (r && r.ok) {
+				const got = MS.fromSender(r.items, P.email);
+				P.items = more ? MS.mergeItems(P.items, got) : got;
+				P.next = r.next || null;
+				P.error = null;
+			} else P.error = errText(r);
+			if (S.pane === 'sender') renderPane();
+		}
+
+		function renderSender() {
+			const P = S.sender;
+			const acc = MS.accountOf(S.me, P.accountId);
+			const name = (P.contact && P.contact.name) || P.name || P.email;
+			const bar = el('div', { class: 'ml-read-bar', role: 'toolbar', 'aria-label': t('mail.actions') }, [
+				el('button', { type: 'button', class: 'ml-ib', title: t('mail.sender.back'), 'aria-label': t('mail.sender.back'), on: { click: () => { S.pane = S.read ? 'read' : 'empty'; renderPane(); } } }, [icon('back', 16)]),
+				el('span', { class: 'ml-sub', text: t('mail.sender.title') }),
+			]);
+			const scroll = el('div', { class: 'ml-read ml-sender' });
+			const av = el('span', { class: 'ml-av ml-av-lg', text: MS.initials({ name: name === P.email ? null : name, email: P.email }) });
+			av.style.background = acc ? acc.color : 'var(--faint)';
+			scroll.append(el('div', { class: 'ml-sender-head' }, [
+				av,
+				el('span', { class: 'ml-sender-tx' }, [
+					el('h2', { class: 'ml-read-subj ml-sender-name', text: name }),
+					name !== P.email ? el('span', { class: 'ml-read-addr ml-sender-mail', text: P.email }) : null,
+					// the place for what the person's contacts know (the coming contacts plugin); for now that they are one
+					P.contact ? el('span', { class: 'ml-sub ml-sender-contact', text: t('mail.sender.inContacts') }) : null,
+				]),
+			]));
+			scroll.append(el('div', { class: 'ml-sender-acts' }, [
+				el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: () => openCompose({ to: [{ name: P.name, email: P.email }], accountId: P.accountId }) } }, [icon('pen', 15), el('span', { text: t('mail.sender.write') })]),
+				el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => {
+					const done = () => toast(t('mail.sender.copied'), 'success');
+					if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(P.email).then(done).catch(() => toast(t('mail.err.failed'), 'error'));
+				} } }, [icon('copy', 15), el('span', { text: t('mail.sender.copy') })]),
+			]));
+			scroll.append(el('h3', { class: 'ml-lab ml-sender-lab', text: acc ? t('mail.sender.mailsIn', { name: acc.name }) : t('mail.sender.mails') }));
+			const rows = el('div', { class: 'ml-rows ml-sender-rows', role: 'listbox', 'aria-label': t('mail.sender.mails') });
+			for (const x of P.items) rows.append(rowEl(x));
+			if (P.loading) rows.append(el('div', { class: 'ml-empty' }, [el('p', { class: 'ml-p', text: t('mail.loading') })]));
+			else if (P.error && !P.items.length) rows.append(el('div', { class: 'ml-empty' }, [el('p', { class: 'ml-p', text: P.error }), el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.retry'), on: { click: () => loadSender(S.senderSeq) } })]));
+			else if (!P.items.length) rows.append(el('div', { class: 'ml-empty' }, [el('p', { class: 'ml-p', text: t('mail.sender.none') })]));
+			else if (P.next) rows.append(el('button', { type: 'button', class: 'btn btn-ghost btn-sm ml-more', text: t('mail.more'), on: { click: () => loadSender(S.senderSeq, true) } }));
+			scroll.append(rows);
+			pane.append(bar, scroll);
 		}
 
 		async function allowImages(m, allow) {

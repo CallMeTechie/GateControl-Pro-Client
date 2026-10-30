@@ -462,6 +462,70 @@
 		return (!!changed.messageId && changed.messageId === message.id) || (!!changed.threadId && changed.threadId === message.threadId);
 	}
 
+	// ── The reader (wide mails, the menu's folds, the conversation, a sender) ──
+
+	/** Below this a wide mail is not made any smaller to fit. */
+	const FIT_MIN = 0.25;
+
+	/**
+	 * The zoom of the frame's #gc-fit so a wide mail (a newsletter's table of a fixed 600 px) fits without scrolling
+	 * sideways: `avail` its width and `content` the width of what it holds (scrollWidth), both measured at zoom 1.
+	 * 1 when it fits (1 px of rounding allowed); never below FIT_MIN.
+	 */
+	function fitZoom(avail, content) {
+		const a = Number(avail);
+		const c = Number(content);
+		if (!(a > 0) || !(c > a + 1)) return 1;
+		return Math.max(FIT_MIN, Math.floor((a / c) * 1000) / 1000);
+	}
+
+	/** Whether the menu shows an account's folders: as folded this session (folds: Map id → bool), else open for the account shown. */
+	function foldOpen(folds, accountId, view) {
+		if (folds && folds.has(accountId)) return !!folds.get(accountId);
+		return !!view && view.kind === 'box' && view.box === accountId;
+	}
+
+	/** A tap on an account in the menu: its folders open or close (folds is changed and returned). */
+	function toggleFold(folds, accountId, view) {
+		folds.set(accountId, !foldOpen(folds, accountId, view));
+		return folds;
+	}
+
+	/** A conversation (GET threads/<id>) around the open mail: { older, newer }, each oldest first (the newest at the bottom). */
+	function conversation(items, currentId) {
+		const seen = new Set();
+		const list = (Array.isArray(items) ? items : []).filter((m) => m && !seen.has(m.id) && seen.add(m.id))
+			.sort((a, b) => (a.date - b.date) || (a.id - b.id));
+		const at = list.findIndex((m) => m.id === currentId);
+		if (at < 0) return { older: list, newer: [] };
+		return { older: list.slice(0, at), newer: list.slice(at + 1) };
+	}
+
+	/** The senders of a conversation for its line, each once, at most `max`. */
+	function participants(items, t, max = 3) {
+		const seen = new Set();
+		const out = [];
+		for (const m of Array.isArray(items) ? items : []) {
+			const key = str(m && m.from && m.from.email).toLowerCase() || str(m && m.from && m.from.name);
+			if (!key || seen.has(key)) continue;
+			seen.add(key);
+			out.push(senderName(m.from, t));
+		}
+		return out.slice(0, max);
+	}
+
+	/** The plugin's `from` matches a part of the address: only the mails of exactly `email` stay. */
+	function fromSender(items, email) {
+		const e = str(email).trim().toLowerCase();
+		return (Array.isArray(items) ? items : []).filter((m) => m && m.from && str(m.from.email).trim().toLowerCase() === e);
+	}
+
+	/** The sender in the person's contacts (contacts?q=, a `person` hit with a name), null without one. */
+	function contactOf(items, email) {
+		const e = str(email).trim().toLowerCase();
+		return (Array.isArray(items) ? items : []).find((c) => c && c.source === 'person' && str(c.email).trim().toLowerCase() === e && str(c.name).trim()) || null;
+	}
+
 	function errorText(r, t, lang) {
 		const code = str(r && r.code);
 		const hint = r && r.detail && r.detail.hint ? (lang === 'en' ? r.detail.hint.en || r.detail.hint.de : r.detail.hint.de || r.detail.hint.en) : null;
@@ -514,6 +578,14 @@
 		BUSY_RETRIES,
 		busyRetry,
 		bringsBody,
+		FIT_MIN,
+		fitZoom,
+		foldOpen,
+		toggleFold,
+		conversation,
+		participants,
+		fromSender,
+		contactOf,
 		errorText,
 	};
 });

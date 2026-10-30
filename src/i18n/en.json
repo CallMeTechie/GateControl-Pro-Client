@@ -2888,6 +2888,24 @@
       "links_disabled": "Share links are switched off in Drive."
     },
     "bodyMissing": "The content is still being loaded from the provider …",
-    "picturesLoading": "Embedded pictures are loading …"
+    "picturesLoading": "Embedded pictures are loading …",
+    "thread": {
+      "count": "Conversation · {{count}} mails",
+      "show": "Show all mails of the conversation",
+      "hide": "Fold the conversation",
+      "open": "Open mail"
+    },
+    "sender": {
+      "show": "Show sender",
+      "title": "Sender",
+      "back": "Back to the mail",
+      "write": "Write mail",
+      "copy": "Copy address",
+      "copied": "Address copied",
+      "mails": "Mails from this sender",
+      "mailsIn": "Mails from this sender in {{name}}",
+      "none": "No mails from this sender yet.",
+      "inContacts": "In your contacts"
+    }
   }
 }

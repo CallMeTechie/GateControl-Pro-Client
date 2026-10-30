@@ -2888,6 +2888,24 @@
       "links_disabled": "Freigabe-Links sind in Drive ausgeschaltet."
     },
     "bodyMissing": "Der Inhalt wird noch vom Anbieter geladen …",
-    "picturesLoading": "Eingebettete Bilder werden gerade geladen …"
+    "picturesLoading": "Eingebettete Bilder werden gerade geladen …",
+    "thread": {
+      "count": "Unterhaltung · {{count}} Mails",
+      "show": "Alle Mails der Unterhaltung zeigen",
+      "hide": "Unterhaltung zuklappen",
+      "open": "Mail öffnen"
+    },
+    "sender": {
+      "show": "Absender zeigen",
+      "title": "Absender",
+      "back": "Zurück zur Mail",
+      "write": "Mail schreiben",
+      "copy": "Adresse kopieren",
+      "copied": "Adresse kopiert",
+      "mails": "Mails von diesem Absender",
+      "mailsIn": "Mails von diesem Absender in {{name}}",
+      "none": "Noch keine Mails von diesem Absender.",
+      "inContacts": "In deinen Kontakten"
+    }
   }
 }
