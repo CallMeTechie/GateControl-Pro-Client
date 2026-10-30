@@ -136,11 +136,18 @@ test.describe('mail', () => {
     const { page, answerOpenDialogs } = await launchApp();
     await setupWithApiKey(page, mock);
     const root = await openMail(page);
-    // a mail whose body the server does not have: the note and "Erneut versuchen" instead of the frame
+    // a mail whose body the provider has not sent yet (Mail 1.1.2): the note, "Erneut versuchen" and the snippet
     await root.locator('.ml-chip', { hasText: 'Firma · M365' }).click();
     await row(root, 105).click();
-    await expect(root.locator('.ml-read .ml-banner.is-info')).toBeVisible();
-    await expect(root.locator('iframe.ml-frame')).toHaveCount(0);
+    const note = root.locator('.ml-read .ml-banner.is-info');
+    await expect(note).toBeVisible();
+    await expect(page.frameLocator('iframe.ml-frame').locator('body')).toContainText('Inhalt fehlt');
+    // the body has come: "Erneut versuchen" shows it, the note goes
+    m.srv.state.messages.get(105).bodyMissing = false;
+    m.srv.state.messages.get(105).text = 'Hier sind die alten Unterlagen.';
+    await note.getByRole('button').click();
+    await expect(page.frameLocator('iframe.ml-frame').locator('body')).toContainText('Hier sind die alten Unterlagen.');
+    await expect(note).toHaveCount(0);
 
     await root.locator('.ml-new').click();
     await root.locator('select.ml-from').selectOption('2');
