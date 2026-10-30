@@ -32,6 +32,10 @@
  * `gatecontrol-drive`. With it (support/drive-mock.js) the list names it and
  * its routes go to the core's fake Drive server.
  *
+ * Mail: without `await server.setMail()` the plugin list has no
+ * `gatecontrol-mail`. With it (support/mail-mock.js) the list names it and
+ * its routes go to the core's fake Mail server.
+ *
  * Map ("Standort senden"): /osm/<z>/<x>/<y>.png answers a PNG tile and
  * /nominatim/search, /nominatim/reverse canned addresses (`setGeocode()`)
  * — the app's MapService points there in e2e mode (GC_E2E_MAP_URL).
@@ -52,6 +56,7 @@ const { createMessenger } = require('./messenger-mock');
 const { createSchool } = require('./school-mock');
 const { createVault } = require('./vault-mock');
 const { createDrive } = require('./drive-mock');
+const { createMail } = require('./mail-mock');
 const { createSignin } = require('./signin-mock');
 
 const API_TOKEN = 'gc_e2e_test_token';
@@ -117,6 +122,7 @@ async function startMockServer() {
   let school = null; // support/school-mock.js, null = no Schule plugin
   let vault = null; // support/vault-mock.js, null = no Vault plugin
   let drive = null; // support/drive-mock.js, null = no Drive plugin
+  let mail = null; // support/mail-mock.js, null = no Mail plugin
   let signin = null; // support/signin-mock.js, null = server before company sign-in (404)
   const acks = [];
   const prefs = [];
@@ -242,6 +248,15 @@ async function startMockServer() {
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
 
+      if (mail) {
+        // The plugin list names every plugin that is set.
+        if (route === 'plugins') {
+          const list = messenger ? [{ id: 'gatecontrol-messenger', name: 'Messenger', version: '1.0.0', tab: { label: 'Chats', icon: 'M0 0' } }] : [];
+          return json(200, { ok: true, plugins: [...list, ...(school ? [school.entry()] : []), ...(vault ? [vault.entry()] : []), ...(drive ? [drive.entry()] : []), mail.entry()] });
+        }
+        if (mail.handle({ method: req.method, url, raw, headers: req.headers }, res)) return undefined;
+      }
+
       if (drive) {
         // The plugin list names every plugin that is set.
         if (route === 'plugins') {
@@ -349,6 +364,11 @@ async function startMockServer() {
       drive = await createDrive(opts);
       return drive;
     },
+    /** Enables the Mail plugin (support/mail-mock.js, the core's fake server on its own port); returns it. */
+    async setMail(opts = {}) {
+      mail = await createMail(opts);
+      return mail;
+    },
     /** Enables the Vault plugin (support/vault-mock.js, the core's fake server); returns its state. */
     setVault(opts = {}) {
       vault = createVault(opts);
@@ -378,6 +398,7 @@ async function startMockServer() {
     count(pathname) { return requests.filter((r) => r.path === pathname).length; },
     close: () => new Promise((resolve) => {
       if (drive) drive.close().catch(() => {});
+      if (mail) mail.close().catch(() => {});
       for (const res of streams) res.end();
       streams.clear();
       server.closeAllConnections?.();

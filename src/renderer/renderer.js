@@ -11,7 +11,7 @@ const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
 	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, gatedrop: gatedropApi, vault: vaultApi, drive: driveApi,
-	signin: signinApi,
+	signin: signinApi, mail: mailApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
 
@@ -192,6 +192,7 @@ function refreshTexts() {
 	gatedropView?.relabel();
 	vaultView?.relabel();
 	driveView?.relabel();
+	mailView?.relabel();
 	notifyRoutesView?.render();
 }
 
@@ -210,6 +211,7 @@ let schoolView = null; // school-view.js instance (SCHULE section below)
 let gatedropView = null; // gatedrop-view.js instance (GATEDROP section below)
 let vaultView = null; // vault-view.js instance (VAULT section below)
 let driveView = null; // drive-view.js instance (DRIVE section below)
+let mailView = null; // mail-view.js instance (MAIL section below)
 let notifyRoutesView = null; // notify-routes.js in Settings › Benachrichtigungen
 let appVersion = '';
 let serverUrl = '';
@@ -360,7 +362,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'gatedrop', 'drive', 'vault', 'inbox', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'gatedrop', 'mail', 'drive', 'vault', 'inbox', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -403,6 +405,9 @@ function navigateTo(page, opts = {}) {
 	// Drive: the areas and the folder load when shown
 	if (page === 'drive' && prev !== 'drive') driveView?.show();
 	else if (prev === 'drive' && page !== 'drive') driveView?.hide();
+	// Mail: accounts, folders and the list load when shown
+	if (page === 'mail' && prev !== 'mail') mailView?.show();
+	else if (prev === 'mail' && page !== 'mail') mailView?.hide();
 	// Vault: footer in the status bar, secrets leave the screen with the page
 	if (page === 'vault' && prev !== 'vault') vaultView?.show();
 	else if (prev === 'vault' && page !== 'vault') vaultView?.hide();
@@ -2524,6 +2529,7 @@ function shownPages() {
 		: p === 'schule' ? !!schoolView && !$('#nav-schule').hidden
 			: p === 'gatedrop' ? !!gatedropView && !$('#nav-gatedrop').hidden
 				: p === 'drive' ? !!driveView && !$('#nav-drive').hidden
+					: p === 'mail' ? !!mailView && !$('#nav-mail').hidden
 					: p === 'vault' ? !!vaultView && !$('#nav-vault').hidden : true));
 }
 
@@ -2539,6 +2545,13 @@ function openDrive(context) {
 	if (!driveView) return;
 	navigateTo('drive');
 	driveView.open(context || null);
+}
+
+/** Mail on a push target (a new mail: that mail; a failed send: the outbox), e.g. from a toast click. */
+function openMail(context) {
+	if (!mailView) return;
+	navigateTo('mail');
+	mailView.open(context || null);
 }
 
 /** GateDrop on a push target (Empfangen / Links, a send), e.g. from a toast click. */
@@ -2617,6 +2630,8 @@ if (notifyAvailable()) {
 			openVault(target.context);
 		} else if (target.page === 'drive') {
 			openDrive(target.context);
+		} else if (target.page === 'mail') {
+			openMail(target.context);
 		} else {
 			navigateTo(target.page);
 		}
@@ -2822,6 +2837,7 @@ async function openCardRoute(route, target) {
 		if (own.page === 'schule') openSchool(own.context);
 		else if (own.page === 'gatedrop') openGateDrop(own.context);
 		else if (own.page === 'vault') openVault(own.context);
+		else if (own.page === 'mail') openMail(own.context);
 		else navigateTo(own.page);
 		return true;
 	}
@@ -2941,8 +2957,8 @@ if (gatedropView) {
 		api: gatedropApi,
 		t,
 		toast: (msg, type) => showToast(msg, type || 'info'),
-		// The chat composer and the Drive page take files themselves.
-		skip: (target) => !!(target.closest && target.closest('#page-chats, #page-drive')),
+		// The chat composer, the Drive page and the mail editor take files themselves.
+		skip: (target) => !!(target.closest && target.closest('#page-chats, #page-drive, #page-mail')),
 	});
 }
 
@@ -2995,6 +3011,53 @@ driveView = driveApi && window.GCDriveView && $('#page-drive')
 		},
 	})
 	: null;
+
+// ══════════════════════════════════════════════════════════
+//  MAIL (plugin gatecontrol-mail: the person's mail accounts on the own
+//  server, Phase 1)
+//  Data: window.gatecontrol.mail (core MailService in main); the page is
+//  built by mail-view.js (window.GCMailView) with mail-state.js. The nav
+//  entry is shown only while the server lists the plugin and lets the
+//  person in; its badge counts the unread mails of all inboxes.
+// ══════════════════════════════════════════════════════════
+function renderMailBadge(count) {
+	const badge = $('#mail-badge');
+	if (!badge) return;
+	const n = Number(count) || 0;
+	badge.hidden = n <= 0;
+	badge.textContent = n > 99 ? '99+' : String(n);
+	if (n > 0) badge.setAttribute('aria-label', t('mail.unreadCount', { count: n }));
+}
+
+mailView = mailApi && window.GCMailView && $('#page-mail')
+	? window.GCMailView.mount({
+		root: $('#page-mail'),
+		api: mailApi,
+		t,
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		// "Aus Drive" anhängen und „In Drive speichern“ in einen anderen Ordner (Drives Ordnerwahl)
+		driveApi: driveApi || null,
+		driveView: driveApi ? window.GCDriveView || null : null,
+		onUnread: (n) => renderMailBadge(n),
+		onStatus: (st) => {
+			const show = !!st && st.state === 'available';
+			$('#nav-mail').hidden = !show;
+			if (!show) renderMailBadge(0);
+			if (!show && currentPage === 'mail' && st && st.state === 'unavailable') navigateTo('status');
+		},
+	})
+	: null;
+// the unread count also while the page is not shown (a new mail, read elsewhere)
+mailApi?.onChanged?.(() => {
+	if (!mailView || $('#nav-mail').hidden || currentPage === 'mail') return;
+	mailApi.me().then((r) => { if (r && r.ok && r.unread) renderMailBadge(r.unread.all); }).catch(() => {});
+});
+function refreshMailBadge(st) {
+	if (st && st.state === 'available' && currentPage !== 'mail') mailApi.me().then((r) => { if (r && r.ok && r.unread) renderMailBadge(r.unread.all); }).catch(() => {});
+}
+mailApi?.onState?.(refreshMailBadge);
+if (mailView) mailApi.status().then(refreshMailBadge).catch(() => {});
 
 // Explorer-Kontextmenü „GateControl Drive ›“ (Dateien bei Bedarf): „Link
 // teilen …“ und „Ältere Versionen“ öffnen den Dialog der Drive-Seite.

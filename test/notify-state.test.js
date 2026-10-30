@@ -294,6 +294,10 @@ describe('inbox empty states and hints', () => {
     const ctx = { kind: 'changes', studentId: 3, date: '2026-10-20', messageId: null };
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7, context: ctx }, [...pages, 'schule']), { page: 'schule', id: null, context: ctx });
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7 }, [...pages, 'schule']), { page: 'schule', id: null, context: null });
+    // Mail: a new mail / a failed send (core MailService.clickContext); without the page: the inbox
+    const mctx = { kind: 'message', messageId: 101, accountId: 1 };
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-mail', id: 7, context: mctx }, [...pages, 'mail']), { page: 'mail', id: null, context: mctx });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-mail', id: 7, context: mctx }, pages), { page: 'inbox', id: 7 });
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7, context: ctx }, pages), { page: 'inbox', id: 7 });
     // GateDrop: a received send opens the page on Empfangen / Links
     const gctx = { tab: 'received', sendId: '41' };
@@ -306,6 +310,9 @@ describe('inbox empty states and hints', () => {
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-vault', id: 9, context: vctx }, [...pages, 'vault']), { page: 'vault', id: null, context: vctx });
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-vault', id: 9, context: vctx }, pages), { page: 'inbox', id: 9 });
     assert.deepEqual(NS.routeTarget('plg-gatecontrol-vault', [...pages, 'vault']), { page: 'vault', context: null });
+    assert.deepEqual(NS.routeTarget('plg-gatecontrol-mail/message/101', [...pages, 'mail']), { page: 'mail', context: { kind: 'message', messageId: 101, accountId: null } });
+    assert.deepEqual(NS.routeTarget('plg-gatecontrol-mail/message/x', [...pages, 'mail']), { page: 'mail', context: null });
+    assert.equal(NS.routeTarget('plg-gatecontrol-mail', pages), null);
     assert.equal(NS.routeTarget('plg-gatecontrol-vault/emergency', [...pages, 'vault']).context.page, 'emergency');
     assert.equal(NS.routeTarget('plg-gatecontrol-vault', pages), null);
   });
