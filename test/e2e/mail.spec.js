@@ -102,7 +102,7 @@ test.describe('mail', () => {
   test('reading: a wide newsletter fits, the menu\'s folders fold, the conversation, the sender\'s page', async ({ launchApp, mock }) => {
     const m = await mock.setMail();
     // a newsletter with a fixed width (as IONOS sends it): wider than the pane
-    m.srv.state.messages.get(104).html = '<div style="width:1400px;background:#EEF1F5"><p>Newsletter mit fester Breite</p></div><table width="600"><tr><td width="600">Angebot</td></tr></table>';
+    m.srv.state.messages.get(104).html = '<div style="width:760px;background:#EEF1F5"><p>Newsletter mit fester Breite</p></div><table width="600"><tr><td width="600">Angebot</td></tr></table>';
     const { page } = await launchApp();
     await setupWithApiKey(page, mock);
     const root = await openMail(page);
@@ -151,7 +151,8 @@ test.describe('mail', () => {
     const frame = page.frameLocator('.ml-frame-wrap iframe.ml-frame');
     await expect(frame.locator('body')).toContainText('Newsletter mit fester Breite');
     await expect.poll(() => frame.locator('#gc-fit').evaluate((b) => Number(b.style.zoom || 1))).toBeLessThan(1);
-    expect(await frame.locator('html').evaluate((h) => h.scrollWidth <= h.clientWidth + 1)).toBe(true);
+    const widths = await frame.locator('html').evaluate((h) => ({ scroll: h.scrollWidth, client: h.clientWidth, zoom: h.ownerDocument.getElementById('gc-fit').style.zoom }));
+    expect(widths.scroll, JSON.stringify(widths)).toBeLessThanOrEqual(widths.client + 1);
     expect(await frame.locator('body').evaluate(() => typeof window.gatecontrol)).toBe('undefined');
     await page.screenshot({ path: test.info().outputPath('mail-wide.png') });
 

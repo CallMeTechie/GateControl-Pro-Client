@@ -229,14 +229,18 @@
 				try {
 					const d = f.contentDocument;
 					if (!d || !d.documentElement) return;
+					const root = d.documentElement;
 					const box = d.getElementById('gc-fit');
 					if (box) {
 						box.style.zoom = '';
 						const z = MS.fitZoom(box.clientWidth, box.scrollWidth);
 						if (z < 1) box.style.zoom = String(z);
 					}
-					const h = Math.max(d.documentElement.scrollHeight, d.body ? d.body.scrollHeight : 0);
-					f.style.height = `${Math.min(Math.max(h, 60), 30000)}px`;
+					const h = Math.max(root.scrollHeight, d.body ? d.body.scrollHeight : 0);
+					// the frame is as tall as the mail: no scrollbar of its own (a Windows scrollbar, shown for a
+					// rounded half pixel, would take width from the mail that was just made to fit)
+					root.style.overflowY = h < 30000 ? 'hidden' : '';
+					f.style.height = `${Math.min(Math.max(h + 1, 60), 30000)}px`;
 				} catch { /* not there yet */ }
 			};
 			f.addEventListener('load', () => {
