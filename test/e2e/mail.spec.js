@@ -103,7 +103,9 @@ test.describe('mail', () => {
     const m = await mock.setMail();
     // a newsletter with a fixed width (as IONOS sends it): wider than the pane
     m.srv.state.messages.get(104).html = '<div style="width:760px;background:#EEF1F5"><p>Newsletter mit fester Breite</p></div><table width="600"><tr><td width="600">Angebot</td></tr></table>';
-    const { page } = await launchApp();
+    const { app, page } = await launchApp();
+    // a window wide enough for a reading pane (the CI's default one leaves it ~160 px)
+    await app.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; win.unmaximize(); win.setSize(1440, 900); });
     await setupWithApiKey(page, mock);
     const root = await openMail(page);
 
@@ -151,8 +153,11 @@ test.describe('mail', () => {
     const frame = page.frameLocator('.ml-frame-wrap iframe.ml-frame');
     await expect(frame.locator('body')).toContainText('Newsletter mit fester Breite');
     await expect.poll(() => frame.locator('#gc-fit').evaluate((b) => Number(b.style.zoom || 1))).toBeLessThan(1);
-    const widths = await frame.locator('html').evaluate((h) => ({ scroll: h.scrollWidth, client: h.clientWidth, zoom: h.ownerDocument.getElementById('gc-fit').style.zoom }));
-    expect(widths.scroll, JSON.stringify(widths)).toBeLessThanOrEqual(widths.client + 1);
+    const widths = await frame.locator('html').evaluate((h) => ({ scroll: h.scrollWidth, client: h.clientWidth, zoom: Number(h.ownerDocument.getElementById('gc-fit').style.zoom) }));
+    // 760 px + the margins fit any pane of at least 222 px (zoom ≥ 25 %); a narrower one keeps the smallest zoom
+    if (widths.client >= 230) expect(widths.scroll, JSON.stringify(widths)).toBeLessThanOrEqual(widths.client + 1);
+    else expect(widths.zoom, JSON.stringify(widths)).toBe(0.25);
+    expect(widths.zoom, JSON.stringify(widths)).toBeCloseTo(Math.max(0.25, Math.floor(((widths.client - 32) / 760) * 1000) / 1000), 1);
     expect(await frame.locator('body').evaluate(() => typeof window.gatecontrol)).toBe('undefined');
     await page.screenshot({ path: test.info().outputPath('mail-wide.png') });
 
