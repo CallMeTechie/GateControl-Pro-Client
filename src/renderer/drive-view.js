@@ -501,6 +501,12 @@
 			openSync: () => openSync(),
 			// kept for the lists; the folder loads in that order when it is shown next
 			setSort: (sort) => { if (DS.SORTS.includes(sort)) { S.sort = sort; keep('gc.drive.sort', sort); } },
+			// Drive 1.14: new deadlines of an area into the family calendar on their own
+			calendarChanged: (areaId, on) => {
+				const set = (list) => (Array.isArray(list) ? list.map((a) => (a && a.id === areaId ? { ...a, deadlinesToCalendar: on } : a)) : list);
+				S.areas = set(S.areas);
+				if (S.me && Array.isArray(S.me.areas)) S.me = { ...S.me, areas: set(S.me.areas) };
+			},
 			docAiChanged: (areaId, on) => {
 				S.areas = DS.withDocAi(S.areas, areaId, on);
 				if (S.me && Array.isArray(S.me.areas)) S.me = { ...S.me, areas: DS.withDocAi(S.me.areas, areaId, on) };
@@ -850,14 +856,14 @@
 			if (!q) { S.searchMode = 'auto'; renderModes(); if (S.view === 'search' || S.view === 'ask') backToFolder(); return; }
 			// a question waits for Enter (Drive answers a limited number per hour)
 			if (asking(q) || q.length < 2) return;
-			searchTimer = setTimeout(() => { S.query = q; runSearch(); }, 350);
+			searchTimer = setTimeout(() => { S.query = q.slice(0, 100); runSearch(); }, 350);
 		}
 		function onSearchKey(e) {
 			if (e.key === 'Enter') {
 				clearTimeout(searchTimer);
 				const q = refs.search.value.trim();
-				if (q.length >= 2 && asking(q)) runAsk(q);
-				else if (q.length >= 2) { S.query = q; runSearch(); }
+				if (asking(q)) { if (q.length >= 3) runAsk(q.slice(0, 300)); }
+				else if (q.length >= 2) { S.query = q.slice(0, 100); runSearch(); }
 			} else if (e.key === 'Escape' && refs.search.value) {
 				e.preventDefault();
 				refs.search.value = '';
@@ -870,6 +876,8 @@
 		function renderModes() {
 			clear(refs.modes);
 			refs.modes.hidden = !ki || !DS.hasFeature(S.me, 'docAsk');
+			// a question may be longer than a file search (Drive: 3 … 300 characters)
+			refs.search.maxLength = refs.modes.hidden ? 100 : 300;
 			if (refs.modes.hidden) return;
 			refs.modes.setAttribute('aria-label', t('drive.ki.ask.modes'));
 			const on = asking(refs.search.value) ? 'ask' : 'files';

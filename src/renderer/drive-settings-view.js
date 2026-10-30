@@ -189,6 +189,23 @@
 					render();
 				}), id);
 			});
+			// Drive 1.14 'deadlineCalendar': new deadlines of an area into the family calendar on their own
+			const KS = root.GCDriveKiState;
+			const cal = KS && typeof api.setDeadlinesToCalendar === 'function' ? KS.calendarAreas(p.areas, p.me) : [];
+			if (cal.length) {
+				kids.push(el('h4', { class: 'dset-sub lbl', text: t('drive.ki.dl.autoTitle') }));
+				for (const x of cal) {
+					const id = nextId('dset-cal');
+					kids.push(row(DS.areaLabel(x.area, t), t('drive.ki.dl.autoHint'), sw(`cal-${x.areaId}`, x.on, id, async () => {
+						const r = await call(() => api.setDeadlinesToCalendar(x.areaId, !x.on));
+						if (!r) return;
+						const on = r.area && typeof r.area.deadlinesToCalendar === 'boolean' ? r.area.deadlinesToCalendar : !x.on;
+						if (typeof o.calendarChanged === 'function') o.calendarChanged(x.areaId, on);
+						toast(t(on ? 'drive.ki.dl.autoOn' : 'drive.ki.dl.autoOff', { area: DS.areaLabel(x.area, t) }), 'success');
+						render();
+					}), id));
+				}
+			}
 			kids.push(el('p', { class: 'dsv-foot dv-p', text: t('drive.settings.ai.vaults') }));
 			return card('ai', t('drive.docAi.label'), null, kids);
 		}

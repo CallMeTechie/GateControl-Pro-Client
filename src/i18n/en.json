@@ -1251,9 +1251,10 @@
       "tooMany": "That is too many at once – please do it in smaller parts.",
       "tooManyJobs": "Several jobs are running already – please wait until one is done.",
       "intoItself": "A folder cannot go into itself.",
-      "familieUnavailable": "The family calendar is not available right now (Familie missing or refused).",
+      "familieUnavailable": "The family calendar does not take entries from Drive right now (the Familie plugin does not allow Drive yet). Drive's reminder still works.",
       "notPicture": "Only pictures can be converted into a document.",
-      "noOcr": "No language for text recognition is installed on this PC."
+      "noOcr": "No language for text recognition is installed on this PC.",
+      "scanNoFile": "Drive made no document."
     },
     "sync": {
       "title": "Back up folders",
@@ -2409,7 +2410,11 @@
         "toCalendar": "Add to family calendar",
         "inCalendar": "In family calendar",
         "added": "Added to the family calendar",
-        "note": "Found in your documents · only files you may read"
+        "note": "Found in your documents · only files you may read",
+        "autoTitle": "New deadlines into the family calendar",
+        "autoHint": "Newly found deadlines are added on their own.",
+        "autoOn": "New deadlines from {{area}} go into the family calendar",
+        "autoOff": "New deadlines from {{area}} no longer go into the family calendar on their own"
       },
       "file": {
         "region": "Filing suggestion",
@@ -2482,7 +2487,8 @@
         "folderTitle": "File in …",
         "change": "Change",
         "keep": "Keep original scan",
-        "saved": "Saved: {{name}}"
+        "saved": "Saved: {{name}}",
+        "noPdf": "A PDF is not possible here: no language for text recognition is installed on this PC, and the pictures could not go to Drive. “Picture only” and the other formats still work."
       },
       "ask": {
         "modes": "Search or ask",

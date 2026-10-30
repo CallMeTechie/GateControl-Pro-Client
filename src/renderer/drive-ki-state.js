@@ -188,17 +188,22 @@
 	const SCAN_MIME_RE = /^image\/(jpeg|png|webp|heic|heif|tiff|bmp)$/i;
 	const SCAN_NAME_RE = /\.(jpe?g|png|webp|hei[cf]|tiff?|bmp)$/i;
 
-	/** Can this file (or these files) become a document? Pictures, not in a vault, ≤ 20, where one may write. */
+	const SCAN_PAGES_MAX = 8;
+
+	/** Can this file (or these files) become a document? Pictures, not in a vault, ≤ 8, where one may write. */
 	function scanAvailable(items, { me, writable } = {}) {
 		const list = Array.isArray(items) ? items : [];
-		return has(me, 'scanDocs') && !!writable && list.length > 0 && list.length <= 20
+		return has(me, 'scanDocs') && !!writable && list.length > 0 && list.length <= SCAN_PAGES_MAX
 			&& list.every((n) => n && !n.isDir && !n.encrypted && (SCAN_MIME_RE.test(str(n.mime)) || SCAN_NAME_RE.test(str(n.name))));
 	}
 
-	/** The formats offered: PDF · Word (not for "nothing recognised") · Excel (tables only) · Nur Bild (one page) */
-	function scanFormats(kind, pages = 1) {
+	/**
+	 * The formats offered: PDF (only when this PC reads the text or its pictures can go to Drive) · Word (not for
+	 * "nothing recognised") · Excel (tables only) · Nur Bild (one page)
+	 */
+	function scanFormats(kind, pages = 1, pdf = true) {
 		const k = SCAN_KINDS.includes(kind) ? kind : 'other';
-		const out = ['pdf'];
+		const out = pdf ? ['pdf'] : [];
 		if (k !== 'other') out.push('docx');
 		if (k === 'table') out.push('xlsx');
 		if (pages === 1) out.push('image');
@@ -206,10 +211,10 @@
 	}
 
 	/** The format picked first: table → Excel, handwriting / whiteboard → Word, printed → PDF, nothing → the picture. */
-	function scanDefault(kind, pages = 1) {
+	function scanDefault(kind, pages = 1, pdf = true) {
 		if (kind === 'table') return 'xlsx';
 		if (kind === 'handwriting' || kind === 'whiteboard') return 'docx';
-		if (kind === 'printed' || pages > 1) return 'pdf';
+		if (kind === 'printed' || pages > 1) return pdf ? 'pdf' : (kind === 'printed' ? 'docx' : 'image');
 		return 'image';
 	}
 
@@ -221,8 +226,10 @@
 		const s = scan || {};
 		const kind = SCAN_KINDS.includes(s.kind) ? s.kind : 'other';
 		const pages = s.pages || 1;
-		const formats = scanFormats(kind, pages);
-		const f = formats.includes(fmt) ? fmt : scanDefault(kind, pages);
+		const pdf = s.pdf !== false;
+		const formats = scanFormats(kind, pages, pdf);
+		const def = scanDefault(kind, pages, pdf);
+		const f = formats.includes(fmt) ? fmt : formats.includes(def) ? def : formats[0];
 		let preview;
 		if (f === 'pdf') preview = t(s.local ? 'drive.ki.scan.preview.pdfLocal' : 'drive.ki.scan.preview.pdf');
 		else if (f === 'xlsx') preview = t('drive.ki.scan.preview.xlsx');
@@ -234,7 +241,9 @@
 			format: f,
 			title: s.classified === false && kind === 'other' ? t('drive.ki.scan.unknown') : t('drive.ki.scan.recognised', { kind: t(`drive.ki.scan.kind.${kind}`) }),
 			summary: str(s.summary) || (s.local && s.words ? t('drive.ki.scan.words', { count: s.words }) : ''),
-			ask: t(`drive.ki.scan.ask.${scanDefault(kind, pages)}`),
+			ask: t(`drive.ki.scan.ask.${formats.includes(def) ? def : f}`),
+			// no PDF without this PC's text or pictures for Drive
+			noPdf: pdf ? '' : t('drive.ki.scan.noPdf'),
 			preview,
 			cost,
 			save: t(`drive.ki.scan.save.${f}`),
@@ -252,6 +261,20 @@
 		if (SCAN_EXT[fmt]) return `.${SCAN_EXT[fmt]}`;
 		const m = /\.[A-Za-z0-9]{1,5}$/.exec(str(pictureName));
 		return m ? m[0] : '';
+	}
+
+	/** "Original-Scan behalten" at first: the choice kept on this PC ('1' / '0'), else Drive's setting, else on. */
+	function scanKeep(stored, me) {
+		if (stored === '0') return false;
+		if (stored === '1') return true;
+		const s = me && me.settings ? me.settings.scanKeepOriginal : null;
+		return s !== false;
+	}
+
+	/** The areas whose new deadlines may go into the family calendar on their own (write, 'deadlineCalendar'). */
+	function calendarAreas(areas, me) {
+		if (!has(me, 'deadlineCalendar')) return [];
+		return (Array.isArray(areas) ? areas : []).filter((a) => a && typeof a.deadlinesToCalendar === 'boolean' && a.writable && !a.archived).map((a) => ({ area: a, areaId: a.id, on: a.deadlinesToCalendar }));
 	}
 
 	/** The name and folder suggested first: Drive's suggestion (docAi), else the picture's name and folder. */
@@ -289,7 +312,9 @@
 			where: [str(s.path).split('/').filter(Boolean).join(' › '), s.page ? t('drive.ki.ask.page', { page: s.page }) : ''].filter(Boolean).join(' · '),
 			quote: s.quote ? `„${str(s.quote).replace(/^[„"“]+|[“"”]+$/g, '')}“` : '',
 		}));
-		const where = (Array.isArray(areas) ? areas : []).map((ar) => (typeof areaLabel === 'function' ? areaLabel(ar) : str(ar && ar.label))).filter(Boolean);
+		// where Drive searched (its answer), else the person's areas
+		const where = Array.isArray(x.areas) && x.areas.length ? x.areas.map(str).filter(Boolean)
+			: (Array.isArray(areas) ? areas : []).map((ar) => (typeof areaLabel === 'function' ? areaLabel(ar) : str(ar && ar.label))).filter(Boolean);
 		const terms = Array.isArray(x.terms) ? x.terms.filter(Boolean) : [];
 		return {
 			found,
@@ -301,11 +326,12 @@
 	}
 
 	/**
-	 * "Frist in den Familienkalender" of an answer: the next deadline of a source file that is not in the calendar yet
-	 * (null: no button).
+	 * "Frist in den Familienkalender" of an answer: the deadline Drive names with it (a source's whose date the answer
+	 * names), else the next deadline of a source file not in the calendar yet (null: no button).
 	 */
 	function answerDeadline(answer, deadlines, now = Date.now()) {
 		if (!answer || answer.status !== 'answered') return null;
+		if (answer.deadline && answer.deadline.id) return answer.deadline.calendar || daysUntil(answer.deadline.date, now) < 0 ? null : answer.deadline;
 		const ids = new Set((answer.sources || []).map((s) => s.nodeId));
 		const list = (Array.isArray(deadlines) ? deadlines : []).filter((d) => d && d.node && ids.has(d.node.id) && !d.calendar && daysUntil(d.date, now) >= 0);
 		list.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -333,8 +359,9 @@
 		const out = words.map((w) => ({ term: w, on: true, label: w }));
 		for (const x of Array.isArray(terms) ? terms : []) {
 			const term = x && typeof x === 'object' ? str(x.term) : str(x);
-			if (!term || words.some((w) => w.toLowerCase() === term.toLowerCase())) continue;
-			out.push({ term, on: false, label: `+ ${term}` });
+			const label = (x && typeof x === 'object' && str(x.label)) || term;
+			if (!term || words.some((w) => w.toLowerCase() === term.toLowerCase() || w.toLowerCase() === label.toLowerCase())) continue;
+			out.push({ term, on: false, label: `+ ${label}` });
 			if (out.length >= words.length + 6) break;
 		}
 		return out;
@@ -350,11 +377,11 @@
 	}
 
 	return {
-		DEADLINE_KINDS, SCAN_KINDS, WATCH_MS,
+		DEADLINE_KINDS, SCAN_KINDS, SCAN_PAGES_MAX, WATCH_MS,
 		features, daysUntil, shortDay, relative,
 		deadlineTag, deadlineCard, monthTitle, deadlineMonths, calendarButton,
 		newUpload, fileBar, shortDayPlain,
-		scanAvailable, scanFormats, scanDefault, scanView, baseName, scanExt, scanStart,
+		scanAvailable, scanFormats, scanDefault, scanView, baseName, scanExt, scanStart, scanKeep, calendarAreas,
 		asks, answerView, answerDeadline,
 		photoWords, photoChips, photoToggle,
 	};

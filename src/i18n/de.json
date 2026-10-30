@@ -1251,9 +1251,10 @@
       "tooMany": "Das sind zu viele auf einmal – bitte in kleineren Teilen.",
       "tooManyJobs": "Es laufen schon mehrere Aufträge – bitte warte, bis einer fertig ist.",
       "intoItself": "Ein Ordner kann nicht in sich selbst.",
-      "familieUnavailable": "Der Familienkalender ist gerade nicht erreichbar (Familie fehlt oder hat abgelehnt).",
+      "familieUnavailable": "Der Familienkalender nimmt gerade keine Einträge von Drive an (das Familie-Plugin lässt Drive noch nicht zu). Die Erinnerung von Drive geht weiter.",
       "notPicture": "Nur Bilder lassen sich in ein Dokument umwandeln.",
-      "noOcr": "Auf diesem PC ist keine Sprache für die Texterkennung installiert."
+      "noOcr": "Auf diesem PC ist keine Sprache für die Texterkennung installiert.",
+      "scanNoFile": "Drive hat kein Dokument erzeugt."
     },
     "sync": {
       "title": "Ordner sichern",
@@ -2409,7 +2410,11 @@
         "toCalendar": "In den Familienkalender",
         "inCalendar": "Im Familienkalender",
         "added": "In den Familienkalender eingetragen",
-        "note": "Aus deinen Dokumenten erkannt · nur Dateien, die du lesen darfst"
+        "note": "Aus deinen Dokumenten erkannt · nur Dateien, die du lesen darfst",
+        "autoTitle": "Neue Fristen in den Familienkalender",
+        "autoHint": "Neu erkannte Fristen werden von selbst eingetragen.",
+        "autoOn": "Neue Fristen aus {{area}} kommen in den Familienkalender",
+        "autoOff": "Neue Fristen aus {{area}} kommen nicht mehr von selbst in den Familienkalender"
       },
       "file": {
         "region": "Ablagevorschlag",
@@ -2482,7 +2487,8 @@
         "folderTitle": "Ablegen in …",
         "change": "Ändern",
         "keep": "Original-Scan behalten",
-        "saved": "Gespeichert: {{name}}"
+        "saved": "Gespeichert: {{name}}",
+        "noPdf": "Ein PDF geht hier nicht: Auf diesem PC ist keine Sprache für die Texterkennung installiert, und die Bilder konnten nicht an Drive gehen. „Nur Bild“ und die anderen Formate gehen weiter."
       },
       "ask": {
         "modes": "Suchen oder fragen",

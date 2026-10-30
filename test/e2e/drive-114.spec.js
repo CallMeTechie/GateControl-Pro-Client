@@ -90,6 +90,21 @@ test.describe('drive 1.14', () => {
     await q.press('Enter');
     await expect(root.locator('.dv-ki-answer.is-none')).toContainText(/nichts gefunden|found nothing/);
     await expect(root.locator('.dv-ki-answer.is-none')).toContainText(/Mietvertrag/);
+    // Drive settings: new deadlines of an area into the family calendar on their own
+    await root.locator('.dv-ki-modes [data-mode="files"]').click();
+    await q.fill('');
+    await tool(root, 'settings').click();
+    const ai = root.locator('.dset [data-section="ai"]');
+    await expect(ai.locator('[data-key="cal-mine:2"]')).toHaveAttribute('aria-checked', 'false');
+    await ai.locator('[data-key="cal-mine:2"]').click();
+    await expect.poll(() => d.srv.state.toCalendar.has('mine:2')).toBe(true);
+    await expect(ai.locator('[data-key="cal-mine:2"]')).toHaveAttribute('aria-checked', 'true');
+    // Familie does not take Drive yet: an understandable message, the switch stays off
+    d.srv.familie = false;
+    await ai.locator('[data-key="cal-family:1"]').click();
+    await expect(page.locator('.toast, [role="status"], [role="alert"]').filter({ hasText: /Familie-Plugin|Familie plugin/ }).first()).toBeVisible();
+    await expect(ai.locator('[data-key="cal-family:1"]')).toHaveAttribute('aria-checked', 'false');
+    await root.locator('.dv-tree-row.is-area').first().click();
     // "Dateien": the file search again
     await root.locator('.dv-ki-modes [data-mode="files"]').click();
     await q.fill('Brief');
@@ -130,7 +145,10 @@ test.describe('drive 1.14', () => {
     await dlg.locator('.dv-ki-save').click();
     await expect(dlg).toHaveCount(0);
     await expect.poll(() => d.srv.state.convertCalls.length).toBe(1);
-    expect(d.srv.state.convertCalls[0]).toMatchObject({ target: 'xlsx', kind: 'table', folderId: 10, name: '2026 Zählerstände.xlsx', keepOriginal: false });
+    expect(d.srv.state.convertCalls[0]).toMatchObject({ target: 'xlsx', kind: 'table', folderId: 10, name: '2026 Zählerstände.xlsx' });
+    // Drive made the bytes, the app uploaded them and filed them; the original went into the trash
+    await expect.poll(() => d.srv.state.saveCalls.length).toBe(1);
+    expect(d.srv.state.saveCalls[0]).toMatchObject({ folderId: 10, name: '2026 Zählerstände.xlsx', sourceId: 11, keepOriginal: false });
     await expect.poll(() => d.srv.state.nodes.get(11).deleted).toBe(true);
     expect(await page.evaluate(() => localStorage.getItem('gc.drive.scan.keep'))).toBe('0');
   });
@@ -159,15 +177,18 @@ test.describe('drive 1.14', () => {
     await expect(dlg).toHaveCount(0);
     const made = () => [...d.srv.state.nodes.values()].find((n) => n.name === 'Brief Stadtwerke.pdf');
     await expect.poll(() => !!made()).toBe(true);
+    const saved = d.srv.state.saveCalls.find((c) => c.name === 'Brief Stadtwerke.pdf');
+    expect(saved).toMatchObject({ sourceId: pic.id, keepOriginal: true });
     if (win) {
       expect(d.srv.state.convertCalls.length).toBe(0);
-      const commit = d.srv.state.commits.find((c) => c.name === 'Brief Stadtwerke.pdf');
-      expect(commit.text).toMatch(/Betrag 84[,.]20/);
+      expect(saved.text).toMatch(/Betrag 84[,.]20/);
       const pdf = d.srv.state.media.get(made().mediaId).data.toString('latin1');
       expect(pdf.startsWith('%PDF-1.4')).toBe(true);
       expect(pdf).toContain('/DCTDecode');
     } else {
+      // no OCR language here: Drive makes the PDF from a smaller copy of the page
       expect(d.srv.state.convertCalls[0]).toMatchObject({ target: 'pdf', kind: 'printed', name: 'Brief Stadtwerke.pdf' });
+      expect(d.srv.state.convertCalls[0].images.length).toBe(1);
     }
     // the original stays ("Original-Scan behalten" is on by default)
     expect(d.srv.state.nodes.get(pic.id).deleted).toBe(false);
@@ -209,8 +230,8 @@ test.describe('drive 1.14', () => {
     const a = d.srv.mutate.photo(1, 'Strand.jpg', { takenAt: Date.now() - 3600000 });
     const b = d.srv.mutate.photo(1, 'Abend.jpg', { takenAt: Date.now() - 7200000 });
     d.srv.mutate.photo(1, 'Hund.jpg');
-    d.srv.state.labels.set(a.id, ['Strand', 'Meer']);
-    d.srv.state.labels.set(b.id, ['Strand', 'Sonnenuntergang']);
+    d.srv.state.labels.set(a.id, ['strand', 'meer']);
+    d.srv.state.labels.set(b.id, ['strand', 'sonnenuntergang']);
     const { page } = await launchApp();
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
@@ -222,11 +243,11 @@ test.describe('drive 1.14', () => {
     await expect(pv.locator('.dpv-tile')).toHaveCount(2);
     await expect(pv.locator('.dpv-hits')).toContainText(/2 Fotos|2 photos/);
     await expect(pv.locator('.dpv-chips .dv-chip.is-on')).toHaveText('Strand');
-    await expect(pv.locator('.dpv-chips .dv-chip[data-term="Meer"]')).toHaveText('+ Meer');
+    await expect(pv.locator('.dpv-chips .dv-chip[data-term="meer"]')).toHaveText('+ Meer');
     await expect(pv.locator('.dpv-search-note')).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('drive-photo-search.png') });
-    await pv.locator('.dpv-chips .dv-chip[data-term="Meer"]').click();
-    await expect(pv.locator('.dpv-q')).toHaveValue('Strand Meer');
+    await pv.locator('.dpv-chips .dv-chip[data-term="meer"]').click();
+    await expect(pv.locator('.dpv-q')).toHaveValue('Strand meer');
     await expect(pv.locator('.dpv-tile')).toHaveCount(1);
     await pv.locator('.dpv-q').press('Escape');
     await expect(pv.locator('.dpv-month .dpv-tile')).toHaveCount(4);

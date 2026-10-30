@@ -252,7 +252,9 @@
 			const dlg = openDialog({ title: t('drive.ki.scan.title'), host: o.host, wide: true, closeLabel: t('drive.close'), onClose: () => { if (S.scan && !S.saved) Promise.resolve(api.scan.discard(S.scan.scanId)).catch(() => {}); } });
 			dlg.box.classList.add('dv-ki-scan');
 			const S = { scan: null, fmt: null, name: '', folderId: null, folderPath: '', keep: true, saved: false };
-			try { S.keep = !store || store.getItem(KEEP_KEY) !== '0'; } catch { S.keep = true; }
+			let stored = null;
+			try { stored = store ? store.getItem(KEEP_KEY) : null; } catch { stored = null; }
+			S.keep = KS.scanKeep(stored, o.getMe());
 			const body = el('div', { class: 'dv-ki-scan-body' }, [el('div', { class: 'dv-pick-note', text: t('drive.ki.scan.reading', { count: pages }) })]);
 			const errEl = el('span', { class: 'dv-dlg-err', role: 'alert' });
 			const save = el('button', { type: 'button', class: 'btn btn-pri dv-ki-save', disabled: true, text: t('drive.ki.scan.save.pdf') });
@@ -285,6 +287,7 @@
 						el('span', { class: 'dv-ki-d', text: pages > 1 ? `${t('drive.ki.scan.pages', { count: pages })} · ${v.ask}` : v.ask }),
 					]),
 				]));
+				if (v.noPdf) body.appendChild(el('div', { class: 'dv-note is-muted dv-ki-nopdf', text: v.noPdf }));
 				const chips = el('div', { class: 'dv-ki-chips', role: 'radiogroup', 'aria-label': t('drive.ki.scan.format.label') });
 				for (const c of v.chips) {
 					chips.appendChild(el('button', { type: 'button', role: 'radio', 'aria-checked': c.on ? 'true' : 'false', class: `dv-chip${c.on ? ' is-on' : ''}`, 'data-format': c.key, text: c.label, on: { click: () => { S.fmt = c.key; render(); } } }));
@@ -350,7 +353,13 @@
 				errEl.textContent = '';
 				const target = S.fmt;
 				const r = await Promise.resolve(api.scan.save(S.scan.scanId, { target, folderId: S.folderId, name: String(S.name).trim(), keepOriginal: S.keep })).catch(fail);
-				if (!r || !r.ok) { save.disabled = false; errEl.textContent = o.errorText(r, t); return; }
+				if (!r || !r.ok) {
+					save.disabled = false;
+					errEl.textContent = r && r.code === 'scan_no_file' ? t('drive.ki.scan.noPdf') : o.errorText(r, t);
+					// no PDF: the other formats still work
+					if (r && r.code === 'scan_no_file' && S.scan) { S.scan = { ...S.scan, pdf: false }; render(); errEl.textContent = t('drive.ki.scan.noPdf'); }
+					return;
+				}
 				S.saved = true;
 				dlg.close(r);
 				o.toast(t('drive.ki.scan.saved', { name: r.node.name }), 'success');
@@ -369,7 +378,7 @@
 				const start = KS.scanStart(r);
 				S.name = start.name;
 				S.folderId = start.folderId;
-				S.fmt = KS.scanDefault(r.kind, r.pages);
+				S.fmt = KS.scanDefault(r.kind, r.pages, r.pdf !== false);
 				S.folderPath = start.folderPath !== null && start.folderId
 					? [o.areaLabel(r.areaId), ...String(start.folderPath).split('/').filter(Boolean)].join(' › ')
 					: await Promise.resolve(o.folderPath(S.folderId)).catch(() => '');
@@ -402,7 +411,7 @@
 				const acts = el('div', { class: 'dv-ki-acts' });
 				card.appendChild(acts);
 				if (feats().calendar) {
-					Promise.resolve(api.deadlines()).then((r) => {
+					Promise.resolve(a.deadline ? { ok: true, deadlines: [] } : api.deadlines()).then((r) => {
 						const d = r && r.ok ? KS.answerDeadline(a, r.deadlines, now()) : null;
 						if (!d || !card.isConnected) return;
 						const c = KS.deadlineCard(d, { t, locale: o.getLocale(), now: now(), calendar: true });

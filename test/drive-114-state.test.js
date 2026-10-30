@@ -99,6 +99,14 @@ describe('"Scan prüfen" (D5)', () => {
     assert.deepEqual(KS.scanFormats('printed', 3), ['pdf', 'docx']);
     assert.deepEqual(['table', 'handwriting', 'whiteboard', 'printed', 'other'].map((k) => KS.scanDefault(k)), ['xlsx', 'docx', 'docx', 'pdf', 'image']);
     assert.equal(KS.scanDefault('other', 2), 'pdf');
+    // no PDF possible (no OCR language, no pictures for Drive): the other formats
+    assert.deepEqual(KS.scanFormats('printed', 1, false), ['docx', 'image']);
+    assert.equal(KS.scanDefault('printed', 1, false), 'docx');
+    const v = KS.scanView({ kind: 'printed', pages: 1, pdf: false }, 'pdf', t);
+    assert.equal(v.format, 'docx');
+    assert.equal(v.noPdf, 'drive.ki.scan.noPdf');
+    assert.equal(KS.scanView({ kind: 'other', pages: 1, pdf: false }, null, t).format, 'image');
+    assert.equal(KS.scanView({ kind: 'printed', pages: 1 }, null, t).noPdf, '');
   });
 
   it('the texts of the card, the preview, the cost line and the button', () => {
@@ -133,7 +141,13 @@ describe('"Scan prüfen" (D5)', () => {
     assert.equal(KS.scanAvailable([pic], { me: { features: [] }, writable: true }), false);
     assert.equal(KS.scanAvailable([{ ...pic, encrypted: true }], { me, writable: true }), false);
     assert.equal(KS.scanAvailable([{ id: 2, name: 'a.pdf', mime: 'application/pdf' }], { me, writable: true }), false);
-    assert.equal(KS.scanAvailable(new Array(21).fill(pic), { me, writable: true }), false);
+    assert.equal(KS.scanAvailable(new Array(8).fill(pic), { me, writable: true }), true);
+    assert.equal(KS.scanAvailable(new Array(9).fill(pic), { me, writable: true }), false);
+    // "Original-Scan behalten": this PC's choice, else Drive's setting, else on
+    assert.equal(KS.scanKeep('0', { settings: { scanKeepOriginal: true } }), false);
+    assert.equal(KS.scanKeep('1', { settings: { scanKeepOriginal: false } }), true);
+    assert.equal(KS.scanKeep(null, { settings: { scanKeepOriginal: false } }), false);
+    assert.equal(KS.scanKeep(null, null), true);
     assert.equal(KS.baseName('2026 Zählerstände.jpg'), '2026 Zählerstände');
     assert.equal(KS.baseName('Rechnung v1.2'), 'Rechnung v1.2');
     assert.equal(KS.scanExt('xlsx', 'a.jpg'), '.xlsx');
@@ -164,6 +178,8 @@ describe('questions (D1) and photos by content (D3)', () => {
     assert.equal(n.found, false);
     assert.equal(n.text, 'drive.ki.ask.nothing');
     assert.equal(n.searched, 'drive.ki.ask.searched(terms=Kfz, Versicherung,where=Meine Dateiendrive.ki.ask.andFamilie)');
+    // where Drive says it searched
+    assert.equal(KS.answerView({ status: 'not_found', terms: ['Miete'], areas: ['Familie Muster'] }, { t, areas: [{ label: 'x' }], areaLabel: (ar) => ar.label }).searched, 'drive.ki.ask.searched(terms=Miete,where=Familie Muster)');
     // "Frist in den Familienkalender": the next deadline of a source not in the calendar yet
     const dls = [
       { id: 1, date: '2099-12-31', node: { id: 5 } },
@@ -172,6 +188,9 @@ describe('questions (D1) and photos by content (D3)', () => {
       { id: 4, date: '2099-01-01', node: { id: 99 } },
     ];
     assert.equal(KS.answerDeadline(a, dls, NOW).id, 2);
+    // the deadline Drive names with the answer comes first; one in the calendar already: no button
+    assert.equal(KS.answerDeadline({ ...a, deadline: { id: 9, date: '2099-01-01', nodeId: 5, calendar: null } }, dls, NOW).id, 9);
+    assert.equal(KS.answerDeadline({ ...a, deadline: { id: 9, date: '2099-01-01', nodeId: 5, calendar: { eventId: 'x' } } }, dls, NOW), null);
     assert.equal(KS.answerDeadline({ status: 'not_found' }, dls, NOW), null);
   });
 
@@ -180,8 +199,26 @@ describe('questions (D1) and photos by content (D3)', () => {
     assert.deepEqual(KS.photoChips('Strand', [{ term: 'Meer', count: 12 }, 'Sonnenuntergang', { term: 'strand' }]), [
       { term: 'Strand', on: true, label: 'Strand' }, { term: 'Meer', on: false, label: '+ Meer' }, { term: 'Sonnenuntergang', on: false, label: '+ Sonnenuntergang' },
     ]);
+    // Drive's chips: the term to add, the label to show
+    assert.deepEqual(KS.photoChips('Strand', [{ term: 'sea', label: 'Meer', count: 2 }, { term: 'strand', label: 'Strand' }]), [
+      { term: 'Strand', on: true, label: 'Strand' }, { term: 'sea', on: false, label: '+ Meer' },
+    ]);
     assert.equal(KS.photoToggle('Strand', 'Meer'), 'Strand Meer');
     assert.equal(KS.photoToggle('Strand Meer', 'meer'), 'Strand');
+  });
+});
+
+describe('Drive settings: new deadlines into the family calendar per area', () => {
+  it('only with deadlineCalendar, where one writes, when Drive tells the state', () => {
+    const areas = [
+      { id: 'mine:2', writable: true, deadlinesToCalendar: false },
+      { id: 'family:1', writable: true, deadlinesToCalendar: true },
+      { id: 'child:7', writable: false, deadlinesToCalendar: false },
+      { id: 'team:1', writable: true, archived: true, deadlinesToCalendar: false },
+      { id: 'team:2', writable: true, deadlinesToCalendar: null },
+    ];
+    assert.deepEqual(KS.calendarAreas(areas, { features: ['deadlineCalendar'] }).map((x) => [x.areaId, x.on]), [['mine:2', false], ['family:1', true]]);
+    assert.deepEqual(KS.calendarAreas(areas, { features: ['docAi'] }), []);
   });
 });
 
@@ -196,7 +233,7 @@ describe('the page', () => {
     const flat = (o, pre = '', out = {}) => { for (const [k, v] of Object.entries(o)) { const key = pre ? `${pre}.${k}` : k; if (v && typeof v === 'object') flat(v, key, out); else out[key] = v; } return out; };
     const de = flat(JSON.parse(read('src', 'i18n', 'de.json')));
     const en = flat(JSON.parse(read('src', 'i18n', 'en.json')));
-    const src = ['drive-view.js', 'drive-ki-view.js', 'drive-ki-state.js', 'drive-photos-view.js'].map((f) => read('src', 'renderer', f)).join('\n');
+    const src = ['drive-view.js', 'drive-ki-view.js', 'drive-ki-state.js', 'drive-photos-view.js', 'drive-settings-view.js'].map((f) => read('src', 'renderer', f)).join('\n');
     const keys = new Set();
     for (const m of src.matchAll(/['"`](drive\.ki\.[A-Za-z0-9_.]+)['"`]/g)) if (!m[1].endsWith('.')) keys.add(m[1]);
     for (const k of [...KS.DEADLINE_KINDS, 'other']) { keys.add(`drive.ki.dl.tag.${k}`); keys.add(`drive.deadline.kind.${k}`); }
