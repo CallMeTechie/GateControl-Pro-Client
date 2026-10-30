@@ -99,6 +99,76 @@ test.describe('mail', () => {
     expect(m.srv.state.messages.get(101).folderId).toBe(14);
   });
 
+  test('reading: a wide newsletter fits, the menu\'s folders fold, the conversation, the sender\'s page', async ({ launchApp, mock }) => {
+    const m = await mock.setMail();
+    // a newsletter with a fixed width (as IONOS sends it): wider than the pane
+    m.srv.state.messages.get(104).html = '<div style="width:1400px;background:#EEF1F5"><p>Newsletter mit fester Breite</p></div><table width="600"><tr><td width="600">Angebot</td></tr></table>';
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openMail(page);
+
+    // menu: a tap on the account opens its folders (Posteingang first), another closes them; each account for itself
+    const firma = root.locator('.ml-side .ml-acc').nth(1).locator('.ml-it-acc');
+    await expect(firma).toHaveAttribute('aria-expanded', 'false');
+    await expect(root.locator('.ml-side .ml-it.sub')).toHaveCount(0);
+    await firma.click();
+    await expect(firma).toHaveAttribute('aria-expanded', 'true');
+    await expect(root.locator('.ml-side .ml-it.sub').first()).toContainText(/Posteingang|Inbox/);
+    await expect(root.locator('.ml-side .ml-it.sub')).toHaveCount(3);
+    await firma.click();
+    await expect(firma).toHaveAttribute('aria-expanded', 'false');
+    await expect(root.locator('.ml-side .ml-it.sub')).toHaveCount(0);
+    // the inbox from the tree: shown, the tree stays as it was
+    await firma.click();
+    await root.locator('.ml-side .ml-it.sub').first().click();
+    await expect(row(root, 102)).toBeVisible();
+    await expect(firma).toHaveAttribute('aria-expanded', 'true');
+    await firma.click();
+    await expect(firma).toHaveAttribute('aria-expanded', 'false', { timeout: 5000 });
+
+    // the conversation: its line with the sender; a tap shows the older mail above this one, unfolding
+    await row(root, 102).click();
+    const conv = root.locator('.ml-conv');
+    await expect(conv).toContainText('2');
+    await expect(conv).toContainText('Sabine Keller');
+    await expect(root.locator('.ml-thread')).toHaveCount(0);
+    await conv.click();
+    await expect(conv).toHaveAttribute('aria-expanded', 'true');
+    await expect(root.locator('.ml-thread')).toHaveCount(1);
+    await expect(root.locator('.ml-thread')).toHaveAttribute('data-id', '103');
+    expect(await root.locator('.ml-thread').evaluate((card) => !!(card.compareDocumentPosition(document.querySelector('#page-mail .ml-read-from')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+    await root.locator('.ml-thread summary').click();
+    await expect(page.frameLocator('.ml-thread iframe.ml-frame').locator('body')).toContainText('Hallo');
+    await expect(root.locator('.ml-thread .ml-thread-foot .btn')).toBeVisible();
+    expect(m.srv.state.requests.filter((r) => r.path.endsWith('/api/threads/900')).length).toBe(1);
+    await conv.click();
+    await expect(root.locator('.ml-thread')).toHaveCount(0);
+
+    // the newsletter fits the pane: #gc-fit set smaller, nothing to scroll sideways, no script in the frame
+    await root.locator('.ml-chip').first().click();
+    await root.locator('.ml-tab').nth(1).click();
+    await row(root, 104).click();
+    const frame = page.frameLocator('.ml-frame-wrap iframe.ml-frame');
+    await expect(frame.locator('body')).toContainText('Newsletter mit fester Breite');
+    await expect.poll(() => frame.locator('#gc-fit').evaluate((b) => Number(b.style.zoom || 1))).toBeLessThan(1);
+    expect(await frame.locator('html').evaluate((h) => h.scrollWidth <= h.clientWidth + 1)).toBe(true);
+    expect(await frame.locator('body').evaluate(() => typeof window.gatecontrol)).toBe('undefined');
+    await page.screenshot({ path: test.info().outputPath('mail-wide.png') });
+
+    // the sender's page: name, address, "Mail schreiben", "Adresse kopieren", their mails in the account
+    await root.locator('.ml-read-sender').click();
+    await expect(root.locator('.ml-sender-name')).toHaveText('Elektromarkt');
+    await expect(root.locator('.ml-sender-mail')).toHaveText('news@elektromarkt.de');
+    await expect(root.locator('.ml-sender-rows .ml-row')).toHaveCount(1);
+    const asked = m.srv.state.requests.filter((r) => r.path.endsWith('/api/search')).pop();
+    expect(asked.query.from).toBe('news@elektromarkt.de');
+    expect(asked.query.box).toBe('1');
+    await expect(root.locator('.ml-sender-acts .btn')).toHaveCount(2);
+    await page.screenshot({ path: test.info().outputPath('mail-sender.png') });
+    await root.locator('.ml-sender-acts .btn-pri').click();
+    await expect(root.locator('.ml-rcpt')).toHaveText(['Elektromarkt']);
+  });
+
   test('writing: recipients, send with "Rückgängig", the draft comes back', async ({ launchApp, mock }) => {
     const m = await mock.setMail();
     const { page } = await launchApp();

@@ -203,6 +203,49 @@ describe('mail page wiring', () => {
     assert.match(main, /\n    mail,\n/, 'mail goes to registerBaseHandlers');
   });
 
+  it('a wide mail fits: the zoom of #gc-fit from its width and what it holds', () => {
+    assert.equal(MS.fitZoom(600, 600), 1, 'fits');
+    assert.equal(MS.fitZoom(600, 601), 1, '1 px of rounding');
+    assert.equal(MS.fitZoom(400, 600), 0.666);
+    assert.equal(MS.fitZoom(100, 5000), MS.FIT_MIN, 'never below the minimum');
+    assert.equal(MS.fitZoom(0, 600), 1);
+    assert.equal(MS.fitZoom(undefined, 600), 1);
+  });
+
+  it('the menu: an account\'s folders open or close with a tap, each account for itself, for the session', () => {
+    const folds = new Map();
+    const view = { kind: 'box', box: 1, folderId: null };
+    assert.equal(MS.foldOpen(folds, 1, view), true, 'the account shown starts open');
+    assert.equal(MS.foldOpen(folds, 2, view), false);
+    MS.toggleFold(folds, 1, view);
+    assert.equal(MS.foldOpen(folds, 1, view), false, 'the open one closes again');
+    MS.toggleFold(folds, 2, view);
+    assert.equal(MS.foldOpen(folds, 2, view), true);
+    assert.equal(MS.foldOpen(folds, 1, { kind: 'box', box: 1, folderId: 12 }), false, 'kept when another box is shown');
+    assert.equal(MS.foldOpen(new Map(), 1, { kind: 'search', q: 'x' }), false);
+  });
+
+  it('a conversation around the open mail: older above, newer below, oldest first; its senders once', () => {
+    const m = (id, date, email = 'a@b.de', name = 'Anna') => ({ id, date, from: { name, email } });
+    const items = [m(3, 300), m(1, 100), m(2, 200, 'tim@b.de', 'Tim'), m(4, 400), m(4, 400)];
+    const c = MS.conversation(items, 2);
+    assert.deepEqual(c.older.map((x) => x.id), [1]);
+    assert.deepEqual(c.newer.map((x) => x.id), [3, 4]);
+    assert.deepEqual(MS.conversation(items, 99).older.map((x) => x.id), [1, 2, 3, 4]);
+    assert.deepEqual(MS.conversation(null, 1), { older: [], newer: [] });
+    assert.deepEqual(MS.participants(items, t), ['Anna', 'Tim']);
+    assert.deepEqual(MS.participants([m(1, 1, 'x@y.de', '')], t), ['x@y.de']);
+  });
+
+  it('a sender: exactly that address, the name from a person in the contacts', () => {
+    const items = [{ id: 1, from: { email: 'anna@b.de' } }, { id: 2, from: { email: 'hanna@b.de' } }, { id: 3, from: { email: 'ANNA@b.de' } }];
+    assert.deepEqual(MS.fromSender(items, ' anna@b.de').map((x) => x.id), [1, 3]);
+    const contacts = [{ name: 'Recent', email: 'anna@b.de', source: 'recent' }, { name: 'Anna Müller', email: 'Anna@b.de', source: 'person' }];
+    assert.equal(MS.contactOf(contacts, 'anna@b.de').name, 'Anna Müller');
+    assert.equal(MS.contactOf(contacts.slice(0, 1), 'anna@b.de'), null);
+    assert.equal(MS.contactOf([{ name: '', email: 'anna@b.de', source: 'person' }], 'anna@b.de'), null);
+  });
+
   it('every mail.* key the views use exists in de and en', () => {
     const flat = (o, pre = '', out = {}) => { for (const [k, v] of Object.entries(o)) { const key = pre ? `${pre}.${k}` : k; if (v && typeof v === 'object') flat(v, key, out); else out[key] = v; } return out; };
     const de = flat(JSON.parse(read('src', 'i18n', 'de.json')));
