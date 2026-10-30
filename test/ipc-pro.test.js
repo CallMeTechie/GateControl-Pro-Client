@@ -191,6 +191,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       drive: { on() {}, status: () => ({ state: 'unavailable' }) },
       // … and "Ordner sichern" (drive:sync:* channels; a core before it ignores it)
       driveSync: { on() {}, status: () => ({ ok: true, folders: [] }) },
+      // … and Mail (mail:* channels; a core before Mail ignores it)
+      mail: { on() {}, status: () => ({ state: 'unavailable' }) },
     };
     const registered = registerProIpc(ipcMain, ctx);
     return { handlers, stored, written, calls, registered, apiClient };

@@ -448,11 +448,12 @@
 	function navigateTarget(evt, pages) {
 		const route = evt && evt.route;
 		const id = evt && Number.isSafeInteger(evt.id) ? evt.id : null;
-		const map = { vpn: 'status', services: 'services', inbox: 'inbox', 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule', 'plg-gatecontrol-gatedrop': 'gatedrop', 'plg-gatecontrol-vault': 'vault', 'plg-gatecontrol-drive': 'drive' };
+		const map = { vpn: 'status', services: 'services', inbox: 'inbox', 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule', 'plg-gatecontrol-gatedrop': 'gatedrop', 'plg-gatecontrol-vault': 'vault', 'plg-gatecontrol-drive': 'drive', 'plg-gatecontrol-mail': 'mail' };
 		const page = map[route];
 		if (page && (!pages || pages.includes(page))) {
 			// Drive 1.8 / 1.9: a deadline reminder opens its file, a vault request the vault (core DriveService.clickContext)
-			if (page === 'schule' || page === 'gatedrop' || page === 'vault' || page === 'drive') return { page, id: null, context: evt.context && typeof evt.context === 'object' ? evt.context : null };
+			// Mail: a new mail opens it, a failed send the outbox (core MailService.clickContext)
+			if (page === 'schule' || page === 'gatedrop' || page === 'vault' || page === 'drive' || page === 'mail') return { page, id: null, context: evt.context && typeof evt.context === 'object' ? evt.context : null };
 			return { page, id: page === 'inbox' ? id : null };
 		}
 		return { page: 'inbox', id };
@@ -466,13 +467,15 @@
 	 */
 	function routeTarget(route, pages) {
 		const parts = str(route).split('/');
-		const map = { 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule', 'plg-gatecontrol-gatedrop': 'gatedrop', 'plg-gatecontrol-vault': 'vault' };
+		const map = { 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule', 'plg-gatecontrol-gatedrop': 'gatedrop', 'plg-gatecontrol-vault': 'vault', 'plg-gatecontrol-mail': 'mail' };
 		const page = map[parts[0]];
 		if (!page || (pages && !pages.includes(page))) return null;
 		// GateDrop: plg-gatecontrol-gatedrop[/received|sent|links]
 		if (page === 'gatedrop') return { page, context: ['received', 'sent', 'links'].includes(parts[1]) ? { tab: parts[1], sendId: null } : null };
 		// Vault: plg-gatecontrol-vault[/emergency]
 		if (page === 'vault') return { page, context: parts[1] === 'emergency' ? { topic: 'emergency', event: null, vaultId: null, emergencyId: null, page: 'emergency' } : null };
+		// Mail: plg-gatecontrol-mail[/message/<id>] (the link Drive shows at a file saved from a mail)
+		if (page === 'mail') return { page, context: parts[1] === 'message' && /^[1-9]\d{0,14}$/.test(str(parts[2])) ? { kind: 'message', messageId: Number(parts[2]), accountId: null } : null };
 		if (page !== 'schule') return { page, context: null };
 		const kind = ['messages', 'absences', 'changes'].includes(parts[1]) ? parts[1] : null;
 		const raw = kind === 'messages' && /^[A-Za-z0-9_.:-]{1,80}$/.test(str(parts[2])) ? parts[2] : null;

@@ -29,7 +29,7 @@ process.on('unhandledRejection', (reason) => {
 
 writeCrashLog('STARTUP', 'Process starting...');
 
-let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut;
+let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut, protocol;
 let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, updateToast;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
@@ -39,6 +39,7 @@ let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsS
 let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
 let DriveService, DriveSync;
+let MailService;
 let VaultService, windowsHello, windowsOcr, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
 let createDriveOnDemand, driveOnDemandExePath, parseDriveActionArgv, drivePathsOverlap;
@@ -47,7 +48,7 @@ let installWindowGuard, autostartTask, createAutostart;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
-  ({ app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut } = require('electron'));
+  ({ app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut, protocol } = require('electron'));
   // Chats "Standort senden": navigator.geolocation from the Windows location
   // service (Electron has no key for Google's network location).
   if (process.platform === 'win32') app.commandLine.appendSwitch('enable-features', 'WinrtGeolocationImplementation');
@@ -103,6 +104,9 @@ try {
   ({ DriveService, DriveSync } = require('@gatecontrol/client-core'));
   // Drive 1.14: die Texterkennung von Windows für durchsuchbare PDFs aus Scans (fehlt in einem älteren Core)
   ({ windowsOcr } = require('@gatecontrol/client-core'));
+  // Mail (plugin gatecontrol-mail): the person's mail accounts on the own
+  // server (core services/mail.js); absent in an older core.
+  ({ MailService } = require('@gatecontrol/client-core'));
   // Vault (plugin gatecontrol-vault): end-to-end encrypted password manager
   // (core docs/vault.md); quick search window on Strg+Alt+P.
   ({ VaultService, windowsHello } = require('@gatecontrol/client-core'));
@@ -168,6 +172,13 @@ installWindowGuard(app, {
   getShell: () => shell,
   log,
 });
+
+// Mail: the reading frame loads its pictures (img/<token>, cid/…) through
+// gcmail: — served by the core MailService with the client's sign-in (the
+// scheme has to be known before the app is ready).
+if (MailService && protocol && typeof protocol.registerSchemesAsPrivileged === 'function') {
+  protocol.registerSchemesAsPrivileged([{ scheme: MailService.SCHEME, privileges: { ...MailService.SCHEME_PRIVILEGES } }]);
+}
 
 // ── Konfiguration ────────────────────────────────────────────
 const crypto = require('crypto');
@@ -272,6 +283,7 @@ let vault = null; // Vault (core VaultService), one per app lifetime
 let vaultQuick = null; // Vault quick search window (./vault-quick.js)
 let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
 let drive = null; // Drive (core DriveService), one per app lifetime
+let mail = null; // Mail (core MailService), one per app lifetime
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
 let driveSyncTray = '';
 let driveOnDemandLocked = false; // letzter Status von gc-drive-sync: von Drive gestoppt?
@@ -999,6 +1011,22 @@ function initializeServices() {
     allowedHosts: () => [store.get('server.url', ''), portalUrl].map((u) => { try { return u ? new URL(u).hostname : null; } catch { return null; } }).filter(Boolean),
   }) : null;
 
+  // Mail: shown while the server lists the plugin and lets the person in;
+  // attachments open from %TEMP%\gatecontrol-mail, the offline cache lives in
+  // %APPDATA%\…\mail-cache (only under DPAPI), the Microsoft sign-in runs in
+  // the default browser.
+  mail = MailService ? new MailService({
+    apiClient, log, shell, dialog,
+    getMainWindow: () => mainWindow,
+    tempDir: () => path.join(app.getPath('temp'), 'gatecontrol-mail'),
+    cacheDir: () => path.join(app.getPath('userData'), 'mail-cache'),
+    protect: DriveService && typeof DriveService.safeStorageProtect === 'function' ? DriveService.safeStorageProtect(safeStorage) : null,
+    getLang: () => getLocale(),
+    pushClient: notifications?.pushClient,
+    // ein Klick auf eine Mail-Mitteilung öffnet die Mail auf der Mail-Seite
+    notificationCenter: notifications?.notificationCenter,
+  }) : null;
+
   // "Ordner sichern": folders of this PC backed up / synced with Drive. Runs
   // in the main process (tray), the state of each folder lives in
   // %APPDATA%\…\drive-sync (no tokens); deleted files go to the recycle bin.
@@ -1357,6 +1385,8 @@ function registerIpcHandlers() {
     drive,
     // drive:sync:* ("Ordner sichern"), reset on server:setup (core, opt-in with drive)
     driveSync,
+    // mail:* channels + events, reset on server:setup (core, opt-in)
+    mail,
     gatedropExplorer: gatedrop?.explorer,
     // drive-ondemand:* (Pro, ./ipc-pro.js)
     driveOnDemand,
@@ -1433,6 +1463,11 @@ app.on('ready', () => {
   school?.start();
   // Drive: availability check (the page shows while the server lists the plugin).
   drive?.start();
+  // Mail: pictures of the reading frame (gcmail:), availability, live events.
+  if (mail && protocol && typeof protocol.handle === 'function') {
+    try { protocol.handle(MailService.SCHEME, (req) => mail.handleProtocol(req)); } catch (err) { log.warn(`Mail protocol not registered: ${err.message}`); }
+  }
+  mail?.start();
   // "Ordner sichern": watches the folders, a full run shortly after start and every 15 min.
   driveSync?.start();
   // Drive „Dateien bei Bedarf“: startet gc-drive-sync.exe nur, wenn eingeschaltet.
@@ -1603,6 +1638,8 @@ app.on('before-quit', (e) => {
   chats?.stop();
   school?.stop();
   drive?.stop();
+  // Mail: a waiting Microsoft sign-in ends, the offline cache is written.
+  mail?.stop();
   driveSync?.stop();
   // gc-drive-sync.exe beenden (endet sonst mit dem Prozess über --parent-pid).
   driveOnDemand?.stop().catch(() => {});
