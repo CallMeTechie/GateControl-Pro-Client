@@ -2651,7 +2651,9 @@
       "saved": "Attachment saved",
       "unsafe": "This file type is not opened directly – please use “Save as …”.",
       "link": "Link",
-      "remove": "Remove “{{name}}”"
+      "remove": "Remove “{{name}}”",
+      "loading": "Loading …",
+      "stillLoading": "The attachment is still being loaded from the provider – please try again in a moment."
     },
     "drive": {
       "saveAs": "Save to Drive as",
@@ -2885,6 +2887,7 @@
       "exists": "This account exists already.",
       "links_disabled": "Share links are switched off in Drive."
     },
-    "bodyMissing": "The content of this mail is not on the server yet and is being loaded from the provider."
+    "bodyMissing": "The content is still being loaded from the provider …",
+    "picturesLoading": "Embedded pictures are loading …"
   }
 }

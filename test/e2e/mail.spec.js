@@ -46,6 +46,10 @@ test.describe('mail', () => {
 
     // menu: Alle Posteingänge, Zum Ablegen, two accounts
     await expect(root.locator('.ml-side .ml-acc')).toHaveCount(2);
+    // accounts as in the Outlook app (Mail 1.1.2): the Microsoft account's picture, GMX's mark, the address below the name
+    await expect(root.locator('.ml-side .ml-acc').nth(1).locator('.ml-av-face img')).toHaveAttribute('src', /^data:image\/png;base64,/);
+    await expect(root.locator('.ml-side .ml-acc').first().locator('.ml-av-face')).toHaveText('GMX');
+    await expect(root.locator('.ml-side .ml-acc').first().locator('.ml-it-mail')).toHaveText('max@gmx.de');
     await expect(root.locator('.ml-it.on')).toContainText(/Alle Posteingänge|All inboxes/);
     // Relevant: the newest first; Sonstige: the newsletter
     await expect(row(root, 101)).toBeVisible();

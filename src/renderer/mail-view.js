@@ -248,6 +248,66 @@
 		const lang = () => (o.getLocale && o.getLocale() === 'en' ? 'en' : 'de');
 		const toast = (msg, type) => { if (o.toast) o.toast(msg, type); };
 		const errText = (r) => MS.errorText(r, t, lang());
+		/** An attachment's failure: "still on its way from the provider" for busy (loading), else the code's text. */
+		const attErr = (r) => { const b = MS.busyRetry(r); return b && b.loading ? t('mail.att.stillLoading') : errText(r); };
+
+		// ── Account pictures (Mail 1.1.2) ────────────────
+
+		const avatarUrls = new Map();     // media id → data: URL
+		const avatarWaiting = new Map();  // media id → Promise<url | null>
+		const avatarFailed = new Map();   // media id → when it last failed (asked again after a minute)
+
+		function avatarUrl(mediaId) {
+			if (avatarUrls.has(mediaId)) return Promise.resolve(avatarUrls.get(mediaId));
+			if (avatarWaiting.has(mediaId)) return avatarWaiting.get(mediaId);
+			if (!api.avatar || Date.now() - (avatarFailed.get(mediaId) || 0) < 60000) return Promise.resolve(null);
+			const p = call(api.avatar(mediaId)).then((r) => {
+				avatarWaiting.delete(mediaId);
+				const url = r && r.ok && typeof r.url === 'string' && /^data:image\/(png|jpe?g|gif|webp|bmp|avif);base64,/.test(r.url) ? r.url : null;
+				if (url) avatarUrls.set(mediaId, url);
+				else avatarFailed.set(mediaId, Date.now());
+				return url;
+			});
+			avatarWaiting.set(mediaId, p);
+			return p;
+		}
+
+		/**
+		 * An account as the Outlook app shows it: round, its picture (Microsoft) or the provider's mark (own simple
+		 * signs, MS.accountMark), with a small dot in the account's colour.
+		 */
+		function avatarEl(a, size = 30, { dotted = true } = {}) {
+			const box = el('span', { class: 'ml-av', 'aria-hidden': 'true' });
+			box.style.width = `${size}px`;
+			box.style.height = `${size}px`;
+			const face = el('span', { class: 'ml-av-face' });
+			const mark = MS.accountMark(a);
+			face.style.background = mark.bg;
+			face.style.color = mark.fg;
+			if (mark.tiles) {
+				const g = el('span', { class: 'ml-av-tiles' });
+				for (const c of mark.tiles) { const q = el('span'); q.style.background = c; g.append(q); }
+				face.append(g);
+			} else {
+				face.textContent = mark.text;
+				face.style.fontSize = `${Math.round(size * (mark.small ? 0.3 : 0.46))}px`;
+			}
+			const picture = (url) => {
+				clear(face);
+				face.style.background = 'transparent';
+				face.append(el('img', { src: url, alt: '', draggable: 'false' }));
+			};
+			const media = a && a.avatar && a.avatar.mediaId;
+			if (media && avatarUrls.has(media)) picture(avatarUrls.get(media));
+			else if (media) avatarUrl(media).then((url) => { if (url) picture(url); });
+			box.append(face);
+			if (dotted) {
+				const d = el('span', { class: 'ml-av-dot' });
+				d.style.background = (a && a.color) || 'var(--faint)';
+				box.append(d);
+			}
+			return box;
+		}
 
 		const S = {
 			status: null,
@@ -396,6 +456,16 @@
 
 		api.onChanged && api.onChanged((c) => {
 			if (!S.loaded) return;
+			// Mail 1.1.2: the body, an attachment or an embedded picture of the open mail has come
+			const R = S.read;
+			if (c && R && R.message && !R.loading) {
+				if (R.message.bodyMissing && MS.bringsBody(c, R.message)) refreshBody(R.message.id);
+				if (c.messageId === R.message.id && c.attachmentId) {
+					const w = R.atts && R.atts.get(c.attachmentId);
+					if (w && !w.inFlight) w.run();
+					if (R.pics && R.pics.waiting.has(c.attachmentId)) reloadPictures(R);
+				}
+			}
 			const v = S.view;
 			if (!c || !c.accountId || v.kind !== 'box' || v.box === 'all' || v.box === c.accountId) reloadSoon();
 			else loadMe().then(renderMenu);
@@ -411,8 +481,20 @@
 				warn ? el('span', { class: 'ml-it-warn', title: t('mail.accountProblem') }, [icon('alert', 14)]) : null,
 				count ? el('span', { class: `ml-n${on ? ' on' : ''}`, text: count > 999 ? '999+' : String(count) }) : null,
 			]);
-			if (depth) b.style.paddingLeft = `${30 + depth * 14}px`;
+			if (depth) b.style.paddingLeft = `${50 + depth * 14}px`;
 			return b;
+		}
+
+		/** An account in the menu: its picture or mark, the name and below the address (like the Outlook app). */
+		function accountItem(a, { count, on, onClick }) {
+			const warn = a.state === 'auth_failed' || a.state === 'unreachable';
+			const sub = MS.accountSub(a);
+			return el('button', { type: 'button', class: `ml-it ml-it-acc${on ? ' on' : ''}`, 'aria-current': on ? 'page' : null, title: `${a.name} · ${a.email}`, on: { click: onClick } }, [
+				avatarEl(a, 30),
+				el('span', { class: 'ml-it-tx' }, [el('span', { class: 'ml-it-name', text: a.name }), sub ? el('span', { class: 'ml-it-mail', text: sub }) : null]),
+				warn ? el('span', { class: 'ml-it-warn', title: t('mail.accountProblem') }, [icon('alert', 14)]) : null,
+				count ? el('span', { class: `ml-n${on ? ' on' : ''}`, text: count > 999 ? '999+' : String(count) }) : null,
+			]);
 		}
 
 		function renderMenu() {
@@ -427,7 +509,7 @@
 			for (const a of me.accounts) {
 				const open = S.expanded.has(a.id) || (v.kind === 'box' && v.box === a.id);
 				const row = el('div', { class: 'ml-acc' }, [
-					menuItem({ label: a.name, color: a.color, count: (me.unread.byAccount || {})[String(a.id)] || 0, warn: a.state === 'auth_failed' || a.state === 'unreachable', title: `${a.name} · ${a.email}`, on: v.kind === 'box' && v.box === a.id && !v.folderId, onClick: () => go({ kind: 'box', box: a.id, folderId: null }) }),
+					accountItem(a, { count: (me.unread.byAccount || {})[String(a.id)] || 0, on: v.kind === 'box' && v.box === a.id && !v.folderId, onClick: () => go({ kind: 'box', box: a.id, folderId: null }) }),
 					el('button', { type: 'button', class: `ml-fold${open ? ' open' : ''}`, 'aria-expanded': open ? 'true' : 'false', 'aria-label': t('mail.folders', { name: a.name }), on: { click: () => { if (open) S.expanded.delete(a.id); else S.expanded.add(a.id); if (open && v.kind === 'box' && v.box === a.id) S.expanded.delete(a.id); renderMenu(); } } }, [icon('chevDown', 14)]),
 				]);
 				side.append(row);
@@ -700,16 +782,81 @@
 				if (fromPush) toast(errText(r), 'error');
 				return;
 			}
-			S.read = { message: r.message, doc: r.doc, offline: !!r.offline, ai: null, thread: null, suggest: new Map() };
+			S.read = { message: r.message, doc: r.doc, offline: !!r.offline, ai: null, thread: null, suggest: new Map(), atts: new Map(), attEls: new Map(), pics: null };
 			const row = S.items.find((m) => m.id === id);
 			if (row && row.unread) { row.unread = false; renderList(); loadMe().then(renderMenu); }
 			renderPane();
 			if (r.offline) return;
-			const acc = MS.accountOf(S.me, r.message.accountId);
-			if (has('ai') && (!acc || acc.ai)) loadAi(seq, id);
-			if (S.me && S.me.settings.threads && r.message.threadCount > 1 && r.message.threadId) loadThread(seq, r.message.threadId, id);
-			if (has('drive')) loadSuggestions(seq, r.message);
+			// a body the provider has not sent yet: AI, conversation and Drive once it is there (refreshBody)
+			if (r.message.bodyMissing) { S.read.later = true; return; }
+			loadExtras(seq, r.message);
 		}
+
+		function loadExtras(seq, m) {
+			const acc = MS.accountOf(S.me, m.accountId);
+			if (has('ai') && (!acc || acc.ai)) loadAi(seq, m.id);
+			if (S.me && S.me.settings.threads && m.threadCount > 1 && m.threadId) loadThread(seq, m.threadId, m.id);
+			if (has('drive')) loadSuggestions(seq, m);
+		}
+
+		/** The open mail again (its body has come: the live event, or "Erneut versuchen"); not marked read again. */
+		async function refreshBody(id) {
+			const R = S.read;
+			if (!R || !R.message || R.message.id !== id || R.bodyBusy) return;
+			const seq = S.readSeq;
+			R.bodyBusy = true;
+			renderPane();
+			const r = await call(api.message(id, { markRead: false }));
+			if (seq !== S.readSeq || S.read !== R) return;
+			R.bodyBusy = false;
+			if (r && r.ok) {
+				R.message = r.message;
+				R.doc = r.doc;
+				R.offline = !!r.offline;
+			}
+			renderPane();
+			if (r && r.ok && R.later && !r.message.bodyMissing && !r.offline) {
+				R.later = false;
+				loadExtras(seq, r.message);
+			}
+		}
+
+		// ── Embedded pictures the provider still sends (cid, 409 busy) ──
+
+		function setPicsNote(R, on) {
+			R.pics.show = on;
+			if (R.picsNote) R.picsNote.hidden = !on;
+		}
+
+		/** The frame asks for its pictures again (those it has are kept by the core). */
+		function reloadPictures(R) {
+			if (!R || !R.pics) return;
+			clearTimeout(R.pics.timer);
+			R.pics.timer = null;
+			R.pics.waiting.clear();
+			setPicsNote(R, false);
+			if (R.frame && R.frame.isConnected) R.frame.srcdoc = R.doc;
+		}
+
+		/** mail:loading { messageId, attachmentId, retryAfter }: asked again after retryAfter (a few times) or with the live event. */
+		function onPictureLoading(x) {
+			const R = S.read;
+			if (!R || !R.message || !x || x.messageId !== R.message.id) return;
+			if (!R.pics) R.pics = { waiting: new Set(), tries: 0, timer: null, show: false };
+			const P = R.pics;
+			if (x.attachmentId) P.waiting.add(x.attachmentId);
+			if (P.tries >= MS.BUSY_RETRIES) { setPicsNote(R, false); return; }
+			setPicsNote(R, true);
+			if (P.timer) return;
+			const wait = Math.min(60, Math.max(1, Number(x.retryAfter) || 5)) * 1000;
+			P.timer = setTimeout(() => {
+				P.timer = null;
+				if (S.read !== R) return;
+				P.tries++;
+				reloadPictures(R);
+			}, wait);
+		}
+		api.onLoading && api.onLoading(onPictureLoading);
 
 		async function loadAi(seq, id) {
 			let r = await call(api.ai(id));
@@ -814,15 +961,20 @@
 			}
 			// the older mails of the conversation
 			for (const old of R.thread || []) scroll.append(threadCard(old));
-			if (m.bodyMissing && !m.html && !m.text) {
-				// the body is not in the server's copy yet (the provider did not give it now)
+			if (m.bodyMissing) {
+				// the provider has not sent the body yet (the snippet below): it comes with the live event
 				scroll.append(el('div', { class: 'ml-banner is-info' }, [
 					icon('clock', 15),
 					el('span', { class: 'ml-grow', text: t('mail.bodyMissing') }),
-					el('button', { type: 'button', class: 'btn btn-sec btn-xs', text: t('mail.retry'), on: { click: () => openMessage(m.id) } }),
+					el('button', { type: 'button', class: 'btn btn-sec btn-xs', text: R.bodyBusy ? t('mail.loading') : t('mail.retry'), disabled: R.bodyBusy || null, on: { click: () => refreshBody(m.id) } }),
 				]));
-			} else {
-				scroll.append(el('div', { class: 'ml-frame-wrap' }, [mailFrame(R.doc, { title: m.subject || t('mail.noSubject') })]));
+			}
+			R.picsNote = el('div', { class: 'ml-read-note', hidden: !(R.pics && R.pics.show) }, [icon('image', 13), el('span', { text: t('mail.picturesLoading') })]);
+			scroll.append(R.picsNote);
+			R.frame = null;
+			if (!m.bodyMissing || m.html || m.text) {
+				R.frame = mailFrame(R.doc, { title: m.subject || t('mail.noSubject') });
+				scroll.append(el('div', { class: 'ml-frame-wrap' }, [R.frame]));
 			}
 			const notes = [];
 			if (m.trackers > 0) notes.push(t('mail.trackers', { count: m.trackers }));
@@ -890,6 +1042,9 @@
 		}
 
 		function attCard(m, a, R) {
+			const attSub = el('span', { class: 'ml-sub' });
+			if (R.attEls) R.attEls.set(a.id, attSub);
+			attLabel(R, a);
 			const ft = MS.fileTag(a.name, a.mime);
 			const tag = el('span', { class: 'ml-ftag', text: ft.tag });
 			const [bg, fg] = TONE[ft.tone] || TONE.muted;
@@ -898,7 +1053,7 @@
 			const card = el('div', { class: 'ml-card ml-att' });
 			card.append(el('div', { class: 'ml-att-top' }, [
 				tag,
-				el('span', { class: 'ml-att-tx' }, [el('span', { class: 'ml-att-name', text: a.name, title: a.name }), el('span', { class: 'ml-sub', text: MS.bytes(a.size, lang()) })]),
+				el('span', { class: 'ml-att-tx' }, [el('span', { class: 'ml-att-name', text: a.name, title: a.name }), attSub]),
 				el('button', { type: 'button', class: 'ml-ib', title: t('mail.att.open'), 'aria-label': t('mail.att.open'), on: { click: () => openAtt(m, a) } }, [icon('open', 15)]),
 				el('button', { type: 'button', class: 'ml-ib', title: t('mail.att.save'), 'aria-label': t('mail.att.save'), on: { click: () => saveAtt(m, a) } }, [icon('down', 15)]),
 			]));
@@ -951,17 +1106,48 @@
 			if (allow === 'sender') toast(t('mail.images.senderDone', { sender: MS.senderName(m.from, t) }), 'success');
 		}
 
+		/** The size below an attachment's name, "Wird gerade geladen …" while it is fetched or still on its way. */
+		function attLabel(R, a) {
+			const e = R && R.attEls && R.attEls.get(a.id);
+			if (e) e.textContent = R.atts && R.atts.has(a.id) ? t('mail.att.loading') : MS.bytes(a.size, lang());
+		}
+
+		/**
+		 * Opens an attachment. While the provider still sends it (409 busy, reason 'loading') it shows "Wird gerade
+		 * geladen …" and asks again after retryAfter (MS.BUSY_RETRIES times) or at once with the live event.
+		 */
 		async function openAtt(m, a) {
-			const r = await call(api.openAttachment(m.id, a.id, { name: a.name, mime: a.mime }));
-			if (r && r.ok) return;
-			if (r && r.code === 'unsafe') { toast(t('mail.att.unsafe'), 'error'); return; }
-			toast(errText(r), 'error');
+			const R = S.read;
+			if (!R || !R.atts || R.atts.has(a.id)) return;
+			const w = { tries: 0, timer: null, inFlight: false, run: null };
+			w.run = async () => {
+				clearTimeout(w.timer);
+				w.timer = null;
+				w.inFlight = true;
+				const r = await call(api.openAttachment(m.id, a.id, { name: a.name, mime: a.mime }));
+				w.inFlight = false;
+				if (S.read !== R) return;
+				const b = MS.busyRetry(r);
+				if (b && b.loading && w.tries < MS.BUSY_RETRIES) {
+					w.tries++;
+					w.timer = setTimeout(w.run, b.waitMs);
+					return;
+				}
+				R.atts.delete(a.id);
+				attLabel(R, a);
+				if (r && r.ok) return;
+				if (r && r.code === 'unsafe') { toast(t('mail.att.unsafe'), 'error'); return; }
+				toast(attErr(r), 'error');
+			};
+			R.atts.set(a.id, w);
+			attLabel(R, a);
+			w.run();
 		}
 
 		async function saveAtt(m, a) {
 			const r = await call(api.saveAttachment(m.id, a.id, { name: a.name }));
 			if (r && r.ok) toast(t('mail.att.saved'), 'success');
-			else if (r && r.code !== 'cancelled') toast(errText(r), 'error');
+			else if (r && r.code !== 'cancelled') toast(attErr(r), 'error');
 		}
 
 		async function pickDriveFolder(title) {
@@ -977,7 +1163,7 @@
 				folderId = p.folderId;
 			}
 			const r = await call(api.saveToDrive(m.id, a.id, { folderId, remember: opts.remember === true }));
-			if (!r || !r.ok) { toast(errText(r), 'error'); return; }
+			if (!r || !r.ok) { toast(attErr(r), 'error'); return; }
 			a.savedTo = r.savedTo;
 			toast(t('mail.drive.savedIn', { where: r.savedTo.where || '' }), 'success');
 			const row = S.items.find((x) => x.id === m.id);
@@ -1500,8 +1686,15 @@
 			const accs = (S.me && S.me.accounts) || [];
 			const from = el('select', { class: 'ml-from', 'aria-label': t('mail.compose.from') });
 			for (const a of accs) from.append(el('option', { value: String(a.id), text: `${a.email} · ${a.name}`, selected: a.id === C.accountId || null }));
-			const fromDot = dot((MS.accountOf(S.me, C.accountId) || {}).color);
-			from.addEventListener('change', () => { C.accountId = Number(from.value); fromDot.style.background = (MS.accountOf(S.me, C.accountId) || {}).color || ''; renderComposeParts(); scheduleSave(); });
+			let fromAv = avatarEl(MS.accountOf(S.me, C.accountId), 22, { dotted: false });
+			from.addEventListener('change', () => {
+				C.accountId = Number(from.value);
+				const next = avatarEl(MS.accountOf(S.me, C.accountId), 22, { dotted: false });
+				fromAv.replaceWith(next);
+				fromAv = next;
+				renderComposeParts();
+				scheduleSave();
+			});
 			const subj = el('input', { type: 'text', class: 'ml-subj-in', value: C.subject, 'aria-label': t('mail.compose.subject'), maxlength: '998' });
 			subj.addEventListener('input', () => { C.subject = subj.value; scheduleSave(); });
 			const sendBtn = el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: () => send(null) } }, [icon('send', 15), el('span', { text: t('mail.compose.send') })]);
@@ -1525,7 +1718,7 @@
 				el('button', { type: 'button', class: 'ml-ib', title: t('mail.compose.close'), 'aria-label': t('mail.compose.close'), on: { click: () => leaveCompose() } }, [icon('close', 16)]),
 			]);
 			const fields = el('div', { class: 'ml-fields' });
-			fields.append(el('div', { class: 'ml-f' }, [el('span', { class: 'ml-f-k', text: t('mail.compose.from') }), fromDot, from]));
+			fields.append(el('div', { class: 'ml-f' }, [el('span', { class: 'ml-f-k', text: t('mail.compose.from') }), fromAv, from]));
 			const toRow = recipientField('to', t('mail.compose.to'));
 			if (!C.showCc) toRow.append(el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('mail.compose.ccBcc'), on: { click: () => { flushRecipients(); C.showCc = true; renderPane(); } } }));
 			fields.append(toRow);
@@ -1763,7 +1956,7 @@
 			}
 			dlg.body.append(el('div', { class: 'lbl', text: t('mail.accountsLabel') }));
 			for (const a of me.accounts) {
-				dlg.body.append(el('button', { type: 'button', class: 'ml-pick-row', on: { click: () => { dlg.close(); openAccount(a); } } }, [dot(a.color), el('span', { class: 'ml-att-tx' }, [el('span', { class: 'ml-att-name', text: a.name }), el('span', { class: 'ml-sub', text: `${a.email} · ${t(`mail.state.${a.state}`)}` })]), icon('chevron', 14)]));
+				dlg.body.append(el('button', { type: 'button', class: 'ml-pick-row', on: { click: () => { dlg.close(); openAccount(a); } } }, [avatarEl(a, 32), el('span', { class: 'ml-att-tx' }, [el('span', { class: 'ml-att-name', text: a.name }), el('span', { class: 'ml-sub', text: `${a.email} · ${t(`mail.state.${a.state}`)}` })]), icon('chevron', 14)]));
 			}
 			dlg.body.append(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { dlg.close(); openAddAccount(); } } }, [icon('plus', 14), el('span', { text: t('mail.addAccount') })]));
 			dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.close'), on: { click: () => dlg.close() } }));
@@ -1785,7 +1978,10 @@
 			sig.value = a.signature || '';
 			sig.addEventListener('input', () => { patch.signature = sig.value; });
 			dlg.body.append(
-				el('div', { class: 'ml-sub', text: `${a.email} · ${t(`mail.state.${a.state}`)}` }),
+				el('div', { class: 'ml-acc-head' }, [
+					avatarEl(a, 48),
+					el('span', { class: 'ml-att-tx' }, [el('span', { class: 'ml-att-name', text: a.name }), el('span', { class: 'ml-sub', text: `${a.email} · ${t(`mail.state.${a.state}`)}` })]),
+				]),
 				field(t('mail.add.name'), name),
 				colors,
 				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow', text: t('mail.add.kind') }), seg([['personal', t('mail.kind.personal')], ['business', t('mail.kind.business')]], a.kind, (v) => { patch.kind = v; }, t('mail.add.kind'))]),

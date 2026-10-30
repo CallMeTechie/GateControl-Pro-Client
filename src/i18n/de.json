@@ -2651,7 +2651,9 @@
       "saved": "Anhang gespeichert",
       "unsafe": "Dieser Dateityp wird nicht direkt geöffnet – bitte „Speichern unter …“ nutzen.",
       "link": "Link",
-      "remove": "„{{name}}“ entfernen"
+      "remove": "„{{name}}“ entfernen",
+      "loading": "Wird gerade geladen …",
+      "stillLoading": "Der Anhang wird noch vom Anbieter geladen – bitte gleich noch einmal versuchen."
     },
     "drive": {
       "saveAs": "In Drive speichern als",
@@ -2885,6 +2887,7 @@
       "exists": "Das Konto gibt es schon.",
       "links_disabled": "Freigabe-Links sind in Drive ausgeschaltet."
     },
-    "bodyMissing": "Der Inhalt dieser Mail liegt noch nicht auf dem Server und wird vom Anbieter geladen."
+    "bodyMissing": "Der Inhalt wird noch vom Anbieter geladen …",
+    "picturesLoading": "Eingebettete Bilder werden gerade geladen …"
   }
 }
