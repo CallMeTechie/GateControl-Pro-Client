@@ -411,6 +411,57 @@
 	};
 
 	/** The text of a failed answer ({ code, detail }); the server's hint for a refused login. */
+	// ── Accounts as the Outlook app shows them (Mail 1.1.2) ─────
+
+	/** Microsoft's four squares, drawn by the page (no logo file). */
+	const MS_TILES = ['#F25022', '#7FBA00', '#00A4EF', '#FFB900'];
+	const ACCOUNT_MARKS = {
+		outlook: { text: 'O', bg: '#0F6CBD', fg: '#FFFFFF' },
+		m365: { text: '', bg: '#F3F4F6', fg: '#1A1D22', tiles: MS_TILES },
+		gmail: { text: 'G', bg: '#FFFFFF', fg: '#EA4335' },
+		gmx: { text: 'GMX', bg: '#1C449B', fg: '#FFFFFF', small: true },
+		webde: { text: 'W', bg: '#FFD800', fg: '#1A1D22' },
+		tonline: { text: 'T', bg: '#E20074', fg: '#FFFFFF' },
+	};
+
+	/**
+	 * The round mark of an account without a picture: own simple signs in the provider's colour ("O", four squares,
+	 * "G", "GMX", "W", "T"), else "@" in the account's colour → { text, bg, fg, tiles?, small? }.
+	 */
+	function accountMark(account) {
+		const m = account && ACCOUNT_MARKS[account.provider];
+		if (m) return { ...m };
+		return { text: '@', bg: (account && account.color) || '#79B8FF', fg: '#0D1015' };
+	}
+
+	/** The address below the name (none when the name is the address). */
+	function accountSub(account) {
+		if (!account || !account.email) return null;
+		return str(account.name).trim().toLowerCase() === account.email.toLowerCase() ? null : account.email;
+	}
+
+	// ── Loading later (Mail 1.1.2) ───────────────────────────
+
+	/** How often an attachment or embedded picture still on its way is asked for again by itself. */
+	const BUSY_RETRIES = 3;
+
+	/**
+	 * A failure `{ ok: false, code: 'busy', detail: { reason, retryAfter } }` → { loading, waitMs } (retryAfter 1…60 s,
+	 * 5 without one); null for anything else.
+	 */
+	function busyRetry(r) {
+		if (!r || r.ok !== false || r.code !== 'busy') return null;
+		const d = r.detail && typeof r.detail === 'object' ? r.detail : {};
+		const s = Number.isFinite(d.retryAfter) ? Math.round(d.retryAfter) : 5;
+		return { loading: d.reason === 'loading', waitMs: Math.min(60, Math.max(1, s)) * 1000 };
+	}
+
+	/** Whether a live event (mail:changed) brings the body of the open mail (its id, or its conversation's). */
+	function bringsBody(changed, message) {
+		if (!changed || !message) return false;
+		return (!!changed.messageId && changed.messageId === message.id) || (!!changed.threadId && changed.threadId === message.threadId);
+	}
+
 	function errorText(r, t, lang) {
 		const code = str(r && r.code);
 		const hint = r && r.detail && r.detail.hint ? (lang === 'en' ? r.detail.hint.en || r.detail.hint.de : r.detail.hint.de || r.detail.hint.en) : null;
@@ -458,6 +509,11 @@
 		providerRows,
 		freeColor,
 		quotaView,
+		accountMark,
+		accountSub,
+		BUSY_RETRIES,
+		busyRetry,
+		bringsBody,
 		errorText,
 	};
 });

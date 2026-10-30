@@ -16,6 +16,39 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 const t = (key, params) => (params ? `${key}(${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(',')})` : key);
 
 describe('mail-state', () => {
+  it('accounts as in the Outlook app: the provider\'s mark without a picture, the address below the name', () => {
+    assert.deepEqual(MS.accountMark({ provider: 'outlook' }), { text: 'O', bg: '#0F6CBD', fg: '#FFFFFF' });
+    assert.deepEqual(MS.accountMark({ provider: 'm365' }).tiles, ['#F25022', '#7FBA00', '#00A4EF', '#FFB900']);
+    assert.equal(MS.accountMark({ provider: 'gmail' }).text, 'G');
+    assert.equal(MS.accountMark({ provider: 'gmx' }).text, 'GMX');
+    assert.equal(MS.accountMark({ provider: 'webde' }).text, 'W');
+    assert.equal(MS.accountMark({ provider: 'tonline' }).text, 'T');
+    assert.deepEqual(MS.accountMark({ provider: 'imap', color: '#B79CFF' }), { text: '@', bg: '#B79CFF', fg: '#0D1015' });
+    assert.equal(MS.accountMark(null).text, '@');
+    const m = MS.accountMark({ provider: 'gmail' });
+    m.text = 'x';
+    assert.equal(MS.accountMark({ provider: 'gmail' }).text, 'G', 'a copy');
+    assert.equal(MS.accountSub({ name: 'Firma', email: 'max@firma.de' }), 'max@firma.de');
+    assert.equal(MS.accountSub({ name: 'Max@Firma.de', email: 'max@firma.de' }), null, 'no name: the address once');
+    assert.equal(MS.accountSub(null), null);
+  });
+
+  it('loading later (Mail 1.1.2): busy with retryAfter, the event of the open mail', () => {
+    assert.deepEqual(MS.busyRetry({ ok: false, code: 'busy', detail: { reason: 'loading', retryAfter: 5 } }), { loading: true, waitMs: 5000 });
+    assert.deepEqual(MS.busyRetry({ ok: false, code: 'busy' }), { loading: false, waitMs: 5000 });
+    assert.deepEqual(MS.busyRetry({ ok: false, code: 'busy', detail: { retryAfter: 900 } }), { loading: false, waitMs: 60000 });
+    assert.equal(MS.busyRetry({ ok: false, code: 'not_found' }), null);
+    assert.equal(MS.busyRetry({ ok: true }), null);
+    assert.equal(MS.busyRetry(null), null);
+    assert.ok(MS.BUSY_RETRIES >= 1 && MS.BUSY_RETRIES <= 5);
+    const m = { id: 42, threadId: 9 };
+    assert.equal(MS.bringsBody({ messageId: 42 }, m), true);
+    assert.equal(MS.bringsBody({ messageId: null, threadId: 9 }, m), true);
+    assert.equal(MS.bringsBody({ accountId: 1, folderId: 10, messageId: null, threadId: null }, m), false);
+    assert.equal(MS.bringsBody({ messageId: 43 }, { id: 42, threadId: null }), false);
+    assert.equal(MS.bringsBody(null, m), false);
+  });
+
   it('times of the list: today, yesterday, this week, this year, older', () => {
     const now = new Date(2026, 10, 4, 10, 0).getTime();   // Wed 4.11.2026
     assert.equal(MS.timeLabel(new Date(2026, 10, 4, 9, 42).getTime(), now, 'de', t), '09:42');
