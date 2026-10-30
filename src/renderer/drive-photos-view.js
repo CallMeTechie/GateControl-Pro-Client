@@ -11,6 +11,8 @@
  * ZIP, move them, share one link or delete them. "Alben": the albums one can see (cover, count, area, photo frame),
  * new album, rename, delete (the photos stay), photos out of an album, the
  * cover, and the switch "Im Fotorahmen zeigen" for those one may change.
+ * Drive 1.14 'photoSearch': a search field above the timeline finds photos by what is on them (the labels the
+ * phones recognised, GET photos?q=) with the chips of the hits ("+ Meer") and how many there are.
  *
  * Mounted by drive-view.js (it hands over el / icon / clear / openDialog and
  * what it knows: me, the areas, opening a folder or a file). Data:
@@ -67,6 +69,10 @@
 			sel: new Set(),
 			last: null,
 			seq: 0,
+			// Drive 1.14 'photoSearch': the words searched, the chips of the hits, their number
+			query: '',
+			terms: [],
+			total: null,
 		};
 		const previews = new Map();
 		const limit = PS.limiter(6);
@@ -92,6 +98,16 @@
 		if (moreObs) moreObs.observe(sentinel);
 
 		const feats = () => PS.features(o.getMe());
+		const KS = () => root.GCDriveKiState || null;
+		const canSearch = () => { const me = o.getMe(); return !!KS() && !!(me && Array.isArray(me.features) && me.features.includes('photoSearch')); };
+		const qInput = el('input', { type: 'search', class: 'dv-input dpv-q', maxlength: '100', spellcheck: 'false' });
+		let qTimer = null;
+		const search = (q) => { clearTimeout(qTimer); const v = String(q || '').trim(); if (v === P.query) return; P.query = v; clearSel(); loadTimeline(); };
+		qInput.addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(() => search(qInput.value), 400); });
+		qInput.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter') search(qInput.value);
+			else if (e.key === 'Escape' && qInput.value) { e.preventDefault(); e.stopPropagation(); qInput.value = ''; search(''); }
+		});
 
 		// ── Loading ──────────────────────────────────────
 		async function loadTimeline({ before = null } = {}) {
@@ -102,6 +118,21 @@
 			P.next = null;
 			render();
 			const area = P.area || null;
+			if (P.query && canSearch()) {
+				const r = await Promise.resolve(api.photos({ area, before, limit: PS.PAGE, q: P.query })).catch(fail);
+				if (seq !== P.seq) return;
+				P.loading = false;
+				if (!r || !r.ok) { P.error = r; render(); return; }
+				P.items = r.items;
+				P.next = r.next;
+				P.terms = r.terms || [];
+				P.total = typeof r.total === 'number' ? r.total : null;
+				P.months = [];
+				P.memories = [];
+				render();
+				return;
+			}
+			P.query = '';
 			const [page, months, mem] = await Promise.all([
 				Promise.resolve(api.photos({ area, before, limit: PS.PAGE })).catch(fail),
 				Promise.resolve(api.photoMonths(area)).catch(fail),
@@ -127,7 +158,7 @@
 			const seq = P.seq;
 			const r = inAlbum
 				? await Promise.resolve(api.album(P.album.album.id, { before: cursor, limit: PS.PAGE })).catch(fail)
-				: await Promise.resolve(api.photos({ area: P.area || null, before: cursor, limit: PS.PAGE })).catch(fail);
+				: await Promise.resolve(api.photos({ area: P.area || null, before: cursor, limit: PS.PAGE, ...(P.query ? { q: P.query } : {}) })).catch(fail);
 			loadingMore = false;
 			if (seq !== P.seq) return;
 			if (!r || !r.ok) { toast(err(r), 'error'); return; }
@@ -302,6 +333,14 @@
 			tab('timeline', t('drive.photos.timeline'));
 			if (f.albums) tab('albums', t('drive.photos.albums'));
 			head.append(el('h2', { class: 'dsv-h', text: t('drive.photos.title') }), tabs, el('span', { class: 'dv-grow' }));
+			if (P.tab === 'timeline' && canSearch()) {
+				const focused = document.activeElement === qInput;
+				qInput.placeholder = t('drive.ki.photos.placeholder');
+				qInput.setAttribute('aria-label', t('drive.ki.photos.label'));
+				if (qInput.value.trim() !== P.query && !focused) qInput.value = P.query;
+				head.appendChild(el('label', { class: 'dv-search dpv-search' }, [icon('search', 15), qInput]));
+				if (focused) qInput.focus();
+			}
 			if (P.tab === 'timeline') {
 				const areaId = nextId('dpv-area');
 				const sel = el('select', { id: areaId, class: 'dv-input dpv-select', 'aria-label': t('drive.photos.area') });
@@ -309,7 +348,7 @@
 				sel.value = P.area;
 				sel.addEventListener('change', () => { P.area = sel.value; clearSel(); loadTimeline(); });
 				head.appendChild(sel);
-				if (P.months.length > 1) {
+				if (P.months.length > 1 && !P.query) {
 					const jump = el('select', { class: 'dv-input dpv-select', 'aria-label': t('drive.photos.jump') });
 					jump.appendChild(el('option', { value: '', text: t('drive.photos.jump') }));
 					for (const m of P.months) jump.appendChild(el('option', { value: m.month, text: `${PS.monthLabel(m.month, locale())} (${m.count})` }));
@@ -343,7 +382,23 @@
 			renderTimeline();
 		}
 
+		/** Drive 1.14: the hits of a photo search — chips, how many, the photos, where the labels come from. */
+		function renderSearch() {
+			const chips = el('div', { class: 'dv-ki-chips dpv-chips', role: 'group', 'aria-label': t('drive.ki.photos.chips') });
+			for (const c of KS().photoChips(P.query, P.terms)) {
+				chips.appendChild(el('button', { type: 'button', class: `dv-chip${c.on ? ' is-on' : ''}`, 'aria-pressed': c.on ? 'true' : 'false', 'data-term': c.term, text: c.label, on: { click: () => { const q = KS().photoToggle(P.query, c.term); qInput.value = q; search(q); } } }));
+			}
+			body.appendChild(chips);
+			const n = P.total !== null ? P.total : P.items.length;
+			body.appendChild(el('div', { class: 'dpv-month-h dpv-hits' }, [el('span', { class: 'dpv-month-name', text: DSPlural('drive.photos.count', n) }), el('span', { class: 'dpv-month-n', text: t('drive.ki.photos.source') })]));
+			if (!P.items.length) body.appendChild(el('div', { class: 'dv-empty' }, [icon('image', 28, '1.6'), el('span', { text: t('drive.ki.photos.none') })]));
+			else body.appendChild(grid(P.items));
+			moreFoot(P.next);
+			body.appendChild(el('p', { class: 'dv-ki-note dpv-search-note', text: t('drive.ki.photos.note') }));
+		}
+
 		function renderTimeline() {
+			if (P.query && canSearch()) { renderSearch(); return; }
 			const mem = PS.memoriesView(P.memories, { t, locale: locale() });
 			if (mem.length) {
 				const strip = el('section', { class: 'dpv-mem card' }, [el('div', { class: 'dpv-mem-h' }, [icon('history', 16), el('b', { text: t('drive.photos.memories') })])]);

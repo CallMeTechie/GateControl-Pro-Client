@@ -626,6 +626,8 @@
 		hello_retries: 'helloRetries', hello_unavailable: 'helloUnavailable', hello_failed: 'helloFailed',
 		// Drive 1.12: jobs for many at once
 		too_many: 'tooMany', too_many_jobs: 'tooManyJobs', job_limit: 'tooManyJobs', into_itself: 'intoItself', http_413: 'quota', insufficient_storage: 'quota',
+		// Drive 1.14: the family calendar, "In Dokument umwandeln"
+		familie_unavailable: 'familieUnavailable', not_picture: 'notPicture', no_language: 'noOcr',
 	};
 
 	/** The text of a failed answer ({ ok: false, code }) — Drive's codes and those of the plugins passing them on. */

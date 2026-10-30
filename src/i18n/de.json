@@ -1250,7 +1250,10 @@
       "helloFailed": "Windows Hello hat nicht bestätigt.",
       "tooMany": "Das sind zu viele auf einmal – bitte in kleineren Teilen.",
       "tooManyJobs": "Es laufen schon mehrere Aufträge – bitte warte, bis einer fertig ist.",
-      "intoItself": "Ein Ordner kann nicht in sich selbst."
+      "intoItself": "Ein Ordner kann nicht in sich selbst.",
+      "familieUnavailable": "Der Familienkalender ist gerade nicht erreichbar (Familie fehlt oder hat abgelehnt).",
+      "notPicture": "Nur Bilder lassen sich in ein Dokument umwandeln.",
+      "noOcr": "Auf diesem PC ist keine Sprache für die Texterkennung installiert."
     },
     "sync": {
       "title": "Ordner sichern",
@@ -2006,6 +2009,8 @@
         "payment": "Zahlungsfrist",
         "cancellation": "Kündigungsfrist",
         "objection": "Widerspruchsfrist",
+        "warranty": "Garantieende",
+        "renewal": "Vertragsverlängerung",
         "other": "Frist"
       },
       "today": "heute",
@@ -2388,6 +2393,127 @@
         "none": "Keine",
         "allLabel": "Alle aus {{month}} auswählen",
         "noneLabel": "Keine aus {{month}} auswählen"
+      }
+    },
+    "ki": {
+      "dl": {
+        "tag": {
+          "payment": "Zahlung",
+          "cancellation": "Kündigung",
+          "objection": "Widerspruch",
+          "warranty": "Garantieende",
+          "renewal": "Vertragsverlängerung",
+          "other": "Frist"
+        },
+        "cancelBy": "kündigen bis {{day}}",
+        "toCalendar": "In den Familienkalender",
+        "inCalendar": "Im Familienkalender",
+        "added": "In den Familienkalender eingetragen",
+        "note": "Aus deinen Dokumenten erkannt · nur Dateien, die du lesen darfst"
+      },
+      "file": {
+        "region": "Ablagevorschlag",
+        "suggestion": "Vorschlag",
+        "as": "Ablegen als",
+        "in": "in",
+        "remind": "An die Zahlung am {{day}} erinnern",
+        "take": "Übernehmen",
+        "other": "Anderer Ordner",
+        "otherTitle": "Ablegen in …",
+        "dismiss": "Vorschlag verwerfen",
+        "done": "Abgelegt"
+      },
+      "scan": {
+        "menu": "In Dokument umwandeln …",
+        "menuMany": "In ein Dokument umwandeln ({{count}} Seiten) …",
+        "title": "Scan prüfen",
+        "reading": "Scan wird gelesen und ausgewertet …",
+        "pages": "{{count}} Seiten",
+        "recognised": "Erkannt: {{kind}}",
+        "unknown": "Nicht erkannt",
+        "kind": {
+          "printed": "Gedruckter Text",
+          "handwriting": "Handschrift",
+          "table": "Tabelle",
+          "whiteboard": "Whiteboard",
+          "other": "Nur Bild"
+        },
+        "words": "{{count}} Wörter erkannt",
+        "ask": {
+          "pdf": "Als durchsuchbares PDF ablegen?",
+          "docx": "Als Word-Datei mit Gliederung ablegen?",
+          "xlsx": "Als Excel-Datei ablegen?",
+          "image": "Nichts erkannt – als Bild behalten?"
+        },
+        "format": {
+          "label": "Format",
+          "pdf": "PDF",
+          "docx": "Word",
+          "xlsx": "Excel",
+          "image": "Nur Bild"
+        },
+        "preview": {
+          "label": "Vorschau",
+          "pdf": "Das Bild bleibt, darüber liegt der erkannte Text unsichtbar: durchsuchbar und kopierbar.",
+          "pdfLocal": "Das Bild bleibt, darüber liegt der erkannte Text unsichtbar: durchsuchbar und kopierbar. Ohne KI, auf diesem PC.",
+          "xlsx": "Zahlen als Zahlen, Datum als Datum, Kopfzeile fixiert. Eine Summenzeile wird als Formel angelegt.",
+          "image": "Wie bisher: nur das Bild.",
+          "docx": {
+            "printed": "Der erkannte Text als Word-Dokument.",
+            "handwriting": "Der abgeschriebene Text als Word-Dokument, der Scan als letzte Seite.",
+            "table": "Die Tabelle steht als Word-Tabelle im Dokument.",
+            "whiteboard": "Überschriften, Stichpunkte und Aufgaben als Liste; das bereinigte Foto steht obenauf. Eingekreistes wird zu „Offen“."
+          }
+        },
+        "cost": {
+          "none": "Nichts wird ausgewertet.",
+          "local": "Erkannt auf diesem PC, ohne KI.",
+          "ai": "Ausgewertet über den KI-Anbieter deines GateControl."
+        },
+        "save": {
+          "pdf": "Als PDF speichern",
+          "docx": "Als Word-Datei speichern",
+          "xlsx": "Als Excel-Datei speichern",
+          "image": "Bild speichern"
+        },
+        "name": "Name",
+        "noName": "Bitte einen Namen eingeben.",
+        "folder": "Ablegen in",
+        "folderTitle": "Ablegen in …",
+        "change": "Ändern",
+        "keep": "Original-Scan behalten",
+        "saved": "Gespeichert: {{name}}"
+      },
+      "ask": {
+        "modes": "Suchen oder fragen",
+        "mode": {
+          "files": "Dateien",
+          "ask": "Fragen"
+        },
+        "placeholder": "Frage an deine Dokumente …",
+        "title": "Frage: „{{q}}“",
+        "sub": "Antwort nur aus deinen Dateien",
+        "loading": "Drive sucht in deinen Dateien …",
+        "limited": "Gerade zu viele Fragen – bitte versuch es später noch einmal.",
+        "nothing": "Dazu habe ich in deinen Dateien nichts gefunden.",
+        "searched": "Gesucht nach: {{terms}} · in {{where}}",
+        "and": " und ",
+        "yourFiles": "deinen Dateien",
+        "page": "Seite {{page}}",
+        "sources": {
+          "one": "1 Quelle",
+          "other": "{{count}} Quellen"
+        },
+        "toCalendar": "Frist in den Familienkalender",
+        "hint": "Antwort nur aus deinen Dateien. Tresore werden nie durchsucht."
+      },
+      "photos": {
+        "label": "Fotos durchsuchen",
+        "placeholder": "Fotos nach Inhalt suchen (z. B. Strand)",
+        "chips": "Begriffe der Treffer",
+        "source": "Begriffe auf dem Handy erkannt",
+        "none": "Keine Fotos mit diesen Begriffen.",
+        "note": "Fotos, die nicht vom Handy gesichert wurden (z. B. vom PC), haben noch keine Begriffe. Sie werden beim nächsten Öffnen auf dem Handy nachgetragen."
       }
     }
   }

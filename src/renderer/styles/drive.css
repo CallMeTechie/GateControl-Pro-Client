@@ -572,3 +572,66 @@
 .dpv-month-h .dpv-month-sel { align-self: center; color: var(--acc-t); font-weight: 600; }
 .dpv-tile.is-sel { background: var(--acc-bg); }
 .dpv-tile.is-sel .dpv-img { inset: 0; transform: scale(.86); border-radius: 8px; transition: transform .12s; }
+
+/* ── Drive 1.14: AI in Drive (drive-ki-view.js) ───────────── */
+.dv-ki-modes { flex-shrink: 0; }
+.dv-ki-modes[hidden], .dv-ki-bar[hidden] { display: none; }
+.dv-ki-note { margin: 0; padding: 10px 12px 2px; color: var(--muted); font-size: 12.5px; }
+.dv-ki-d { color: var(--muted); font-size: 12.5px; }
+.dv-ki-t { color: var(--text); font-size: 14px; font-weight: 500; }
+.dv-ki-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 14px; background: var(--panel2); border: 1px solid var(--line); }
+.dv-ki-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dv-ki-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+/* "Fristen" by month */
+.dv-dl.dv-ki-dl { flex-direction: column; align-items: stretch; gap: 4px; padding: 12px 14px; }
+.dv-ki-dl-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dv-ki-tag { padding: 2px 8px; border-radius: 999px; background: var(--info-bg); color: var(--info); font-size: 11.5px; font-weight: 600; }
+.dv-dl.is-urgent .dv-ki-tag { background: var(--warn-bg); color: var(--warn); }
+.dv-ki-dl-title { font-size: 14.5px; font-weight: 600; }
+.dv-ki-dl .dv-ki-acts { margin-top: 4px; }
+.dv-ki-cal.is-done { border-color: transparent; background: var(--acc-bg); color: var(--acc-t); opacity: 1; }
+.dv-dl-remind.is-set { border-color: var(--acc); color: var(--acc-t); }
+/* "Vorschlag · Ablegen als …" after an upload */
+.dv-ki-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: var(--panel); border: 1px solid var(--acc); box-shadow: 0 6px 20px rgba(0, 0, 0, .18); }
+.dv-ki-bar-h { display: inline-flex; align-items: center; gap: 6px; color: var(--acc-t); font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.dv-ki-bar-tx { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; flex: 1 1 260px; min-width: 0; }
+.dv-ki-bar-tx .dv-ki-t { overflow-wrap: anywhere; }
+.dv-ki-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.dv-ki-bar-acts { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+/* "Scan prüfen" */
+.dv-ki-scan-body { display: flex; flex-direction: column; gap: 12px; }
+.dv-ki-kind { flex-direction: row; align-items: center; gap: 12px; }
+.dv-ki-shot { position: relative; display: grid; place-items: center; width: 52px; height: 68px; flex: none; overflow: hidden; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); color: var(--faint); }
+.dv-ki-shot img, .dv-ki-pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.dv-ki-kind-tx { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dv-ki-ok { display: inline-flex; align-items: center; gap: 6px; color: var(--acc-t); font-size: 13px; font-weight: 600; }
+.dv-ki-pv { position: relative; }
+.dv-ki-pic { position: relative; display: grid; place-items: center; height: 200px; overflow: hidden; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); color: var(--faint); }
+.dv-ki-pic.has-img img { object-fit: contain; }
+.dv-ki-pv.is-xlsx .dv-ki-pic, .dv-ki-pv.is-docx .dv-ki-pic { opacity: .75; }
+.dv-ki-pv-badge { position: absolute; right: 10px; bottom: 10px; padding: 3px 8px; border-radius: 6px; background: var(--acc); color: #03261A; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+.dv-ki-where { gap: 0; padding: 4px 14px; }
+.dv-ki-row { display: flex; flex-direction: column; gap: 4px; padding: 10px 0; }
+.dv-ki-row.is-line { flex-direction: row; align-items: center; gap: 12px; border-top: 1px solid var(--line); cursor: default; }
+.dv-ki-row-tx { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.dv-ki-row.is-line > .dv-ki-t { flex: 1; }
+.dv-ki-name-row { display: flex; align-items: center; gap: 6px; }
+.dv-ki-name-row .dv-input { flex: 1; min-width: 0; }
+.dv-ki-ext { color: var(--muted); font-size: 13px; }
+.dv-ki-cost { padding: 0 4px; }
+/* the answer to a question */
+.dv-ki-ask { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+.dv-ki-answer-tx { margin: 0; font-size: 14.5px; line-height: 1.5; white-space: pre-line; }
+.dv-ki-src-n { padding-top: 4px; border-top: 1px solid var(--line); }
+.dv-ki-src { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dv-ki-src:hover { background: var(--panel); }
+.dv-ki-src:focus-visible { outline: 2px solid var(--info); outline-offset: 0; }
+.dv-ki-src-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dv-ki-quote { color: var(--muted); font-size: 12.5px; font-style: italic; }
+.dv-ki-hint { margin: 0; padding: 0 4px; }
+/* photos by content */
+.dpv-search { width: 240px; max-width: 100%; }
+.dpv-search .dpv-q { border: 0; background: transparent; padding: 0; height: 100%; }
+.dpv-chips { padding: 4px 0 8px; }
+.dpv-hits { padding-top: 0; }
+.dpv-search-note { padding: 14px 0 4px; }

@@ -65,6 +65,12 @@
  * list, the menu's tree or the breadcrumbs (Strg: copy; files from the Explorer still go up as before), the shortcuts
  * below the list; jobs show in the transfer list (progress, "Abbrechen", "Rückgängig"), new ones "neu hier".
  *
+ * Drive 1.14 (only with the features `me` reports, drive-ki-view.js / drive-ki-state.js): "Fristen" by month with
+ * "In den Familienkalender" ('deadlineCalendar'); after a document went up the bar "Vorschlag · Ablegen als … in …"
+ * ('docAi'); "In Dokument umwandeln" of pictures (row menu, the menu of a selection: "Scan prüfen", 'scanDocs');
+ * the chips "Dateien | Fragen" at the search field — a question (the chip, or "?" at the end, Enter) is answered from
+ * the person's files with its sources ('docAsk').
+ *
  * Data: window.gatecontrol.drive (core DriveService over IPC); texts: drive.*
  * of the app locales; view logic without DOM: drive-state.js
  * (window.GCDriveState).
@@ -131,6 +137,7 @@
 		globe: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M3 12h18|M12 3c3 3 3 15 0 18|M12 3c-3 3-3 15 0 18',
 		import: 'M12 3v12|M7 10l5 5 5-5|M5 21h14|M17 3h3v3',
 		// Drive 1.11
+		table: 'M3 4h18v16H3z|M3 10h18|M9 4v16|M15 4v16',
 		gear: 'M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.8l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.8v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z|M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
 		chevDown: 'M6 9l6 6 6-6',
 		folderPlus: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 10v6M9 13h6',
@@ -412,6 +419,9 @@
 			clip: null,
 			drag: null,
 			fresh: null,
+			// Drive 1.14: the search field asks ('ask') or searches files; the question shown and its answer
+			searchMode: 'auto',
+			ask: null,
 		};
 		const keepOpen = () => keep(MS.OPEN_KEY, MS.serializeOpen(S.open));
 
@@ -424,6 +434,8 @@
 		refs.searchLabel = el('label', { class: 'dv-sr', for: nextId('dv-q') });
 		refs.search = el('input', { id: refs.searchLabel.getAttribute('for'), type: 'search', class: 'dv-search-in', maxlength: '100', on: { input: onSearchInput, keydown: onSearchKey } });
 		refs.refresh = el('button', { type: 'button', class: 'dv-ib', on: { click: () => reload() } }, [icon('refresh', 16)]);
+		// Drive 1.14 'docAsk': "Dateien | Fragen" at the search field
+		refs.modes = el('div', { class: 'seg dv-seg dv-ki-modes', role: 'radiogroup', hidden: true });
 		refs.banner = el('div', { class: 'dv-banner', role: 'status', hidden: true });
 		refs.guard = el('div', { class: 'dv-guard', role: 'alert', hidden: true });
 		refs.side = el('nav', { class: 'dv-side scroll' });
@@ -509,6 +521,23 @@
 			openFile: (n) => openNode(n),
 			changed: () => refreshView(),
 		}) : null;
+		// Drive 1.14: deadlines by month and into the family calendar, "Ablegen" after an upload, "In Dokument umwandeln",
+		// the answer to a question (drive-ki-view.js)
+		const KS = root.GCDriveKiState;
+		const ki = root.GCDriveKiView && KS && typeof api.ask === 'function' ? root.GCDriveKiView.create({
+			api, t, getLocale: o.getLocale, ui: { el, icon, clear, openDialog }, host, toast, now, errorText: DS.errorText,
+			getMe: () => S.me, getAreas: () => S.areas,
+			areaLabel: (areaId) => DS.areaLabel(S.areas.find((a) => a.id === areaId), t),
+			areaOfFolder: (folderId) => (S.folder && S.folder.node.id === folderId ? S.folder.node.areaId : S.areaId),
+			pickFolder: (opts) => pickFolder({ api, t, host, ...(opts || {}) }),
+			folderPath: async (id) => {
+				const r = await Promise.resolve(api.folder(id, { limit: 1 })).catch(fail);
+				return r && r.ok ? DS.pickerPath(r, S.areas.find((a) => a.id === r.node.areaId) || null, t) : '';
+			},
+			openFile: (id) => { Promise.resolve(api.open(id)).then((r) => { if (r && !r.ok) done(r); }).catch(() => {}); },
+			details: docs ? (n) => docs.details(n) : null,
+			changed: () => refreshView(),
+		}) : null;
 		const vaultUi = root.GCDriveVaultView && api.vault ? root.GCDriveVaultView.create({
 			api, t, ui: { el, icon, clear, openDialog }, host, toast, errorText: DS.errorText,
 			changed: () => { loadVaults().then(() => refreshView()); },
@@ -518,7 +547,7 @@
 			openSettings: () => openSettingsView('vaults'),
 		}) : null;
 		const vaultOn = () => !!vaultUi && root.GCDriveVaultState.vaultAvailable(S.me, S.vaultStatus);
-		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.selBar, refs.listWrap, refs.keys, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null]);
+		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.selBar, refs.listWrap, refs.keys, ki ? ki.bar : null, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null]);
 		refs.empty = el('div', { class: 'dv-gate', hidden: true });
 		refs.main = el('div', { class: 'dv-main' }, [refs.side, refs.pane]);
 		rootEl.append(
@@ -526,6 +555,7 @@
 				el('div', { class: 'dv-head-tx' }, [refs.h, refs.sub]),
 				el('span', { class: 'dv-grow' }),
 				el('div', { class: 'dv-search' }, [icon('search', 15), refs.searchLabel, refs.search]),
+				refs.modes,
 				refs.refresh,
 			]),
 			refs.banner,
@@ -563,7 +593,7 @@
 		}
 		Promise.resolve(api.status()).then(setStatus).catch(() => {});
 		api.onState((st) => { S.dirty = true; setStatus(st); });
-		api.onTransfers((rows) => { S.transfers = Array.isArray(rows) ? rows : []; renderTransfers(); maybeAskConflict(); });
+		api.onTransfers((rows) => { S.transfers = Array.isArray(rows) ? rows : []; renderTransfers(); maybeAskConflict(); if (ki) ki.onTransfers(S.transfers); });
 		api.onChanged((c) => {
 			if (S.shown && S.view === 'folder' && S.folder && c && c.folderId === S.folder.node.id) loadFolder(S.folder.node.id, { quiet: true });
 			else S.dirty = true;
@@ -572,6 +602,7 @@
 		const live = DS.throttle(() => liveRefresh(), 2000);
 		if (typeof api.onRemote === 'function') {
 			api.onRemote((ev) => {
+				if (ki) ki.onRemote();
 				if (S.shown && DS.liveRelevant(ev, { view: S.view, areaId: S.folder ? S.folder.node.areaId : S.areaId })) live.request();
 				else if (!S.shown) S.dirty = true;
 			});
@@ -615,7 +646,7 @@
 		rootEl.addEventListener('pointerdown', vaultActivity, true);
 		rootEl.addEventListener('keydown', vaultActivity, true);
 		rootEl.addEventListener('wheel', vaultActivity, { capture: true, passive: true });
-		Promise.resolve(api.transfers()).then((r) => { if (r && r.ok) { S.transfers = r.transfers; renderTransfers(); } }).catch(() => {});
+		Promise.resolve(api.transfers()).then((r) => { if (r && r.ok) { S.transfers = r.transfers; renderTransfers(); if (ki) ki.onTransfers(S.transfers); } }).catch(() => {});
 
 		// ── Loading ──────────────────────────────────────
 		const area = () => S.areas.find((a) => a.id === (S.folder ? S.folder.node.areaId : S.areaId)) || null;
@@ -677,6 +708,7 @@
 			else if (S.view === 'search') await runSearch();
 			else if (S.view === 'deadlines') openDeadlines();
 			else if (S.view === 'settings') openSettingsView();
+			else if (S.view === 'ask' && S.ask) { if (!DS.hasFeature(S.me, 'docAsk')) backToFolder(); else render(); }
 			else render();
 		}
 
@@ -809,23 +841,61 @@
 		}
 
 		let searchTimer = null;
+		/** Drive 1.14: does the search field ask (the chip "Fragen", or "?" at the end)? */
+		const asking = (q) => !!ki && KS.asks(q, S.searchMode, S.me);
 		function onSearchInput() {
 			clearTimeout(searchTimer);
 			const q = refs.search.value.trim();
-			if (!q) { if (S.view === 'search') backToFolder(); return; }
-			if (q.length < 2) return;
+			renderModes();
+			if (!q) { S.searchMode = 'auto'; renderModes(); if (S.view === 'search' || S.view === 'ask') backToFolder(); return; }
+			// a question waits for Enter (Drive answers a limited number per hour)
+			if (asking(q) || q.length < 2) return;
 			searchTimer = setTimeout(() => { S.query = q; runSearch(); }, 350);
 		}
 		function onSearchKey(e) {
 			if (e.key === 'Enter') {
 				clearTimeout(searchTimer);
 				const q = refs.search.value.trim();
-				if (q.length >= 2) { S.query = q; runSearch(); }
+				if (q.length >= 2 && asking(q)) runAsk(q);
+				else if (q.length >= 2) { S.query = q; runSearch(); }
 			} else if (e.key === 'Escape' && refs.search.value) {
 				e.preventDefault();
 				refs.search.value = '';
+				S.searchMode = 'auto';
+				renderModes();
 				backToFolder();
 			}
+		}
+		/** "Dateien | Fragen" (only where Drive answers questions). */
+		function renderModes() {
+			clear(refs.modes);
+			refs.modes.hidden = !ki || !DS.hasFeature(S.me, 'docAsk');
+			if (refs.modes.hidden) return;
+			refs.modes.setAttribute('aria-label', t('drive.ki.ask.modes'));
+			const on = asking(refs.search.value) ? 'ask' : 'files';
+			for (const m of ['files', 'ask']) {
+				refs.modes.appendChild(el('button', { type: 'button', role: 'radio', 'aria-checked': on === m ? 'true' : 'false', class: on === m ? 'on' : '', 'data-mode': m, text: t(`drive.ki.ask.mode.${m}`), on: { click: () => {
+					S.searchMode = m;
+					refs.search.placeholder = t(m === 'ask' ? 'drive.ki.ask.placeholder' : 'drive.search.placeholder');
+					renderModes();
+					refs.search.focus();
+					const q = refs.search.value.trim();
+					if (m === 'files' && q.length >= 2 && !asking(q)) { S.query = q; runSearch(); }
+				} } }));
+			}
+		}
+		/** Drive 1.14 'docAsk': the question `q` to the person's files → the answer card in the list. */
+		async function runAsk(q) {
+			S.view = 'ask';
+			S.query = '';
+			S.ask = { q, loading: true, answer: null, error: null };
+			S.loading = false;
+			S.error = null;
+			render();
+			const r = await Promise.resolve(api.ask(q)).catch(fail);
+			if (S.view !== 'ask' || !S.ask || S.ask.q !== q) return;
+			S.ask = { q, loading: false, answer: r && r.ok ? r : null, error: r && r.ok ? null : r };
+			render();
 		}
 		async function runSearch({ quiet = false } = {}) {
 			const q = S.query;
@@ -840,6 +910,7 @@
 		}
 		function backToFolder() {
 			S.query = '';
+			S.ask = null;
 			const a = DS.currentArea(S.areas, S.areaId);
 			loadFolder(S.folder ? S.folder.node.id : (a && a.rootId));
 		}
@@ -1364,6 +1435,8 @@
 			if (acts.timeTravel) item('restore', t('drive.tt.menu'), () => timeTravelDialog(n));
 			// Drive 1.8 'docAi' / 1.9 'office'
 			if (acts.details && docs) item('calendar', t('drive.doc.details'), () => docs.details(n));
+			// Drive 1.14 'scanDocs': a picture becomes a document
+			if (ki && ki.available([n], writable)) item('file', t('drive.ki.scan.menu'), () => ki.scanDialog([n]));
 			if (acts.office) item('globe', t(acts.office === 'edit' ? 'drive.office.edit' : 'drive.office.view'), () => openOffice(n));
 			if (acts.portal) item('cloud', t('drive.portal.open'), () => openInPortal(n));
 			if (acts.remove) item('trash', t('drive.remove'), () => trashNode(n), true);
@@ -1591,6 +1664,8 @@
 				{ key: 'copy', icon: 'copy', label: t('drive.bulk.copy'), kbd: `${t('drive.bulk.key.ctrl')}+C`, act: a.copyClip, run: () => clipSet('copy', items) },
 				{ key: 'moveTo', icon: 'folder', label: t('drive.bulk.moveTo'), act: a.move, run: () => doMove(items, 'move') },
 				{ key: 'copyTo', icon: 'copy', label: t('drive.bulk.copyTo'), act: a.copy, run: () => doMove(items, 'copy') },
+				// Drive 1.14 'scanDocs': several pictures become one document (the pages in the order shown)
+				...(ki && items.length > 1 && ki.available(items, selWritable(items)) ? [{ key: 'scan', icon: 'file', label: t('drive.ki.scan.menuMany', { count: items.length }), act: { on: true }, run: () => ki.scanDialog(items) }] : []),
 				'sep',
 				{ key: 'rename', icon: 'pen', label: t('drive.rename'), kbd: 'F2', act: a.rename, run: () => renameNode(items[0]) },
 				{ key: 'link', icon: 'link', label: t('drive.bulk.link'), act: a.link, run: () => doLink(items) },
@@ -1717,7 +1792,7 @@
 		function relabel() {
 			refs.h.textContent = t('drive.title');
 			refs.searchLabel.textContent = t('drive.search.label');
-			refs.search.placeholder = t('drive.search.placeholder');
+			refs.search.placeholder = t(ki && S.searchMode === 'ask' && DS.hasFeature(S.me, 'docAsk') ? 'drive.ki.ask.placeholder' : 'drive.search.placeholder');
 			refs.refresh.title = t('drive.refresh');
 			refs.refresh.setAttribute('aria-label', t('drive.refresh'));
 			render();
@@ -1752,6 +1827,7 @@
 			for (const [k, v] of Object.entries(VIEWS)) if (v && k !== S.view) v.hide();
 			renderSide();
 			renderBar();
+			renderModes();
 			if (!inSync) renderList();
 			if (inSync || !selectable()) { refs.selBar.hidden = true; clear(refs.selBar); }
 			renderKeys();
@@ -1948,6 +2024,10 @@
 				refs.bar.append(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { refs.search.value = ''; backToFolder(); } } }, [icon('back', 14), el('span', { text: t('drive.back') })]),
 					el('span', { class: 'dv-bar-h', text: t('drive.search.title', { q: S.query }) }));
 				refs.sub.textContent = t('drive.search.hint');
+			} else if (S.view === 'ask' && S.ask) {
+				refs.bar.append(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { refs.search.value = ''; renderModes(); backToFolder(); } } }, [icon('back', 14), el('span', { text: t('drive.back') })]),
+					el('span', { class: 'dv-bar-h', text: t('drive.ki.ask.title', { q: S.ask.q }) }));
+				refs.sub.textContent = t('drive.ki.ask.sub');
 			} else if (S.view === 'trash') {
 				refs.bar.append(el('span', { class: 'dv-bar-h', text: t('drive.trash.title') }));
 				const days = S.me && S.me.settings && S.me.settings.trashDays;
@@ -1989,7 +2069,8 @@
 				return;
 			}
 			if (S.view === 'links') { renderLinks(); return; }
-			if (S.view === 'deadlines') { if (docs) docs.renderDeadlines(refs.list); return; }
+			if (S.view === 'deadlines') { if (ki) ki.renderDeadlines(refs.list, { onOpen: docs ? (n) => docs.details(n) : null }); else if (docs) docs.renderDeadlines(refs.list); return; }
+			if (S.view === 'ask') { if (ki && S.ask) ki.renderAnswer(refs.list, S.ask); return; }
 			// Drive 1.9: a vault folder this PC cannot open yet → its card instead of the (unreadable) list
 			const fv = S.view === 'folder' && S.folder && S.folder.vault;
 			if (fv && fv.state !== 'open' && vaultUi) {
