@@ -405,6 +405,9 @@
 		busy: 'busy', state_mismatch: 'signin_failed', invalid_response: 'signin_failed', drive_unavailable: 'drive_unavailable',
 		mail_unavailable: 'mail_unavailable', unsafe: 'unsafe', not_found: 'not_found', open_failed: 'open_failed', missing: 'missing', empty: 'empty',
 		encrypted: 'encrypted', forbidden: 'forbidden',
+		microsoft_off: 'microsoft_off', attachments_unsupported: 'attachments_unsupported', images_blocked: 'images_blocked',
+		images_off: 'images_off', no_folder: 'no_folder', not_waiting: 'not_waiting', login_required: 'login_required',
+		exists: 'exists', links_disabled: 'links_disabled',
 	};
 
 	/** The text of a failed answer ({ code, detail }); the server's hint for a refused login. */

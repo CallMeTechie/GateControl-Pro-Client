@@ -255,3 +255,5 @@
 .ml-server-row { display: flex; gap: 8px; align-items: flex-end; }
 .ml-server-row .ml-field:first-child { flex-grow: 1; }
 .ml-help { align-self: flex-start; }
+.ml-ai-h .ml-ai-again { margin-left: auto; height: 24px; }
+.ml-ai-h { width: 100%; }

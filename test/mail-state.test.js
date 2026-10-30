@@ -134,6 +134,7 @@ describe('mail-state', () => {
     assert.equal(MS.errorText({ code: 'network' }, t, 'de'), 'mail.err.offline');
     assert.equal(MS.errorText({ code: 'http_503' }, t, 'de'), 'mail.err.offline');
     assert.equal(MS.errorText({ code: 'weird' }, t, 'de'), 'mail.err.failed');
+    for (const c of ['microsoft_off', 'attachments_unsupported', 'images_blocked', 'images_off', 'drive_unavailable', 'no_folder', 'not_waiting', 'not_allowed']) assert.equal(MS.errorText({ code: c }, t, 'de'), `mail.err.${c}`);
   });
 });
 

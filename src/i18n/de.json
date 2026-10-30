@@ -2642,7 +2642,8 @@
       "nothing": "Kurze Mail – keine Zusammenfassung nötig.",
       "replies": "Antwortvorschläge",
       "toCalendar": "In den Familienkalender eintragen",
-      "inCalendar": "Eingetragen: {{where}}"
+      "inCalendar": "Eingetragen: {{where}}",
+      "again": "Neu erstellen"
     },
     "att": {
       "open": "Öffnen",
@@ -2724,7 +2725,9 @@
       "badRecipients": "Eine Adresse ist ungültig – bitte prüfen.",
       "uploading": "Anhänge werden noch hochgeladen …",
       "uploadingN": "{{count}} wird hochgeladen …",
-      "removeRecipient": "„{{name}}“ entfernen"
+      "removeRecipient": "„{{name}}“ entfernen",
+      "msUnsupported": "Microsoft-Konten können Dateien vom PC oder aus Mails anderer Konten nicht mitsenden. Bitte diese Anhänge entfernen oder die Datei aus Drive als Link anhängen.",
+      "driveLink": "Aus Drive als Link"
     },
     "warn": {
       "password": "Das Passwort für den Link bitte getrennt mitteilen.",
@@ -2871,7 +2874,17 @@
       "empty": "Leere Datei.",
       "encrypted": "Dateien aus einem Tresor können nicht angehängt werden.",
       "forbidden": "Dafür fehlt die Berechtigung.",
-      "failed": "Das hat nicht geklappt."
-    }
+      "failed": "Das hat nicht geklappt.",
+      "microsoft_off": "Microsoft-Konten sind auf diesem Server ausgeschaltet.",
+      "attachments_unsupported": "Microsoft-Konten können Dateien vom PC oder aus Mails anderer Konten nicht mitsenden – bitte entfernen oder aus Drive als Link anhängen.",
+      "images_blocked": "Bilder dieser Mail sind blockiert – erst „Bilder laden“ wählen.",
+      "images_off": "Bilder aus Mails laden ist auf diesem Server ausgeschaltet.",
+      "no_folder": "Kein passender Drive-Ordner – bitte einen Ordner wählen.",
+      "not_waiting": "Die Mail ist schon unterwegs und lässt sich nicht mehr zurückholen.",
+      "login_required": "Bitte neu anmelden.",
+      "exists": "Das Konto gibt es schon.",
+      "links_disabled": "Freigabe-Links sind in Drive ausgeschaltet."
+    },
+    "bodyMissing": "Der Inhalt dieser Mail liegt noch nicht auf dem Server und wird vom Anbieter geladen."
   }
 }

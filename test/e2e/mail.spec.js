@@ -127,6 +127,36 @@ test.describe('mail', () => {
     await expect(undo).toBeHidden();
   });
 
+  test('Microsoft account: a file of this PC blocks sending with a hint; a body not on the server yet', async ({ launchApp, mock }, testInfo) => {
+    const m = await mock.setMail();
+    const { page, answerOpenDialogs } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openMail(page);
+    // a mail whose body the server does not have: the note and "Erneut versuchen" instead of the frame
+    await root.locator('.ml-chip', { hasText: 'Firma · M365' }).click();
+    await row(root, 105).click();
+    await expect(root.locator('.ml-read .ml-banner.is-info')).toBeVisible();
+    await expect(root.locator('iframe.ml-frame')).toHaveCount(0);
+
+    await root.locator('.ml-new').click();
+    await root.locator('select.ml-from').selectOption('2');
+    await root.locator('.ml-rcpt-in').first().fill('tim@firma.de,');
+    await root.locator('.ml-subj-in').fill('Mit Anhang');
+    const file = testInfo.outputPath('Angebot.pdf');
+    require('fs').writeFileSync(file, '%PDF-1.4 Angebot');
+    await answerOpenDialogs([file]);
+    await root.locator('.ml-read-bar .btn-sec').first().click();
+    await page.locator('.ml-menu-item').first().click();
+    await expect(root.locator('.ml-catt-name')).toHaveText(['Angebot.pdf']);
+    await expect(root.locator('.ml-cwarn .ml-banner.is-err')).toBeVisible();
+    await root.locator('.ml-split .btn-pri').first().click();
+    await expect(page.locator('.ml-undo')).toBeHidden();
+    expect(m.srv.state.outbox.size).toBe(0);
+    // removing the file lifts the block
+    await root.locator('.ml-catt .ml-rcpt-x').click();
+    await expect(root.locator('.ml-cwarn .ml-banner.is-err')).toHaveCount(0);
+  });
+
   test('Konto hinzufügen: providers, the hint, the refusal; Microsoft in the browser', async ({ launchApp, mock }) => {
     const m = await mock.setMail();
     const { page, events } = await launchApp();

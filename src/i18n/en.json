@@ -2642,7 +2642,8 @@
       "nothing": "Short mail – no summary needed.",
       "replies": "Reply suggestions",
       "toCalendar": "Add to the family calendar",
-      "inCalendar": "Added: {{where}}"
+      "inCalendar": "Added: {{where}}",
+      "again": "Create again"
     },
     "att": {
       "open": "Open",
@@ -2724,7 +2725,9 @@
       "badRecipients": "An address is invalid – please check.",
       "uploading": "Attachments are still uploading …",
       "uploadingN": "{{count}} uploading …",
-      "removeRecipient": "Remove “{{name}}”"
+      "removeRecipient": "Remove “{{name}}”",
+      "msUnsupported": "Microsoft accounts cannot send files from this PC or from another account's mail. Please remove these attachments or attach the file from Drive as a link.",
+      "driveLink": "From Drive as a link"
     },
     "warn": {
       "password": "Please share the link's password separately.",
@@ -2871,7 +2874,17 @@
       "empty": "Empty file.",
       "encrypted": "Files from a vault cannot be attached.",
       "forbidden": "You lack the permission for this.",
-      "failed": "That did not work."
-    }
+      "failed": "That did not work.",
+      "microsoft_off": "Microsoft accounts are switched off on this server.",
+      "attachments_unsupported": "Microsoft accounts cannot send files from this PC or from another account's mail – remove them or attach the file from Drive as a link.",
+      "images_blocked": "Pictures of this mail are blocked – choose “Load pictures” first.",
+      "images_off": "Loading pictures of mails is switched off on this server.",
+      "no_folder": "No fitting Drive folder – please choose a folder.",
+      "not_waiting": "The mail is already on its way and cannot be taken back.",
+      "login_required": "Please sign in again.",
+      "exists": "This account exists already.",
+      "links_disabled": "Share links are switched off in Drive."
+    },
+    "bodyMissing": "The content of this mail is not on the server yet and is being loaded from the provider."
   }
 }

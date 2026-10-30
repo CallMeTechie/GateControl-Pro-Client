@@ -814,7 +814,16 @@
 			}
 			// the older mails of the conversation
 			for (const old of R.thread || []) scroll.append(threadCard(old));
-			scroll.append(el('div', { class: 'ml-frame-wrap' }, [mailFrame(R.doc, { title: m.subject || t('mail.noSubject') })]));
+			if (m.bodyMissing && !m.html && !m.text) {
+				// the body is not in the server's copy yet (the provider did not give it now)
+				scroll.append(el('div', { class: 'ml-banner is-info' }, [
+					icon('clock', 15),
+					el('span', { class: 'ml-grow', text: t('mail.bodyMissing') }),
+					el('button', { type: 'button', class: 'btn btn-sec btn-xs', text: t('mail.retry'), on: { click: () => openMessage(m.id) } }),
+				]));
+			} else {
+				scroll.append(el('div', { class: 'ml-frame-wrap' }, [mailFrame(R.doc, { title: m.subject || t('mail.noSubject') })]));
+			}
 			const notes = [];
 			if (m.trackers > 0) notes.push(t('mail.trackers', { count: m.trackers }));
 			if (!m.imagesBlocked && /gcmail:\/\/img\//.test(R.doc || '')) notes.push(t('mail.images.proxied'));
@@ -845,6 +854,17 @@
 			if (R.aiBusy) { card.append(el('span', { class: 'ml-sub', text: t('mail.ai.working') })); return card; }
 			if (R.aiError) { card.append(el('span', { class: 'ml-sub', text: R.aiError })); return card; }
 			const ai = R.ai;
+			card.firstChild.append(el('button', { type: 'button', class: 'btn btn-ghost btn-xs ml-ai-again', text: t('mail.ai.again'), on: { click: async () => {
+				const id = m.id;
+				R.aiBusy = true;
+				renderPane();
+				const r = await call(api.runAi(id, true));
+				if (!S.read || S.read.message.id !== id) return;
+				S.read.aiBusy = false;
+				if (r && r.ok) S.read.ai = r.ai;
+				else toast(errText(r), 'error');
+				renderPane();
+			} } }));
 			if (ai.summary) card.append(el('p', { class: 'ml-ai-sum', text: ai.summary }));
 			else if (!ai.todos.length) card.append(el('span', { class: 'ml-sub', text: t('mail.ai.nothing') }));
 			const chips = MS.todoChips(ai, features());
@@ -1192,7 +1212,10 @@
 			// what changed meanwhile stays (pending attachments added during the save)
 			const sent = new Set(body.attachments.map((a) => JSON.stringify(a)));
 			const later = C.atts.filter((a) => a.pending && !sent.has(JSON.stringify(a.pending)));
-			C.atts = r.draft.attachments.concat(later);
+			// files of this PC stay marked (a Microsoft account cannot send them)
+			const known = new Map(C.atts.filter((a) => a.id).map((a) => [a.id, !!a.foreign]));
+			const fromPc = body.attachments.filter((a) => a.mediaId).map((a) => a.name);
+			C.atts = r.draft.attachments.map((a) => ({ ...a, foreign: known.has(a.id) ? known.get(a.id) : fromPc.includes(a.name) })).concat(later);
 			C.warnings = r.draft.warnings;
 			if (later.length) scheduleSave();
 			renderComposeParts();
@@ -1243,12 +1266,14 @@
 			if (!C.to.length && !C.cc.length && !C.bcc.length) { toast(t('mail.compose.noRecipients'), 'error'); return; }
 			if (C.badRecipients) { toast(t('mail.compose.badRecipients'), 'error'); return; }
 			if (C.uploading) { toast(t('mail.compose.uploading'), 'error'); return; }
+			if (msBlocked(C)) { C.unsupported = true; renderComposeParts(); toast(t('mail.compose.msUnsupported'), 'error'); return; }
 			C.busy = true;
 			renderComposeParts();
 			const d = await saveDraft();
 			if (!d) { C.busy = false; renderComposeParts(); return; }
 			const r = await call(api.send(d.id, sendAt));
 			C.busy = false;
+			if (r && r.code === 'attachments_unsupported') { C.unsupported = true; renderComposeParts(); toast(t('mail.compose.msUnsupported'), 'error'); return; }
 			if (!r || !r.ok) { toast(errText(r), 'error'); renderComposeParts(); return; }
 			closeCompose();
 			startUndo(r);
@@ -1345,6 +1370,12 @@
 
 		const composeParts = { atts: null, warn: null, sendBtn: null };
 
+		const isMsAccount = (id) => { const a = MS.accountOf(S.me, id); return !!a && (a.provider === 'm365' || a.provider === 'outlook'); };
+		/** A Microsoft account sends through Graph: files of this PC (or another account's mail) cannot go along. */
+		function msBlocked(C) {
+			return isMsAccount(C.accountId) && C.atts.some((a) => a.as !== 'link' && (a.foreign || (a.pending && a.pending.mediaId)));
+		}
+
 		function renderComposeParts() {
 			const C = S.compose;
 			if (!C || !composeParts.atts) return;
@@ -1362,7 +1393,15 @@
 			composeParts.atts.hidden = !C.atts.length && !C.uploading;
 			clear(composeParts.warn);
 			for (const w of C.warnings) composeParts.warn.append(el('div', { class: `ml-banner${w.kind === 'too_large' ? ' is-info' : ''}` }, [icon('alert', 14), el('span', { text: w.text || t(`mail.warn.${w.kind}`) })]));
-			composeParts.warn.hidden = !C.warnings.length;
+			if (C.unsupported && !msBlocked(C)) C.unsupported = false;
+			if (msBlocked(C)) {
+				composeParts.warn.append(el('div', { class: 'ml-banner is-err' }, [
+					icon('alert', 14),
+					el('span', { class: 'ml-grow', text: t('mail.compose.msUnsupported') }),
+					has('drive') && o.driveApi ? el('button', { type: 'button', class: 'btn btn-sec btn-xs', text: t('mail.compose.driveLink'), on: { click: () => attachFromDrive('link') } }) : null,
+				]));
+			}
+			composeParts.warn.hidden = !composeParts.warn.childNodes.length;
 			if (composeParts.sendBtn) composeParts.sendBtn.disabled = !!C.busy;
 		}
 
@@ -1375,7 +1414,7 @@
 			C.uploading = 0;
 			if (S.compose !== C) return;
 			if (!r || !r.ok) { toast(errText(r), 'error'); renderComposeParts(); return; }
-			for (const it of r.items) C.atts.push({ id: null, name: it.name, size: it.size, mime: it.mime, as: 'copy', pending: { mediaId: it.mediaId } });
+			for (const it of r.items) C.atts.push({ id: null, name: it.name, size: it.size, mime: it.mime, as: 'copy', foreign: true, pending: { mediaId: it.mediaId, name: it.name } });
 			for (const x of r.rejected) toast(`${x.name}: ${errText({ code: x.code })}`, 'error');
 			renderComposeParts();
 			if (r.items.length) scheduleSave();
@@ -1386,7 +1425,7 @@
 			if (p && p.ok) addFiles(p.paths);
 		}
 
-		function attachFromDrive() {
+		function attachFromDrive(prefer) {
 			const C = S.compose;
 			if (!C || !o.driveApi) return;
 			const dlg = openDialog({ title: t('mail.fromDrive.title'), wide: true, closeLabel: t('mail.close') });
@@ -1432,7 +1471,8 @@
 					const big = n.size > 20 * 1024 * 1024;
 					const state = picked.get(n.id);
 					const cb = el('input', { type: 'checkbox', class: 'ml-check', checked: !!state || null, 'aria-label': n.name });
-					let as = state ? state.as : (big ? 'link' : 'copy');
+					// Microsoft accounts: Drive files go as links anyway
+					let as = state ? state.as : (big || prefer === 'link' || isMsAccount(C.accountId) ? 'link' : 'copy');
 					const segBox = seg([['copy', t('mail.fromDrive.copy')], ['link', t('mail.fromDrive.link')]], as, (v2) => { as = v2; if (picked.has(n.id)) picked.set(n.id, { node: n, as }); sync(); }, n.name);
 					cb.addEventListener('change', () => { if (cb.checked) picked.set(n.id, { node: n, as }); else picked.delete(n.id); sync(); });
 					const ft = MS.fileTag(n.name, n.mime);
@@ -1461,7 +1501,7 @@
 			const from = el('select', { class: 'ml-from', 'aria-label': t('mail.compose.from') });
 			for (const a of accs) from.append(el('option', { value: String(a.id), text: `${a.email} · ${a.name}`, selected: a.id === C.accountId || null }));
 			const fromDot = dot((MS.accountOf(S.me, C.accountId) || {}).color);
-			from.addEventListener('change', () => { C.accountId = Number(from.value); fromDot.style.background = (MS.accountOf(S.me, C.accountId) || {}).color || ''; scheduleSave(); });
+			from.addEventListener('change', () => { C.accountId = Number(from.value); fromDot.style.background = (MS.accountOf(S.me, C.accountId) || {}).color || ''; renderComposeParts(); scheduleSave(); });
 			const subj = el('input', { type: 'text', class: 'ml-subj-in', value: C.subject, 'aria-label': t('mail.compose.subject'), maxlength: '998' });
 			subj.addEventListener('input', () => { C.subject = subj.value; scheduleSave(); });
 			const sendBtn = el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: () => send(null) } }, [icon('send', 15), el('span', { text: t('mail.compose.send') })]);
