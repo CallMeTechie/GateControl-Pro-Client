@@ -120,15 +120,18 @@ describe('mail-state – calendar', () => {
     assert.deepEqual([ev.teams, ev.onlineUrl, ev.reminders, ev.attendees, ev.recurrence.kind, ev.recurrence.end, ev.etag], [true, '', [5, 60], [{ name: 'A', email: 'a@x.de' }], 'monthlyDay', 'until', '"1-0"']);
   });
 
-  it('a changed time of the whole series is made against the master\'s times (Mail 1.3.0 `series`)', () => {
+  it('a changed time of the whole series: the shift at the occurrence in days and wall-clock minutes on `series` (Mail 1.3.0)', () => {
     const ev = { start: at(2026, 11, 10, 18), end: at(2026, 11, 10, 19, 30), series: { start: at(2026, 9, 1, 18), end: at(2026, 9, 1, 19, 30), allDay: false } };
-    // the shown occurrence moved one hour later and half an hour longer → the master likewise
-    assert.deepEqual(MS.seriesTimes({ start: at(2026, 11, 10, 19), end: at(2026, 11, 10, 21) }, ev), { start: at(2026, 9, 1, 19), end: at(2026, 9, 1, 21) });
+    // one hour later and half an hour longer, one day later → the master likewise
+    assert.deepEqual(MS.seriesTimes({ start: at(2026, 11, 11, 19), end: at(2026, 11, 11, 21) }, ev), { start: at(2026, 9, 2, 19), end: at(2026, 9, 2, 21) });
+    // the occurrence's times unchanged → the series' times unchanged (across the change to winter time: wall clock, not ms)
+    assert.deepEqual(MS.seriesTimes({ start: ev.start, end: ev.end }, ev), { start: at(2026, 9, 1, 18), end: at(2026, 9, 1, 19, 30) });
     assert.equal(MS.seriesTimes({ start: 1, end: 2 }, { start: 1, end: 2 }), null, 'Mail 1.2.0: no series times');
-    const ad = { allDay: true, startDate: '2026-11-10', endDate: '2026-11-10', start: at(2026, 11, 10), end: at(2026, 11, 11), series: { start: at(2026, 9, 1), end: at(2026, 9, 2), allDay: true } };
+    const ad = { allDay: true, startDate: '2026-11-10', endDate: '2026-11-10', start: at(2026, 11, 10), end: at(2026, 11, 11), series: { start: at(2026, 9, 1), end: at(2026, 9, 2), allDay: true, startDate: '2026-09-01', endDate: '2026-09-01' } };
     assert.deepEqual(MS.seriesTimes({ allDay: true, startDate: '2026-11-11', endDate: '2026-11-12' }, ad), { startDate: '2026-09-02', endDate: '2026-09-03' });
     const view = read('src', 'renderer', 'calendar-view.js');
     assert.match(view, /seriesOk: !moved \|\| !!ev\.series/, 'without `series` only "Nur dieser Termin" for a changed time');
+    assert.match(view, /series_shift/, 'the server\'s refusal of a shift gets its own text');
   });
 
   it('invitation states', () => {
@@ -224,7 +227,7 @@ describe('mail areas wiring', () => {
     add('mail.cal.resp', ['accepted', 'tentative', 'declined', 'needs_action']);
     add('mail.cal.busy', ['busy', 'tentative', 'free', 'oof']);
     add('mail.cal.answered', ['accepted', 'tentative', 'declined']);
-    add('mail.cal.bad', ['title', 'start', 'end']);
+    add('mail.cal.bad', ['title', 'start', 'end', 'seriesShift']);
     add('mail.cal.rec.pos', ['1', '2', '3', '4', '-1']);
     add('mail.cal.label', ['request', 'cancel', 'reply', 'counter']);
     add('mail.cal.inv', ['open', 'outdated', 'cancelled', 'cancelledRemoved', 'counter', 'counterDone', 'reply.accepted', 'reply.tentative', 'reply.declined', 'answered.accepted', 'answered.tentative', 'answered.declined']);

@@ -897,32 +897,34 @@
 		return b;
 	}
 
+	/** `ms` moved by `days` and `min` minutes of wall clock (local; a DST change in between keeps the clock time). */
+	function wallMove(ms, days, min) { const d = new Date(ms); d.setDate(d.getDate() + days); d.setMinutes(d.getMinutes() + min); return d.getTime(); }
+	const dayMin = (ms) => { const d = new Date(ms); return d.getHours() * 60 + d.getMinutes(); };
+
 	/**
-	 * "Alle Termine der Serie" with changed times: the new times of the series, made against the master's
-	 * (`ev.series` of Mail 1.3.0: { start, end, allDay }) — the shown occurrence moved by Δ moves the master by Δ.
-	 * null without `series` (Mail 1.2.0): then only "Nur dieser Termin" may change the time.
+	 * "Alle Termine der Serie" with changed times (PATCH scope 'series'): the shift the person made at the shown
+	 * occurrence `ev` — in days and minutes of wall clock, not in ms — put on the series' own start (`ev.series` of
+	 * Mail 1.3.0: DTSTART / DTEND of the master) → { start, end } | { startDate, endDate }. The occurrence's times sent
+	 * back unchanged give the series' times unchanged. null without `series` (Mail 1.2.0): then only "Nur dieser Termin"
+	 * may change the time. (As L.shiftSeries of the portal, gatecontrol-mail ui/pimlogic.js.)
 	 */
 	function seriesTimes(body, ev) {
 		const s = ev && ev.series;
 		if (!s || !body) return null;
-		const out = {};
+		const occDay = ev.allDay && ev.startDate ? ev.startDate : ymd(ev.start);
+		const seriesDay = s.allDay && s.startDate ? s.startDate : ymd(s.start);
+		const days = (a, b) => Math.round((fromYmd(a) - fromYmd(b)) / 86400000);
 		if (body.allDay) {
-			const occStart = fromYmd(ev.startDate) ?? dayStart(ev.start);
-			const occEnd = fromYmd(ev.endDate || ev.startDate) ?? dayStart(ev.start);
-			const dStart = Math.round((dayStart(s.start) - occStart) / 86400000);
-			const dEnd = Math.round((dayStart(Math.max(s.start, s.allDay ? s.end - 1 : s.end)) - occEnd) / 86400000);
-			const a = fromYmd(body.startDate);
-			const z = fromYmd(body.endDate || body.startDate);
-			if (a === null || z === null) return null;
-			out.startDate = ymd(addDays(a, dStart));
-			out.endDate = ymd(addDays(z, ev.allDay ? dEnd : dStart));
-			if (out.endDate < out.startDate) out.endDate = out.startDate;
-			return out;
+			if (fromYmd(body.startDate) === null) return null;
+			const len = Math.max(0, days(body.endDate || body.startDate, body.startDate));
+			const startDate = ymd(addDays(fromYmd(seriesDay), days(body.startDate, occDay)));
+			return { startDate, endDate: ymd(addDays(fromYmd(startDate), len)) };
 		}
-		out.start = body.start + (s.start - ev.start);
-		out.end = body.end + (ev.allDay || s.allDay ? s.start - ev.start : s.end - ev.end);
-		if (out.end < out.start) out.end = out.start + (body.end - body.start);
-		return out;
+		const d = days(ymd(body.start), occDay);
+		const base = s.allDay ? fromYmd(seriesDay) : s.start;
+		const min = dayMin(body.start) - (ev.allDay || s.allDay ? 0 : dayMin(ev.start));
+		const start = wallMove(base, d, min);
+		return { start, end: start + Math.max(0, body.end - body.start) };
 	}
 
 	/** What a new event of a tap on the grid gets: half an hour snapped, one hour long. */

@@ -3059,7 +3059,8 @@
       "bad": {
         "title": "Bitte gib einen Titel ein.",
         "start": "Der Beginn fehlt.",
-        "end": "Das Ende muss nach dem Beginn liegen."
+        "end": "Das Ende muss nach dem Beginn liegen.",
+        "seriesShift": "Die Serie lässt sich so nicht verschieben (zu weit, über den 28. hinaus oder es gäbe Lücken). Ändere die Zeit „Nur dieses Termins“ oder lege die Serie neu an."
       },
       "conflictTitle": "Der Termin wurde inzwischen geändert",
       "conflictText": "„{{title}}“ wurde woanders geändert, während du ihn bearbeitet hast.",

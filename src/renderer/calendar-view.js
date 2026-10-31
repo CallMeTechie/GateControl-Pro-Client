@@ -892,6 +892,7 @@
 				}
 				save.disabled = false;
 				if (r && r.code === 'conflict' && r.current) { conflictDialog(r.current, (choice) => { if (choice === 'mine') doSave(r.current.etag); else { dlg.close(); C.sheet = { item: r.current, event: r.current }; renderMain(); } }); return; }
+				if (r && r.code === 'invalid' && r.detail && r.detail.reason === 'series_shift') { err.textContent = t('mail.cal.bad.seriesShift'); return; }
 				if (!r || !r.ok) { err.textContent = errText(r); return; }
 				dlg.close();
 				const sent = r.sent ? r.sent.mail + r.sent.internal : 0;

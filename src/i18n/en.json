@@ -3059,7 +3059,8 @@
       "bad": {
         "title": "Please enter a title.",
         "start": "The start is missing.",
-        "end": "The end must be after the start."
+        "end": "The end must be after the start.",
+        "seriesShift": "The series cannot be moved like this (too far, past the 28th or events would get lost). Change the time of “Only this event” or create the series anew."
       },
       "conflictTitle": "The event was changed in the meantime",
       "conflictText": "“{{title}}” was changed elsewhere while you edited it.",
