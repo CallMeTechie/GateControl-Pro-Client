@@ -21,7 +21,8 @@
  * plugin (no "Chats" in the app). With it, the Messenger plugin answers
  * (support/messenger-mock.js) and its realtime events go to the open push
  * streams as `event: plugin`; `pushChat(payload)` sends a chat notification
- * (`kind: "message"`, never part of the inbox).
+ * (`kind: "message"`, never part of the inbox). `pushPlugin(plugin, type, data)`
+ * sends any plugin's realtime event (e.g. Mail's `calendar` / `contacts`).
  *
  * Schule: without `server.setSchool()` the plugin list has no
  * `gatecontrol-schule`. With it (support/school-mock.js) the list names it
@@ -386,6 +387,8 @@ async function startMockServer() {
     },
     /** Sends `event: control` (no id) to the open streams, e.g. { type: 'policy_changed', policy_version: 2 }. */
     pushControl(c) { for (const res of streams) sse(res, 'control', c); },
+    /** A realtime event of a plugin to the open streams (`event: plugin`), e.g. ('gatecontrol-mail', 'calendar', { kind: 'changed' }). */
+    pushPlugin(plugin, type, data) { for (const res of streams) sse(res, 'plugin', { plugin, type, data }); },
     acks: () => acks.slice(),
     /** Canned Nominatim answers: { search: [results], reverse: result }. */
     setGeocode(g) { geocode = { ...geocode, ...g }; },

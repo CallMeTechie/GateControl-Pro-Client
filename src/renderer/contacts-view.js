@@ -23,6 +23,18 @@
  * Read only sources (CardDAV without write right, Gmail's import) show "nur
  * lesend"; offline everything that changes is greyed out.
  *
+ * Mail 1.4.0 (the GC contact as the master; hidden with servers before, whose
+ * answers lack the new fields): the list shows only GC contacts and unlinked
+ * cards with a dot per source, a star for favourites and a dot for different
+ * values at a linked source. A contact: a band per conflict ("Übernehmen",
+ * "Zusätzlich", "Verwerfen"), the star, "Als Hauptnummer" at each number,
+ * "Auf Start anheften" for a favourite (window.GCHomePins), "Quellen" with
+ * "Verknüpfung lösen"; saving names the accounts a change went to (writeBack);
+ * deleting one with links asks whether they go at the provider too. The
+ * duplicates: "Automatisch zusammengeführt (n)" with "Rückgängig", then the
+ * uncertain cases with each card's source, picture, numbers, addresses and
+ * postal address, "So wird der Kontakt", "Zusammenführen", "Keine Dublette".
+ *
  * Built by mail-view.js through GCContactsView.create(ctx); pure logic in
  * mail-state.js (GCMailState). Server text only into textContent / attributes.
  */
@@ -68,6 +80,8 @@
 		const groupOf = (id) => groups().find((g) => g.id === id) || null;
 		const offline = () => K.offline || K.booksOffline;
 		const offlineNote = () => t('mail.con.offlineHint');
+		const pins = () => root.GCHomePins || null;
+		const digits = (v) => String(v || '').replace(/\D/g, '').slice(-9);
 
 		// ── Loading ──────────────────────────────────────
 
@@ -80,7 +94,8 @@
 		async function loadDups() {
 			if (offline()) return;
 			const r = await call(api.duplicates());
-			if (r && r.ok) K.dups = r.items;
+			// Mail 1.4.0: the certain ones are merged by the server, only the uncertain ones are left to check
+			if (r && r.ok) K.dups = MS.dupCases(r.items).open;
 			ctx.renderMenu();
 			renderList();
 		}
@@ -259,15 +274,16 @@
 			for (const sec of MS.cardSections(K.items)) {
 				rows.append(el('div', { class: 'con-letter', text: sec.letter }));
 				for (const c of sec.items) {
-					const book = bookOf(c.addressbookId);
-					const color = MS.bookColor(book, ctx.me());
 					const on = K.pane && (K.pane.kind === 'card' || K.pane.kind === 'edit') && K.pane.id === c.id;
+					// a dot per source (Mail 1.4.0: the GC contact and its linked cards), the star, the hint of different values
+					const dots = MS.sourceColors(c, books(), ctx.me()).map((x) => { const d = el('span', { class: 'ml-dot con-src', title: x.label }); d.style.background = x.color; return d; });
 					const row = el('button', { type: 'button', role: 'option', class: `con-row${on ? ' on' : ''}`, 'aria-selected': on ? 'true' : 'false', 'data-id': String(c.id), on: { click: () => openCard(c.id) } }, [
 						shown < PHOTO_MAX ? avatar(c, 36) : avatar({ ...c, photo: false }, 36),
 						el('span', { class: 'con-row-tx' }, [el('span', { class: 'con-row-name', text: c.name || t('mail.con.noName') }), MS.cardSub(c) ? el('span', { class: 'ml-sub con-row-sub', text: MS.cardSub(c) }) : null]),
-						color ? el('span', { class: 'ml-dot con-src', title: book ? MS.bookLabel(book, ctx.me()) : '' }) : null,
+						c.conflicts > 0 ? el('span', { class: 'con-hint', title: t('mail.con.conflictHint'), 'aria-label': t('mail.con.conflictHint') }) : null,
+						c.favorite ? el('span', { class: 'con-fav', title: t('mail.con.fav'), 'aria-label': t('mail.con.fav') }, [icon('star', 13)]) : null,
+						dots.length ? el('span', { class: 'con-srcs' }, dots) : null,
 					]);
-					if (color) row.lastChild.style.background = color;
 					rows.append(row);
 					shown += 1;
 				}
@@ -337,6 +353,8 @@
 			const r = await call(api.card(id));
 			if (seq !== K.paneSeq) return;
 			if (!r || !r.ok) { K.pane = { kind: 'card', id, error: r && r.code === 'not_found' ? t('mail.con.gone') : errText(r) }; renderPane(); return; }
+			// a linked card (an account's address book, Mail 1.4.0): its GC contact stands for it
+			if (r.card.masterId && r.card.masterId !== id) { openCard(r.card.masterId, { quiet }); return; }
 			K.pane = { kind: 'card', id, card: r.card, offline: !!r.offline, activity: null };
 			renderPane();
 			if (!r.offline) {
@@ -354,15 +372,33 @@
 			const ro = c.readOnly || (book && !book.writable);
 			const off = P.offline || offline();
 			const name = c.name.display || [c.name.given, c.name.family].filter(Boolean).join(' ') || (c.emails[0] && c.emails[0].value) || t('mail.con.noName');
+			const master = c.favorite !== null && c.favorite !== undefined;   // Mail 1.4.0
+			const pinned = !!(pins() && pins().hasContact(c.id));
 			const bar = el('div', { class: 'ml-read-bar', role: 'toolbar', 'aria-label': t('mail.actions') }, [
+				master ? el('button', { type: 'button', class: `ml-ib con-fav-btn${c.favorite ? ' on' : ''}`, 'aria-pressed': c.favorite ? 'true' : 'false', title: t(c.favorite ? 'mail.con.favRemove' : 'mail.con.favAdd'), 'aria-label': t(c.favorite ? 'mail.con.favRemove' : 'mail.con.favAdd'), disabled: off || null, on: { click: () => toggleFavorite(c) } }, [icon('star', 16)]) : null,
+				master && c.favorite && pins() ? el('button', { type: 'button', class: `ml-ib con-pin${pinned ? ' on' : ''}`, 'aria-pressed': pinned ? 'true' : 'false', title: t(pinned ? 'mail.con.unpin' : 'mail.con.pin'), 'aria-label': t(pinned ? 'mail.con.unpin' : 'mail.con.pin'), on: { click: () => togglePin(c) } }, [icon('pin', 16)]) : null,
 				el('span', { class: 'ml-grow' }),
 				!ro ? el('button', { type: 'button', class: 'ml-ib', title: t('mail.con.photoChange'), 'aria-label': t('mail.con.photoChange'), disabled: off || null, on: { click: () => changePhoto(c) } }, [icon('image', 16)]) : null,
-				!ro ? el('button', { type: 'button', class: 'ml-ib', title: t('mail.con.delete'), 'aria-label': t('mail.con.delete'), disabled: off || null, on: { click: () => deleteCard(c) } }, [icon('trash', 16)]) : null,
+				!ro ? el('button', { type: 'button', class: 'ml-ib con-del', title: t('mail.con.delete'), 'aria-label': t('mail.con.delete'), disabled: off || null, on: { click: () => deleteCard(c) } }, [icon('trash', 16)]) : null,
 				el('button', { type: 'button', class: 'ml-ib', title: t('mail.close'), 'aria-label': t('mail.close'), on: { click: () => { K.pane = null; renderList(); renderPane(); } } }, [icon('close', 16)]),
 			]);
 			const scroll = el('div', { class: 'ml-read con-card' });
+			// Mail 1.4.0: a band per different value at a linked source — "Übernehmen" (replace), "Zusätzlich" (add), "Verwerfen"
+			for (const x of c.conflicts || []) {
+				const ct = MS.conflictText(x, books(), ctx.me(), lang(), t);
+				scroll.append(el('div', { class: 'ml-banner is-warn con-cf', 'data-conflict': String(x.id) }, [
+					icon('alert', 15),
+					el('span', { class: 'ml-grow con-cf-tx', text: ct.text }),
+					el('span', { class: 'con-cf-acts' }, [
+						el('button', { type: 'button', class: 'btn btn-pri btn-xs con-cf-accept', disabled: off || null, text: t('mail.con.cf.accept'), on: { click: () => resolveConflict(c, x, 'accept', x.replaces ? 'replace' : null) } }),
+						ct.canAdd ? el('button', { type: 'button', class: 'btn btn-sec btn-xs con-cf-add', disabled: off || null, text: t('mail.con.cf.add'), on: { click: () => resolveConflict(c, x, 'accept', 'add') } }) : null,
+						el('button', { type: 'button', class: 'btn btn-ghost btn-xs con-cf-dismiss', disabled: off || null, text: t('mail.con.cf.dismiss'), on: { click: () => resolveConflict(c, x, 'dismiss') } }),
+					]),
+				]));
+			}
 			const srcs = [MS.bookLabel(book, ctx.me())];
-			for (const l of c.linked || []) { const lb = bookOf(l.addressbookId); if (lb) srcs.push(t('mail.con.linkedWith', { name: MS.bookLabel(lb, ctx.me()) })); }
+			if (c.sources && c.sources.length > 1) srcs.push(t('mail.con.linkedTo', { names: c.sources.slice(1).map((x) => MS.sourceLabel(x, books(), ctx.me())).join(', ') }));
+			else for (const l of c.linked || []) { const lb = bookOf(l.addressbookId); if (lb) srcs.push(t('mail.con.linkedWith', { name: MS.bookLabel(lb, ctx.me()) })); }
 			const color = MS.bookColor(book, ctx.me());
 			scroll.append(el('div', { class: 'con-hero' }, [
 				avatar({ ...c, name: { display: name } }, 88, 'con-av-lg'),
@@ -389,7 +425,14 @@
 			const fields = el('div', { class: 'ml-card con-fields' });
 			const fld = (label, value, extra) => el('div', { class: 'con-fld' }, [el('span', { class: 'con-fld-tx' }, [el('span', { class: 'ml-sub', text: label }), value]), extra || null]);
 			for (const e of c.emails) fields.append(fld(`${t('mail.con.email')} · ${typeLabel('email', e.type)}`, el('button', { type: 'button', class: 'con-link', text: e.value, on: { click: () => ctx.openCompose({ to: [{ name, email: e.value }] }) } })));
-			for (const p of c.phones) fields.append(fld(typeLabel('phone', p.type), el('button', { type: 'button', class: 'con-link', text: p.value, on: { click: () => dial(p.value) } })));
+			const mainDigits = c.mainPhone ? digits(c.mainPhone.value) : '';
+			for (const p of c.phones) {
+				const isMain = master && mainDigits && digits(p.value) === mainDigits;
+				const extra = !master ? null : (isMain
+					? el('span', { class: 'ml-chip con-main', title: t('mail.con.mainPhone'), text: t('mail.con.mainPhone') })
+					: el('button', { type: 'button', class: 'btn btn-ghost btn-xs con-set-main', disabled: off || null, text: t('mail.con.setMain'), on: { click: () => setMainPhone(c, p.value) } }));
+				fields.append(fld(typeLabel('phone', p.type), el('button', { type: 'button', class: 'con-link', text: p.value, on: { click: () => dial(p.value) } }), extra));
+			}
 			for (const a of c.addresses) {
 				const url = MS.mapUrl(a);
 				fields.append(fld(`${typeLabel('address', a.type)} · ${t('mail.con.address')}`, el('span', { class: 'con-addr', text: MS.addressLines(a).join('\n') }),
@@ -400,6 +443,20 @@
 			if (c.note) fields.append(fld(t('mail.con.note'), el('span', { class: 'con-note', text: c.note })));
 			if (c.groups.length) fields.append(el('div', { class: 'con-fld' }, [el('span', { class: 'con-fld-tx' }, [el('span', { class: 'ml-sub', text: t('mail.con.groups') }), el('span', { class: 'con-chips' }, c.groups.map((g) => { const gg = groupOf(g); return gg ? el('button', { type: 'button', class: 'ml-chip', text: gg.name, on: { click: () => openGroup(gg.id) } }) : null; }))])]));
 			if (fields.childNodes.length) scroll.append(fields);
+			// "Quellen": the GC contact and its linked cards, each with "Verknüpfung lösen" (Mail 1.4.0)
+			if (c.sources && c.sources.length > 1) {
+				const list = el('div', { class: 'ml-card con-list-card con-sources' });
+				c.sources.forEach((x, i) => {
+					const b = bookOf(x.addressbookId);
+					const color = MS.bookColor(b, ctx.me());
+					list.append(el('div', { class: 'con-source', 'data-id': String(x.id) }, [
+						color ? dot(color) : el('span', { class: 'ml-dot con-src-own' }),
+						el('span', { class: 'con-row-tx' }, [el('span', { class: 'con-row-name', text: MS.sourceLabel(x, books(), ctx.me()) }), i === 0 ? el('span', { class: 'ml-sub', text: t('mail.con.sourceOwn') }) : null]),
+						i > 0 ? el('button', { type: 'button', class: 'btn btn-ghost btn-xs con-unlink', disabled: off || null, text: t('mail.con.unlink'), on: { click: () => unlinkSource(c, x) } }) : null,
+					]));
+				});
+				scroll.append(el('h3', { class: 'ml-lab con-lab', text: t('mail.con.sources') }), list);
+			}
 			const A = P.activity;
 			if (A && A.mails.length) {
 				const list = el('div', { class: 'ml-card con-list-card' });
@@ -435,6 +492,58 @@
 			if (!r || !r.ok) toast(t('mail.con.noPhoneApp'), 'error');
 		}
 
+		// ── Mail 1.4.0: conflicts, favourites, main number, sources ──
+
+		async function resolveConflict(c, x, action, mode = null) {
+			const r = await call(action === 'accept' ? api.acceptConflict(c.id, x.id, mode) : api.dismissConflict(c.id, x.id));
+			if (!r || !r.ok) { toast(errText(r), 'error'); if (r && r.code === 'not_found') openCard(c.id, { quiet: true }); return; }
+			toast(t(action === 'accept' ? 'mail.con.cf.accepted' : 'mail.con.cf.dismissed'), 'success');
+			if (K.pane && K.pane.kind === 'card' && K.pane.id === c.id) { K.pane.card = r.card; renderPane(); }
+			loadList();
+		}
+
+		async function toggleFavorite(c) {
+			const on = !c.favorite;
+			const r = await call(api.setFavorite(c.id, on));
+			if (!r || !r.ok) { toast(errText(r), 'error'); return; }
+			if (!on && pins() && pins().hasContact(c.id)) pins().pinContact(c.id, false);
+			toast(t(on ? 'mail.con.favOn' : 'mail.con.favOff'), 'success');
+			if (K.pane && K.pane.kind === 'card' && K.pane.id === c.id) { K.pane.card = r.card; renderPane(); }
+			loadList();
+		}
+
+		function togglePin(c) {
+			if (!pins()) return;
+			const on = !pins().hasContact(c.id);
+			pins().pinContact(c.id, on);
+			toast(t(on ? 'mail.con.pinned' : 'mail.con.unpinned'), 'success');
+			renderPane();
+		}
+
+		async function setMainPhone(c, value) {
+			const r = await call(api.setMainPhone(c.id, value));
+			if (!r || !r.ok) { toast(errText(r), 'error'); return; }
+			toast(t('mail.con.mainSet'), 'success');
+			if (K.pane && K.pane.kind === 'card' && K.pane.id === c.id) { K.pane.card = r.card; renderPane(); }
+			loadList();
+		}
+
+		function unlinkSource(c, x) {
+			const label = MS.sourceLabel(x, books(), ctx.me());
+			const dlg = openDialog({ title: t('mail.con.unlinkTitle', { name: label }), closeLabel: t('mail.close') });
+			dlg.body.append(el('p', { class: 'ml-p', text: t('mail.con.unlinkText') }));
+			if (c.sources.length === 2) dlg.body.append(el('p', { class: 'ml-note', text: t('mail.con.unlinkLast') }));
+			dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.cancel'), on: { click: () => dlg.close() } }), el('button', { type: 'button', class: 'btn btn-pri con-unlink-ok', text: t('mail.con.unlink'), on: { click: async () => {
+				const r = await call(api.unmerge(c.id, { ids: [x.id] }));
+				if (!r || !r.ok) { toast(errText(r), 'error'); return; }
+				dlg.close();
+				toast(t('mail.con.unlinked'), 'success');
+				if (r.card) { K.pane = { kind: 'card', id: r.card.id, card: r.card, offline: false, activity: K.pane && K.pane.activity }; } else K.pane = null;
+				renderPane();
+				reloadSoon({ books: true });
+			} } }));
+		}
+
 		async function changePhoto(c) {
 			const r = await call(api.setCardPhoto(c.id));
 			if (r && r.code === 'cancelled') return;
@@ -448,8 +557,15 @@
 			const dlg = openDialog({ title: t('mail.con.deleteTitle', { name: c.name.display || '' }), closeLabel: t('mail.close') });
 			const book = bookOf(c.addressbookId);
 			dlg.body.append(el('p', { class: 'ml-p', text: book && book.accountId ? t('mail.con.deleteRemote', { name: MS.bookLabel(book, ctx.me()) }) : t('mail.con.deleteText') }));
+			// Mail 1.4.0: a GC contact with links — the linked entries at the provider too? (no by default)
+			const links = c.sources && c.sources.length > 1 ? c.sources.slice(1) : [];
+			const alsoLinked = links.length ? el('input', { type: 'checkbox', class: 'ml-check con-del-linked' }) : null;
+			if (alsoLinked) {
+				dlg.body.append(el('label', { class: 'ml-check-row' }, [alsoLinked, el('span', { text: t('mail.con.deleteLinked') })]),
+					el('p', { class: 'ml-note', text: t('mail.con.deleteLinkedText', { names: links.map((x) => MS.sourceLabel(x, books(), ctx.me())).join(', ') }) }));
+			}
 			dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.cancel'), on: { click: () => dlg.close() } }), el('button', { type: 'button', class: 'btn btn-danger con-del-ok', text: t('mail.con.delete'), on: { click: async () => {
-				const r = await call(api.deleteCard(c.id));
+				const r = await call(alsoLinked ? api.deleteCard(c.id, { linked: alsoLinked.checked ? 'delete' : 'keep' }) : api.deleteCard(c.id));
 				if (!r || !r.ok) { toast(errText(r), 'error'); return; }
 				dlg.close();
 				toast(t('mail.con.deleted'), 'success');
@@ -595,7 +711,12 @@
 					return;
 				}
 				if (!r || !r.ok) { err.textContent = r && r.code === 'read_only' ? t('mail.con.readOnly') : errText(r); return; }
-				toast(t('mail.saved'), 'success');
+				// Mail 1.4.0: a value taken over from a linked card went back there — or did not ("Nicht bei <Konto> geändert")
+				const failed = MS.writeBackFailed(r.writeBack, books(), ctx.me());
+				const done = MS.writeBackDone(r.writeBack, books(), ctx.me());
+				if (failed.length) toast(t('mail.con.writeBackFail', { names: failed.join(', ') }), 'warning');
+				else if (done.length) toast(t('mail.con.writeBackOk', { names: done.join(', ') }), 'success');
+				else toast(t('mail.saved'), 'success');
 				openCard(r.card.id);
 				reloadSoon({ books: true });
 			}
@@ -746,19 +867,28 @@
 
 		// ── Duplicates ───────────────────────────────────
 
-		async function openDups() {
-			K.pane = { kind: 'dups', loading: true };
+		async function openDups({ quiet = false } = {}) {
+			const autoOpen = !!(K.pane && K.pane.kind === 'dups' && K.pane.autoOpen);
+			if (!quiet || !K.pane || K.pane.kind !== 'dups') K.pane = { kind: 'dups', loading: true };
 			K.group = null;
 			ctx.renderMenu();
 			renderPane();
-			const r = await call(api.duplicates());
+			// Mail 1.4.0: each card in full with its source and the preview; the protocol of the automatic merges
+			const [r, mg] = await Promise.all([call(api.duplicates({ details: true })), api.merges ? call(api.merges()) : Promise.resolve(null)]);
 			if (!K.pane || K.pane.kind !== 'dups') return;
-			if (r && r.ok) { K.dups = r.items; K.pane = { kind: 'dups', items: r.items }; } else K.pane = { kind: 'dups', error: errText(r) };
+			if (r && r.ok) {
+				const cases = MS.dupCases(r.items);
+				K.dups = cases.open;
+				K.pane = cases.fresh || (mg && mg.ok && !mg.unsupported)
+					? { kind: 'dups', fresh: true, items: cases.open, merges: mg && mg.ok && !mg.unsupported ? MS.autoMerges(mg.items) : [], autoOpen }
+					: { kind: 'dups', items: r.items };
+			} else K.pane = { kind: 'dups', error: errText(r) };
 			ctx.renderMenu();
 			renderPane();
 		}
 
 		function renderDups(P) {
+			if (P.fresh) { renderDupsMaster(P); return; }
 			const scroll = el('div', { class: 'ml-read' });
 			scroll.append(el('h2', { class: 'ml-read-subj', text: t('mail.con.dups') }), el('p', { class: 'ml-note', text: t('mail.con.dupsIntro') }));
 			if (!P.items.length) scroll.append(el('div', { class: 'ml-empty' }, [icon('check', 26), el('p', { class: 'ml-p', text: t('mail.con.noDups') })]));
@@ -780,6 +910,112 @@
 				scroll.append(card);
 			}
 			paneCol.append(scroll);
+		}
+
+		/** The duplicates of Mail 1.4.0: the automatic merges with "Rückgängig", the uncertain cases with the preview. */
+		function renderDupsMaster(P) {
+			const off = offline();
+			const scroll = el('div', { class: 'ml-read con-dups' });
+			scroll.append(el('h2', { class: 'ml-read-subj', text: t('mail.con.dups') }));
+			const autoBox = el('div', { class: 'ml-card con-auto' });
+			autoBox.append(el('button', { type: 'button', class: 'con-auto-head', 'aria-expanded': P.autoOpen ? 'true' : 'false', on: { click: () => { P.autoOpen = !P.autoOpen; renderPane(); } } }, [
+				icon(P.autoOpen ? 'chevDown' : 'chevron', 15), el('span', { class: 'ml-grow', text: t('mail.con.dupsAuto', { count: P.merges.length }) }),
+			]));
+			if (P.autoOpen) {
+				if (!P.merges.length) autoBox.append(el('p', { class: 'ml-note', text: t('mail.con.dupsAutoNone') }));
+				for (const m of P.merges) {
+					autoBox.append(el('div', { class: 'con-auto-row', 'data-id': String(m.id) }, [
+						el('button', { type: 'button', class: 'con-row-tx con-auto-tx', on: { click: () => { if (m.masterId) openCard(m.masterId); } } }, [
+							el('span', { class: 'con-row-name', text: MS.mergeLine(m) }),
+							el('span', { class: 'ml-sub', text: [t(`mail.con.mode.${m.mode}`), m.at ? MS.timeLabel(m.at, Date.now(), lang(), t) : null].filter(Boolean).join(' · ') }),
+						]),
+						el('button', { type: 'button', class: 'btn btn-ghost btn-xs con-undo', disabled: off || null, text: t('mail.con.undo'), on: { click: () => undoMerge(m) } }),
+					]));
+				}
+			}
+			scroll.append(autoBox);
+			scroll.append(el('h3', { class: 'ml-lab con-lab', text: t('mail.con.dupsCheck', { count: P.items.length }) }), el('p', { class: 'ml-note', text: t('mail.con.dupsIntroNew') }));
+			if (!P.items.length) scroll.append(el('div', { class: 'ml-empty' }, [icon('check', 26), el('p', { class: 'ml-p', text: t('mail.con.noDupsNew') })]));
+			for (const d of P.items) scroll.append(dupCase(d, off));
+			paneCol.append(scroll);
+		}
+
+		/** One uncertain case: each card with its source and fields, "So wird der Kontakt", the two answers. */
+		function dupCase(d, off) {
+			const box = el('div', { class: 'ml-card con-dup con-case', 'data-key': d.key });
+			box.append(el('span', { class: 'ml-sub', text: t(`mail.con.reason.${d.reason}`) }));
+			const list = d.details && d.details.length ? d.details : d.cards.map((c) => ({ card: { ...c, name: { display: c.name }, emails: c.emails.map((v) => ({ value: v })), phones: c.phone ? [{ value: c.phone }] : [], addresses: [] }, source: null }));
+			const cols = el('div', { class: 'con-case-cards' });
+			for (const x of list) {
+				const c = x.card;
+				const f = MS.dupFields(c);
+				const origin = x.source ? MS.sourceLabel(x.source, books(), ctx.me()) : MS.bookLabel(bookOf(c.addressbookId), ctx.me());
+				const color = MS.bookColor(bookOf(c.addressbookId), ctx.me());
+				cols.append(el('div', { class: 'con-case-card', 'data-id': String(c.id) }, [
+					el('div', { class: 'con-case-head' }, [
+						avatar({ ...c, photoEtag: c.photo && c.photo.etag ? c.photo.etag : c.photoEtag }, 44, 'con-thumb'),
+						el('span', { class: 'con-row-tx' }, [
+							el('button', { type: 'button', class: 'con-link con-case-name', text: MS.cardName(c) || t('mail.con.noName'), on: { click: () => openCard(c.id) } }),
+							el('span', { class: 'ml-sub con-origin' }, [color ? dot(color) : null, el('span', { text: origin })]),
+						]),
+					]),
+					...f.phones.map((v) => el('span', { class: 'con-case-fld' }, [icon('phone', 13), el('span', { text: v })])),
+					...f.emails.map((v) => el('span', { class: 'con-case-fld' }, [icon('mail', 13), el('span', { text: v })])),
+					f.address ? el('span', { class: 'con-case-fld' }, [icon('open', 13), el('span', { text: f.address })]) : null,
+				]));
+			}
+			box.append(cols);
+			const pv = d.preview;
+			if (pv) {
+				const f = MS.dupFields(pv);
+				const photoOf = pv.photoFrom ? list.find((x) => x.card.id === pv.photoFrom) : null;
+				const pc = photoOf ? photoOf.card : null;
+				box.append(el('div', { class: 'con-preview' }, [
+					el('span', { class: 'ml-lab con-preview-h', text: t('mail.con.preview') }),
+					el('div', { class: 'con-case-head' }, [
+						avatar(pc ? { ...pc, name: { display: MS.cardName(pv) }, photoEtag: pc.photo && pc.photo.etag ? pc.photo.etag : pc.photoEtag } : { name: { display: MS.cardName(pv) } }, 44, 'con-thumb'),
+						el('span', { class: 'con-row-tx' }, [
+							el('span', { class: 'con-row-name con-preview-name', text: MS.cardName(pv) }),
+							pc ? el('span', { class: 'ml-sub', text: t('mail.con.previewPhoto', { name: MS.cardName(pc) }) }) : null,
+						]),
+					]),
+					...f.phones.map((v) => el('span', { class: 'con-case-fld' }, [icon('phone', 13), el('span', { text: v })])),
+					...f.emails.map((v) => el('span', { class: 'con-case-fld' }, [icon('mail', 13), el('span', { text: v })])),
+					f.address ? el('span', { class: 'con-case-fld' }, [icon('open', 13), el('span', { text: f.address })]) : null,
+					[pv.title, pv.company].filter(Boolean).length ? el('span', { class: 'con-case-fld' }, [icon('person', 13), el('span', { text: [pv.title, pv.company].filter(Boolean).join(' · ') })]) : null,
+				]));
+			}
+			const ids = list.map((x) => x.card.id);
+			box.append(el('div', { class: 'ml-att-acts' }, [
+				el('button', { type: 'button', class: 'btn btn-pri btn-sm con-merge', disabled: off || null, text: t('mail.con.merge'), on: { click: async (e) => {
+					e.currentTarget.disabled = true;
+					const r = await call(api.merge({ ids }));
+					if (!r || !r.ok) { toast(errText(r), 'error'); openDups({ quiet: true }); return; }
+					toast(t('mail.con.mergedNew'), 'success');
+					reloadSoon({ books: true });
+					openCard(r.card.id);
+				} } }),
+				el('button', { type: 'button', class: 'btn btn-ghost btn-sm con-notdup', disabled: off || null, text: t('mail.con.notDup'), on: { click: async () => {
+					const r = await call(api.ignoreDuplicates(ids));
+					if (!r || !r.ok) { toast(errText(r), 'error'); return; }
+					openDups({ quiet: true });
+				} } }),
+			]));
+			return box;
+		}
+
+		function undoMerge(m) {
+			const dlg = openDialog({ title: t('mail.con.undoTitle'), closeLabel: t('mail.close') });
+			dlg.body.append(el('p', { class: 'ml-p', text: MS.mergeLine(m) }), el('p', { class: 'ml-note', text: t('mail.con.undoText') }));
+			if (m.created) dlg.body.append(el('p', { class: 'ml-note', text: t('mail.con.undoCreated') }));
+			dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.cancel'), on: { click: () => dlg.close() } }), el('button', { type: 'button', class: 'btn btn-pri con-undo-ok', text: t('mail.con.undo'), on: { click: async () => {
+				const r = await call(api.undoMerge(m.id));
+				if (!r || !r.ok) { toast(errText(r), 'error'); return; }
+				dlg.close();
+				toast(t('mail.con.undone'), 'success');
+				reloadSoon({ books: true });
+				openDups({ quiet: true });
+			} } }));
 		}
 
 		async function mergeDialog(d) {
@@ -837,8 +1073,11 @@
 			/** mail:contacts live events. */
 			onLive(c) {
 				if (!c || !K.shown) return;
-				const mine = c.kind === 'changed' && K.pane && K.pane.kind === 'card' && c.contactIds.includes(K.pane.id);
-				reloadSoon({ books: true, card: mine });
+				const open = K.pane && K.pane.kind === 'card' ? K.pane.id : null;
+				// Mail 1.4.0: merged (an open linked card becomes its GC contact), different values, favourites
+				if (c.kind === 'merged' && open && (c.contactIds || []).includes(open) && c.masterId && c.masterId !== open) { reloadSoon({ books: true }); openCard(c.masterId, { quiet: true }); return; }
+				const mine = (c.kind === 'changed' || c.kind === 'conflicts' || c.kind === 'merged') && open && (c.contactIds || []).includes(open);
+				reloadSoon({ books: c.kind !== 'conflicts' && c.kind !== 'favorites', card: mine });
 			},
 			openCard,
 			saveFrom,

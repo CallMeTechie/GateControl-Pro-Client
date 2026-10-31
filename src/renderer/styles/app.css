@@ -578,3 +578,41 @@ body:not([data-conn="connected"]) .show-connected { display: none !important; }
 	.notify-grid { grid-template-columns: minmax(0, 1fr); }
 	.set-tab.set-tab-wide { max-width: 760px; }
 }
+
+/* ── Start: angeheftete Favoriten und Termine (Mail 1.4.0, home-view.js) ── */
+.home-pins { display: flex; flex-direction: column; gap: 10px; }
+.home-pins-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.home-cal { grid-column: span 2; grid-row: span 3; display: flex; flex-direction: column; padding: 6px; min-width: 0; }
+.home-cal-head { display: flex; align-items: center; gap: 4px; }
+.home-cal-open { display: flex; align-items: center; gap: 10px; flex-grow: 1; min-width: 0; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.home-cal-open:hover { background: var(--panel2); }
+.home-cal-ic { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 10px; background: var(--info-bg); color: var(--info); }
+.home-x { width: 30px; height: 30px; padding: 0; flex: none; display: grid; place-items: center; }
+.home-cal-note { margin: 0 10px 4px; font-size: 12px; color: var(--faint); }
+.home-cal-day { padding: 8px 10px 2px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.home-ev { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 5px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.home-ev:hover { background: var(--panel2); }
+.home-ev-time { width: 64px; flex: none; font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }
+.home-ev-bar { width: 4px; align-self: stretch; flex: none; border-radius: 4px; background: var(--acc); }
+.home-ev-tx { display: flex; flex-direction: column; min-width: 0; flex-grow: 1; }
+.home-ev-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-ev-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-ev.is-tentative .home-ev-bar { background: repeating-linear-gradient(180deg, currentColor 0 4px, transparent 4px 7px) !important; color: var(--faint); }
+.home-cal-empty { margin: 6px 10px 10px; font-size: 13px; color: var(--muted); }
+.home-cal-more { padding: 4px 10px 8px; font-size: 12.5px; color: var(--faint); }
+.home-favs { display: contents; }
+.home-fav { position: relative; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 12px; cursor: pointer; }
+.home-fav:hover { background: var(--panel2); }
+.home-fav-call { position: relative; flex: none; padding: 0; border: 0; background: transparent; cursor: pointer; border-radius: 99px; }
+.home-fav-av { width: 44px; height: 44px; border-radius: 99px; overflow: hidden; display: grid; place-items: center; background: var(--acc-bg); color: var(--acc-t); font-family: var(--font-disp); font-weight: 700; font-size: 16px; }
+.home-fav-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.home-fav-tel { position: absolute; right: -3px; bottom: -3px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 99px; background: var(--acc); color: var(--acc-on); border: 2px solid var(--panel); }
+.home-fav-name { display: flex; flex-direction: column; min-width: 0; flex-grow: 1; padding: 0; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.home-fav-name:hover .svc-name { text-decoration: underline; }
+.home-fav .home-x { opacity: 0; }
+.home-fav:hover .home-x, .home-fav:focus-within .home-x { opacity: 1; }
+.home-fav-call:focus-visible, .home-fav-name:focus-visible, .home-cal-open:focus-visible, .home-ev:focus-visible { outline: 2px solid var(--info); outline-offset: 1px; }
+@media (max-width: 1100px) {
+	.home-pins-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.home-cal { grid-column: span 2; grid-row: auto; }
+}
