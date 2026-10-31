@@ -212,6 +212,29 @@ describe('mail page wiring', () => {
     assert.equal(MS.fitZoom(undefined, 600), 1);
   });
 
+  it('mails in the dark: only while the app is dark, the setting is on and the mail is not shown light', () => {
+    assert.equal(MS.showDark(true, true, false), true);
+    assert.equal(MS.showDark(true, true, true), false, '"Hell anzeigen"');
+    assert.equal(MS.showDark(true, false, false), false, '"Mails dunkel darstellen" off');
+    assert.equal(MS.showDark(false, true, false), false, 'the app is light');
+    // the setting is on unless switched off
+    assert.equal(MS.darkSetting(null), true);
+    assert.equal(MS.darkSetting('1'), true);
+    assert.equal(MS.darkSetting('0'), false);
+    assert.equal(MS.DARK_KEY, 'gc.mail.darkMails');
+    // the core's documents: docDark only when dark and there, else the original
+    assert.equal(MS.frameDoc({ doc: 'L', docDark: 'D' }, true), 'D');
+    assert.equal(MS.frameDoc({ doc: 'L', docDark: 'D' }, false), 'L');
+    assert.equal(MS.frameDoc({ doc: 'L' }, true), 'L', 'an older core without docDark');
+    assert.equal(MS.frameDoc(null, true), '');
+    // the page: the frame shows docDark while dark, the sun in the bar, the setting under "Darstellung"
+    const view = read('src', 'renderer', 'mail-view.js');
+    assert.match(view, /mailFrame\(MS\.frameDoc\(R, R\.frameDark\)/);
+    assert.match(view, /mail\.read\.showLight/);
+    assert.match(view, /mail\.settings\.darkMails/);
+    assert.ok(!/allow-scripts/.test(view), 'the frames never run a script');
+  });
+
   it('the menu: an account\'s folders open or close with a tap, each account for itself, for the session', () => {
     const folds = new Map();
     const view = { kind: 'box', box: 1, folderId: null };

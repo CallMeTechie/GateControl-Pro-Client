@@ -25,7 +25,10 @@
  *   open / save as; "Bilder laden" (once / always for the sender); the mail
  *   in a sandboxed frame (no scripts, own CSP, links in the browser, pictures
  *   only through gcmail: with the client's sign-in); trackers removed; the
- *   older mails of the conversation.
+ *   older mails of the conversation. While the app is dark the mail is shown
+ *   dark as the Outlook app does (the core's docDark: light backgrounds dark,
+ *   dark text light, pictures untouched; "Mails dunkel darstellen" in the
+ *   settings), the sun in the bar shows this one mail light ("Hell anzeigen").
  *
  * Writing (mockup "Schreiben") opens in the reading pane: Von (an account),
  * An / Cc / Bcc with suggestions, Betreff, the text in an editable sandboxed
@@ -102,6 +105,8 @@
 		italic: 'M10 5h8M6 19h8M14 5l-4 14',
 		underline: 'M7 4v7a5 5 0 0 0 10 0V4|M5 20h14',
 		list: 'M9 6h11M9 12h11M9 18h11|M4.5 6h.01M4.5 12h.01M4.5 18h.01',
+		sun: 'M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+		moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
 		offline: 'M2 8.8a15 15 0 0 1 4.2-2.6|M10.7 5.1A15 15 0 0 1 22 8.8|M5 12.9a10 10 0 0 1 5.2-2.8|M16.8 11.5A10 10 0 0 1 19 12.9|M8.5 16.4a5 5 0 0 1 7 0|M12 20h.01|M3 3l18 18',
 	};
 	const TONE = { err: ['var(--err-bg)', 'var(--err)'], info: ['var(--info-bg)', 'var(--info)'], acc: ['var(--acc-bg)', 'var(--acc-t)'], warn: ['var(--warn-bg)', 'var(--warn)'], pro: ['var(--pro-bg)', 'var(--pro)'], muted: ['var(--panel2)', 'var(--muted)'] };
@@ -216,9 +221,9 @@
 	 * measures the frame's #gc-fit (core mailDocument) at zoom 1 and gives it CSS zoom (MS.fitZoom) — the frame
 	 * itself never runs a script.
 	 */
-	function mailFrame(doc, { title, editable = false } = {}) {
+	function mailFrame(doc, { title, editable = false, dark = false } = {}) {
 		const f = el('iframe', {
-			class: editable ? 'ml-editor' : 'ml-frame',
+			class: editable ? 'ml-editor' : `ml-frame${dark ? ' is-dark' : ''}`,
 			title: title || null,
 			sandbox: editable ? 'allow-same-origin' : 'allow-same-origin allow-popups allow-popups-to-escape-sandbox',
 			referrerpolicy: 'no-referrer',
@@ -354,7 +359,7 @@
 			listSeq: 0,
 			selectedId: null,
 			pane: 'empty',          // 'empty' | 'read' | 'compose' | 'sender'
-			read: null,             // { message, doc, ai, thread, aiError, suggest: Map(aid → { suggestion, duplicate }) }
+			read: null,             // { message, doc, docDark, light, ai, thread, aiError, suggest: Map(aid → { suggestion, duplicate }) }
 			readSeq: 0,
 			senderSeq: 0,
 			folds: new Map(),       // account id → its folders shown in the menu (this session)
@@ -364,6 +369,27 @@
 			undo: null,             // { outboxId, draftId, until, sendAt, timer }
 			compose: null,
 		};
+
+		// ── Mails in the dark ────────────────────────────
+
+		const store = (() => { try { return root.localStorage || null; } catch { return null; } })();
+		/** "Mails dunkel darstellen" (kept on this PC, on by default). */
+		function darkMails() {
+			try { return MS.darkSetting(store ? store.getItem(MS.DARK_KEY) : null); } catch { return true; }
+		}
+		function setDarkMails(on) {
+			try { if (store) store.setItem(MS.DARK_KEY, on ? '1' : '0'); } catch { /* private */ }
+			if (S.pane === 'read') renderPane();
+		}
+		/** Whether the app is dark right now (the window's theme: no data-theme="light"). */
+		const appDark = () => document.documentElement.getAttribute('data-theme') !== 'light';
+		/** Whether the open mail is shown dark (the app dark, the setting on, not switched to light). */
+		const readDark = () => MS.showDark(appDark(), darkMails(), !!(S.read && S.read.light));
+		// the app's theme changed: the open mail follows
+		if (typeof MutationObserver === 'function') {
+			new MutationObserver(() => { if (S.pane === 'read' && S.read && S.read.message) renderPane(); })
+				.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+		}
 
 		const page = el('div', { class: 'ml' });
 		const side = el('aside', { class: 'ml-side', 'aria-label': t('mail.menu') });
@@ -823,7 +849,7 @@
 				if (fromPush) toast(errText(r), 'error');
 				return;
 			}
-			S.read = { message: r.message, doc: r.doc, offline: !!r.offline, ai: null, thread: null, suggest: new Map(), atts: new Map(), attEls: new Map(), pics: null };
+			S.read = { message: r.message, doc: r.doc, docDark: r.docDark, light: false, offline: !!r.offline, ai: null, thread: null, suggest: new Map(), atts: new Map(), attEls: new Map(), pics: null };
 			const row = S.items.find((m) => m.id === id);
 			if (row && row.unread) { row.unread = false; renderList(); loadMe().then(renderMenu); }
 			renderPane();
@@ -853,6 +879,7 @@
 			if (r && r.ok) {
 				R.message = r.message;
 				R.doc = r.doc;
+				R.docDark = r.docDark;
 				R.offline = !!r.offline;
 			}
 			renderPane();
@@ -876,7 +903,7 @@
 			R.pics.timer = null;
 			R.pics.waiting.clear();
 			setPicsNote(R, false);
-			if (R.frame && R.frame.isConnected) R.frame.srcdoc = R.doc;
+			if (R.frame && R.frame.isConnected) R.frame.srcdoc = MS.frameDoc(R, R.frameDark);
 		}
 
 		/** mail:loading { messageId, attachmentId, retryAfter }: asked again after retryAfter (a few times) or with the live event. */
@@ -976,6 +1003,10 @@
 				tb('junk', 'mail.act.junk', () => runAction('junk', [m])),
 				tb(m.unread ? 'mailOpen' : 'mail', m.unread ? 'mail.act.markRead' : 'mail.act.markUnread', () => runAction('read', [m])),
 				tb('flag', m.flagged ? 'mail.act.unflag' : 'mail.act.flag', () => runAction('flag', [m])),
+				// "Hell anzeigen": this mail light as it was made (while the app is dark and mails are shown dark)
+				appDark() && darkMails() && (R.docDark || (R.thread || []).some((x) => x.docDark))
+					? tb(R.light ? 'moon' : 'sun', R.light ? 'mail.read.showDark' : 'mail.read.showLight', () => { R.light = !R.light; renderPane(); })
+					: null,
 				tb('more', 'mail.more', (e) => {
 					const r = e.currentTarget.getBoundingClientRect();
 					popMenu(r.left, r.bottom + 4, [
@@ -1042,8 +1073,9 @@
 			scroll.append(R.picsNote);
 			R.frame = null;
 			if (!m.bodyMissing || m.html || m.text) {
-				R.frame = mailFrame(R.doc, { title: m.subject || t('mail.noSubject') });
-				scroll.append(el('div', { class: 'ml-frame-wrap' }, [R.frame]));
+				R.frameDark = readDark();
+				R.frame = mailFrame(MS.frameDoc(R, R.frameDark), { title: m.subject || t('mail.noSubject'), dark: R.frameDark });
+				scroll.append(el('div', { class: `ml-frame-wrap${R.frameDark ? ' is-dark' : ''}` }, [R.frame]));
 			}
 			const notes = [];
 			if (m.trackers > 0) notes.push(t('mail.trackers', { count: m.trackers }));
@@ -1166,7 +1198,8 @@
 			]));
 			card.addEventListener('toggle', () => {
 				if (card.open && !card.querySelector('iframe')) {
-					card.append(mailFrame(x.doc, { title: x.subject || '' }));
+					const dark = readDark();
+					card.append(mailFrame(MS.frameDoc(x, dark), { title: x.subject || '', dark }));
 					card.append(el('div', { class: 'ml-thread-foot' }, [el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('mail.thread.open'), on: { click: () => openMessage(x.id) } })]));
 				}
 			}, { once: false });
@@ -1251,6 +1284,7 @@
 			if (S.read && S.read.message.id === m.id) {
 				S.read.message = r.message;
 				S.read.doc = r.doc;
+				S.read.docDark = r.docDark;
 				renderPane();
 			}
 			if (allow === 'sender') toast(t('mail.images.senderDone', { sender: MS.senderName(m.from, t) }), 'success');
@@ -2097,6 +2131,8 @@
 				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow', text: t('mail.settings.threads') }), sw(me.settings.threads, t('mail.settings.threads'), (v) => put({ threads: v }))]),
 				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow' }, [t('mail.settings.quick1'), el('span', { class: 'ml-sub ml-block', text: t('mail.settings.quickHint') })]), sel(me.settings.swipeRight, (v) => put({ swipeRight: v }), t('mail.settings.quick1'))]),
 				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow', text: t('mail.settings.quick2') }), sel(me.settings.swipeLeft, (v) => put({ swipeLeft: v }), t('mail.settings.quick2'))]),
+				el('div', { class: 'lbl', text: t('mail.settings.display') }),
+				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow' }, [t('mail.settings.darkMails'), el('span', { class: 'ml-sub ml-block', text: t('mail.settings.darkMailsHint') })]), sw(darkMails(), t('mail.settings.darkMails'), (v) => setDarkMails(v))]),
 			);
 			const q = MS.quotaView(me.limits, lang(), t);
 			if (q) {

@@ -175,6 +175,77 @@ test.describe('mail', () => {
     await expect(root.locator('.ml-rcpt')).toHaveText(['Elektromarkt']);
   });
 
+  test('a light mail in the dark app: shown dark, the sun shows it light, the setting and the light app keep it light', async ({ launchApp, mock }) => {
+    const m = await mock.setMail();
+    // a light newsletter: white table, black text, a red button with white text and a picture
+    m.srv.state.messages.get(104).html = '<table bgcolor="#FFFFFF" width="100%"><tr><td id="cell" style="background:#FFFFFF;color:#000000">'
+      + '<p id="txt">Heller Newsletter</p><a id="btn" style="background:#E30613;color:#FFFFFF" href="https://shop.example/">Zum Angebot</a>'
+      + '<img id="pic" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="></td></tr></table>';
+    const { app, page } = await launchApp();
+    await app.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; win.unmaximize(); win.setSize(1440, 900); });
+    await setupWithApiKey(page, mock);
+    const root = await openMail(page);
+    // the app is dark (its default)
+    await page.evaluate(() => document.documentElement.removeAttribute('data-theme'));
+    await root.locator('.ml-tab').nth(1).click();
+    await row(root, 104).click();
+    const frame = page.frameLocator('.ml-frame-wrap iframe.ml-frame');
+    const look = () => frame.locator('#cell').evaluate((td) => {
+      const css = (el, k) => el.ownerDocument.defaultView.getComputedStyle(el)[k];
+      const d = td.ownerDocument;
+      return { body: css(d.body, 'backgroundColor'), cell: css(td, 'backgroundColor'), text: css(d.getElementById('txt'), 'color'), btn: css(d.getElementById('btn'), 'backgroundColor'), btnText: css(d.getElementById('btn'), 'color'), pic: d.getElementById('pic').getAttribute('style'), scheme: css(d.documentElement, 'colorScheme') };
+    });
+    await expect(frame.locator('#txt')).toHaveText('Heller Newsletter');
+    // dark: the page and the white cell the app's panel, black text light, the red button and the picture as they were
+    await expect.poll(async () => (await look()).cell).toBe('rgb(22, 27, 34)');
+    let l = await look();
+    expect(l.body).toBe('rgb(22, 27, 34)');
+    expect(l.text).toBe('rgb(230, 234, 240)');
+    expect(l.btn).toBe('rgb(227, 6, 19)');
+    expect(l.btnText).toBe('rgb(255, 255, 255)');
+    expect(l.pic).toBeNull();
+    expect(l.scheme).toBe('dark');
+    await expect(root.locator('.ml-frame-wrap')).toHaveClass(/is-dark/);
+    expect(await frame.locator('body').evaluate(() => typeof window.gatecontrol)).toBe('undefined');
+    await page.screenshot({ path: test.info().outputPath('mail-dark.png') });
+
+    // "Hell anzeigen": this mail as it was made
+    const sun = root.locator('.ml-read-bar button[title="Hell anzeigen"], .ml-read-bar button[title="Show light"]');
+    await expect(sun).toHaveCount(1);
+    await sun.click();
+    await expect.poll(async () => (await look()).cell).toBe('rgb(255, 255, 255)');
+    l = await look();
+    expect(l.text).toBe('rgb(0, 0, 0)');
+    expect(l.scheme).toBe('light');
+    await expect(root.locator('.ml-frame-wrap')).not.toHaveClass(/is-dark/);
+    await page.screenshot({ path: test.info().outputPath('mail-dark-shown-light.png') });
+    // the moon: dark again
+    await root.locator('.ml-read-bar button[title="Dunkel anzeigen"], .ml-read-bar button[title="Show dark"]').click();
+    await expect.poll(async () => (await look()).cell).toBe('rgb(22, 27, 34)');
+
+    // another mail starts dark again; the light app shows mails light without the sun
+    await root.locator('.ml-tab').nth(0).click();
+    await row(root, 101).click();
+    await expect(root.locator('.ml-frame-wrap')).toHaveClass(/is-dark/);
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+    await expect(root.locator('.ml-frame-wrap')).not.toHaveClass(/is-dark/);
+    await expect(sun).toHaveCount(0);
+    await page.evaluate(() => document.documentElement.removeAttribute('data-theme'));
+    await expect(root.locator('.ml-frame-wrap')).toHaveClass(/is-dark/);
+
+    // "Mails dunkel darstellen" off: light in the dark app too, no sun
+    await root.locator('button[title="Mail-Einstellungen"], button[title="Mail settings"]').first().click();
+    const setting = page.locator('.ml-dlg [role="switch"][aria-label="Mails dunkel darstellen"], .ml-dlg [role="switch"][aria-label="Show mails dark"]');
+    await expect(setting).toHaveAttribute('aria-checked', 'true');
+    await setting.click();
+    await expect(setting).toHaveAttribute('aria-checked', 'false');
+    await page.keyboard.press('Escape');
+    await expect(root.locator('.ml-frame-wrap')).not.toHaveClass(/is-dark/);
+    await expect(sun).toHaveCount(0);
+    // kept on this PC
+    expect(await page.evaluate(() => localStorage.getItem('gc.mail.darkMails'))).toBe('0');
+  });
+
   test('writing: recipients, send with "Rückgängig", the draft comes back', async ({ launchApp, mock }) => {
     const m = await mock.setMail();
     const { page } = await launchApp();
