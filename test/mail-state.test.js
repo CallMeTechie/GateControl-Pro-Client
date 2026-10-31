@@ -75,6 +75,53 @@ describe('mail-state', () => {
     assert.deepEqual(MS.fileTag('datei.weird-ext'), { tag: 'FILE', tone: 'muted' });
   });
 
+  it('the folder tree in the menu: roles on top, closed by default, the arrow, the unread below a closed parent, the folder shown open', () => {
+    const F = (id, name, parentId, o) => ({ id, name, role: null, parentId: parentId || null, unread: 0, ...(o || {}) });
+    const list = [
+      F(10, 'Projekte'), F(11, 'Alpha', 10, { unread: 2 }), F(12, '2025', 11, { unread: 3 }), F(13, 'beta', 10),
+      F(14, 'Kunden', 1, { unread: 1 }), F(1, 'INBOX', null, { role: 'inbox', unread: 4 }), F(2, 'Gesendet', null, { role: 'sent' }),
+      F(3, 'Papierkorb', null, { role: 'trash' }), F(4, 'Entwürfe', 99, { role: 'drafts' }), F(15, 'Archiv alt', 77), F(5, 'Zeug'),
+      F(20, 'a', 21), F(21, 'b', 20),
+    ];
+    const tree = MS.folderTree(list);
+    assert.deepEqual(tree.map((n) => [n.folder.id, n.depth]), [
+      [1, 0], [14, 1], [4, 0], [2, 0], [3, 0], [15, 0], [10, 0], [11, 1], [12, 2], [13, 1], [5, 0], [20, 0], [21, 1],
+    ], 'a role always on top (also below a folder not synced), a parent not there → on top, a loop → on top at the end');
+    assert.deepEqual(tree.find((n) => n.folder.id === 10).kids, [11, 13]);
+    assert.equal(tree.find((n) => n.folder.id === 10).unreadBelow, 5, 'everything below');
+    const ids = (rows) => rows.map((r) => r.folder.id);
+    const folds = new Map();
+    let rows = MS.folderRows(tree, folds, null);
+    assert.deepEqual(ids(rows), [1, 4, 2, 3, 15, 10, 5, 20], 'closed by default');
+    assert.deepEqual(['hasKids', 'open', 'unreadBelow'].map((k) => rows.find((r) => r.folder.id === 10)[k]), [true, false, 5]);
+    MS.toggleFolder(tree, folds, 10, null);
+    rows = MS.folderRows(tree, folds, null);
+    assert.deepEqual(ids(rows).slice(5, 9), [10, 11, 13, 5]);
+    assert.deepEqual([rows.find((r) => r.folder.id === 10).unreadBelow, rows.find((r) => r.folder.id === 11).unreadBelow], [0, 3]);
+    MS.toggleFolder(tree, folds, 11, null);
+    MS.toggleFolder(tree, folds, 10, null);
+    assert.deepEqual(ids(MS.folderRows(tree, folds, null)).slice(5, 7), [10, 5], 'closed again: everything below hidden');
+    assert.equal(folds.get(11), true, 'the choice below stays');
+    // the folder shown: the parents above it open without a choice; revealFolder opens them over a choice
+    assert.deepEqual(MS.folderAncestors(tree, 12), [11, 10]);
+    assert.equal(MS.folderOpen(tree, new Map(), 10, 12), true);
+    assert.deepEqual(ids(MS.folderRows(tree, new Map(), 12)).slice(5, 10), [10, 11, 12, 13, 5]);
+    assert.equal(MS.revealFolder(tree, folds, 12), true);
+    assert.equal(folds.get(10), true);
+    assert.equal(MS.revealFolder(tree, folds, 12), false, 'nothing to open');
+    // the indent stops at level 4
+    const deep = [F(1, 'l1')];
+    for (let i = 2; i <= 7; i++) deep.push(F(i, `l${i}`, i - 1));
+    const all = new Map(deep.map((f) => [f.id, true]));
+    assert.deepEqual(MS.folderRows(MS.folderTree(deep), all, null).map((r) => [r.depth, r.indent]), [[0, 0], [1, 1], [2, 2], [3, 3], [4, 4], [5, 4], [6, 4]]);
+    // kept on this PC: JSON { id: bool }, anything else ignored
+    assert.equal(MS.FOLDER_FOLDS_KEY, 'gc.mail.folderFolds');
+    assert.deepEqual([...MS.folderFoldsOf(MS.folderFoldsJson(new Map([[10, true], [11, false]])))], [[10, true], [11, false]]);
+    assert.deepEqual([...MS.folderFoldsOf('{"x":true,"5":"ja","7":false}')], [[7, false]]);
+    assert.deepEqual([...MS.folderFoldsOf('kaputt')], []);
+    assert.deepEqual([...MS.folderFoldsOf(null)], []);
+  });
+
   it('folders as a tree: roles first, children below their parent, the inbox shows Relevant / Sonstige', () => {
     const folders = { accounts: [{ accountId: 1, folders: [
       { id: 15, name: 'Rechnungen', role: null, parentId: 14 },
