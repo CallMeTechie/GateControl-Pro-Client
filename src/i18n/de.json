@@ -2816,10 +2816,17 @@
       "msWaiting": "Bitte im Browser bei Microsoft anmelden …",
       "done": "„{{name}}“ ist verbunden."
     },
+    "read": {
+      "showLight": "Hell anzeigen",
+      "showDark": "Dunkel anzeigen"
+    },
     "settings": {
       "title": "Mail-Einstellungen",
       "general": "Allgemein",
       "threads": "Unterhaltungen zusammenfassen",
+      "display": "Darstellung",
+      "darkMails": "Mails dunkel darstellen",
+      "darkMailsHint": "Ist die App dunkel, erscheinen auch Mails dunkel: Helle Hintergründe werden dunkel, dunkle Schrift wird hell, Bilder bleiben unverändert. Die Sonne über einer Mail zeigt sie hell.",
       "quick1": "Schnellaktion 1",
       "quick2": "Schnellaktion 2",
       "quickHint": "Knöpfe an einer Mail in der Liste (wie Wischen in der App)",

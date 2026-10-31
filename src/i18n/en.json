@@ -2816,10 +2816,17 @@
       "msWaiting": "Please sign in at Microsoft in your browser …",
       "done": "“{{name}}” is connected."
     },
+    "read": {
+      "showLight": "Show light",
+      "showDark": "Show dark"
+    },
     "settings": {
       "title": "Mail settings",
       "general": "General",
       "threads": "Group conversations",
+      "display": "Appearance",
+      "darkMails": "Show mails dark",
+      "darkMailsHint": "While the app is dark, mails are shown dark too: light backgrounds turn dark and dark text light, pictures stay unchanged. The sun above a mail shows it light.",
       "quick1": "Quick action 1",
       "quick2": "Quick action 2",
       "quickHint": "Buttons on a mail in the list (like swiping in the app)",

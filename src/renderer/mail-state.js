@@ -479,6 +479,28 @@
 		return Math.max(FIT_MIN, Math.floor((a / c) * 1000) / 1000);
 	}
 
+	/** Where "Mails dunkel darstellen" is kept on this PC (on unless switched off). */
+	const DARK_KEY = 'gc.mail.darkMails';
+
+	/** The stored "Mails dunkel darstellen" (localStorage value) → on / off; on by default. */
+	function darkSetting(raw) {
+		return raw !== '0' && raw !== 'false';
+	}
+
+	/**
+	 * Whether a mail is shown dark (as the Outlook app shows mails while it is dark): the app is dark, "Mails dunkel
+	 * darstellen" is on and the mail was not switched to light ("Hell anzeigen").
+	 */
+	function showDark(appDark, setting, shownLight) {
+		return !!appDark && !!setting && !shownLight;
+	}
+
+	/** The frame document of a mail (core: doc as sent, docDark with its colours for the dark app). */
+	function frameDoc(x, dark) {
+		if (!x) return '';
+		return dark && typeof x.docDark === 'string' && x.docDark ? x.docDark : (x.doc || '');
+	}
+
 	/** Whether the menu shows an account's folders: as folded this session (folds: Map id → bool), else open for the account shown. */
 	function foldOpen(folds, accountId, view) {
 		if (folds && folds.has(accountId)) return !!folds.get(accountId);
@@ -580,6 +602,10 @@
 		bringsBody,
 		FIT_MIN,
 		fitZoom,
+		DARK_KEY,
+		darkSetting,
+		showDark,
+		frameDoc,
 		foldOpen,
 		toggleFold,
 		conversation,
