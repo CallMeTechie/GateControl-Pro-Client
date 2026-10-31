@@ -128,6 +128,8 @@
 		person: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M4 21c0-4 3.6-7 8-7s8 3 8 7',
 		users: 'M9 4a3.5 3.5 0 1 0 0 7a3.5 3.5 0 1 0 0-7|M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6|M16 4.5a3.2 3.2 0 0 1 0 6.2|M18.5 14.5c2 .9 3 2.8 3 5.5',
 		phone: 'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2',
+		star: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z',
+		pin: 'M9 3h6|M10 3v6l-3 4h10l-3-4V3|M12 13v8',
 	};
 	const TONE = { err: ['var(--err-bg)', 'var(--err)'], info: ['var(--info-bg)', 'var(--info)'], acc: ['var(--acc-bg)', 'var(--acc-t)'], warn: ['var(--warn-bg)', 'var(--warn)'], pro: ['var(--pro-bg)', 'var(--pro)'], muted: ['var(--panel2)', 'var(--muted)'] };
 	const SAVE_DELAY_MS = 2500;
@@ -2604,6 +2606,9 @@
 					if (!S.loaded) loadAll();
 					else reloadSoon();
 				}
+				// back on the page in the calendar / contacts: that area is shown again (hide() hid it; the start page opens a contact there)
+				const view = S.loaded ? areaView() : null;
+				if (view && !mainCol.hidden) view.show(mainCol);
 			},
 			hide() {
 				S.shown = false;
@@ -2617,12 +2622,20 @@
 			},
 			/**
 			 * A push target: { kind: 'message', messageId, accountId } | { kind: 'outbox', outboxId } | Phase 2:
-			 * { kind: 'event', eventId, occurrence } (a reminder) | { kind: 'invitation', invitationId } | { kind: 'calendar' }.
+			 * { kind: 'event', eventId, occurrence } (a reminder) | { kind: 'invitation', invitationId } | { kind: 'calendar' }
+			 * | the start page: { kind: 'contact', contactId } | { kind: 'contacts' }.
 			 */
 			async open(context) {
 				S.shown = true;
 				if (!S.loaded && S.status && S.status.state === 'available') await loadAll();
 				if (!context) return;
+				// the start page (Mail 1.4.0): a favourite's tile opens its contact
+				if (context.kind === 'contact' || context.kind === 'contacts') {
+					if (!contacts || !has('contacts')) return;
+					setArea('contacts');
+					if (context.kind === 'contact' && context.contactId) contacts.openCard(context.contactId);
+					return;
+				}
 				if (context.kind === 'event' || context.kind === 'invitation' || context.kind === 'calendar') {
 					if (!calendar || !has('calendar')) return;
 					setArea('calendar');

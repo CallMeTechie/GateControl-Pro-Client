@@ -583,3 +583,34 @@
 	.con-list { width: 290px; }
 }
 .cal-inv-more .btn-ghost, .cal-inv-open, .cal-inv-change { color: var(--acc-t); font-weight: 600; }
+
+/* ── Kontakte: GC-Kontakt als Master (Mail 1.4.0) ──────── */
+.con-srcs { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.con-fav { display: inline-flex; flex: none; color: var(--warn); }
+.con-fav svg, .con-fav-btn.on svg { fill: currentColor; }
+.con-fav-btn.on { color: var(--warn); }
+.con-pin.on { color: var(--acc-t); }
+.con-hint { width: 7px; height: 7px; flex: none; border-radius: 99px; background: var(--warn); box-shadow: 0 0 0 3px var(--warn-bg); }
+.con-cf { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+.con-cf-tx { min-width: 180px; overflow-wrap: anywhere; }
+.con-cf-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.con-main { height: 22px; font-size: 11.5px; color: var(--acc-t); background: var(--acc-bg); border-color: transparent; }
+.con-source { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 4px 10px; }
+.con-src-own { background: var(--acc); }
+.con-auto { gap: 4px; padding: 6px; }
+.con-auto-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.con-auto-head:hover { background: var(--panel2); }
+.con-auto-row { display: flex; align-items: center; gap: 10px; padding: 4px 8px; border-top: 1px solid var(--line); }
+.con-auto-tx { border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; padding: 4px 0; }
+.con-case { gap: 10px; }
+.con-case-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.con-case-card, .con-preview { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.con-preview { border-color: var(--acc); background: var(--acc-bg); }
+.con-preview-h { padding: 0; color: var(--acc-t); }
+.con-case-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.con-case-name { font-weight: 600; font-size: 14px; color: var(--text); }
+.con-origin { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.con-case-fld { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; user-select: text; }
+.con-case-fld svg { flex: none; color: var(--faint); }
+.ml-av.con-thumb { border-radius: 12px; }
+.con-auto-head:focus-visible, .con-auto-tx:focus-visible { outline: 2px solid var(--info); outline-offset: 1px; }

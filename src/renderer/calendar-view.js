@@ -187,9 +187,17 @@
 					side.append(b);
 				}
 			}
+			// the calendar widget of the start page (Mail 1.4.0; window.GCHomePins, hidden there with servers before)
+			const pins = root.GCHomePins || null;
+			const pinned = !!(pins && pins.hasCalendar());
 			side.append(el('div', { class: 'cal-side-acts' }, [
 				el('button', { type: 'button', class: 'ml-it cal-add', disabled: C.calsOffline || null, on: { click: () => addCalendar() } }, [icon('plus', 16), el('span', { class: 'ml-it-tx', text: t('mail.cal.add') })]),
 				el('button', { type: 'button', class: 'ml-it cal-add', disabled: C.calsOffline || null, on: { click: () => addSubscription() } }, [icon('link', 16), el('span', { class: 'ml-it-tx', text: t('mail.cal.subscribe') })]),
+				pins && pins.calendarSupported() ? el('button', { type: 'button', class: `ml-it cal-add cal-pin${pinned ? ' on' : ''}`, 'aria-pressed': pinned ? 'true' : 'false', on: { click: () => {
+					pins.setCalendar(!pinned);
+					toast(t(pinned ? 'home.cal.unpin' : 'home.cal.pinned'), 'success');
+					ctx.renderMenu();
+				} } }, [icon('pin', 16), el('span', { class: 'ml-it-tx', text: t(pinned ? 'home.cal.unpin' : 'home.cal.pin') })]) : null,
 			]));
 		}
 
@@ -1075,6 +1083,8 @@
 			closeSheet();
 		}
 		document.addEventListener('keydown', onKey);
+		// pinned or not, the server's widget known: the menu's "Termine auf Start anheften"
+		if (root.GCHomePins) root.GCHomePins.onChange(() => { if (C.shown) ctx.renderMenu(); });
 
 		return {
 			renderSide,

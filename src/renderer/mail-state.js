@@ -1199,6 +1199,170 @@
 		return out;
 	}
 
+
+	// ── Contacts with the GC contact as the master (Mail 1.4.0) ──
+
+	/** The server knows the GC contact as the master (Mail 1.4.0): its summaries carry `favorite` (null before). */
+	function hasMaster(items) {
+		return (items || []).some((c) => c && typeof c.favorite === 'boolean');
+	}
+
+	/** A source of a contact: "Firma · M365 (max@firma.de)" — its address book and, with an account, the account's address. */
+	function sourceLabel(src, books, me) {
+		if (!src) return '';
+		const book = (books || []).find((b) => b.id === src.addressbookId) || null;
+		const name = book ? bookLabel(book, me) : str(src.addressbook);
+		const acc = str(src.account);
+		return acc && !name.includes(acc) ? `${name} (${acc})` : name;
+	}
+
+	/** The colour dots of a row: one per source (the account's colour; own address books none), without doubles. */
+	function sourceColors(c, books, me) {
+		const list = c && Array.isArray(c.sources) && c.sources.length ? c.sources : [{ addressbookId: c && c.addressbookId }];
+		const out = [];
+		for (const s of list) {
+			const book = (books || []).find((b) => b.id === s.addressbookId) || null;
+			const color = bookColor(book, me);
+			if (color && !out.some((x) => x.color === color)) out.push({ color, label: book ? bookLabel(book, me) : '' });
+		}
+		return out;
+	}
+
+	/** A value of a conflict as text: a number, an address on one line, a birthday, a text. */
+	function conflictValueText(field, v, locale) {
+		if (v === null || v === undefined) return '';
+		if (field === 'phones') return str(v.value);
+		if (field === 'addresses') return addressLines(v).join(', ');
+		if (field === 'birthday') {
+			const m = /^(\d{4}|-)-(\d{2})-(\d{2})$/.exec(str(v));
+			if (!m) return '';
+			const d = new Date(m[1] === '-' ? 2000 : Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+			return d.toLocaleDateString(localeTag(locale), m[1] === '-' ? { day: 'numeric', month: 'long' } : { day: 'numeric', month: 'long', year: 'numeric' });
+		}
+		return str(v);
+	}
+
+	/**
+	 * The band of a conflict: "Outlook (ma.backes@outlook.com) hat eine andere Mobilnummer: 0171 … (bisher 0170 …)" →
+	 * { text, canAdd } — "Zusätzlich" only where a second value fits (numbers, addresses).
+	 */
+	function conflictText(c, books, me, locale, t) {
+		if (!c) return { text: '', canAdd: false };
+		const PHONE = ['mobile', 'home', 'work', 'fax'];
+		const ADDR = ['home', 'work'];
+		const field = c.field === 'phones' ? `phone_${PHONE.includes(c.type) ? c.type : 'other'}` : (c.field === 'addresses' ? `address_${ADDR.includes(c.type) ? c.type : 'other'}` : c.field);
+		const what = t(`mail.con.cf.${field}`);
+		const value = conflictValueText(c.field, c.value, locale);
+		const before = conflictValueText(c.field, c.replaces, locale);
+		const source = sourceLabel(c.source, books, me) || t('mail.con.cf.other');
+		const text = before ? t('mail.con.cf.textWas', { source, what, value, before }) : t('mail.con.cf.text', { source, what, value });
+		return { text, canAdd: (c.field === 'phones' || c.field === 'addresses') && !!c.replaces };
+	}
+
+	/** The accounts a change did not reach (writeBack ok: false) → their labels, without doubles. */
+	function writeBackFailed(writeBack, books, me) {
+		const out = [];
+		for (const w of writeBack || []) {
+			if (!w || w.ok) continue;
+			const book = (books || []).find((b) => b.id === w.addressbookId) || null;
+			const label = book ? bookLabel(book, me) : '';
+			if (label && !out.includes(label)) out.push(label);
+		}
+		return out;
+	}
+
+	/** The accounts a change went to as well (writeBack ok) → their labels. */
+	function writeBackDone(writeBack, books, me) {
+		const out = [];
+		for (const w of writeBack || []) {
+			if (!w || !w.ok) continue;
+			const book = (books || []).find((b) => b.id === w.addressbookId) || null;
+			const label = book ? bookLabel(book, me) : '';
+			if (label && !out.includes(label)) out.push(label);
+		}
+		return out;
+	}
+
+	/** The fields of a card in the duplicates view: numbers, addresses, the first postal address. */
+	function dupFields(card) {
+		const c = card || {};
+		return {
+			phones: (c.phones || []).map((p) => str(p.value)).filter(Boolean),
+			emails: (c.emails || []).map((e) => str(e.value)).filter(Boolean),
+			address: c.addresses && c.addresses[0] ? addressLines(c.addresses[0]).join(', ') : '',
+		};
+	}
+
+	/** The name of a card / preview as shown ("Schatzimausi 💞" as written). */
+	function cardName(c) {
+		const n = (c && c.name) || {};
+		return str(n.display).trim() || [n.given, n.family].map(str).filter(Boolean).join(' ') || str(c && c.emails && c.emails[0] && c.emails[0].value);
+	}
+
+	/** The duplicates of 1.4.0 split: the uncertain ones to confirm (with their details), and whether the view is the new one. */
+	function dupCases(items) {
+		const list = items || [];
+		const fresh = list.some((d) => d && typeof d.certain === 'boolean');
+		return { fresh, open: fresh ? list.filter((d) => d.certain === false || d.certain === null) : list };
+	}
+
+	/** "Automatisch zusammengeführt": the protocol's automatic merges not undone, newest first. */
+	function autoMerges(items) {
+		return (items || []).filter((m) => m && (m.mode === 'auto' || m.mode === 'migrated') && !m.undoneAt);
+	}
+
+	/** A merge of the protocol as a line: "Sabine Keller · Meine Kontakte + Firma · M365". */
+	function mergeLine(m) {
+		if (!m) return '';
+		const names = [...new Set((m.cards || []).map((c) => str(c.name)).filter(Boolean))];
+		const books = [...new Set((m.cards || []).map((c) => str(c.addressbook)).filter(Boolean))];
+		return [names.join(' / '), books.join(' + ')].filter(Boolean).join(' · ');
+	}
+
+	// ── The start page: pinned favourites and the calendar widget ──
+
+	const PINS_MAX = 12;
+
+	/** The pins of the start page as kept on this PC → { calendar: bool, contacts: [ids ≤ 12] }. */
+	function homePins(raw) {
+		const o = raw && typeof raw === 'object' ? raw : {};
+		const ids = Array.isArray(o.contacts) ? o.contacts.filter((x) => Number.isSafeInteger(x) && x > 0) : [];
+		return { calendar: o.calendar === true, contacts: [...new Set(ids)].slice(0, PINS_MAX) };
+	}
+
+	/** A favourite pinned or loosened → the new pins (a copy; at most 12). */
+	function pinContact(pins, id, on) {
+		const p = homePins(pins);
+		const rest = p.contacts.filter((x) => x !== id);
+		return { ...p, contacts: on && Number.isSafeInteger(id) && id > 0 ? rest.concat(id).slice(0, PINS_MAX) : rest };
+	}
+
+	/** The tiles: the favourites pinned, in the favourites' order → [{ id, name, initials, phone, email, photo, photoEtag }]. */
+	function favoriteTiles(favorites, pins) {
+		const p = homePins(pins);
+		return (favorites || []).filter((f) => f && p.contacts.includes(f.id)).map((f) => ({
+			id: f.id, name: str(f.name), initials: initials({ name: f.name, email: f.email }), phone: f.phone ? str(f.phone.value) || null : null,
+			email: f.email || null, photo: !!f.photo, photoEtag: f.photoEtag || null,
+		}));
+	}
+
+	/** The widget's days: [{ day, label ('Heute' / 'Morgen' / a date), items: [{ …item, time }] }] in the server's order. */
+	function upcomingDays(res, now, locale, t) {
+		const today = (res && res.today) || ymd(now);
+		const tomorrow = ymd(addDays(fromYmd(today) || now, 1));
+		const out = [];
+		for (const x of (res && res.items) || []) {
+			const day = x.day || today;
+			if (!out.length || out[out.length - 1].day !== day) {
+				const label = day === today ? t('home.cal.today') : (day === tomorrow ? t('home.cal.tomorrow') : new Date(fromYmd(day) || now).toLocaleDateString(localeTag(locale), { weekday: 'long', day: 'numeric', month: 'short' }));
+				out.push({ day, label, items: [] });
+			}
+			const time = x.allDay ? t('mail.cal.allDay') : (x.start < now && x.end > now ? t('home.cal.now') : hhmm(x.start));
+			out[out.length - 1].items.push({ ...x, time });
+		}
+		return out;
+	}
+
 	function errorText(r, t, lang) {
 		const code = str(r && r.code);
 		const hint = r && r.detail && r.detail.hint ? (lang === 'en' ? r.detail.hint.en || r.detail.hint.de : r.detail.hint.de || r.detail.hint.en) : null;
@@ -1324,5 +1488,22 @@
 		bookColor,
 		suggestionRecipients,
 		mergeChoices,
+		// Mail 1.4.0: the GC contact as the master, favourites, the start page
+		hasMaster,
+		sourceLabel,
+		sourceColors,
+		conflictValueText,
+		conflictText,
+		writeBackFailed,
+		writeBackDone,
+		dupFields,
+		cardName,
+		dupCases,
+		autoMerges,
+		mergeLine,
+		homePins,
+		pinContact,
+		favoriteTiles,
+		upcomingDays,
 	};
 });

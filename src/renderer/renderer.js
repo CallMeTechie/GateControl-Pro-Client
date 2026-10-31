@@ -193,6 +193,7 @@ function refreshTexts() {
 	vaultView?.relabel();
 	driveView?.relabel();
 	mailView?.relabel();
+	homeView?.relabel();
 	notifyRoutesView?.render();
 }
 
@@ -212,6 +213,7 @@ let gatedropView = null; // gatedrop-view.js instance (GATEDROP section below)
 let vaultView = null; // vault-view.js instance (VAULT section below)
 let driveView = null; // drive-view.js instance (DRIVE section below)
 let mailView = null; // mail-view.js instance (MAIL section below)
+let homeView = null; // home-view.js instance: pinned favourites and events on the start page (MAIL section below)
 let notifyRoutesView = null; // notify-routes.js in Settings › Benachrichtigungen
 let appVersion = '';
 let serverUrl = '';
@@ -405,6 +407,8 @@ function navigateTo(page, opts = {}) {
 	// Drive: the areas and the folder load when shown
 	if (page === 'drive' && prev !== 'drive') driveView?.show();
 	else if (prev === 'drive' && page !== 'drive') driveView?.hide();
+	// Start: the pinned favourites and events again (Mail 1.4.0)
+	if (page === 'status' && prev !== 'status') homeView?.show();
 	// Mail: accounts, folders and the list load when shown
 	if (page === 'mail' && prev !== 'mail') mailView?.show();
 	else if (prev === 'mail' && page !== 'mail') mailView?.hide();
@@ -3046,6 +3050,18 @@ mailView = mailApi && window.GCMailView && $('#page-mail')
 			if (!show) renderMailBadge(0);
 			if (!show && currentPage === 'mail' && st && st.state === 'unavailable') navigateTo('status');
 		},
+	})
+	: null;
+// Start page (Mail 1.4.0): favourites pinned as tiles (a click calls, the name opens the contact) and the events of
+// today and tomorrow (home-view.js; hidden with servers before)
+homeView = mailView && window.GCHomeView && $('#home-pins')
+	? window.GCHomeView.mount({
+		host: $('#home-pins'),
+		api: mailApi,
+		t,
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		openMail: (context) => openMail(context),
 	})
 	: null;
 // the unread count also while the page is not shown (a new mail, read elsewhere)
