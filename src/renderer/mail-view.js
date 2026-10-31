@@ -7,7 +7,9 @@
  *   Drive), "Postausgang" (while something waits or failed), the accounts
  *   with their colour and unread count — the account shown unfolds its
  *   folders (Posteingang, Entwürfe, Gesendet, Archiv, Spam, Papierkorb, own
- *   folders as a tree) — and at the bottom "Konto hinzufügen",
+ *   folders as a tree: the arrow of a parent opens or closes its children,
+ *   closed by default and kept on this PC, a closed parent shows the unread
+ *   mail below it) — and at the bottom "Konto hinzufügen",
  *   "Mail-Einstellungen" and the storage used.
  * - List (middle, mockup "Main"): title and unread count, search, "Neue
  *   Mail", the account chips (Alle / per account, colour dot), Relevant /
@@ -384,6 +386,7 @@
 			readSeq: 0,
 			senderSeq: 0,
 			folds: new Map(),       // account id → its folders shown in the menu (this session)
+			ffolds: new Map(),      // folder id → its children shown in the menu (kept on this PC, see loadFolderFolds)
 			sender: null,           // the sender's page: { email, name, accountId, contact, items, next, loading, error }
 			outbox: [],
 			filing: [],
@@ -402,6 +405,14 @@
 		function darkMails() {
 			try { return MS.darkSetting(store ? store.getItem(MS.DARK_KEY) : null); } catch { return true; }
 		}
+		/** The menu's folded folders, kept on this PC (MS.FOLDER_FOLDS_KEY). */
+		function loadFolderFolds() {
+			try { S.ffolds = MS.folderFoldsOf(store ? store.getItem(MS.FOLDER_FOLDS_KEY) : null); } catch { S.ffolds = new Map(); }
+		}
+		function saveFolderFolds() {
+			try { if (store) store.setItem(MS.FOLDER_FOLDS_KEY, MS.folderFoldsJson(S.ffolds)); } catch { /* private */ }
+		}
+		loadFolderFolds();
 		function setDarkMails(on) {
 			try { if (store) store.setItem(MS.DARK_KEY, on ? '1' : '0'); } catch { /* private */ }
 			if (S.pane === 'read') renderPane();
@@ -555,12 +566,14 @@
 
 		// ── Menu (left) ──────────────────────────────────
 
-		function menuItem({ label, ic, color, count, on, onClick, sub = false, depth = 0, warn = false, title = null }) {
+		function menuItem({ label, ic, color, count, on, onClick, sub = false, depth = 0, warn = false, title = null, below = 0 }) {
 			const b = el('button', { type: 'button', class: `ml-it${on ? ' on' : ''}${sub ? ' sub' : ''}`, 'aria-current': on ? 'page' : null, title: title || label, on: { click: onClick } }, [
 				color ? dot(color) : (ic ? icon(ic, 16) : null),
 				el('span', { class: 'ml-it-tx', text: label }),
 				warn ? el('span', { class: 'ml-it-warn', title: t('mail.accountProblem') }, [icon('alert', 14)]) : null,
 				count ? el('span', { class: `ml-n${on ? ' on' : ''}`, text: count > 999 ? '999+' : String(count) }) : null,
+				// a closed parent: the unread mail below it, quietly
+				below ? el('span', { class: 'ml-n ml-n-below', title: t('mail.folderBelow', { count: below }), text: `${count ? '+' : ''}${below > 999 ? '999+' : below}` }) : null,
 			]);
 			if (depth) b.style.paddingLeft = `${50 + depth * 14}px`;
 			return b;
@@ -611,16 +624,31 @@
 					const acc = ((S.folders && S.folders.accounts) || []).find((x) => x.accountId === a.id);
 					const tree = MS.folderTree(acc ? acc.folders : []);
 					const inboxOn = v.kind === 'box' && v.box === a.id && !v.folderId;
+					const current = v.kind === 'box' && v.box === a.id ? v.folderId : null;
 					if (!tree.some(({ folder }) => folder.role === 'inbox')) {
 						side.append(menuItem({ label: t('mail.role.inbox'), sub: true, depth: 0, on: inboxOn, onClick: () => go({ kind: 'box', box: a.id, folderId: null }) }));
 					}
-					for (const { folder, depth } of tree) {
+					// the folders as a tree: the arrow of a parent opens or closes its children, the name opens the folder
+					for (const r of MS.folderRows(tree, S.ffolds, current)) {
+						const { folder } = r;
 						const inbox = folder.role === 'inbox';
-						side.append(menuItem({
-							label: MS.folderName(folder, t), sub: true, depth, count: folder.role === 'sent' || folder.role === 'trash' ? 0 : folder.unread,
+						const label = MS.folderName(folder, t);
+						const item = menuItem({
+							label, sub: true, depth: r.indent, count: folder.role === 'sent' || folder.role === 'trash' ? 0 : folder.unread, below: r.unreadBelow,
 							on: inbox ? inboxOn : v.kind === 'box' && v.folderId === folder.id,
 							onClick: () => go({ kind: 'box', box: a.id, folderId: inbox ? null : folder.id }),
-						}));
+						});
+						const frow = el('div', { class: 'ml-frow', 'data-folder': String(folder.id) }, [item]);
+						if (r.hasKids) {
+							const key = r.open ? 'mail.folderClose' : 'mail.folderOpen';
+							const arrow = el('button', {
+								type: 'button', class: `ml-ffold${r.open ? ' open' : ''}`, 'aria-expanded': r.open ? 'true' : 'false', 'aria-label': t(key, { name: label }), title: t(key, { name: label }),
+								on: { click: () => { MS.toggleFolder(tree, S.ffolds, folder.id, current); saveFolderFolds(); renderMenu(); } },
+							}, [icon('chevDown', 14)]);
+							arrow.style.left = `${26 + r.indent * 14}px`;
+							frow.append(arrow);
+						}
+						side.append(frow);
 					}
 				}
 			}
@@ -683,6 +711,11 @@
 
 		function go(view) {
 			S.view = view;
+			// the folder shown is never hidden in the menu: the folders above it open
+			if (view.kind === 'box' && view.folderId && view.box !== 'all') {
+				const acc = ((S.folders && S.folders.accounts) || []).find((x) => x.accountId === view.box);
+				if (MS.revealFolder(MS.folderTree(acc ? acc.folders : []), S.ffolds, view.folderId)) saveFolderFolds();
+			}
 			if (view.kind === 'box') { S.lastBox = view; S.tab = 'relevant'; }
 			if (view.kind === 'filing' || view.kind === 'outbox') { S.selectedId = null; if (S.pane === 'read') S.pane = 'empty'; }
 			page.classList.toggle('is-wide', view.kind === 'filing' || view.kind === 'outbox');
@@ -894,19 +927,39 @@
 			const acc = ((S.folders && S.folders.accounts) || []).find((a) => a.accountId === accountId);
 			const dlg = openDialog({ title: t('mail.act.moveTitle'), closeLabel: t('mail.close') });
 			const rows = el('div', { class: 'ml-pick-list', role: 'list' });
-			for (const { folder, depth } of MS.folderTree(acc ? acc.folders : [])) {
-				if (folder.id === list[0].folderId) continue;
-				const b = el('button', { type: 'button', role: 'listitem', class: 'ml-pick-row', on: { click: async () => {
-					dlg.close();
-					const r = await call(api.act('move', list.map((m) => m.id), { folderId: folder.id }));
-					if (!r || !r.ok) { toast(errText(r), 'error'); return; }
-					toast(t('mail.done.move', { folder: MS.folderName(folder, t) }), 'success');
-					dropFromList(list.map((m) => m.id));
-					renderList();
-				} } }, [icon('folder', 15), el('span', { text: MS.folderName(folder, t) })]);
-				b.style.paddingLeft = `${12 + depth * 16}px`;
-				rows.append(b);
-			}
+			// the folders as a tree like the menu (its own folds: closed but for the folders above the mail's own); the
+			// mail's folder stays in the tree, dimmed, so that its children can be reached
+			const tree = MS.folderTree(acc ? acc.folders : []);
+			const here = list[0].folderId;
+			const folds = new Map();
+			const draw = () => {
+				clear(rows);
+				for (const r of MS.folderRows(tree, folds, here)) {
+					const { folder } = r;
+					const label = MS.folderName(folder, t);
+					const b = el('button', { type: 'button', class: 'ml-pick-row', disabled: folder.id === here ? '' : null, on: { click: async () => {
+						dlg.close();
+						const x = await call(api.act('move', list.map((m) => m.id), { folderId: folder.id }));
+						if (!x || !x.ok) { toast(errText(x), 'error'); return; }
+						toast(t('mail.done.move', { folder: label }), 'success');
+						dropFromList(list.map((m) => m.id));
+						renderList();
+					} } }, [icon('folder', 15), el('span', { text: label })]);
+					b.style.paddingLeft = `${34 + r.indent * 16}px`;
+					const frow = el('div', { class: 'ml-frow', role: 'listitem', 'data-folder': String(folder.id) }, [b]);
+					if (r.hasKids) {
+						const key = r.open ? 'mail.folderClose' : 'mail.folderOpen';
+						const arrow = el('button', {
+							type: 'button', class: `ml-ffold${r.open ? ' open' : ''}`, 'aria-expanded': r.open ? 'true' : 'false', 'aria-label': t(key, { name: label }), title: t(key, { name: label }),
+							on: { click: () => { MS.toggleFolder(tree, folds, folder.id, here); draw(); } },
+						}, [icon('chevDown', 14)]);
+						arrow.style.left = `${8 + r.indent * 16}px`;
+						frow.append(arrow);
+					}
+					rows.append(frow);
+				}
+			};
+			draw();
 			dlg.body.append(rows);
 			dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.cancel'), on: { click: () => dlg.close() } }));
 		}

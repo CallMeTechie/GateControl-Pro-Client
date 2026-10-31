@@ -27,7 +27,7 @@
 .ml-ib:hover { background: var(--panel2); border-color: var(--line2); }
 .ml-ib-sm { width: 28px; height: 28px; border-radius: 8px; }
 .ml-ib:focus-visible, .ml-it:focus-visible, .ml-row:focus-visible, .ml-chip:focus-visible, .ml-tab:focus-visible, .ml-filter:focus-visible,
-.ml-pick-row:focus-visible, .ml-prov:focus-visible, .ml-menu-item:focus-visible, .ml-sug:focus-visible, .ml-color:focus-visible, .ml-fold:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.ml-pick-row:focus-visible, .ml-prov:focus-visible, .ml-menu-item:focus-visible, .ml-sug:focus-visible, .ml-color:focus-visible, .ml-fold:focus-visible, .ml-ffold:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 
 /* Gate (loading / offline / not there) */
 .ml-gate { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; flex-grow: 1; padding: 40px; text-align: center; }
@@ -59,6 +59,13 @@
 .ml-fold { width: 26px; height: 26px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: transparent; color: var(--faint); cursor: pointer; transform: rotate(-90deg); transition: transform .15s; }
 .ml-fold.open { transform: none; }
 .ml-fold:hover { background: var(--panel2); color: var(--text); }
+/* the folder tree: the arrow of a parent left of its name (in the menu and in "Verschieben"); a closed parent's unread below it, quietly */
+.ml-frow { position: relative; }
+.ml-ffold { position: absolute; top: 50%; width: 22px; height: 22px; margin-top: -11px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--faint); cursor: pointer; }
+.ml-ffold svg { transform: rotate(-90deg); transition: transform .15s; }
+.ml-ffold.open svg { transform: none; }
+.ml-ffold:hover { background: var(--panel2); color: var(--text); }
+.ml-n.ml-n-below { background: transparent; color: var(--faint); font-weight: 500; min-width: 0; padding: 0 2px; }
 .ml-side-foot { margin-top: auto; padding-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .ml-side-foot .ml-ib { border-color: var(--line2); background: var(--panel2); }
 .ml-quota { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 6px 4px 0; }
@@ -262,6 +269,7 @@
 .ml-pick-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; }
 .ml-pick-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 6px 12px; border: 0; border-radius: 10px; background: transparent; text-align: left; cursor: pointer; }
 .ml-pick-row:hover { background: var(--panel2); }
+.ml-pick-row:disabled { opacity: .5; cursor: default; background: transparent; }
 .ml-drive-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 10px; cursor: pointer; }
 .ml-drive-row:hover { background: var(--panel2); }
 .ml-drive-row .seg button { height: 26px; font-size: 12px; }

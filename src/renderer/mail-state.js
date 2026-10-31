@@ -130,33 +130,112 @@
 		return f.role ? t(`mail.role.${f.role}`) : str(f.name);
 	}
 
+	/** From this depth on the folders in the menu are not indented any further. */
+	const FOLDER_MAX_INDENT = 4;
+
 	/**
-	 * An account's folders as a tree: the folders with a role first (Posteingang, Entwürfe, Gesendet, Archiv,
-	 * Spam, Papierkorb), then the others by name; children below their parent → [{ folder, depth }].
+	 * An account's folders as a tree: the folders with a role always on top (Posteingang, Entwürfe, Gesendet, Archiv,
+	 * Spam, Papierkorb), then the others by name; children below their parent (parentId), by name. A parent the list
+	 * does not hold (not synced) leaves its children on top, so does a loop → [{ folder, depth, parent, kids (ids),
+	 * hasKids, unreadBelow (all unread below it) }], each parent before its children.
 	 */
 	function folderTree(list) {
-		const all = Array.isArray(list) ? list : [];
+		const all = (Array.isArray(list) ? list : []).filter((f) => f && f.id != null);
 		const ids = new Set(all.map((f) => f.id));
+		const parentOf = (f) => (!f.role && f.parentId && ids.has(f.parentId) && f.parentId !== f.id ? f.parentId : 0);
 		const kids = new Map();
 		for (const f of all) {
-			const p = f.parentId && ids.has(f.parentId) && f.parentId !== f.id ? f.parentId : 0;
+			const p = parentOf(f);
 			if (!kids.has(p)) kids.set(p, []);
 			kids.get(p).push(f);
 		}
-		const rank = (f) => (f.role ? ROLE_ORDER.indexOf(f.role) : ROLE_ORDER.length);
-		const sort = (a, b) => rank(a) - rank(b) || str(a.name).localeCompare(str(b.name), 'de', { sensitivity: 'base' });
+		const rank = (f) => (f.role && ROLE_ORDER.includes(f.role) ? ROLE_ORDER.indexOf(f.role) : ROLE_ORDER.length);
+		const sort = (a, b) => rank(a) - rank(b) || str(a.name).localeCompare(str(b.name), 'de', { sensitivity: 'base' }) || a.id - b.id;
 		const out = [];
 		const seen = new Set();
-		const walk = (p, depth) => {
-			for (const f of (kids.get(p) || []).sort(sort)) {
-				if (seen.has(f.id)) continue;
-				seen.add(f.id);
-				out.push({ folder: f, depth });
-				if (depth < 6) walk(f.id, depth + 1);
+		// → the unread mail of f and everything below it
+		const walk = (f, depth, parent) => {
+			seen.add(f.id);
+			const node = { folder: f, depth, parent, kids: [], hasKids: false, unreadBelow: 0 };
+			out.push(node);
+			for (const c of (kids.get(f.id) || []).slice().sort(sort)) {
+				if (seen.has(c.id)) continue;
+				node.kids.push(c.id);
+				node.unreadBelow += walk(c, depth + 1, f.id);
 			}
+			node.hasKids = node.kids.length > 0;
+			return (Number(f.unread) || 0) + node.unreadBelow;
 		};
-		walk(0, 0);
+		for (const f of (kids.get(0) || []).slice().sort(sort)) if (!seen.has(f.id)) walk(f, 0, null);
+		for (const f of all.slice().sort(sort)) if (!seen.has(f.id)) walk(f, 0, null);
 		return out;
+	}
+
+	/** The ids above folder `id` in a folderTree, its parent first. */
+	function folderAncestors(tree, id) {
+		const byId = new Map((tree || []).map((n) => [n.folder.id, n]));
+		const out = [];
+		let n = byId.get(id);
+		while (n && n.parent != null && !out.includes(n.parent)) { out.push(n.parent); n = byId.get(n.parent); }
+		return out;
+	}
+
+	/**
+	 * Whether a folder shows its children in the menu: as folded by the person (ffolds: Map id → bool, kept on this
+	 * PC), else closed — open when the folder shown (`current`) lies below it.
+	 */
+	function folderOpen(tree, ffolds, id, current) {
+		if (ffolds && ffolds.has(id)) return !!ffolds.get(id);
+		return current != null && folderAncestors(tree, current).includes(id);
+	}
+
+	/** A tap on a folder's arrow: its children open or close (ffolds is changed and returned). */
+	function toggleFolder(tree, ffolds, id, current) {
+		ffolds.set(id, !folderOpen(tree, ffolds, id, current));
+		return ffolds;
+	}
+
+	/** A folder picked or pointed at: the folders above it open (ffolds is changed; → whether anything changed). */
+	function revealFolder(tree, ffolds, id) {
+		let changed = false;
+		for (const a of folderAncestors(tree, id)) if (ffolds.get(a) !== true) { ffolds.set(a, true); changed = true; }
+		return changed;
+	}
+
+	/**
+	 * The rows the menu shows of a folderTree: the children of a closed folder are left out → [{ folder, depth, indent
+	 * (the depth up to FOLDER_MAX_INDENT), hasKids, open, unreadBelow (only for a closed parent, else 0) }].
+	 */
+	function folderRows(tree, ffolds, current) {
+		const out = [];
+		let hiddenBelow = -1;
+		for (const n of tree || []) {
+			if (hiddenBelow >= 0) {
+				if (n.depth > hiddenBelow) continue;
+				hiddenBelow = -1;
+			}
+			const open = n.hasKids && folderOpen(tree, ffolds, n.folder.id, current);
+			out.push({ folder: n.folder, depth: n.depth, indent: Math.min(n.depth, FOLDER_MAX_INDENT), hasKids: n.hasKids, open, unreadBelow: n.hasKids && !open ? n.unreadBelow : 0 });
+			if (n.hasKids && !open) hiddenBelow = n.depth;
+		}
+		return out;
+	}
+
+	/** The folds of the folders as kept on this PC (JSON { id: bool }) → Map; anything else → an empty Map. */
+	function folderFoldsOf(raw) {
+		const m = new Map();
+		try {
+			const o = JSON.parse(raw || '{}');
+			if (o && typeof o === 'object' && !Array.isArray(o)) for (const [k, v] of Object.entries(o)) if (/^\d+$/.test(k) && typeof v === 'boolean') m.set(Number(k), v);
+		} catch { /* none */ }
+		return m;
+	}
+
+	/** The folds of the folders → JSON to keep (at most the last 500). */
+	function folderFoldsJson(ffolds) {
+		const o = {};
+		for (const [k, v] of [...(ffolds || new Map())].slice(-500)) o[k] = !!v;
+		return JSON.stringify(o);
 	}
 
 	/** The folder with this role of an account (folders answer), or null. */
@@ -487,6 +566,8 @@
 
 	/** Where "Mails dunkel darstellen" is kept on this PC (on unless switched off). */
 	const DARK_KEY = 'gc.mail.darkMails';
+	/** The menu's folded folders (folderFoldsJson), kept on this PC. */
+	const FOLDER_FOLDS_KEY = 'gc.mail.folderFolds';
 
 	/** The stored "Mails dunkel darstellen" (localStorage value) → on / off; on by default. */
 	function darkSetting(raw) {
@@ -1139,6 +1220,15 @@
 		folderOf,
 		folderName,
 		folderTree,
+		folderAncestors,
+		folderOpen,
+		toggleFolder,
+		revealFolder,
+		folderRows,
+		folderFoldsOf,
+		folderFoldsJson,
+		FOLDER_MAX_INDENT,
+		FOLDER_FOLDS_KEY,
 		roleFolder,
 		isInbox,
 		viewTitle,

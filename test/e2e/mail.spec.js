@@ -99,6 +99,85 @@ test.describe('mail', () => {
     expect(m.srv.state.messages.get(101).folderId).toBe(14);
   });
 
+  test('the folder tree: subfolders closed below their parent, the arrow folds (kept on this PC), the unread below, "Verschieben" as a tree with the mail\'s folder open', async ({ launchApp, mock }) => {
+    const m = await mock.setMail();
+    // account 1: Projekte › Alpha › 2025 (an unread mail in 2025) besides Archiv › Rechnungen
+    m.srv.state.folders.push(
+      { id: 31, accountId: 1, name: 'Projekte', path: 'Projekte', role: null, parentId: null },
+      { id: 32, accountId: 1, name: 'Alpha', path: 'Projekte/Alpha', role: null, parentId: 31 },
+      { id: 33, accountId: 1, name: '2025', path: 'Projekte/Alpha/2025', role: null, parentId: 32 },
+    );
+    m.srv.state.messages.set(990, { ...m.srv.state.messages.get(104), id: 990, folderId: 33, threadId: 990, subject: 'Tief unten', tab: 'relevant', unread: true });
+    const { app, page } = await launchApp();
+    await app.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; win.unmaximize(); win.setSize(1440, 900); });
+    await setupWithApiKey(page, mock);
+    const root = await openMail(page);
+    const side = root.locator('.ml-side');
+    const frow = (id) => side.locator(`.ml-frow[data-folder="${id}"]`);
+    const arrow = (id) => frow(id).locator('.ml-ffold');
+
+    // the account opens: its folders, the subfolders closed; the role folders on top as before
+    const privat = side.locator('.ml-acc').nth(0).locator('.ml-it-acc');
+    await privat.click();
+    await expect(privat).toHaveAttribute('aria-expanded', 'true');
+    await expect(frow(31)).toBeVisible();
+    await expect(frow(32)).toHaveCount(0);
+    await expect(frow(15)).toHaveCount(0);
+    await expect(arrow(14)).toHaveAttribute('aria-expanded', 'false');
+    const order = await side.locator('.ml-frow').evaluateAll((rows) => rows.map((r) => Number(r.dataset.folder)));
+    expect(order).toEqual([11, 12, 14, 13, 31]);
+    // a closed parent: the unread below it, quietly
+    await expect(frow(31).locator('.ml-n-below')).toHaveText('1');
+    await expect(arrow(31)).toHaveAttribute('aria-label', /Projekte (aufklappen)|Expand Projekte/);
+    await expect(arrow(31)).toHaveAttribute('aria-expanded', 'false');
+    await expect(arrow(33)).toHaveCount(0);
+
+    // the arrow folds only: the menu stays, nothing else is shown
+    await arrow(31).click();
+    await expect(arrow(31)).toHaveAttribute('aria-expanded', 'true');
+    await expect(frow(31).locator('.ml-n-below')).toHaveCount(0);
+    await expect(frow(32)).toBeVisible();
+    await expect(frow(33)).toHaveCount(0);
+    await expect(frow(32).locator('.ml-n-below')).toHaveText('1');
+    await expect(privat).toHaveAttribute('aria-expanded', 'true');
+    await expect(row(root, 990)).toHaveCount(0);
+    const indent = async (id) => frow(id).locator('.ml-it').evaluate((b) => parseFloat(getComputedStyle(b).paddingLeft));
+    await arrow(32).click();
+    await expect(frow(33)).toBeVisible();
+    expect(await indent(32)).toBeGreaterThan(await indent(31));
+    expect(await indent(33)).toBeGreaterThan(await indent(32));
+
+    // the name opens the folder
+    await frow(33).locator('.ml-it').click();
+    await expect(row(root, 990)).toBeVisible();
+    await expect(frow(33).locator('.ml-it')).toHaveAttribute('aria-current', 'page');
+
+    // kept on this PC
+    const kept = await page.evaluate(() => JSON.parse(window.localStorage.getItem('gc.mail.folderFolds') || '{}'));
+    expect(kept).toMatchObject({ 31: true, 32: true });
+
+    // closing a parent of the folder shown hides it; the folder shown again (from "Alle Posteingänge" back) opens its parents
+    await arrow(31).click();
+    await expect(frow(33)).toHaveCount(0);
+    await expect(arrow(31)).toHaveAttribute('aria-expanded', 'false');
+
+    // "Verschieben" as a tree: the arrow opens, the mail's own folder dimmed
+    await row(root, 990).click({ button: 'right' });
+    await page.locator('.ml-menu-item').filter({ hasText: /^(Verschieben|Move) …$/ }).click();
+    const pick = page.locator('.ml-pick-list');
+    await expect(pick).toBeVisible();
+    const prow = (id) => pick.locator(`.ml-frow[data-folder="${id}"]`);
+    await expect(prow(31)).toBeVisible();
+    await expect(prow(32)).toBeVisible();
+    await expect(prow(33).locator('.ml-pick-row')).toBeDisabled();
+    await expect(prow(15)).toHaveCount(0);
+    await prow(14).locator('.ml-ffold').click();
+    await expect(prow(15)).toBeVisible();
+    await prow(15).locator('.ml-pick-row').click();
+    await expect(pick).toHaveCount(0);
+    await expect.poll(() => m.srv.state.messages.get(990).folderId).toBe(15);
+  });
+
   test('reading: a wide newsletter fits, the menu\'s folders fold, the conversation, the sender\'s page', async ({ launchApp, mock }) => {
     const m = await mock.setMail();
     // a newsletter with a fixed width (as IONOS sends it): wider than the pane
