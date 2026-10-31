@@ -81,6 +81,12 @@ describe('mail-state – calendar', () => {
     assert.equal(MS.reminderText(120, t), 'mail.cal.rem.hours(count=2)');
     assert.equal(MS.reminderText(1440, t), 'mail.cal.rem.day(count=1)');
     assert.equal(MS.reminderText(20160, t), 'mail.cal.rem.weeks(count=2)');
+    // the menu of a reminder holds its value: the all-day default 360 (18:00 the day before) is not one of the choices
+    assert.deepEqual(MS.reminderChoices(15), MS.REMINDERS);
+    assert.deepEqual(MS.reminderChoices(360), [0, 5, 10, 15, 30, 60, 120, 360, 1440, 2880, 10080]);
+    assert.deepEqual(MS.reminderChoices(1080), [0, 5, 10, 15, 30, 60, 120, 1080, 1440, 2880, 10080]);
+    assert.deepEqual([MS.reminderChoices(-1), MS.reminderChoices(null), MS.reminderChoices(2.5)], [MS.REMINDERS, MS.REMINDERS, MS.REMINDERS]);
+    assert.equal(MS.reminderText(360, t), 'mail.cal.rem.hours(count=6)');
     assert.deepEqual(MS.responseCounts([{ response: 'accepted' }, { response: 'declined' }, { response: 'needs_action' }, { response: 'accepted', role: 'resource' }]), { accepted: 1, tentative: 0, declined: 1, needs_action: 1, total: 3 });
   });
 
@@ -98,9 +104,10 @@ describe('mail-state – calendar', () => {
 
   it('the event form and its body: new, all-day, recurrence, attendees, the online link', () => {
     const cals = [{ id: 1, writable: true }, { id: 4, writable: false }];
-    const prefs = { defaultCalendarId: 4, defaultReminder: 15, allDayReminder: 1080 };
+    const prefs = { defaultCalendarId: 4, defaultReminder: 15, allDayReminder: 360 };
     const f = MS.eventForm({ start: at(2026, 11, 4, 9), end: at(2026, 11, 4, 10) }, prefs, cals);
     assert.deepEqual([f.calendarId, f.startDate, f.startTime, f.endTime, f.reminders, f.recurrence.kind, f.recurrence.days], [1, '2026-11-04', '09:00', '10:00', [15], 'none', ['WE']]);
+    assert.deepEqual(MS.eventForm({ start: at(2026, 11, 4), allDay: true }, prefs, cals).reminders, [360], 'a new all-day event: the person\'s all-day reminder');
     assert.deepEqual(MS.eventBody({ ...f, title: ' ' }), { error: 'title' });
     assert.deepEqual(MS.eventBody({ ...f, title: 'X', endTime: '08:00' }), { error: 'end' });
     f.title = ' Planung ';

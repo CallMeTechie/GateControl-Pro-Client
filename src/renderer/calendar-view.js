@@ -804,7 +804,7 @@
 				F.reminders = F.reminders.slice(0, max);
 				F.reminders.forEach((m, i) => {
 					const s = el('select', { class: 'ml-input ml-input-sm', 'aria-label': t('mail.cal.reminder') });
-					for (const x of MS.REMINDERS) s.append(el('option', { value: String(x), text: MS.reminderText(x, t), selected: x === m || null }));
+					for (const x of MS.reminderChoices(m)) s.append(el('option', { value: String(x), text: MS.reminderText(x, t), selected: x === m || null }));
 					s.addEventListener('change', () => { F.reminders[i] = Number(s.value); });
 					rem.append(el('span', { class: 'cal-rem' }, [s, el('button', { type: 'button', class: 'ml-rcpt-x', 'aria-label': t('mail.cal.removeReminder'), on: { click: () => { F.reminders.splice(i, 1); drawRem(); } } }, [icon('close', 11)])]));
 				});
