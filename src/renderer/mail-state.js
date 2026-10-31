@@ -755,6 +755,15 @@
 		return t('mail.cal.rem.minutes', { count: m });
 	}
 
+	/**
+	 * The choices of one reminder's menu: REMINDERS and the reminder itself when it is not one of them (an all-day event's
+	 * default 360 = 18:00 the day before, a value from another app) — else the menu would show the first choice instead.
+	 */
+	function reminderChoices(min) {
+		const m = Number(min);
+		return Number.isInteger(m) && m >= 0 && !REMINDERS.includes(m) ? [...REMINDERS, m].sort((a, b) => a - b) : REMINDERS.slice();
+	}
+
 	/** The answers of attendees → { accepted, tentative, declined, needs_action, total }. */
 	function responseCounts(attendees) {
 		const c = { accepted: 0, tentative: 0, declined: 0, needs_action: 0, total: 0 };
@@ -1197,6 +1206,7 @@
 		weekdayName,
 		recurrenceText,
 		reminderText,
+		reminderChoices,
 		responseCounts,
 		calendarGroups,
 		visibleIds,
