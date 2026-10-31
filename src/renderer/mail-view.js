@@ -44,8 +44,23 @@
  * notifications, AI, attachments to Drive, signature, password, sign in
  * again, remove.
  *
+ * Phase 2 (mockup "MenueNeu"): the menu's foot has "Einstellungen" on the
+ * left and "Kontakte" / "Kalender" on the right (each only with its feature);
+ * they switch the page's area — Mail, Kalender (calendar-view.js), Kontakte
+ * (contacts-view.js) — and "Posteingänge" at the top of the menu goes back to
+ * Mail. "Konto hinzufügen" is only in the settings (the "+" is gone; "Noch
+ * kein Konto" opens them). A mail with an invitation shows its card above the
+ * text, a row the label "Einladung"; the sender's page shows the real contact
+ * (photo, position, numbers, "Kontakt öffnen") or "Als Kontakt speichern";
+ * the suggestions while writing show contacts and groups (a group puts in its
+ * members). Microsoft accounts without the new rights get a band "Kalender
+ * und Kontakte freigeben" with "Neu anmelden" (still missing afterwards: the
+ * administrator's consent link to pass on).
+ *
  * Feature flags of `me`: without `ai` no AI bar, without `drive` no Drive
- * buttons, without `microsoft` Microsoft greyed.
+ * buttons, without `microsoft` Microsoft greyed, without `calendar` /
+ * `contacts` no such area, no invitation card and the sender's page as in
+ * Phase 1.
  *
  * Data: window.gatecontrol.mail (core MailService over IPC); texts: mail.*
  * of the app locales; view logic without DOM: mail-state.js
@@ -108,6 +123,9 @@
 		sun: 'M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
 		moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
 		offline: 'M2 8.8a15 15 0 0 1 4.2-2.6|M10.7 5.1A15 15 0 0 1 22 8.8|M5 12.9a10 10 0 0 1 5.2-2.8|M16.8 11.5A10 10 0 0 1 19 12.9|M8.5 16.4a5 5 0 0 1 7 0|M12 20h.01|M3 3l18 18',
+		person: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M4 21c0-4 3.6-7 8-7s8 3 8 7',
+		users: 'M9 4a3.5 3.5 0 1 0 0 7a3.5 3.5 0 1 0 0-7|M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6|M16 4.5a3.2 3.2 0 0 1 0 6.2|M18.5 14.5c2 .9 3 2.8 3 5.5',
+		phone: 'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2',
 	};
 	const TONE = { err: ['var(--err-bg)', 'var(--err)'], info: ['var(--info-bg)', 'var(--info)'], acc: ['var(--acc-bg)', 'var(--acc-t)'], warn: ['var(--warn-bg)', 'var(--warn)'], pro: ['var(--pro-bg)', 'var(--pro)'], muted: ['var(--panel2)', 'var(--muted)'] };
 	const SAVE_DELAY_MS = 2500;
@@ -262,6 +280,9 @@
 		return f;
 	}
 
+	// the helpers the areas Kalender / Kontakte (calendar-view.js, contacts-view.js) build with
+	root.GCMailUI = { icon, el, clear, dot, openDialog, mailFrame, sw, seg };
+
 	/**
 	 * @param {object} o
 	 * @param {HTMLElement} o.root - #page-mail
@@ -368,7 +389,11 @@
 			filing: [],
 			undo: null,             // { outboxId, draftId, until, sendAt, timer }
 			compose: null,
+			area: 'mail',           // 'mail' | 'calendar' | 'contacts' (Phase 2)
 		};
+		// the areas (calendar-view.js, contacts-view.js), made below with the page's helpers
+		let calendar = null;
+		let contacts = null;
 
 		// ── Mails in the dark ────────────────────────────
 
@@ -395,9 +420,11 @@
 		const side = el('aside', { class: 'ml-side', 'aria-label': t('mail.menu') });
 		const listCol = el('section', { class: 'ml-list', 'aria-label': t('mail.list') });
 		const pane = el('section', { class: 'ml-pane', 'aria-live': 'polite' });
+		// the areas Kalender and Kontakte (instead of the list and the reading pane)
+		const mainCol = el('section', { class: 'ml-main', hidden: true });
 		const gate = el('div', { class: 'ml-gate', hidden: true });
 		const undoBar = el('div', { class: 'ml-undo', role: 'status', hidden: true });
-		page.append(side, listCol, pane);
+		page.append(side, listCol, pane, mainCol);
 		o.root.append(gate, page, undoBar);
 
 		// ── Availability ─────────────────────────────────
@@ -555,6 +582,15 @@
 			clear(side);
 			const v = S.view;
 			const me = S.me || { accounts: [], unread: { all: 0, byAccount: {} } };
+			const area = areaView();
+			if (area) {
+				// Kalender / Kontakte: back to the inboxes at the top, then the area's own menu
+				side.append(el('h2', { class: 'ml-side-h', text: t(S.area === 'calendar' ? 'mail.cal.title' : 'mail.con.title') }));
+				side.append(menuItem({ label: t('mail.inboxes'), ic: 'inbox', count: me.unread.all, onClick: () => setArea('mail') }));
+				area.renderSide(side);
+				side.append(menuFoot());
+				return;
+			}
 			side.append(el('h2', { class: 'ml-side-h', text: t('mail.title') }));
 			side.append(menuItem({ label: t('mail.allInboxes'), ic: 'inbox', count: me.unread.all, on: v.kind === 'box' && v.box === 'all', onClick: () => go({ kind: 'box', box: 'all', folderId: null }) }));
 			if (has('drive')) side.append(menuItem({ label: t('mail.filing.title'), ic: 'cloud', count: S.filing.length, on: v.kind === 'filing', onClick: () => go({ kind: 'filing' }) }));
@@ -588,18 +624,61 @@
 					}
 				}
 			}
-			const foot = el('div', { class: 'ml-side-foot' }, [
-				el('button', { type: 'button', class: 'ml-ib', title: t('mail.addAccount'), 'aria-label': t('mail.addAccount'), on: { click: () => openAddAccount() } }, [icon('plus', 18)]),
-				el('button', { type: 'button', class: 'ml-ib', title: t('mail.settings.title'), 'aria-label': t('mail.settings.title'), on: { click: () => openSettings() } }, [icon('gear', 18)]),
-			]);
+			side.append(menuFoot());
+		}
+
+		/**
+		 * The menu's foot (mockup "MenueNeu"): the storage used, then "Einstellungen" on the left and "Kontakte" /
+		 * "Kalender" on the right (only with their feature); the area shown is marked.
+		 */
+		function menuFoot() {
+			const foot = el('div', { class: 'ml-side-foot' });
 			const q = S.me ? MS.quotaView(S.me.limits, lang(), t) : null;
 			if (q) {
 				const bar = el('div', { class: 'ml-quota-bar' }, [el('span')]);
 				bar.firstChild.style.width = `${q.pct}%`;
 				if (q.pct >= 90) bar.classList.add('is-full');
-				foot.append(el('div', { class: 'ml-quota', title: q.text }, [bar, el('span', { class: 'ml-quota-tx', text: q.text })]));
+				foot.append(el('div', { class: 'ml-quota', title: q.text }, [el('span', { class: 'ml-quota-tx', text: q.text }), bar]));
 			}
-			side.append(foot);
+			const areaBtn = (id, ic, key) => el('button', {
+				type: 'button', class: `ml-ib ml-foot-ib ml-foot-${id}${S.area === id ? ' on' : ''}`, title: t(key), 'aria-label': t(key), 'aria-pressed': S.area === id ? 'true' : 'false',
+				on: { click: () => setArea(S.area === id ? 'mail' : id) },
+			}, [icon(ic, 20)]);
+			foot.append(el('div', { class: 'ml-foot-row' }, [
+				el('button', { type: 'button', class: 'ml-ib ml-foot-ib ml-foot-settings', title: t('mail.settings.title'), 'aria-label': t('mail.settings.title'), on: { click: () => openSettings() } }, [icon('gear', 20)]),
+				el('span', { class: 'ml-grow' }),
+				has('contacts') && contacts ? areaBtn('contacts', 'person', 'mail.con.title') : null,
+				has('calendar') && calendar ? areaBtn('calendar', 'calendar', 'mail.cal.title') : null,
+			]));
+			return foot;
+		}
+
+		// ── Areas (Phase 2): Mail, Kalender, Kontakte ────
+
+		function areaView() {
+			if (S.area === 'calendar' && calendar && has('calendar')) return calendar;
+			if (S.area === 'contacts' && contacts && has('contacts')) return contacts;
+			return null;
+		}
+
+		/** Switches the area: Kalender / Kontakte take the place of the list and the reading pane. */
+		function setArea(area) {
+			const want = area === 'calendar' || area === 'contacts' ? area : 'mail';
+			if (S.area === want && (want === 'mail' || !mainCol.hidden)) { renderMenu(); return; }
+			if (S.compose && S.compose.dirty) saveDraft({ quiet: true }).catch(() => {});
+			const before = areaView();
+			if (before) before.hide();
+			S.area = want;
+			const view = areaView();
+			if (!view) S.area = 'mail';
+			page.classList.toggle('is-area', !!view);
+			listCol.hidden = !!view;
+			pane.hidden = !!view;
+			mainCol.hidden = !view;
+			clear(mainCol);
+			renderMenu();
+			if (view) view.show(mainCol);
+			else { renderList(); renderPane(); }
 		}
 
 		function go(view) {
@@ -675,7 +754,8 @@
 			const rows = el('div', { class: 'ml-rows', role: 'listbox', 'aria-label': head.title, tabindex: '0' });
 			rows.addEventListener('keydown', onListKey);
 			if (!accounts.length && S.me && v.kind === 'box') {
-				rows.append(el('div', { class: 'ml-empty' }, [icon('mail', 28), el('p', { class: 'ml-p', text: t('mail.noAccounts') }), el('button', { type: 'button', class: 'btn btn-pri', text: t('mail.addAccount'), on: { click: () => openAddAccount() } })]));
+				// "Konto hinzufügen" lives in the settings now (Phase 2): the empty list leads there
+				rows.append(el('div', { class: 'ml-empty' }, [icon('mail', 28), el('p', { class: 'ml-p', text: t('mail.noAccounts') }), el('button', { type: 'button', class: 'btn btn-pri ml-empty-settings', text: t('mail.addAccountInSettings'), on: { click: () => openSettings({ focusAdd: true }) } })]));
 			} else if (S.listError && !S.items.length) {
 				rows.append(el('div', { class: 'ml-empty' }, [el('p', { class: 'ml-p', text: S.listError }), el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.retry'), on: { click: () => loadList() } })]));
 			} else if (!S.items.length) {
@@ -708,7 +788,7 @@
 				av,
 				el('span', { class: 'ml-row-main' }, [
 					el('span', { class: 'ml-row-l1' }, [dot(color), el('span', { class: 'ml-row-from', text: MS.senderName(m.from, t) }), m.threadCount > 1 && S.me && S.me.settings.threads ? el('span', { class: 'ml-row-n', text: String(m.threadCount) }) : null, el('span', { class: 'ml-row-time', text: MS.timeLabel(m.date, now, lang(), t) })]),
-					el('span', { class: 'ml-row-subj', text: m.subject || t('mail.noSubject') }),
+					el('span', { class: 'ml-row-subj' }, [m.invite ? el('span', { class: `ml-row-inv is-${m.invite}`, text: t(`mail.cal.label.${m.invite}`) }) : null, el('span', { text: m.subject || t('mail.noSubject') })]),
 					el('span', { class: 'ml-row-snip', text: m.snippet || '' }),
 					m.ai && m.ai.summary && has('ai') ? el('span', { class: 'ml-row-ai' }, [icon('spark', 12), el('span', { text: m.ai.summary })]) : null,
 				]),
@@ -751,8 +831,8 @@
 		function popMenu(x, y, items) {
 			const layer = el('div', { class: 'ml-menu-layer', on: { mousedown: (ev) => { if (ev.target === layer) layer.remove(); } } });
 			const menu = el('div', { class: 'ml-menu', role: 'menu' });
-			for (const [key, ic, fn] of items) {
-				menu.append(el('button', { type: 'button', role: 'menuitem', class: 'ml-menu-item', on: { click: () => { layer.remove(); fn(); } } }, [icon(ic, 15), el('span', { text: t(key) })]));
+			for (const [key, ic, fn, label] of items) {
+				menu.append(el('button', { type: 'button', role: 'menuitem', class: 'ml-menu-item', on: { click: () => { layer.remove(); fn(); } } }, [icon(ic, 15), el('span', { text: key ? t(key) : label })]));
 			}
 			layer.append(menu);
 			document.body.append(layer);
@@ -1012,7 +1092,8 @@
 					popMenu(r.left, r.bottom + 4, [
 						['mail.act.move', 'move', () => moveTo([m])],
 						[m.tab === 'other' ? 'mail.act.toRelevant' : 'mail.act.toOther', 'tab', () => setTab([m], m.tab === 'other' ? 'relevant' : 'other')],
-					]);
+						has('contacts') && contacts && m.from.email ? ['mail.con.saveContact', 'person', () => saveContact({ email: m.from.email, name: m.from.name, messageId: m.id })] : null,
+					].filter(Boolean));
 				}),
 			].filter(Boolean));
 			const scroll = el('div', { class: 'ml-read' });
@@ -1041,6 +1122,12 @@
 				el('span', { class: 'ml-read-date', text: MS.fullDate(m.date, lang()) }),
 			]));
 			scroll.append(el('div', { class: 'ml-read-to', text: `${t('mail.to', { name: acc ? acc.name : '' })}${toLine ? ` · ${toLine}` : ''}` }));
+			// Phase 2: the invitation's card above the text (Microsoft without the calendar right: "Kalender freigeben")
+			if (has('calendar') && calendar && m.invite && !R.offline) scroll.append(calendar.inviteCard(m, { onDone: () => reloadRead(m.id) }));
+			else if (has('calendar') && !m.invite && acc && (acc.missingScopes || []).length) {
+				const row = S.items.find((x) => x.id === m.id);
+				if (row && row.invite) scroll.append(consentBand(acc, 'mail.cal.inv.needConsent'));
+			}
 			// AI bar
 			if (has('ai') && (R.ai || R.aiBusy || R.aiError)) scroll.append(aiCard(m, R));
 			// attachments
@@ -1213,14 +1300,25 @@
 			const email = m.from && m.from.email;
 			if (!email) return;
 			const seq = ++S.senderSeq;
-			S.sender = { email, name: m.from.name || null, accountId: m.accountId, contact: null, items: [], next: null, loading: true, error: null, back: S.read };
+			S.sender = { email, name: m.from.name || null, accountId: m.accountId, messageId: m.id || null, contact: null, lookup: null, photo: null, items: [], next: null, loading: true, error: null, back: S.read };
 			S.pane = 'sender';
 			renderPane();
-			call(api.contacts(email)).then((r) => {
-				if (seq !== S.senderSeq || !S.sender || !r || !r.ok) return;
-				S.sender.contact = MS.contactOf(r.items, email);
-				if (S.pane === 'sender') renderPane();
-			});
+			if (has('contacts') && api.lookup) {
+				// Phase 2: the real contact (GET cards/lookup), its photo
+				call(api.lookup(email)).then((r) => {
+					if (seq !== S.senderSeq || !S.sender || !r || !r.ok) return;
+					S.sender.lookup = r;
+					if (S.pane === 'sender') renderPane();
+					const c = r.card;
+					if (c && c.photo) call(api.cardPhoto(c.id, c.photo.etag)).then((p) => { if (seq === S.senderSeq && S.sender && p && p.ok) { S.sender.photo = p.url; if (S.pane === 'sender') renderPane(); } });
+				});
+			} else {
+				call(api.contacts(email)).then((r) => {
+					if (seq !== S.senderSeq || !S.sender || !r || !r.ok) return;
+					S.sender.contact = MS.contactOf(r.items, email);
+					if (S.pane === 'sender') renderPane();
+				});
+			}
 			await loadSender(seq);
 		}
 
@@ -1243,7 +1341,9 @@
 		function renderSender() {
 			const P = S.sender;
 			const acc = MS.accountOf(S.me, P.accountId);
-			const name = (P.contact && P.contact.name) || P.name || P.email;
+			const card = P.lookup && P.lookup.card;
+			const person = P.lookup && P.lookup.person;
+			const name = (card && (card.name.display || [card.name.given, card.name.family].filter(Boolean).join(' '))) || (P.contact && P.contact.name) || (person && person.name) || P.name || P.email;
 			const bar = el('div', { class: 'ml-read-bar', role: 'toolbar', 'aria-label': t('mail.actions') }, [
 				el('button', { type: 'button', class: 'ml-ib', title: t('mail.sender.back'), 'aria-label': t('mail.sender.back'), on: { click: () => { S.pane = S.read ? 'read' : 'empty'; renderPane(); } } }, [icon('back', 16)]),
 				el('span', { class: 'ml-sub', text: t('mail.sender.title') }),
@@ -1251,16 +1351,27 @@
 			const scroll = el('div', { class: 'ml-read ml-sender' });
 			const av = el('span', { class: 'ml-av ml-av-lg', text: MS.initials({ name: name === P.email ? null : name, email: P.email }) });
 			av.style.background = acc ? acc.color : 'var(--faint)';
+			if (P.photo) { clear(av); av.append(el('img', { src: P.photo, alt: '', draggable: 'false' })); av.classList.add('has-photo'); }
 			scroll.append(el('div', { class: 'ml-sender-head' }, [
 				av,
 				el('span', { class: 'ml-sender-tx' }, [
 					el('h2', { class: 'ml-read-subj ml-sender-name', text: name }),
+					card && (card.title || card.company) ? el('span', { class: 'ml-sender-job', text: [card.title, card.company].filter(Boolean).join(' · ') }) : null,
 					name !== P.email ? el('span', { class: 'ml-read-addr ml-sender-mail', text: P.email }) : null,
-					// the place for what the person's contacts know (the coming contacts plugin); for now that they are one
-					P.contact ? el('span', { class: 'ml-sub ml-sender-contact', text: t('mail.sender.inContacts') }) : null,
+					// a GateControl person (the same server): as before
+					(P.contact || person) && !card ? el('span', { class: 'ml-sub ml-sender-contact', text: t('mail.sender.inContacts') }) : null,
 				]),
 			]));
+			if (card && card.phones.length) {
+				const nums = el('div', { class: 'ml-sender-phones' });
+				for (const ph of card.phones) {
+					nums.append(el('button', { type: 'button', class: 'ml-chip ml-sender-phone', title: t('mail.con.call'), on: { click: () => call(api.call(ph.value)).then((r) => { if (!r || !r.ok) toast(t('mail.con.noPhoneApp'), 'error'); }) } }, [icon('phone', 14), el('span', { text: `${t(`mail.con.type.phone.${ph.type}`)} · ${ph.value}` })]));
+				}
+				scroll.append(nums);
+			}
 			scroll.append(el('div', { class: 'ml-sender-acts' }, [
+				has('contacts') && contacts && card ? el('button', { type: 'button', class: 'btn btn-sec btn-sm ml-sender-open', on: { click: () => openContact(card.id) } }, [icon('person', 15), el('span', { text: t('mail.con.open') })]) : null,
+				has('contacts') && contacts && P.lookup && !card ? el('button', { type: 'button', class: 'btn btn-sec btn-sm ml-sender-save', on: { click: () => saveContact({ email: P.email, name: P.name, messageId: P.messageId }) } }, [icon('person', 15), el('span', { text: t('mail.con.saveContact') })]) : null,
 				el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: () => openCompose({ to: [{ name: P.name, email: P.email }], accountId: P.accountId }) } }, [icon('pen', 15), el('span', { text: t('mail.sender.write') })]),
 				el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => {
 					const done = () => toast(t('mail.sender.copied'), 'success');
@@ -1501,7 +1612,7 @@
 		async function openCompose(x) {
 			if (S.compose && !(await leaveCompose())) return;
 			const accs = (S.me && S.me.accounts) || [];
-			if (!accs.length) { openAddAccount(); return; }
+			if (!accs.length) { openSettings({ focusAdd: true }); return; }
 			const C = {
 				draftId: null, accountId: x.accountId || defaultAccountId(), to: x.to || [], cc: [], bcc: [], subject: x.subject || '',
 				atts: [], warnings: [], mode: x.mode || null, html: '', dirty: false, saving: null, uploading: 0, frame: null, showCc: false, title: t('mail.compose.new'),
@@ -1706,6 +1817,8 @@
 			let q = 0;
 			let sugTimer = null;
 			const add = (a) => { if (!C[field].some((x) => x.email.toLowerCase() === a.email.toLowerCase())) C[field].push(a); input.value = ''; sug.hidden = true; drawChips(); scheduleSave(); input.focus(); };
+			// the first of the suggestions with Enter (a group: all its members)
+			sug.pickFirst = () => { const f = sug.firstChild; if (f) f.dispatchEvent(new MouseEvent('mousedown')); };
 			input.addEventListener('input', () => {
 				input.classList.remove('is-bad');
 				clearTimeout(sugTimer);
@@ -1717,13 +1830,13 @@
 					const r = await call(api.contacts(v));
 					if (my !== q || !r || !r.ok) return;
 					clear(sug);
-					for (const c of r.items) sug.append(el('button', { type: 'button', role: 'option', class: 'ml-sug-row', on: { mousedown: (e) => { e.preventDefault(); add({ name: c.name, email: c.email }); } } }, [el('span', { class: 'ml-sug-name', text: c.name || c.email }), c.name ? el('span', { class: 'ml-sub', text: c.email }) : null]));
+					for (const c of r.items) sug.append(suggestionRow(c, (list) => { for (const a of list) add(a); }));
 					sug.hidden = !r.items.length;
 				}, 220);
 			});
 			input.addEventListener('keydown', (e) => {
 				if (e.key === 'Enter' || e.key === 'Tab') {
-					if (!sug.hidden && sug.firstChild && e.key === 'Enter') { e.preventDefault(); sug.firstChild.dispatchEvent(new MouseEvent('mousedown')); return; }
+					if (!sug.hidden && sug.firstChild && e.key === 'Enter') { e.preventDefault(); sug.pickFirst(); return; }
 					if (input.value.trim()) { if (e.key === 'Enter') e.preventDefault(); flushRecipients(); drawChips(); }
 				} else if (e.key === 'Backspace' && !input.value && C[field].length) {
 					C[field].pop();
@@ -2109,7 +2222,8 @@
 
 		// ── Settings ─────────────────────────────────────
 
-		function openSettings() {
+		/** The Mail settings (focusAdd: "Konto hinzufügen" stands out and has the focus — the way to a first account). */
+		function openSettings({ focusAdd = false } = {}) {
 			const me = S.me;
 			if (!me) return;
 			const dlg = openDialog({ title: t('mail.settings.title'), wide: true, closeLabel: t('mail.close') });
@@ -2144,8 +2258,10 @@
 			for (const a of me.accounts) {
 				dlg.body.append(el('button', { type: 'button', class: 'ml-pick-row', on: { click: () => { dlg.close(); openAccount(a); } } }, [avatarEl(a, 32), el('span', { class: 'ml-att-tx' }, [el('span', { class: 'ml-att-name', text: a.name }), el('span', { class: 'ml-sub', text: `${a.email} · ${t(`mail.state.${a.state}`)}` })]), icon('chevron', 14)]));
 			}
-			dlg.body.append(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { dlg.close(); openAddAccount(); } } }, [icon('plus', 14), el('span', { text: t('mail.addAccount') })]));
+			const addBtn = el('button', { type: 'button', class: `btn ${focusAdd || !me.accounts.length ? 'btn-pri' : 'btn-ghost'} btn-sm ml-set-add`, on: { click: () => { dlg.close(); openAddAccount(); } } }, [icon('plus', 14), el('span', { text: t('mail.addAccount') })]);
+			dlg.body.append(addBtn);
 			dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.close'), on: { click: () => dlg.close() } }));
+			if (focusAdd) setTimeout(() => { addBtn.scrollIntoView({ block: 'nearest' }); addBtn.focus(); }, 30);
 		}
 
 		function openAccount(a) {
@@ -2179,14 +2295,15 @@
 			const isMs = a.provider === 'm365' || a.provider === 'outlook';
 			const err = el('span', { class: 'ml-dlg-err', role: 'alert' });
 			if (isMs) {
+				// Phase 2: the rights of calendar / contacts still missing → "Neu anmelden"
+				if ((a.missingScopes || []).length) dlg.body.append(el('div', { class: 'ml-banner is-info ml-consent' }, [icon('calendar', 15), el('span', { class: 'ml-grow', text: t('mail.consent.band', { name: a.name }) })]));
 				dlg.body.append(el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: async (e) => {
 					const b = e.currentTarget;
 					b.disabled = true;
 					err.textContent = t('mail.add.msWaiting');
-					const r = await call(api.microsoft({ accountId: a.id }));
+					const r = await relogin(a, { quiet: true });
 					b.disabled = false;
 					err.textContent = r && r.ok ? '' : (r && r.code === 'cancelled' ? '' : errText(r && r.code === 'timeout' ? { code: 'timeout_signin' } : r));
-					if (r && r.ok) { toast(t('mail.settings.reloggedIn'), 'success'); loadMe().then(() => { renderMenu(); renderList(); }); }
 				} } }, [icon('refresh', 14), el('span', { text: t('mail.settings.relogin') })]));
 			} else {
 				const pw = el('input', { type: 'password', class: 'ml-input', maxlength: '1024', autocomplete: 'new-password', placeholder: t('mail.settings.passwordKeep') });
@@ -2234,9 +2351,194 @@
 
 		function render() {
 			renderMenu();
-			renderList();
-			renderPane();
+			if (areaView()) areaView().relabel(); else { renderList(); renderPane(); }
 		}
+
+		// ── Phase 2: Microsoft "Neu anmelden", contacts, the areas ──
+
+		/**
+		 * "Neu anmelden" of a Microsoft account (the rights of calendar and contacts): the browser sign-in again; still
+		 * missing afterwards (refused, or the company blocks them) → the administrator's consent link to pass on.
+		 */
+		async function relogin(a, { quiet = false } = {}) {
+			const r = await call(api.microsoft({ accountId: a.id }));
+			if (!r || !r.ok) { if (!quiet && r && r.code !== 'cancelled') toast(errText(r), 'error'); return r; }
+			await loadMe();
+			renderMenu();
+			const now = MS.accountOf(S.me, a.id);
+			if (now && (now.missingScopes || []).length) adminConsent(now);
+			else toast(t('mail.consent.done', { name: a.name }), 'success');
+			const view = areaView();
+			if (view) view.show(mainCol);
+			return r;
+		}
+
+		function adminConsent(a) {
+			const url = S.me && S.me.microsoft ? S.me.microsoft.adminConsentUrl : null;
+			const dlg = openDialog({ title: t('mail.consent.adminTitle'), closeLabel: t('mail.close'), cls: 'ml-admin-consent' });
+			dlg.body.append(el('p', { class: 'ml-p', text: t('mail.consent.adminText', { name: a.name }) }));
+			if (url) {
+				dlg.body.append(el('input', { type: 'text', class: 'ml-input', readonly: true, value: url, 'aria-label': t('mail.consent.adminLink') }));
+				dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec', on: { click: () => {
+					if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(() => toast(t('mail.consent.copied'), 'success')).catch(() => toast(t('mail.err.failed'), 'error'));
+				} } }, [icon('copy', 14), el('span', { text: t('mail.consent.copy') })]));
+			}
+			dlg.foot.append(el('button', { type: 'button', class: 'btn btn-pri', text: t('mail.close'), on: { click: () => dlg.close() } }));
+		}
+
+		/** The band "Kalender und Kontakte von <Konto> freigeben" with "Neu anmelden" (key: another text). */
+		function consentBand(a, key = 'mail.consent.band') {
+			const b = el('button', { type: 'button', class: 'btn btn-sec btn-xs ml-consent-btn', text: t('mail.settings.relogin'), on: { click: async () => {
+				b.disabled = true;
+				b.textContent = t('mail.add.msWaiting');
+				await relogin(a);
+				b.disabled = false;
+				b.textContent = t('mail.settings.relogin');
+			} } });
+			return el('div', { class: 'ml-banner is-info ml-consent' }, [icon('calendar', 15), el('span', { class: 'ml-grow', text: t(key, { name: a.name }) }), b]);
+		}
+
+		function consentBands() {
+			return MS.consentAccounts(S.me).filter((a) => a.provider === 'm365' || a.provider === 'outlook').map((a) => consentBand(a));
+		}
+
+		/** A suggestion while writing: picture or initials, the name, the address or the group's size, its source. */
+		function suggestionRow(c, onPick) {
+			const group = c.source === 'group';
+			const av = el('span', { class: 'ml-av ml-av-sm ml-sug-av', text: group ? '' : MS.initials({ name: c.name, email: c.email }) });
+			if (group) av.append(icon('users', 14));
+			if (!group && c.photo && c.contactId && api.cardPhoto) {
+				call(api.cardPhoto(c.contactId)).then((p) => { if (p && p.ok) { clear(av); av.append(el('img', { src: p.url, alt: '' })); } });
+			}
+			const label = group ? t('mail.compose.group', { name: c.name, count: (c.members || []).length }) : (c.name || c.email);
+			return el('button', { type: 'button', role: 'option', class: `ml-sug-row${group ? ' is-group' : ''}`, on: { mousedown: (e) => { e.preventDefault(); onPick(MS.suggestionRecipients(c)); } } }, [
+				av,
+				el('span', { class: 'ml-sug-tx' }, [el('span', { class: 'ml-sug-name', text: label }), !group && c.name ? el('span', { class: 'ml-sub', text: c.email }) : null]),
+				el('span', { class: 'ml-sug-src', text: t(`mail.compose.src.${c.source}`) }),
+			]);
+		}
+
+		/**
+		 * Recipients as chips with suggestions (the event's attendees): { label, list(), onChange(list) } → the element
+		 * (its .flush() takes what is still typed).
+		 */
+		function recipientInput({ label, list, onChange }) {
+			const wrap = el('div', { class: 'ml-field ml-rcpt-field' });
+			const chips = el('span', { class: 'ml-rcpts' });
+			const input = el('input', { type: 'text', class: 'ml-rcpt-in', 'aria-label': label, spellcheck: 'false', autocomplete: 'off', placeholder: t('mail.cal.attendeesPh') });
+			const sug = el('div', { class: 'ml-sug-list', role: 'listbox', hidden: true });
+			const draw = () => {
+				clear(chips);
+				for (const r of list()) {
+					chips.append(el('span', { class: 'ml-rcpt', title: r.email }, [
+						el('span', { text: MS.recipientLabel(r) }),
+						el('button', { type: 'button', class: 'ml-rcpt-x', 'aria-label': t('mail.compose.removeRecipient', { name: MS.recipientLabel(r) }), on: { click: () => { onChange(list().filter((x) => x !== r)); draw(); } } }, [icon('close', 11)]),
+					]));
+				}
+			};
+			const add = (items) => {
+				const cur = list().slice();
+				for (const a of items) if (!cur.some((x) => x.email.toLowerCase() === a.email.toLowerCase())) cur.push(a);
+				onChange(cur);
+				input.value = '';
+				sug.hidden = true;
+				draw();
+				input.focus();
+			};
+			const flush = () => {
+				if (!input.value.trim()) return;
+				const p = MS.parseRecipients(input.value);
+				if (p.list.length) add(p.list);
+				input.value = p.bad.join(', ');
+				input.classList.toggle('is-bad', p.bad.length > 0);
+			};
+			let q = 0;
+			let timer = null;
+			input.addEventListener('input', () => {
+				input.classList.remove('is-bad');
+				clearTimeout(timer);
+				const v = input.value.trim();
+				if (/[,;]$/.test(input.value)) { flush(); return; }
+				if (v.length < 2) { sug.hidden = true; return; }
+				timer = setTimeout(async () => {
+					const my = ++q;
+					const r = await call(api.contacts(v));
+					if (my !== q || !r || !r.ok) return;
+					clear(sug);
+					for (const c of r.items) sug.append(suggestionRow(c, add));
+					sug.hidden = !r.items.length;
+				}, 200);
+			});
+			input.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					if (!sug.hidden && sug.firstChild) sug.firstChild.dispatchEvent(new MouseEvent('mousedown'));
+					else flush();
+				} else if (e.key === 'Backspace' && !input.value && list().length) { onChange(list().slice(0, -1)); draw(); }
+				else if (e.key === 'Escape' && !sug.hidden) { e.stopPropagation(); sug.hidden = true; }
+			});
+			input.addEventListener('blur', () => { setTimeout(() => { sug.hidden = true; }, 150); flush(); });
+			draw();
+			wrap.append(el('span', { class: 'ml-sub', text: label }), el('span', { class: 'ml-rcpt-box ml-rcpt-boxed' }, [chips, input, sug]));
+			wrap.flush = flush;
+			return wrap;
+		}
+
+		/** The open mail again (an answered invitation): not marked read again. */
+		async function reloadRead(id) {
+			const R = S.read;
+			if (!R || !R.message || R.message.id !== id) return;
+			const r = await call(api.message(id, { markRead: false }));
+			if (S.read !== R || !r || !r.ok) return;
+			R.message = r.message;
+			R.doc = r.doc;
+			R.docDark = r.docDark;
+			if (S.pane === 'read' && S.area === 'mail') renderPane();
+		}
+
+		function openContact(id) {
+			setArea('contacts');
+			if (contacts) contacts.openCard(id);
+		}
+
+		function saveContact(x) {
+			setArea('contacts');
+			if (contacts) contacts.saveFrom(x);
+		}
+
+		const ctx = {
+			api, t, lang, nextId,
+			toast,
+			errText,
+			me: () => S.me,
+			has,
+			popMenu,
+			renderMenu,
+			consentBands,
+			recipientInput,
+			mailDark: () => appDark() && darkMails(),
+			openCompose: (x) => { setArea('mail'); openCompose(x || {}); },
+			openMessage: (id) => { setArea('mail'); if (S.view.kind !== 'box') go(S.lastBox); openMessage(id); },
+			openSender: ({ email, name }) => { setArea('mail'); openSender({ id: null, accountId: null, from: { email, name: name || null } }); },
+			openEvent: (eventId, occurrence) => { setArea('calendar'); if (calendar) calendar.openEvent(eventId, occurrence); },
+			openContact,
+			saveContact,
+		};
+		calendar = root.GCCalendarView ? root.GCCalendarView.create(ctx) : null;
+		contacts = root.GCContactsView ? root.GCContactsView.create(ctx) : null;
+
+		api.onCalendar && api.onCalendar((c) => {
+			if (!S.loaded || !c) return;
+			if (calendar) calendar.onLive(c);
+			// an invitation of the open mail changed (answered elsewhere, a newer one)
+			if (c.kind === 'invitation' && c.messageId && S.read && S.read.message && S.read.message.id === c.messageId) reloadRead(c.messageId);
+		});
+		api.onContacts && api.onContacts((c) => { if (S.loaded && contacts) contacts.onLive(c); });
+
+		o.root.addEventListener('keydown', (e) => {
+			if (!S.shown || e.defaultPrevented || e.key !== 'Escape' || S.area !== 'contacts' || !contacts) return;
+			if (contacts.escape()) e.preventDefault();
+		});
 
 		renderMenu();
 		renderList();
@@ -2253,18 +2555,31 @@
 			hide() {
 				S.shown = false;
 				if (S.compose && S.compose.dirty) saveDraft({ quiet: true }).catch(() => {});
+				const view = areaView();
+				if (view) view.hide();
 			},
 			relabel() {
 				render();
 				setStatus(S.status);
 			},
-			/** A push target: { kind: 'message', messageId, accountId } | { kind: 'outbox', outboxId }. */
+			/**
+			 * A push target: { kind: 'message', messageId, accountId } | { kind: 'outbox', outboxId } | Phase 2:
+			 * { kind: 'event', eventId, occurrence } (a reminder) | { kind: 'invitation', invitationId } | { kind: 'calendar' }.
+			 */
 			async open(context) {
 				S.shown = true;
 				if (!S.loaded && S.status && S.status.state === 'available') await loadAll();
 				if (!context) return;
+				if (context.kind === 'event' || context.kind === 'invitation' || context.kind === 'calendar') {
+					if (!calendar || !has('calendar')) return;
+					setArea('calendar');
+					if (context.kind === 'event') calendar.openEvent(context.eventId, context.occurrence || null);
+					else if (context.kind === 'invitation') calendar.openInvitation(context.invitationId);
+					return;
+				}
 				if (context.kind === 'outbox') { go({ kind: 'outbox' }); return; }
 				if (context.kind === 'message' && context.messageId) {
+					setArea('mail');
 					if (S.view.kind !== 'box') go(S.lastBox);
 					openMessage(context.messageId, { fromPush: true });
 				}

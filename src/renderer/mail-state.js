@@ -8,7 +8,10 @@
  * of a row (the swipe actions of the settings), the AI chips, Drive
  * suggestions, recipients as typed, "Senden planen" presets, the undo
  * countdown, the provider list of "Konto hinzufügen" and the error texts of
- * Mail's codes. Loaded as a plain script before mail-view.js
+ * Mail's codes. Phase 2: the calendar (ranges of the views, the day grid with
+ * overlapping events, times, recurrence and reminder texts, the event form,
+ * invitation states) and the contacts (letter sections, birthdays, the edit
+ * form, merge choices, suggestions). Loaded as a plain script before mail-view.js
  * (window.GCMailState) and required by the node tests
  * (test/mail-state.test.js).
  *
@@ -408,6 +411,9 @@
 		microsoft_off: 'microsoft_off', attachments_unsupported: 'attachments_unsupported', images_blocked: 'images_blocked',
 		images_off: 'images_off', no_folder: 'no_folder', not_waiting: 'not_waiting', login_required: 'login_required',
 		exists: 'exists', links_disabled: 'links_disabled',
+		// Phase 2: calendar and contacts
+		conflict: 'conflict', read_only: 'read_only', feature_off: 'feature_off', not_supported: 'not_supported', send_failed: 'send_failed',
+		invitation_outdated: 'invitation_outdated', invalid_vcard: 'invalid_vcard', invalid_ics: 'invalid_ics', dav_unavailable: 'dav_unavailable',
 	};
 
 	/** The text of a failed answer ({ code, detail }); the server's hint for a refused login. */
@@ -548,6 +554,561 @@
 		return (Array.isArray(items) ? items : []).find((c) => c && c.source === 'person' && str(c.email).trim().toLowerCase() === e && str(c.name).trim()) || null;
 	}
 
+	// ── Calendar (Phase 2) ───────────────────────────────
+
+	const MINUTE = 60 * 1000;
+	const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+	/** The reminders offered (minutes before; 0: at the start). */
+	const REMINDERS = [0, 5, 10, 15, 30, 60, 120, 1440, 2880, 10080];
+	const VIEWS = ['day', 'week', 'month', 'list'];
+
+	const dayStart = startOfDay;
+	/** `n` days after the day of `ms` (local midnight; DST days are 23 / 25 hours). */
+	function addDays(ms, n) { const d = new Date(ms); d.setDate(d.getDate() + n); return d.getTime(); }
+	/** ms → 'YYYY-MM-DD' (local). */
+	function ymd(ms) { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+	/** 'YYYY-MM-DD' → local midnight (ms), or null. */
+	function fromYmd(s) {
+		const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str(s));
+		if (!m) return null;
+		const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+		return d.getMonth() === Number(m[2]) - 1 ? d.getTime() : null;
+	}
+	/** 'HH:MM' of ms (local). */
+	function hhmm(ms) { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+	/** A date ('YYYY-MM-DD') and a time ('HH:MM') of the form → ms (local), or null. */
+	function localMs(date, time) {
+		const d = fromYmd(date);
+		const m = /^(\d{1,2}):(\d{2})$/.exec(str(time));
+		if (d === null || !m || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
+		const x = new Date(d);
+		x.setHours(Number(m[1]), Number(m[2]), 0, 0);
+		return x.getTime();
+	}
+
+	/**
+	 * The days of a calendar view around `anchor` → { from, to, days: [local midnights] } (the range for GET events,
+	 * ≤ 62 days): a day, a week from `weekStart` (Mon 1 / Sun 0; workWeek: Mon–Fri), the month as six weeks, a list of
+	 * `listDays` from the anchor on.
+	 */
+	function viewRange(view, anchor, { weekStart = 1, workWeek = false, listDays = 30 } = {}) {
+		const a = dayStart(anchor);
+		if (view === 'day') return { from: a, to: addDays(a, 1), days: [a] };
+		if (view === 'month') {
+			const first = new Date(a);
+			first.setDate(1);
+			const back = (first.getDay() - weekStart + 7) % 7;
+			const start = addDays(first.getTime(), -back);
+			const days = Array.from({ length: 42 }, (_, i) => addDays(start, i));
+			return { from: start, to: addDays(start, 42), days, month: first.getMonth() };
+		}
+		if (view === 'list') return { from: a, to: addDays(a, Math.min(60, Math.max(1, listDays))), days: [] };
+		const back = (new Date(a).getDay() - weekStart + 7) % 7;
+		const start = addDays(a, -back);
+		let days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+		if (workWeek) days = days.filter((d) => { const w = new Date(d).getDay(); return w !== 0 && w !== 6; });
+		return { from: days[0], to: addDays(days[days.length - 1], 1), days };
+	}
+
+	/** ‹ › of a view: a day, a week, a month (the 1st), 30 days of the list. */
+	function shiftAnchor(view, anchor, dir) {
+		const s = dir < 0 ? -1 : 1;
+		if (view === 'day') return addDays(anchor, s);
+		if (view === 'month') { const d = new Date(dayStart(anchor)); d.setDate(1); d.setMonth(d.getMonth() + s); return d.getTime(); }
+		if (view === 'list') return addDays(anchor, 30 * s);
+		return addDays(anchor, 7 * s);
+	}
+
+	/** The head of a view: "November 2026", "3.–9. Nov. 2026" (a week), "Di., 3. November 2026" (a day). */
+	function rangeTitle(view, range, anchor, locale) {
+		const tag = localeTag(locale);
+		if (view === 'month') return new Date(dayStart(anchor)).toLocaleDateString(tag, { month: 'long', year: 'numeric' });
+		if (view === 'day') return new Date(range.from).toLocaleDateString(tag, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+		if (view === 'list') return new Date(range.from).toLocaleDateString(tag, { month: 'long', year: 'numeric' });
+		const a = new Date(range.from);
+		const b = new Date(addDays(range.to, -1));
+		const sameMonth = a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+		const left = sameMonth ? (locale === 'en' ? String(a.getDate()) : `${a.getDate()}.`) : a.toLocaleDateString(tag, { day: 'numeric', month: 'short' });
+		return `${left} – ${b.toLocaleDateString(tag, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+	}
+
+	/** Does an item (occurrence / overlay item) lie on the day starting at `day`? All-day ones by their dates. */
+	function onDay(x, day) {
+		if (x.allDay && x.startDate) { const d = ymd(day); return x.startDate <= d && d <= (x.endDate || x.startDate); }
+		const end = addDays(day, 1);
+		return x.start < end && (x.end > day || (x.end === x.start && x.start >= day));
+	}
+
+	/**
+	 * The timed items of a day as blocks of the grid: [{ item, top, height (minutes), col, cols }]; overlapping ones
+	 * side by side (columns of a cluster), at least 20 minutes high.
+	 */
+	function layoutDay(items, day) {
+		const end = addDays(day, 1);
+		const list = (items || []).filter((x) => !x.allDay && x.start < end && x.end > day - (x.end === x.start ? 1 : 0))
+			.map((x) => {
+				const top = Math.max(0, Math.round((x.start - day) / MINUTE));
+				const bottom = Math.min(Math.round((end - day) / MINUTE), Math.round((Math.max(x.end, x.start) - day) / MINUTE));
+				return { item: x, top, height: Math.max(20, bottom - top), col: 0, cols: 1 };
+			})
+			.sort((a, b) => a.top - b.top || b.height - a.height);
+		let cluster = [];
+		let clusterEnd = -1;
+		const close = () => { const n = Math.max(1, ...cluster.map((b) => b.col + 1)); for (const b of cluster) b.cols = n; cluster = []; };
+		for (const b of list) {
+			if (cluster.length && b.top >= clusterEnd) close();
+			const used = new Set(cluster.filter((c) => c.top + c.height > b.top).map((c) => c.col));
+			let col = 0;
+			while (used.has(col)) col += 1;
+			b.col = col;
+			cluster.push(b);
+			clusterEnd = Math.max(clusterEnd, b.top + b.height);
+		}
+		if (cluster.length) close();
+		return list;
+	}
+
+	/** The all-day items of a day (occurrences and overlay items), by title. */
+	function allDayOn(items, day) {
+		return (items || []).filter((x) => x.allDay && onDay(x, day)).sort((a, b) => str(a.title).localeCompare(str(b.title)));
+	}
+
+	/** Everything of a day for the month grid / the list: all-day first, then by start. */
+	function dayItems(items, day) {
+		return (items || []).filter((x) => onDay(x, day)).sort((a, b) => (b.allDay ? 1 : 0) - (a.allDay ? 1 : 0) || a.start - b.start || str(a.title).localeCompare(str(b.title)));
+	}
+
+	/** The list view: [{ day, items }] of the days in [from, to) that have something. */
+	function agenda(items, from, to) {
+		const out = [];
+		for (let d = dayStart(from); d < to; d = addDays(d, 1)) {
+			const list = dayItems(items, d);
+			if (list.length) out.push({ day: d, items: list });
+		}
+		return out;
+	}
+
+	/** Where the "now" line is on the day's grid (minutes), or null when `now` is not on that day. */
+	function nowMinutes(now, day) {
+		return now >= day && now < addDays(day, 1) ? Math.round((now - day) / MINUTE) : null;
+	}
+
+	/** "10:00–11:00", "ganztägig", "4.–5. Nov." (several days), "3.11. 22:00 – 4.11. 01:00". */
+	function eventTimeText(x, locale, t) {
+		if (!x) return '';
+		const tag = localeTag(locale);
+		if (x.allDay) {
+			const a = fromYmd(x.startDate);
+			const b = fromYmd(x.endDate || x.startDate);
+			if (a === null || b === null || a === b) return t('mail.cal.allDay');
+			return `${new Date(a).toLocaleDateString(tag, { day: 'numeric', month: 'short' })} – ${new Date(b).toLocaleDateString(tag, { day: 'numeric', month: 'short' })}`;
+		}
+		if (dayStart(x.start) === dayStart(Math.max(x.start, x.end - 1))) return `${hhmm(x.start)}–${hhmm(x.end)}`;
+		const d = (ms) => new Date(ms).toLocaleDateString(tag, { day: 'numeric', month: 'numeric' });
+		return `${d(x.start)} ${hhmm(x.start)} – ${d(x.end)} ${hhmm(x.end)}`;
+	}
+
+	/** The date of an event for the sheet: "Di., 3. Nov. 2026". */
+	function eventDate(x, locale) {
+		if (!x) return '';
+		const ms = x.allDay && x.startDate ? fromYmd(x.startDate) : x.start;
+		return new Date(ms).toLocaleDateString(localeTag(locale), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+	}
+
+	/** Short weekday names of MO … SU in the language. */
+	function weekdayName(code, locale, long = false) {
+		const i = WEEKDAYS.indexOf(String(code).replace(/^[+-]?\d/, ''));
+		if (i < 0) return '';
+		return new Date(2024, 0, 1 + i).toLocaleDateString(localeTag(locale), { weekday: long ? 'long' : 'short' }).replace(/\.$/, '');
+	}
+
+	/** The recurrence as text: "Wöchentlich am Di, Do", "Alle 2 Wochen", "Monatlich am 4.", "… bis 31.12.2026" / "· 5 Mal". */
+	function recurrenceText(rec, t, locale) {
+		if (!rec) return '';
+		if (!rec.freq) return t('mail.cal.rec.custom');
+		const n = rec.interval || 1;
+		const days = (rec.byDay || []).map((d) => weekdayName(d, locale)).filter(Boolean).join(', ');
+		let s;
+		if (rec.freq === 'daily') s = n > 1 ? t('mail.cal.rec.dailyN', { n }) : t('mail.cal.rec.daily');
+		else if (rec.freq === 'weekly') {
+			if (days) s = n > 1 ? t('mail.cal.rec.weeklyNOn', { n, days }) : t('mail.cal.rec.weeklyOn', { days });
+			else s = n > 1 ? t('mail.cal.rec.weeklyN', { n }) : t('mail.cal.rec.weekly');
+		} else if (rec.freq === 'monthly') {
+			const base = n > 1 ? t('mail.cal.rec.monthlyN', { n }) : t('mail.cal.rec.monthly');
+			if (rec.byMonthDay && rec.byMonthDay.length) s = `${base} ${t('mail.cal.rec.onDay', { day: rec.byMonthDay.join(', ') })}`;
+			else if (rec.bySetPos && rec.byDay && rec.byDay.length) s = `${base} ${t('mail.cal.rec.onPos', { pos: t(`mail.cal.rec.pos.${rec.bySetPos}`), day: weekdayName(rec.byDay[0], locale, true) })}`;
+			else s = base;
+		} else s = n > 1 ? t('mail.cal.rec.yearlyN', { n }) : t('mail.cal.rec.yearly');
+		if (rec.until) { const u = fromYmd(rec.until); if (u !== null) s += ` ${t('mail.cal.rec.until', { date: new Date(u).toLocaleDateString(localeTag(locale)) })}`; }
+		else if (rec.count) s += ` · ${t('mail.cal.rec.count', { count: rec.count })}`;
+		return s;
+	}
+
+	/** A reminder as text: "Zur Startzeit", "15 Minuten vorher", "2 Stunden vorher", "1 Tag vorher", "1 Woche vorher". */
+	function reminderText(min, t) {
+		const m = Number(min);
+		if (!Number.isFinite(m) || m < 0) return '';
+		if (m === 0) return t('mail.cal.rem.atStart');
+		if (m % 10080 === 0) return t(m === 10080 ? 'mail.cal.rem.week' : 'mail.cal.rem.weeks', { count: m / 10080 });
+		if (m % 1440 === 0) return t(m === 1440 ? 'mail.cal.rem.day' : 'mail.cal.rem.days', { count: m / 1440 });
+		if (m % 60 === 0) return t(m === 60 ? 'mail.cal.rem.hour' : 'mail.cal.rem.hours', { count: m / 60 });
+		return t('mail.cal.rem.minutes', { count: m });
+	}
+
+	/** The answers of attendees → { accepted, tentative, declined, needs_action, total }. */
+	function responseCounts(attendees) {
+		const c = { accepted: 0, tentative: 0, declined: 0, needs_action: 0, total: 0 };
+		for (const a of attendees || []) {
+			if (a.role === 'resource') continue;
+			c.total += 1;
+			if (c[a.response] !== undefined) c[a.response] += 1;
+		}
+		return c;
+	}
+
+	/**
+	 * The calendar list of the menu: [{ key, label, items: [{ kind: 'calendar' | 'overlay', id, name, color, visible, … }] }]
+	 * — "GateControl" (own calendars and subscriptions without an account), per account (its name), "Eingeblendet".
+	 */
+	function calendarGroups(calendars, overlays, me, t) {
+		const groups = [];
+		const own = (calendars || []).filter((c) => !c.accountId);
+		if (own.length) groups.push({ key: 'gc', label: t('mail.cal.groupOwn'), items: own.map((c) => ({ kind: 'calendar', ...c })) });
+		for (const a of (me && me.accounts) || []) {
+			const list = (calendars || []).filter((c) => c.accountId === a.id);
+			if (list.length) groups.push({ key: `acc:${a.id}`, label: a.name, account: a, items: list.map((c) => ({ kind: 'calendar', ...c })) });
+		}
+		const orphans = (calendars || []).filter((c) => c.accountId && !((me && me.accounts) || []).some((a) => a.id === c.accountId));
+		if (orphans.length) groups.push({ key: 'other', label: t('mail.cal.groupOther'), items: orphans.map((c) => ({ kind: 'calendar', ...c })) });
+		if ((overlays || []).length) groups.push({ key: 'overlays', label: t('mail.cal.groupOverlays'), items: overlays.map((o) => ({ kind: 'overlay', ...o })) });
+		return groups;
+	}
+
+	/** The ids for GET events: the visible calendars and overlays. */
+	function visibleIds(calendars, overlays) {
+		return [...(calendars || []).filter((c) => c.visible).map((c) => c.id), ...(overlays || []).filter((o) => o.visible).map((o) => o.id)];
+	}
+
+	/** The colour of an item: its calendar's / overlay's. */
+	function itemColor(x, calendars, overlays) {
+		if (x && x.overlayId) { const o = (overlays || []).find((y) => y.id === x.overlayId); return o ? o.color : '#8C96A5'; }
+		const c = (calendars || []).find((y) => y.id === (x && x.calendarId));
+		return c ? c.color : '#8C96A5';
+	}
+
+	/** The monthly position of a day: { pos: 1 … 4 | -1 (the last), day: 'TU' }. */
+	function monthPos(ms) {
+		const d = new Date(ms);
+		const day = WEEKDAYS[(d.getDay() + 6) % 7];
+		const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+		const pos = d.getDate() + 7 > last ? -1 : Math.ceil(d.getDate() / 7);
+		return { pos, day };
+	}
+
+	/** The form's recurrence from an event's: { kind: none | daily | weekly | monthlyDay | monthlyPos | yearly | custom, interval, days, end, until, count }. */
+	function recurrenceForm(rec, startMs) {
+		const base = { kind: 'none', interval: 1, days: [WEEKDAYS[(new Date(startMs).getDay() + 6) % 7]], end: 'never', until: '', count: 10 };
+		if (!rec) return base;
+		if (!rec.freq || rec.editable === false) return { ...base, kind: 'custom', rrule: rec.rrule || null };
+		const out = { ...base, interval: rec.interval || 1 };
+		if (rec.until) { out.end = 'until'; out.until = rec.until; } else if (rec.count) { out.end = 'count'; out.count = rec.count; }
+		if (rec.freq === 'daily') out.kind = 'daily';
+		else if (rec.freq === 'weekly') { out.kind = 'weekly'; if (rec.byDay && rec.byDay.length) out.days = rec.byDay.slice(); }
+		else if (rec.freq === 'monthly') out.kind = rec.bySetPos ? 'monthlyPos' : 'monthlyDay';
+		else out.kind = 'yearly';
+		return out;
+	}
+
+	/** The form's recurrence → the body's (`undefined`: unchanged, a custom rule kept; null: none). */
+	function recurrenceBody(f, startMs) {
+		if (!f || f.kind === 'none') return null;
+		if (f.kind === 'custom') return undefined;
+		const interval = Math.max(1, Math.min(999, Number(f.interval) || 1));
+		const b = { freq: f.kind === 'monthlyDay' || f.kind === 'monthlyPos' ? 'monthly' : f.kind, interval };
+		if (f.kind === 'weekly') b.byDay = WEEKDAYS.filter((d) => (f.days || []).includes(d));
+		if (f.kind === 'weekly' && !b.byDay.length) b.byDay = [WEEKDAYS[(new Date(startMs).getDay() + 6) % 7]];
+		if (f.kind === 'monthlyDay') b.byMonthDay = [new Date(startMs).getDate()];
+		if (f.kind === 'monthlyPos') { const p = monthPos(startMs); b.byDay = [p.day]; b.bySetPos = p.pos; }
+		if (f.end === 'until' && fromYmd(f.until) !== null) b.until = f.until;
+		if (f.end === 'count') b.count = Math.max(1, Math.min(999, Number(f.count) || 1));
+		return b;
+	}
+
+	/**
+	 * The form of the event dialog from an event (or a new one: { start, end, allDay, calendarId }): dates and times
+	 * as the inputs want them, the reminders, the attendees, the recurrence.
+	 */
+	function eventForm(ev, prefs, calendars) {
+		const x = ev || {};
+		const writable = (calendars || []).filter((c) => c.writable);
+		const calId = writable.some((c) => c.id === x.calendarId) ? x.calendarId
+			: ((prefs && writable.some((c) => c.id === prefs.defaultCalendarId)) ? prefs.defaultCalendarId : (writable[0] ? writable[0].id : null));
+		const start = Number.isFinite(x.start) ? x.start : Date.now();
+		const end = Number.isFinite(x.end) && x.end > start ? x.end : start + 60 * MINUTE;
+		const allDay = !!x.allDay;
+		const sd = allDay && x.startDate ? x.startDate : ymd(start);
+		const ed = allDay && x.endDate ? x.endDate : ymd(allDay ? start : end);
+		const def = prefs ? (allDay ? prefs.allDayReminder : prefs.defaultReminder) : 15;
+		return {
+			eventId: x.eventId || null, calendarId: calId, title: str(x.title), allDay,
+			startDate: sd, startTime: hhmm(start), endDate: ed, endTime: hhmm(end),
+			location: str(x.location), onlineUrl: x.online && x.online.provider !== 'teams' ? x.online.url : '', teams: !!(x.online && x.online.provider === 'teams'),
+			reminders: Array.isArray(x.reminders) ? x.reminders.slice(0, 3) : (Number.isFinite(x.reminder) ? [x.reminder] : (def === null || def === undefined ? [] : [def])),
+			attendees: (x.attendees && Array.isArray(x.attendees) ? x.attendees : []).filter((a) => !a.self && a.role !== 'resource').map((a) => ({ name: a.name || null, email: a.email })),
+			busy: x.busy || 'busy', private: !!x.private, description: str(x.description),
+			recurrence: recurrenceForm(x.recurrence || null, start), etag: x.etag || null, occurrence: x.occurrence || null, recurring: !!x.recurring,
+		};
+	}
+
+	/** The form → the body of POST / PATCH events, or { error: field } (title, start, end). */
+	function eventBody(f, { hadOnline = false } = {}) {
+		const title = str(f.title).trim();
+		if (!title) return { error: 'title' };
+		const b = { calendarId: f.calendarId, title, allDay: !!f.allDay };
+		let startMs;
+		if (f.allDay) {
+			const a = fromYmd(f.startDate);
+			const z = fromYmd(f.endDate || f.startDate);
+			if (a === null) return { error: 'start' };
+			if (z === null || z < a) return { error: 'end' };
+			b.startDate = f.startDate;
+			b.endDate = f.endDate || f.startDate;
+			startMs = a;
+		} else {
+			const s = localMs(f.startDate, f.startTime);
+			const e = localMs(f.endDate || f.startDate, f.endTime);
+			if (s === null) return { error: 'start' };
+			if (e === null || e <= s) return { error: 'end' };
+			b.start = s;
+			b.end = e;
+			startMs = s;
+		}
+		b.location = str(f.location).trim() || null;
+		b.description = str(f.description);
+		if (f.teams) b.online = { create: 'teams' };
+		else if (str(f.onlineUrl).trim()) b.online = { url: str(f.onlineUrl).trim() };
+		else if (hadOnline) b.online = null;
+		b.reminders = [...new Set((f.reminders || []).filter((m) => Number.isInteger(m) && m >= 0))].slice(0, 3);
+		const rec = recurrenceBody(f.recurrence, startMs);
+		if (rec !== undefined) b.recurrence = rec;
+		b.attendees = (f.attendees || []).filter((a) => a && isEmail(a.email)).map((a) => (a.name ? { email: a.email, name: a.name } : { email: a.email }));
+		b.busy = ['busy', 'free', 'tentative', 'oof'].includes(f.busy) ? f.busy : 'busy';
+		b.private = !!f.private;
+		return b;
+	}
+
+	/** `ms` moved by `days` and `min` minutes of wall clock (local; a DST change in between keeps the clock time). */
+	function wallMove(ms, days, min) { const d = new Date(ms); d.setDate(d.getDate() + days); d.setMinutes(d.getMinutes() + min); return d.getTime(); }
+	const dayMin = (ms) => { const d = new Date(ms); return d.getHours() * 60 + d.getMinutes(); };
+
+	/**
+	 * "Alle Termine der Serie" with changed times (PATCH scope 'series'): the shift the person made at the shown
+	 * occurrence `ev` — in days and minutes of wall clock, not in ms — put on the series' own start (`ev.series` of
+	 * Mail 1.3.0: DTSTART / DTEND of the master) → { start, end } | { startDate, endDate }. The occurrence's times sent
+	 * back unchanged give the series' times unchanged. null without `series` (Mail 1.2.0): then only "Nur dieser Termin"
+	 * may change the time. (As L.shiftSeries of the portal, gatecontrol-mail ui/pimlogic.js.)
+	 */
+	function seriesTimes(body, ev) {
+		const s = ev && ev.series;
+		if (!s || !body) return null;
+		const occDay = ev.allDay && ev.startDate ? ev.startDate : ymd(ev.start);
+		const seriesDay = s.allDay && s.startDate ? s.startDate : ymd(s.start);
+		const days = (a, b) => Math.round((fromYmd(a) - fromYmd(b)) / 86400000);
+		if (body.allDay) {
+			if (fromYmd(body.startDate) === null) return null;
+			const len = Math.max(0, days(body.endDate || body.startDate, body.startDate));
+			const startDate = ymd(addDays(fromYmd(seriesDay), days(body.startDate, occDay)));
+			return { startDate, endDate: ymd(addDays(fromYmd(startDate), len)) };
+		}
+		const d = days(ymd(body.start), occDay);
+		const base = s.allDay ? fromYmd(seriesDay) : s.start;
+		const min = dayMin(body.start) - (ev.allDay || s.allDay ? 0 : dayMin(ev.start));
+		const start = wallMove(base, d, min);
+		return { start, end: start + Math.max(0, body.end - body.start) };
+	}
+
+	/** What a new event of a tap on the grid gets: half an hour snapped, one hour long. */
+	function slotAt(day, minutes) {
+		const m = Math.max(0, Math.min(23 * 60 + 30, Math.floor(minutes / 30) * 30));
+		const d = new Date(day);
+		d.setHours(Math.floor(m / 60), m % 60, 0, 0);
+		return { start: d.getTime(), end: d.getTime() + 60 * MINUTE };
+	}
+
+	/** The state line of an invitation card: { key, tone } — the texts (mail.cal.inv.*) take { name, response }. */
+	function inviteStatus(inv) {
+		if (!inv) return null;
+		if (inv.state === 'outdated') return { key: 'outdated', tone: 'muted' };
+		if (inv.method === 'cancel') return { key: inv.state === 'applied' ? 'cancelledRemoved' : 'cancelled', tone: 'err' };
+		if (inv.method === 'reply') {
+			const who = (inv.attendees || []).find((a) => a.email && inv.from && a.email.toLowerCase() === str(inv.from.email).toLowerCase());
+			return { key: `reply.${who && who.response !== 'needs_action' ? who.response : 'accepted'}`, tone: 'info' };
+		}
+		if (inv.method === 'counter') return { key: inv.state === 'open' ? 'counter' : 'counterDone', tone: 'info' };
+		if (inv.state === 'answered' || inv.state === 'applied' || (inv.myResponse && inv.myResponse !== 'needs_action' && inv.myResponse !== 'organizer')) {
+			return { key: `answered.${['accepted', 'tentative', 'declined'].includes(inv.myResponse) ? inv.myResponse : 'accepted'}`, tone: inv.myResponse === 'declined' ? 'err' : 'acc' };
+		}
+		return { key: 'open', tone: 'info' };
+	}
+
+	/** Microsoft accounts that still lack the rights of calendar / contacts ("Neu anmelden"). */
+	function consentAccounts(me) {
+		return ((me && me.accounts) || []).filter((a) => Array.isArray(a.missingScopes) && a.missingScopes.length);
+	}
+
+	// ── Contacts (Phase 2) ───────────────────────────────
+
+	/** The list's sections by letter (the order of the list kept): [{ letter, items }]. */
+	function cardSections(items) {
+		const out = [];
+		for (const c of items || []) {
+			const l = c.letter || '#';
+			if (!out.length || out[out.length - 1].letter !== l) out.push({ letter: l, items: [] });
+			out[out.length - 1].items.push(c);
+		}
+		return out;
+	}
+
+	/** The second line of a contact's row: the company, else the first address, else the number. */
+	function cardSub(c) {
+		return str(c && (c.company || (c.emails && c.emails[0]) || c.phone)).trim();
+	}
+
+	/** "14. März 1981 · wird 46" / "14. März" (without the year). */
+	function birthdayText(b, now, locale, t) {
+		const m = /^(\d{4}|-)-(\d{2})-(\d{2})$/.exec(str(b));
+		if (!m) return '';
+		const month = Number(m[2]) - 1;
+		const day = Number(m[3]);
+		const ref = new Date(2000, month, day);
+		const tag = localeTag(locale);
+		if (m[1] === '-') return ref.toLocaleDateString(tag, { day: 'numeric', month: 'long' });
+		const year = Number(m[1]);
+		const text = new Date(year, month, day).toLocaleDateString(tag, { day: 'numeric', month: 'long', year: 'numeric' });
+		const n = new Date(now);
+		const passed = n.getMonth() > month || (n.getMonth() === month && n.getDate() > day);
+		const age = n.getFullYear() - year + (passed ? 1 : 0);
+		return age > 0 && age < 150 ? `${text} · ${t('mail.con.turns', { age })}` : text;
+	}
+
+	/** A birthday as the form shows it: { day: '14.03.', year: '1981' } (DE) / '14/03' (EN). */
+	function birthdayInput(b, locale) {
+		const m = /^(\d{4}|-)-(\d{2})-(\d{2})$/.exec(str(b));
+		if (!m) return { day: '', year: '' };
+		return { day: locale === 'en' ? `${m[3]}/${m[2]}` : `${m[3]}.${m[2]}.`, year: m[1] === '-' ? '' : m[1] };
+	}
+
+	/** The form's day ("14.03.", "14.3", "14/03") and year → 'YYYY-MM-DD' | '--MM-DD' | null (empty); undefined when invalid. */
+	function birthdayValue(day, year) {
+		const d = str(day).trim();
+		const y = str(year).trim();
+		if (!d && !y) return null;
+		const m = /^(\d{1,2})[./-](\d{1,2})\.?$/.exec(d);
+		if (!m) return undefined;
+		const dd = Number(m[1]);
+		const mm = Number(m[2]);
+		if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return undefined;
+		if (y && !/^\d{4}$/.test(y)) return undefined;
+		const yr = y ? Number(y) : 2000;
+		const check = new Date(yr, mm - 1, dd);
+		if (check.getMonth() !== mm - 1 || (y && (yr < 1850 || yr > new Date().getFullYear()))) return undefined;
+		return `${y || '-'}-${pad(mm)}-${pad(dd)}`;
+	}
+
+	/** The edit form of a contact (or a draft of "Als Kontakt speichern"). */
+	function cardForm(card, locale) {
+		const c = card || {};
+		const n = c.name || {};
+		const b = birthdayInput(c.birthday, locale);
+		return {
+			id: c.id || null, etag: c.etag || null, addressbookId: c.addressbookId || null,
+			given: str(n.given), family: str(n.family), display: str(n.display),
+			company: str(c.company), title: str(c.title),
+			emails: (c.emails || []).map((e) => ({ value: e.value, type: e.type || 'work' })),
+			phones: (c.phones || []).map((p) => ({ value: p.value, type: p.type || 'mobile' })),
+			addresses: (c.addresses || []).map((a) => ({ type: a.type || 'home', street: str(a.street), postalCode: str(a.postalCode), city: str(a.city), region: str(a.region), country: str(a.country) })),
+			bdayDay: b.day, bdayYear: b.year, note: str(c.note), groups: (c.groups || []).slice(),
+		};
+	}
+
+	/** The form → the body of POST / PATCH cards, or { error: field }. */
+	function cardBody(f) {
+		const birthday = birthdayValue(f.bdayDay, f.bdayYear);
+		if (birthday === undefined) return { error: 'birthday' };
+		const emails = [];
+		for (const e of f.emails || []) {
+			const v = str(e.value).trim();
+			if (!v) continue;
+			if (!isEmail(v)) return { error: 'email' };
+			emails.push({ value: v, type: e.type || 'other', primary: !emails.length });
+		}
+		const phones = (f.phones || []).map((p) => ({ value: str(p.value).trim(), type: p.type || 'other' })).filter((p) => p.value);
+		if (phones.some((p) => !/\d/.test(p.value))) return { error: 'phone' };
+		const given = str(f.given).trim();
+		const family = str(f.family).trim();
+		const company = str(f.company).trim();
+		if (!given && !family && !company && !emails.length && !phones.length) return { error: 'name' };
+		const name = { given, family };
+		if (!given && !family && str(f.display).trim()) name.display = str(f.display).trim();
+		const b = {
+			name, emails, phones, company: company || null, title: str(f.title).trim() || null,
+			addresses: (f.addresses || []).map((a) => ({ type: a.type || 'home', street: str(a.street).trim(), postalCode: str(a.postalCode).trim(), city: str(a.city).trim(), region: str(a.region).trim(), country: str(a.country).trim() }))
+				.filter((a) => a.street || a.postalCode || a.city || a.region || a.country),
+			birthday, note: str(f.note), groups: (f.groups || []).slice(),
+		};
+		if (!f.id && f.addressbookId) b.addressbookId = f.addressbookId;
+		if (f.id && f.etag) b.etag = f.etag;
+		return b;
+	}
+
+	/** An address as lines: "Hansaring 12" / "50670 Köln" / region, country. */
+	function addressLines(a) {
+		if (!a) return [];
+		return [str(a.street), [a.postalCode, a.city].map(str).filter(Boolean).join(' '), [a.region, a.country].map(str).filter(Boolean).join(', ')].filter(Boolean);
+	}
+
+	/** A map search of an address (https, OpenStreetMap). */
+	function mapUrl(a) {
+		const q = addressLines(a).join(', ');
+		return q ? `https://www.openstreetmap.org/search?query=${encodeURIComponent(q)}` : null;
+	}
+
+	/** The source line of a contact: "Firma · M365", "Meine Kontakte" (+ ", nur lesend"). */
+	function bookLabel(book, me) {
+		if (!book) return '';
+		const acc = book.accountId ? accountOf(me, book.accountId) : null;
+		return acc && !str(book.name).includes(acc.name) ? `${acc.name} · ${book.name}` : str(book.name);
+	}
+
+	/** The colour dot of a contact's source (its account's colour; own address books none). */
+	function bookColor(book, me) {
+		if (!book || !book.accountId) return null;
+		const acc = accountOf(me, book.accountId);
+		return acc ? acc.color : null;
+	}
+
+	/** A suggestion while writing → the recipients it gives: one address, or a group's members. */
+	function suggestionRecipients(s) {
+		if (!s) return [];
+		if (s.source === 'group') return (s.members || []).filter((m) => m && isEmail(m.email)).map((m) => ({ name: m.name || null, email: m.email }));
+		return isEmail(s.email) ? [{ name: s.name || null, email: s.email }] : [];
+	}
+
+	/** The fields a merge can pick among the cards (where they differ) → [{ field, options: [{ id, value }] }]. */
+	function mergeChoices(cards) {
+		const fields = ['name', 'company', 'title', 'birthday'];
+		const out = [];
+		for (const field of fields) {
+			const seen = new Map();
+			for (const c of cards || []) {
+				const v = field === 'name' ? str(c.name && (c.name.display || [c.name.given, c.name.family].filter(Boolean).join(' '))) : str(c[field]);
+				if (v && !seen.has(v)) seen.set(v, c.id);
+			}
+			if (seen.size > 1) out.push({ field, options: [...seen.entries()].map(([value, id]) => ({ id, value })) });
+		}
+		return out;
+	}
+
 	function errorText(r, t, lang) {
 		const code = str(r && r.code);
 		const hint = r && r.detail && r.detail.hint ? (lang === 'en' ? r.detail.hint.en || r.detail.hint.de : r.detail.hint.de || r.detail.hint.en) : null;
@@ -613,5 +1174,55 @@
 		fromSender,
 		contactOf,
 		errorText,
+		// Phase 2: calendar
+		WEEKDAYS,
+		REMINDERS,
+		VIEWS,
+		addDays,
+		ymd,
+		fromYmd,
+		hhmm,
+		localMs,
+		viewRange,
+		shiftAnchor,
+		rangeTitle,
+		onDay,
+		layoutDay,
+		allDayOn,
+		dayItems,
+		agenda,
+		nowMinutes,
+		eventTimeText,
+		eventDate,
+		weekdayName,
+		recurrenceText,
+		reminderText,
+		responseCounts,
+		calendarGroups,
+		visibleIds,
+		itemColor,
+		monthPos,
+		recurrenceForm,
+		recurrenceBody,
+		eventForm,
+		eventBody,
+		slotAt,
+		seriesTimes,
+		inviteStatus,
+		consentAccounts,
+		// Phase 2: contacts
+		cardSections,
+		cardSub,
+		birthdayText,
+		birthdayInput,
+		birthdayValue,
+		cardForm,
+		cardBody,
+		addressLines,
+		mapUrl,
+		bookLabel,
+		bookColor,
+		suggestionRecipients,
+		mergeChoices,
 	};
 });

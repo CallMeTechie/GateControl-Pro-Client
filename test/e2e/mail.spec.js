@@ -169,7 +169,9 @@ test.describe('mail', () => {
     const asked = m.srv.state.requests.filter((r) => r.path.endsWith('/api/search')).pop();
     expect(asked.query.from).toBe('news@elektromarkt.de');
     expect(asked.query.box).toBe('1');
-    await expect(root.locator('.ml-sender-acts .btn')).toHaveCount(2);
+    // Phase 2: not in the contacts yet → "Als Kontakt speichern" besides "Mail schreiben" and "Adresse kopieren"
+    await expect(root.locator('.ml-sender-acts .btn')).toHaveCount(3);
+    await expect(root.locator('.ml-sender-save')).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('mail-sender.png') });
     await root.locator('.ml-sender-acts .btn-pri').click();
     await expect(root.locator('.ml-rcpt')).toHaveText(['Elektromarkt']);
@@ -320,7 +322,9 @@ test.describe('mail', () => {
     const { page, events } = await launchApp();
     await setupWithApiKey(page, mock);
     const root = await openMail(page);
-    await root.locator('.ml-side-foot .ml-ib').first().click();
+    // Phase 2: "Konto hinzufügen" only in the settings (the "+" of the menu is gone)
+    await root.locator('.ml-foot-settings').click();
+    await page.locator('.ml-dlg .ml-set-add').click();
     const dlg = page.locator('.ml-dlg.ml-add');
     await expect(dlg.locator('.ml-prov')).toHaveCount(4);
     await expect(dlg.locator('.ml-prov').first()).toContainText('Microsoft 365');
