@@ -718,8 +718,12 @@
 		}
 
 		/** Names a person ("Wer ist das?" / "Umbenennen"), with "Sieht aus wie …" and "Ausblenden"; `then` after it is done. */
-		function nameDialog(p, { rename = false } = {}) {
-			const dlg = openDialog({ title: t(rename ? 'drive.pp.person.rename' : 'drive.pp.name.title'), host: o.host, closeLabel: t('drive.close'), onClose: () => { if (done) loadPeople({ quiet: true }).then(() => { if (S.open && S.open.kind === 'person') loadOpen(); }); } });
+		function nameDialog(p, { rename = false, onClose = null } = {}) {
+			const dlg = openDialog({ title: t(rename ? 'drive.pp.person.rename' : 'drive.pp.name.title'), host: o.host, closeLabel: t('drive.close'), onClose: () => {
+				if (done) loadPeople({ quiet: true }).then(() => { if (S.open && S.open.kind === 'person') loadOpen(); });
+				// Drive 1.18: the overview's "Wer ist das?" loads again
+				if (typeof onClose === 'function') onClose(!!done);
+			} });
 			dlg.box.classList.add('dpp-dlg', 'dpp-name-dlg');
 			let done = null;
 			let contact = p.contact || null;

@@ -2,8 +2,8 @@
  * GateControl -- Drive "Fotos" (renderer view, part of the page Drive)
  *
  * Drive 1.7 'photos' / 'albums' / 'frame': the pictures and videos of every
- * area one can read (or of one area) as a timeline by month, newest first,
- * with "Vor einem Jahr" on top (photos of this day of earlier years); a
+ * area one can read (or of one area) as a timeline by month, newest first
+ * (Drive 1.18: "Vor einem Jahr" is on the overview, drive-overview-view.js); a
  * month can be jumped to. A photo opens large (arrows for the next one) with
  * "Öffnen", "Speichern unter …", "Im Ordner zeigen" and "Im Portal öffnen".
  * "Auswählen" picks several photos (Shift for a range, "Alle" / "Keine" per
@@ -163,10 +163,9 @@
 				return;
 			}
 			P.query = '';
-			const [page, months, mem] = await Promise.all([
+			const [page, months] = await Promise.all([
 				Promise.resolve(api.photos({ area, before, limit: PS.PAGE })).catch(fail),
 				Promise.resolve(api.photoMonths(area)).catch(fail),
-				before || area ? Promise.resolve({ ok: true, groups: [] }) : Promise.resolve(api.memories()).catch(fail),
 			]);
 			if (seq !== P.seq) return;
 			P.loading = false;
@@ -174,7 +173,7 @@
 			P.items = page.items;
 			P.next = page.next;
 			P.months = months && months.ok ? months.months : [];
-			P.memories = mem && mem.ok ? mem.groups : [];
+			P.memories = [];
 			render();
 		}
 
@@ -456,17 +455,6 @@
 
 		function renderTimeline() {
 			if (P.query && canSearch()) { renderSearch(); return; }
-			const mem = PS.memoriesView(P.memories, { t, locale: locale() });
-			if (mem.length) {
-				const strip = el('section', { class: 'dpv-mem card' }, [el('div', { class: 'dpv-mem-h' }, [icon('history', 16), el('b', { text: t('drive.photos.memories') })])]);
-				for (const m of mem) {
-					strip.appendChild(el('div', { class: 'dpv-mem-g' }, [
-						el('div', { class: 'dpv-month-h' }, [el('span', { class: 'dpv-month-name', text: m.title }), el('span', { class: 'dpv-month-n', text: m.sub })]),
-						grid(m.items),
-					]));
-				}
-				body.appendChild(strip);
-			}
 			if (!P.items.length) {
 				body.appendChild(el('div', { class: 'dv-empty' }, [icon('image', 28, '1.6'), el('span', { text: t('drive.photos.empty') })]));
 				return;
@@ -803,6 +791,26 @@
 			},
 			refresh: () => reload(),
 			relabel: () => render(),
+			/**
+			 * Drive 1.18: where the overview's tiles lead, set before show(): { tab: 'timeline' | 'map' | 'people' },
+			 * a person ({ person }) or a place ({ place, name }).
+			 */
+			prepare(target) {
+				const x = target || {};
+				P.query = '';
+				qInput.value = '';
+				clearSel();
+				if (pp) pp.close();
+				P.tab = x.tab === 'map' || x.tab === 'people' ? x.tab : 'timeline';
+				if (!pp) return;
+				if (x.person) pp.openPerson(x.person);
+				else if (x.place) pp.openPlace(x.place, { name: x.name || null });
+				else if (P.tab !== 'timeline') pp.show(P.tab);
+			},
+			/** The photos large (the overview's memories). */
+			lightbox: (list, start = 0) => { if (Array.isArray(list) && list.length) lightbox(list, Math.max(0, Math.min(start, list.length - 1))); },
+			/** "Wer ist das?" of the overview (onClose: after the dialog). */
+			nameDialog: pp ? (person, onClose) => pp.nameDialog(person, { onClose }) : null,
 		};
 	}
 

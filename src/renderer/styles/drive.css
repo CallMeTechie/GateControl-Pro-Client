@@ -756,3 +756,72 @@
 /* settings */
 .dset-how { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; padding: 12px; border-radius: 12px; background: var(--panel2); }
 .dset-how .dv-p { margin: 0; font-size: 12.5px; color: var(--muted); }
+
+/* Drive 1.18: Übersicht | Dateien | Fotos, and the page "Übersicht" (mockup WinStart) */
+.dv-pages { margin-left: 8px; }
+.dv-pages[hidden], .dov[hidden] { display: none; }
+.dov { display: flex; flex-direction: column; gap: 16px; flex-grow: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.dov-grid { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dov-grid.is-n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dov-grid.is-n1 { grid-template-columns: minmax(0, 1fr); }
+.dov-grid.is-second.has-wide.is-n3 { grid-template-columns: 2fr 1fr 1fr; }
+.dov-grid.is-second.has-wide.is-n2 { grid-template-columns: 2fr 1fr; }
+@media (max-width: 1100px) { .dov-grid, .dov-grid.is-second.has-wide.is-n3, .dov-grid.is-second.has-wide.is-n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .dov-grid, .dov-grid.is-n2, .dov-grid.is-second.has-wide.is-n3, .dov-grid.is-second.has-wide.is-n2 { grid-template-columns: minmax(0, 1fr); } }
+.dov-panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px; border-radius: 14px; }
+.dov-ph { display: flex; align-items: baseline; gap: 8px; }
+.dov-h { flex-grow: 1; margin: 0; font-size: 15px; font-weight: 700; }
+.dov-n { font-size: 12px; color: var(--muted); }
+.dov-link { border: 0; background: none; padding: 2px 4px; border-radius: 6px; color: var(--acc-t); font-size: 13px; font-weight: 600; cursor: pointer; }
+.dov-link:hover { text-decoration: underline; }
+.dov-row { display: flex; align-items: center; gap: 10px; min-height: 40px; width: 100%; padding: 2px 4px; border: 0; border-radius: 9px; background: none; text-align: left; color: var(--text); }
+button.dov-row { cursor: pointer; }
+button.dov-row:hover { background: var(--panel2); }
+.dov-row-tx { display: flex; flex-direction: column; min-width: 0; flex-grow: 1; }
+.dov-row-t { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dov-row-t.is-plain { font-weight: 400; white-space: normal; }
+.dov-row-s { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dov-sq { width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; display: inline-grid; place-items: center; font-size: 13px; font-weight: 700; }
+.dov-sq.is-warn { background: var(--warn-bg); color: var(--warn); }
+.dov-sq.is-blue { background: var(--info-bg); color: var(--info); }
+.dov-sq.is-muted { background: var(--panel2); color: var(--muted); }
+.dov-fi { width: 28px; height: 34px; flex-shrink: 0; border-radius: 5px; display: inline-grid; place-items: center; font-size: 9px; font-weight: 700; color: var(--bg); background: var(--faint); }
+.dov-fi.is-red { background: var(--err); }
+.dov-fi.is-blue { background: var(--info); }
+.dov-fi.is-green { background: var(--acc); }
+.dov-fi.is-amber { background: var(--warn); }
+.dov-av, .dov-fc { flex-shrink: 0; border-radius: 999px; display: inline-grid; place-items: center; font-weight: 700; color: #0D1015; }
+.dov-av { width: 32px; height: 32px; font-size: 12px; }
+.dov-fc { width: 48px; height: 48px; font-size: 15px; }
+:is(.dov-av, .dov-fc).is-t0 { background: #FF8080; } :is(.dov-av, .dov-fc).is-t1 { background: #F5B544; } :is(.dov-av, .dov-fc).is-t2 { background: #79B8FF; }
+:is(.dov-av, .dov-fc).is-t3 { background: #46E0A0; } :is(.dov-av, .dov-fc).is-t4 { background: #B79CFF; } :is(.dov-av, .dov-fc).is-t5 { background: #5FD4E8; }
+.dov-fc.is-who { background: var(--panel2); border: 1px dashed var(--warn); color: var(--warn); }
+.dov-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+.dov-store { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 0; border: 0; background: none; text-align: left; color: inherit; }
+button.dov-store { cursor: pointer; }
+.dov-bar { display: block; height: 6px; border-radius: 3px; background: var(--panel2); overflow: hidden; }
+.dov-bar-in { display: block; height: 100%; background: var(--info); }
+.dov-sync { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 12px; cursor: pointer; text-align: left; }
+.dov-mems { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; flex-grow: 1; }
+.dov-mem { position: relative; min-height: 150px; padding: 0; border: 0; border-radius: 12px; overflow: hidden; background: var(--panel2); cursor: pointer; color: #fff; text-align: left; }
+.dov-mem-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.dov-mem:not(.has-img) .dov-mem-img { display: none; }
+.dov-mem::after { content: ''; position: absolute; inset: 0; background: linear-gradient(transparent 45%, rgba(0, 0, 0, .55)); }
+.dov-mem:not(.has-img) { color: var(--text); }
+.dov-mem:not(.has-img)::after { display: none; }
+.dov-mem-tx { position: absolute; left: 12px; right: 12px; bottom: 10px; z-index: 1; display: flex; flex-direction: column; font-size: 12px; }
+.dov-mem-tx b { font-size: 14px; }
+.dov-faces { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; justify-items: center; }
+.dov-face { display: flex; flex-direction: column; align-items: center; gap: 4px; max-width: 100%; padding: 4px; border: 0; border-radius: 10px; background: none; cursor: pointer; color: var(--text); }
+.dov-face:hover { background: var(--panel2); }
+.dov-fn { max-width: 80px; font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dov-face.is-who .dov-fn { color: var(--warn); }
+.dov-map { position: relative; display: block; flex-grow: 1; min-height: 110px; width: 100%; padding: 0; border: 0; border-radius: 10px; overflow: hidden; background: var(--panel2); cursor: pointer; }
+.dov-map-tiles { position: absolute; inset: 0; }
+.dov-map-tile { position: absolute; left: 0; top: 0; width: 256px; height: 256px; max-width: none; pointer-events: none; }
+.dov-bubble { position: absolute; transform: translate(-50%, -50%); min-width: 40px; height: 28px; padding: 0 8px; box-sizing: border-box; border-radius: 999px; border: 2px solid var(--bg); background: var(--acc); color: var(--acc-on); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.dov-map-attr { position: absolute; right: 6px; bottom: 4px; padding: 1px 5px; border-radius: 5px; background: color-mix(in srgb, var(--bg) 72%, transparent); color: var(--faint); font-size: 10.5px; pointer-events: none; }
+.dov-places { font-size: 12px; color: var(--muted); }
+.dov-place { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.dov-place:hover { color: var(--text); text-decoration: underline; }
+.dov-row:focus-visible, .dov-link:focus-visible, .dov-mem:focus-visible, .dov-face:focus-visible, .dov-map:focus-visible, .dov-place:focus-visible, .dov-store:focus-visible, .dov-sync:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }

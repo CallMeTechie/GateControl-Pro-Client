@@ -2709,6 +2709,98 @@
         "facesDeleted": "Alle Gesichtsdaten gelöscht",
         "phones": "Gesichter erkennen deine Handys – dieser PC erkennt keine Gesichter."
       }
+    },
+    "ov": {
+      "page": {
+        "label": "Bereiche von Drive",
+        "overview": "Übersicht",
+        "files": "Dateien",
+        "photos": "Fotos"
+      },
+      "time": {
+        "now": "gerade eben",
+        "min": "vor {{n}} Min.",
+        "hours": "vor {{n}} Std.",
+        "yesterday": "gestern",
+        "days": "vor {{n}} Tagen"
+      },
+      "due": {
+        "past": "überfällig",
+        "today": "heute",
+        "in": {
+          "one": "morgen",
+          "other": "in {{count}} Tagen"
+        }
+      },
+      "todo": {
+        "title": "Zu erledigen",
+        "more": {
+          "one": "{{count}} weitere Frist",
+          "other": "{{count}} weitere Fristen"
+        },
+        "review": {
+          "one": "{{count}} Foto prüfen",
+          "other": "{{count}} Fotos prüfen"
+        },
+        "reviewSub": "Arbeit oder privat?",
+        "toFile": {
+          "one": "{{count}} Mail-Anhang zum Ablegen",
+          "other": "{{count}} Mail-Anhänge zum Ablegen"
+        },
+        "toFileHint": "Vorschlag: {{where}}"
+      },
+      "recent": {
+        "title": "Zuletzt geöffnet"
+      },
+      "all": "Alle",
+      "storage": {
+        "title": "Speicher",
+        "label": "Speicher · {{text}}",
+        "of": "{{used}} von {{total}}",
+        "used": "{{used}} belegt"
+      },
+      "sync": "Ordner sichern · {{text}}",
+      "act": {
+        "someone": "Jemand",
+        "title": "Neu in {{area}}",
+        "titleShared": "Neu in geteilten Bereichen",
+        "photos": {
+          "one": "hat ein Foto hinzugefügt",
+          "other": "hat {{count}} Fotos hinzugefügt"
+        },
+        "files": {
+          "one": "hat eine Datei abgelegt",
+          "other": "hat {{count}} Dateien abgelegt"
+        },
+        "file": "hat „{{file}}“ abgelegt",
+        "changed": {
+          "one": "hat eine Datei geändert",
+          "other": "hat {{count}} Dateien geändert"
+        },
+        "changedOne": "hat „{{file}}“ geändert"
+      },
+      "mem": {
+        "title": "Erinnerungen",
+        "day": "An diesem Tag",
+        "today": {
+          "one": "Heute vor einem Jahr",
+          "other": "Heute vor {{count}} Jahren"
+        },
+        "ago": {
+          "one": "Vor einem Jahr",
+          "other": "Vor {{count}} Jahren"
+        }
+      },
+      "people": {
+        "title": "Personen",
+        "who": "Wer ist das?"
+      },
+      "places": {
+        "title": "Orte",
+        "map": "Karte",
+        "open": "Karte der Fotos öffnen"
+      },
+      "empty": "Gerade gibt es nichts Neues. Deine Dateien findest du unter „Dateien“, die Bilder unter „Fotos“."
     }
   },
   "mail": {

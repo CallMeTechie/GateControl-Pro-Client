@@ -2709,6 +2709,98 @@
         "facesDeleted": "All face data deleted",
         "phones": "Your phones recognise the faces – this PC recognises none."
       }
+    },
+    "ov": {
+      "page": {
+        "label": "Parts of Drive",
+        "overview": "Overview",
+        "files": "Files",
+        "photos": "Photos"
+      },
+      "time": {
+        "now": "just now",
+        "min": "{{n}} min ago",
+        "hours": "{{n}} h ago",
+        "yesterday": "yesterday",
+        "days": "{{n}} days ago"
+      },
+      "due": {
+        "past": "overdue",
+        "today": "today",
+        "in": {
+          "one": "tomorrow",
+          "other": "in {{count}} days"
+        }
+      },
+      "todo": {
+        "title": "To do",
+        "more": {
+          "one": "{{count}} more deadline",
+          "other": "{{count}} more deadlines"
+        },
+        "review": {
+          "one": "Review {{count}} photo",
+          "other": "Review {{count}} photos"
+        },
+        "reviewSub": "Work or private?",
+        "toFile": {
+          "one": "{{count}} mail attachment to file",
+          "other": "{{count}} mail attachments to file"
+        },
+        "toFileHint": "Suggestion: {{where}}"
+      },
+      "recent": {
+        "title": "Recently opened"
+      },
+      "all": "All",
+      "storage": {
+        "title": "Storage",
+        "label": "Storage · {{text}}",
+        "of": "{{used}} of {{total}}",
+        "used": "{{used}} used"
+      },
+      "sync": "Back up folders · {{text}}",
+      "act": {
+        "someone": "Someone",
+        "title": "New in {{area}}",
+        "titleShared": "New in shared areas",
+        "photos": {
+          "one": "added a photo",
+          "other": "added {{count}} photos"
+        },
+        "files": {
+          "one": "added a file",
+          "other": "added {{count}} files"
+        },
+        "file": "added “{{file}}”",
+        "changed": {
+          "one": "changed a file",
+          "other": "changed {{count}} files"
+        },
+        "changedOne": "changed “{{file}}”"
+      },
+      "mem": {
+        "title": "Memories",
+        "day": "On this day",
+        "today": {
+          "one": "Today one year ago",
+          "other": "Today {{count}} years ago"
+        },
+        "ago": {
+          "one": "One year ago",
+          "other": "{{count}} years ago"
+        }
+      },
+      "people": {
+        "title": "People",
+        "who": "Who is this?"
+      },
+      "places": {
+        "title": "Places",
+        "map": "Map",
+        "open": "Open the map of the photos"
+      },
+      "empty": "Nothing new right now. Your files are under “Files”, the pictures under “Photos”."
     }
   },
   "mail": {
