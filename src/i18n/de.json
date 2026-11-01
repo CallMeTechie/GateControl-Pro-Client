@@ -1252,6 +1252,7 @@
       "tooManyJobs": "Es laufen schon mehrere Aufträge – bitte warte, bis einer fertig ist.",
       "intoItself": "Ein Ordner kann nicht in sich selbst.",
       "familieUnavailable": "Der Familienkalender nimmt gerade keine Einträge von Drive an (das Familie-Plugin lässt Drive noch nicht zu). Die Erinnerung von Drive geht weiter.",
+      "mailUnavailable": "Der Mail-Kalender ist gerade nicht erreichbar (Konto getrennt oder Anmeldung abgelaufen). Bitte das Konto in Mail neu anmelden. Die Erinnerung von Drive geht weiter.",
       "notPicture": "Nur Bilder lassen sich in ein Dokument umwandeln.",
       "noOcr": "Auf diesem PC ist keine Sprache für die Texterkennung installiert.",
       "scanNoFile": "Drive hat kein Dokument erzeugt."
@@ -2410,8 +2411,21 @@
         "toCalendar": "In den Familienkalender",
         "inCalendar": "Im Familienkalender",
         "added": "In den Familienkalender eingetragen",
+        "toCalendarAny": "In Kalender eintragen",
+        "inCalendarAt": "Im Kalender · {{where}}",
+        "inCalendarAny": "Im Kalender",
+        "addedAny": "In den Kalender eingetragen",
+        "pickTitle": "In welchen Kalender?",
+        "pickOk": "Eintragen",
+        "from": "Fristen aus {{area}}",
+        "fromHint": "Wohin neu erkannte Fristen aus deinen Uploads kommen.",
+        "targetSet": "Fristen aus {{area}}: {{target}}",
+        "target": {
+          "off": "Nicht eintragen",
+          "family": "Familienkalender",
+          "mail": "Mail-Kalender"
+        },
         "note": "Aus deinen Dokumenten erkannt · nur Dateien, die du lesen darfst",
-        "autoTitle": "Neue Fristen in den Familienkalender",
         "autoHint": "Neu erkannte Fristen werden von selbst eingetragen.",
         "autoOn": "Neue Fristen aus {{area}} kommen in den Familienkalender",
         "autoOff": "Neue Fristen aus {{area}} kommen nicht mehr von selbst in den Familienkalender"

@@ -4,7 +4,8 @@
  * Pure helpers for drive-ki-view.js (and drive-view.js / drive-photos-view.js), loaded as a plain script
  * (window.GCDriveKiState) and required by the node tests (test/drive-114-state.test.js):
  * - "Fristen" by month, each with its kind, the day and "in N Tagen", the file, "In den Familienkalender" /
- *   "Im Familienkalender ✓" ('deadlineCalendar') and the reminder.
+ *   "Im Familienkalender ✓" ('deadlineCalendar') and the reminder; Drive 1.17 ('deadlineMailCalendar') "In Kalender
+ *   eintragen" into the family calendar or a mail calendar, and the target per area ("Fristen aus …").
  * - "Ablegen" after an upload (D4): which upload is watched, the suggestion bar (name, folder, "An die Zahlung am …
  *   erinnern").
  * - "In Dokument umwandeln" (D5, 'scanDocs'): the formats per kind (PDF · Word · Excel · Nur Bild), the one picked
@@ -26,9 +27,9 @@
 	const localeTag = (l) => (l === 'en' ? 'en-GB' : 'de-DE');
 	const has = (me, f) => !!(me && Array.isArray(me.features) && me.features.includes(f));
 
-	/** What of Drive 1.14 this Drive can → { calendar, ask, scan, photoSearch, docAi } */
+	/** What of Drive 1.14 this Drive can → { calendar, ask, scan, photoSearch, docAi, mailCalendar (Drive 1.17) } */
 	function features(me) {
-		return { calendar: has(me, 'deadlineCalendar'), ask: has(me, 'docAsk'), scan: has(me, 'scanDocs'), photoSearch: has(me, 'photoSearch'), docAi: has(me, 'docAi') };
+		return { calendar: has(me, 'deadlineCalendar'), ask: has(me, 'docAsk'), scan: has(me, 'scanDocs'), photoSearch: has(me, 'photoSearch'), docAi: has(me, 'docAi'), mailCalendar: has(me, 'deadlineMailCalendar') };
 	}
 
 	function dayOf(day) {
@@ -72,8 +73,9 @@
 	}
 
 	/**
-	 * A card of "Fristen" → { id, tag, day, when, title, file, nodeId, node, past, urgent, calendar, canCalendar }.
-	 * renewal: "kündigen bis So 31.01." (its date is the last day to cancel).
+	 * A card of "Fristen" → { id, tag, day, when, title, file, nodeId, node, areaId, past, urgent, calendar, entry,
+	 * canCalendar }. renewal: "kündigen bis So 31.01." (its date is the last day to cancel). entry (Drive 1.17): the
+	 * target of the calendar entry ({ kind, label }; null: the family calendar).
 	 */
 	function deadlineCard(d, { t, locale, now = Date.now(), calendar = false } = {}) {
 		const x = d || {};
@@ -91,9 +93,11 @@
 			file: x.node ? str(x.node.name) : '',
 			nodeId: x.node ? x.node.id : null,
 			node: x.node || null,
+			areaId: x.node ? x.node.areaId || null : null,
 			past,
 			urgent: days !== null && days >= 0 && days <= 7,
 			calendar: !!x.calendar,
+			entry: x.calendar && x.calendar.target ? x.calendar.target : null,
 			canCalendar: !!calendar && !past,
 		};
 	}
@@ -126,9 +130,99 @@
 		return out;
 	}
 
-	/** The button of the family calendar → { label, done } */
-	function calendarButton(card, t) {
-		return card.calendar ? { label: t('drive.ki.dl.inCalendar'), done: true } : { label: t('drive.ki.dl.toCalendar'), done: false };
+	/**
+	 * The button of the calendar → { label, done }: "In den Familienkalender" / "Im Familienkalender"; Drive 1.17 with a
+	 * mail calendar to choose (`any`) "In Kalender eintragen", an entry in a mail calendar "Im Kalender · Outlook".
+	 */
+	function calendarButton(card, t, { any = false } = {}) {
+		if (!card.calendar) return { label: t(any ? 'drive.ki.dl.toCalendarAny' : 'drive.ki.dl.toCalendar'), done: false };
+		const e = card.entry;
+		if (!e || e.kind !== 'mail') return { label: t('drive.ki.dl.inCalendar'), done: true };
+		const where = str(e.label).split(' · ')[0].trim();
+		return { label: where ? t('drive.ki.dl.inCalendarAt', { where }) : t('drive.ki.dl.inCalendarAny'), done: true };
+	}
+
+	// ── Drive 1.17: the family calendar or a calendar of the mail plugin ('deadlineMailCalendar') ──
+
+	/** A mail calendar → "Outlook · Kalender" */
+	function mailLabel(c) {
+		const parts = [str(c && c.account ? c.account.label : '').trim(), str(c && c.name).trim()].filter(Boolean);
+		return [...new Set(parts)].join(' · ');
+	}
+
+	/** A target as the value of a choice: 'off' | 'family' | 'mail:<calendarId>' */
+	function targetValue(target) {
+		if (!target) return 'off';
+		if (target.kind === 'mail' && target.calendarId) return `mail:${target.calendarId}`;
+		return target.kind === 'family' ? 'family' : 'off';
+	}
+
+	/** The value of a choice → the target (null: off, or a mail calendar that is not there any more). */
+	function targetFromValue(value, calendars) {
+		if (value === 'family') return { kind: 'family' };
+		const m = /^mail:(.+)$/.exec(str(value));
+		const c = m && calendars && Array.isArray(calendars.mail) ? calendars.mail.find((x) => x.id === m[1]) : null;
+		return c ? { kind: 'mail', calendarId: c.id, label: mailLabel(c) } : null;
+	}
+
+	/**
+	 * The choice of an area's target → [{ account, options: [{ value, label, target }] }]: "Nicht eintragen" (`off`),
+	 * the family calendar (when Familie takes entries), then the mail calendars by account (only with `mail`).
+	 */
+	function targetChoices(calendars, { t, mail = false, off = true } = {}) {
+		const c = calendars || {};
+		const first = [];
+		if (off) first.push({ value: 'off', label: t('drive.ki.dl.target.off'), target: null });
+		if (c.family) first.push({ value: 'family', label: t('drive.ki.dl.target.family'), target: { kind: 'family' } });
+		const out = first.length ? [{ account: null, options: first }] : [];
+		if (!mail) return out;
+		const groups = new Map();
+		for (const x of Array.isArray(c.mail) ? c.mail : []) {
+			if (!x || !x.id) continue;
+			const key = x.account ? str(x.account.id) : '';
+			if (!groups.has(key)) groups.set(key, { account: str(x.account ? x.account.label : '') || t('drive.ki.dl.target.mail'), options: [] });
+			groups.get(key).options.push({ value: `mail:${x.id}`, label: mailLabel(x), name: str(x.name), color: x.color || null, target: { kind: 'mail', calendarId: x.id, label: mailLabel(x) } });
+		}
+		return out.concat([...groups.values()]);
+	}
+
+	/** The targets a single deadline can go to (no "off"). */
+	function deadlineTargets(calendars, mail) {
+		return targetChoices(calendars, { t: (k) => k, mail, off: false }).flatMap((g) => g.options.map((o) => o.target));
+	}
+
+	/** "In Kalender eintragen" asks only when more than one target is possible. */
+	function asksTarget(targets) {
+		return Array.isArray(targets) && targets.length > 1;
+	}
+
+	/** The target picked first for a deadline of `areaId`: my target of the area when still possible, else the family calendar, else the first. */
+	function preselect(rows, areaId, targets) {
+		const list = Array.isArray(targets) ? targets : [];
+		const row = (Array.isArray(rows) ? rows : []).find((r) => r && r.areaId === areaId);
+		const v = row ? targetValue(row.target) : 'off';
+		return list.find((x) => v !== 'off' && targetValue(x) === v) || list.find((x) => x.kind === 'family') || list[0] || null;
+	}
+
+	/** The value of an area's target: "Nicht eintragen", "Familienkalender" or "Outlook · Kalender". */
+	function targetText(target, calendars, t) {
+		if (!target) return t('drive.ki.dl.target.off');
+		if (target.kind !== 'mail') return t('drive.ki.dl.target.family');
+		const c = calendars && Array.isArray(calendars.mail) ? calendars.mail.find((x) => x.id === target.calendarId) : null;
+		return (c && mailLabel(c)) || str(target.label) || t('drive.ki.dl.target.mail');
+	}
+
+	/**
+	 * The deadline rows of the settings under "KI für Dokumente", one per area with AI on: with Drive 1.17 my target
+	 * (`targets` from deadlines/targets) → { areaId, kind: 'target', target }, else the switch into the family calendar
+	 * ('deadlineCalendar') → { areaId, kind: 'switch', on }; null: none.
+	 */
+	function deadlineRow(area, me, targets) {
+		if (!area || area.docAi !== true) return null;
+		const row = has(me, 'deadlineMailCalendar') && Array.isArray(targets) ? targets.find((r) => r && r.areaId === area.id) : null;
+		if (row) return { areaId: area.id, kind: 'target', target: row.target || null };
+		if (has(me, 'deadlineCalendar') && typeof area.deadlinesToCalendar === 'boolean') return { areaId: area.id, kind: 'switch', on: area.deadlinesToCalendar };
+		return null;
 	}
 
 	// ── D4: "Ablegen" after an upload ──────────────────────
@@ -380,6 +474,7 @@
 		DEADLINE_KINDS, SCAN_KINDS, SCAN_PAGES_MAX, WATCH_MS,
 		features, daysUntil, shortDay, relative,
 		deadlineTag, deadlineCard, monthTitle, deadlineMonths, calendarButton,
+		mailLabel, targetValue, targetFromValue, targetChoices, deadlineTargets, asksTarget, preselect, targetText, deadlineRow,
 		newUpload, fileBar, shortDayPlain,
 		scanAvailable, scanFormats, scanDefault, scanView, baseName, scanExt, scanStart, scanKeep, calendarAreas,
 		asks, answerView, answerDeadline,
