@@ -153,6 +153,56 @@ test.describe('drive 1.16: places and people', () => {
     await expect(pv.locator('.dpv-tile')).toHaveCount(2);
   });
 
+  test('"Wer ist das?" as a round: each person once, "Überspringen", "Alle durchgesehen", no loop when GET people fails', async ({ launchApp, mock }) => {
+    const d = await mock.setDrive({ features: PP });
+    const { p } = world(d.srv);
+    // three without a name (most photos first): u1, the world's one (2), u3
+    const u1 = d.srv.addPerson({ nodes: [p.a.id, p.b.id, p.c.id] });
+    const u2 = [...d.srv.state.people.values()].find((x) => !x.name && x.id !== u1.id);
+    const u3 = d.srv.addPerson({ nodes: [p.d.id] });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openDrive(page);
+    await tool(root, 'photos').click();
+    const pv = root.locator('.dpv');
+    await pv.locator('[data-tab="people"]').click();
+    await expect(pv.locator(`.dpp-p[data-person="${u3.id}"]`)).toBeVisible();
+
+    // GET people fails from now on: the page keeps its list, where everyone is still without a name
+    d.srv.state.fail['GET people'] = { status: 503, code: 'unavailable' };
+    const dlg = page.locator('.dpp-name-dlg');
+    await pv.locator(`.dpp-p[data-person="${u1.id}"]`).click();
+    await expect(dlg).toHaveAttribute('data-person', String(u1.id));
+    await dlg.locator('.dpp-name-in').fill('Oma Gerda');
+    await dlg.getByRole('button', { name: /^Speichern$|^Save$/ }).click();
+    await dlg.getByRole('button', { name: /Nächste Person|Next person/ }).click();
+    await expect(dlg).toHaveAttribute('data-person', String(u2.id));
+    await dlg.locator('.dpp-name-in').fill('Opa Kurt');
+    await dlg.getByRole('button', { name: /^Speichern$|^Save$/ }).click();
+    await dlg.getByRole('button', { name: /Nächste Person|Next person/ }).click();
+    // before: u1 again (still without a name in the old list), then u2, u1, …
+    await expect(dlg).toHaveAttribute('data-person', String(u3.id));
+    await page.screenshot({ path: test.info().outputPath('drive-pp-round.png') });
+    await dlg.getByRole('button', { name: /Überspringen|Skip/ }).click();
+    await expect(page.locator('.dpp-all-seen')).toContainText(/Alle durchgesehen|All reviewed/);
+    await expect(page.locator('.dpp-name-dlg:not(.dpp-all-seen)')).toHaveCount(0);
+    await page.locator('.dpp-all-seen').getByRole('button', { name: /^Zurück$|^Back$/ }).click();
+    await expect(page.locator('.dpp-name-dlg')).toHaveCount(0);
+    expect(d.srv.state.people.get(u1.id).name).toBe('Oma Gerda');
+    expect(d.srv.state.people.get(u2.id).name).toBe('Opa Kurt');
+    expect(d.srv.state.people.get(u3.id).name).toBe(null);
+
+    // GET people answers again: a new round from the skipped one, nobody else is left; "Personen" is up to date
+    delete d.srv.state.fail['GET people'];
+    await pv.locator(`.dpp-p[data-person="${u3.id}"]`).click();
+    await expect(dlg).toHaveAttribute('data-person', String(u3.id));
+    await dlg.getByRole('button', { name: /Überspringen|Skip/ }).click();
+    await expect(page.locator('.dpp-all-seen')).toBeVisible();
+    await page.locator('.dpp-all-seen').getByRole('button', { name: /^Zurück$|^Back$/ }).click();
+    await expect(pv.locator(`.dpp-p[data-person="${u1.id}"] .dpp-p-name`)).toHaveText('Oma Gerda');
+    await expect(pv.locator(`.dpp-p[data-person="${u3.id}"] .dpp-p-name`)).toHaveText(/Benennen|Name/);
+  });
+
   test('settings "Orte und Personen": the place switches, "Alle Gesichtsdaten löschen" only after asking', async ({ launchApp, mock }) => {
     const d = await mock.setDrive({ features: PP });
     world(d.srv);

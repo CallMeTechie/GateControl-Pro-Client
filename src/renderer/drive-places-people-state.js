@@ -264,6 +264,16 @@
 		};
 	}
 
+	/**
+	 * "Wer ist das?" one after the other: the next person without a name (most photos first) that this round has not
+	 * shown yet. `seen` holds the ids the round has shown (named, hidden, merged or skipped); null ends the round
+	 * ("Alle durchgesehen"). Works on an old list too (GET people failed): nobody comes back.
+	 */
+	function nextToName(people, seen) {
+		const s = new Set([...(seen instanceof Set ? seen : arr(seen))].map(str));
+		return groupPeople(people).unnamed.find((p) => !s.has(str(p.id))) || null;
+	}
+
 	/** The head line of "Personen": "5 benannt · 9 noch ohne Namen" */
 	function peopleSub(groups, t, locale) {
 		const g = groups || { named: [], unnamed: [] };
@@ -428,7 +438,7 @@
 		fmt, features, segments,
 		TILE, MIN_ZOOM, MAX_ZOOM, clampZoom, worldPx, lonLat, tileGrid, viewBbox, fitView, screenPos,
 		spanText, countryName, placeWhere, inBox, placeRows, byDay, placeSub, peopleOn,
-		initials, toneOf, groupPeople, peopleSub, progressOf, faceCrop, yearsText, personSub, contactText, byYear, uncertainPreview, nameSub, nameChoices, nameError,
+		initials, toneOf, groupPeople, nextToName, peopleSub, progressOf, faceCrop, yearsText, personSub, contactText, byYear, uncertainPreview, nameSub, nameChoices, nameError,
 		suggestionRows, withLabel, settingsRows,
 	};
 });
