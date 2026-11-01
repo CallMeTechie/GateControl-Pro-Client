@@ -274,6 +274,10 @@
 		const aside = el('aside', { class: 'dpp-aside', 'aria-label': t('drive.pp.map.inView') });
 		const mapSplit = el('div', { class: 'dpp-split' }, [map.box, aside]);
 		map.onMove(() => loadClusters());
+		// a narrow window: the list goes below the map
+		if (typeof ResizeObserver === 'function') {
+			new ResizeObserver(() => { const w = mapSplit.clientWidth; if (w) mapSplit.classList.toggle('is-narrow', w < 720); }).observe(mapSplit);
+		}
 
 		/** Once: a view that shows every place (when the map has its size; a map still being laid out waits). */
 		function fitOnce() {
