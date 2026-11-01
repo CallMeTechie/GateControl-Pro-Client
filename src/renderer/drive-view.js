@@ -141,6 +141,9 @@
 		gear: 'M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.8l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.8v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z|M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
 		chevDown: 'M6 9l6 6 6-6',
 		folderPlus: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 10v6M9 13h6',
+		// Drive 1.16: places and people
+		pin: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z|M12 7a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5',
+		minus: 'M5 12h14',
 	};
 	const KIND_ICON = { folder: 'folder', image: 'image', video: 'video', audio: 'audio', pdf: 'pdf', archive: 'archive', vault: 'vault' };
 	const AREA_ICON = { mine: 'user', family: 'users', child: 'child', team: 'team' };
@@ -480,6 +483,8 @@
 			api, t, getLocale: o.getLocale, toast, host, ui: { el, icon, clear, openDialog },
 			getMe: () => S.me, getAreas: () => S.areas, areaLabel: DS.areaLabel, errorText: DS.errorText, formatBytes: DS.formatBytes,
 			openFolder: (id) => { refs.search.value = ''; S.query = ''; loadFolder(id); },
+			// Drive 1.16: the gear of "Personen" opens the settings "Orte und Personen"
+			openSettings: (section) => openSettingsView(section),
 			// Drive 1.12: the selection of photos (ZIP, Verschieben / Kopieren nach …, Link, Löschen)
 			bulk: bulkUi ? {
 				actions: (items) => BS.actions(items, { me: S.me, writable: items.every((n) => !!(S.areas.find((a) => a.id === n.areaId) || {}).writable), vault: false }),

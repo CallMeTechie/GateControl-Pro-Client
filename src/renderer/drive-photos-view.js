@@ -13,6 +13,9 @@
  * cover, and the switch "Im Fotorahmen zeigen" for those one may change.
  * Drive 1.14 'photoSearch': a search field above the timeline finds photos by what is on them (the labels the
  * phones recognised, GET photos?q=) with the chips of the hits ("+ Meer") and how many there are.
+ * Drive 1.16 'photoPlaces' / 'photoPeople' (drive-places-people-view.js): the switch Zeitachse | Karte | Personen
+ * (| Alben), a place, a person and naming; the search finds people and places too, with suggestions while typing
+ * (then a search runs on Enter) and the people and places it recognised; the lightbox names the place.
  *
  * Mounted by drive-view.js (it hands over el / icon / clear / openDialog and
  * what it knows: me, the areas, opening a folder or a file). Data:
@@ -25,6 +28,7 @@
 
 	const PS = root.GCDrivePhotosState;
 	const BS = root.GCDriveBulkState;
+	const PPS = root.GCDrivePlacesPeopleState;
 	const fail = (err) => ({ ok: false, code: (err && err.code) || 'failed', error: err && err.message });
 	let uid = 0;
 	const nextId = (p) => `${p}-${++uid}`;
@@ -44,6 +48,7 @@
 	 * @param {(folderId: number) => void} o.openFolder - "Im Ordner zeigen"
 	 * @param {object} [o.bulk] - Drive 1.12: { actions(items), zip(items), move(items, mode), trash(items), link(items) }
 	 *   of drive-view.js for the photos selected
+	 * @param {Function} [o.openSettings] - Drive 1.16: (section) the Drive settings ("Orte und Personen": 'places')
 	 */
 	function mount(o) {
 		const api = o.api;
@@ -55,7 +60,7 @@
 		const err = (r) => o.errorText(r, t);
 		const P = {
 			shown: false,
-			tab: 'timeline',     // timeline | albums
+			tab: 'timeline',     // timeline | map | people (Drive 1.16) | albums
 			area: '',
 			items: [],
 			next: null,
@@ -73,6 +78,8 @@
 			query: '',
 			terms: [],
 			total: null,
+			// Drive 1.16: the people and places a search recognised
+			marks: null,
 		};
 		const previews = new Map();
 		const limit = PS.limiter(6);
@@ -99,11 +106,33 @@
 
 		const feats = () => PS.features(o.getMe());
 		const KS = () => root.GCDriveKiState || null;
-		const canSearch = () => { const me = o.getMe(); return !!KS() && !!(me && Array.isArray(me.features) && me.features.includes('photoSearch')); };
+		const meFeats = () => { const me = o.getMe(); return me && Array.isArray(me.features) ? me.features : []; };
+		// Drive 1.16: places / people (the switch, the map, people, the search by names)
+		const ppOn = () => !!PPS && (meFeats().includes('photoPlaces') || meFeats().includes('photoPeople'));
+		const canSearch = () => (!!KS() && meFeats().includes('photoSearch')) || ppOn();
 		const qInput = el('input', { type: 'search', class: 'dv-input dpv-q', maxlength: '100', spellcheck: 'false' });
+		const qLabel = el('label', { class: 'dv-search dpv-search' }, [icon('search', 15), qInput]);
+		// Drive 1.16: the field and its suggestions
+		const qWrap = PPS ? el('div', { class: 'dpp-sug-wrap' }, [qLabel]) : qLabel;
 		let qTimer = null;
-		const search = (q) => { clearTimeout(qTimer); const v = String(q || '').trim(); if (v === P.query) return; P.query = v; clearSel(); loadTimeline(); };
-		qInput.addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(() => search(qInput.value), 400); });
+		/** Away from the timeline (map, people, a place or a person): a search shows its hits in the timeline. */
+		const away = () => !!pp && (pp.hasOpen() || P.tab === 'map' || P.tab === 'people');
+		const search = (q) => {
+			clearTimeout(qTimer);
+			const v = String(q || '').trim();
+			if (away() && v) { pp.close(); P.tab = 'timeline'; P.query = v; clearSel(); loadTimeline(); return; }
+			if (v === P.query) return;
+			P.query = v;
+			clearSel();
+			if (away()) { render(); return; }
+			loadTimeline();
+		};
+		// with places / people a search runs on Enter (suggestions while typing); emptied, the timeline is back
+		qInput.addEventListener('input', () => {
+			clearTimeout(qTimer);
+			if (ppOn()) { if (!qInput.value.trim() && P.query) search(''); return; }
+			qTimer = setTimeout(() => search(qInput.value), 400);
+		});
 		qInput.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter') search(qInput.value);
 			else if (e.key === 'Escape' && qInput.value) { e.preventDefault(); e.stopPropagation(); qInput.value = ''; search(''); }
@@ -127,6 +156,7 @@
 				P.next = r.next;
 				P.terms = r.terms || [];
 				P.total = typeof r.total === 'number' ? r.total : null;
+				P.marks = r.marks || null;
 				P.months = [];
 				P.memories = [];
 				render();
@@ -195,6 +225,8 @@
 		}
 
 		function reload() {
+			if (pp && pp.hasOpen()) return pp.refresh(P.tab);
+			if (pp && (P.tab === 'map' || P.tab === 'people')) { pp.show(P.tab); return render(); }
 			if (P.tab === 'albums') return P.album ? openAlbum(P.album.album.id) : loadAlbums();
 			return loadTimeline();
 		}
@@ -291,6 +323,8 @@
 		}
 
 		function onTile(e, p, list, i) {
+			// a place / person shows its photos to look at (the selection is the timeline's)
+			if (pp && pp.hasOpen()) { lightbox(list, i); return; }
 			if (P.selecting || e.ctrlKey || e.metaKey || e.shiftKey) {
 				P.selecting = true;
 				P.sel = e.shiftKey && P.last !== null ? PS.selectRange(P.sel, list, P.last, p.id) : PS.toggle(P.sel, p.id);
@@ -329,19 +363,35 @@
 			clear(head);
 			const f = feats();
 			const tabs = el('div', { class: 'seg dv-seg', role: 'tablist', 'aria-label': t('drive.photos.title') });
-			const tab = (key, label) => tabs.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': P.tab === key ? 'true' : 'false', class: P.tab === key ? 'on' : '', text: label, on: { click: () => { if (P.tab === key && !P.album) return; P.tab = key; clearSel(); if (key === 'albums') loadAlbums(); else loadTimeline(); } } }));
-			tab('timeline', t('drive.photos.timeline'));
-			if (f.albums) tab('albums', t('drive.photos.albums'));
+			const open = !!pp && pp.hasOpen();
+			const tab = (key, label) => tabs.appendChild(el('button', {
+				type: 'button', role: 'tab', 'aria-selected': P.tab === key && !open ? 'true' : 'false', class: P.tab === key && !open ? 'on' : '', 'data-tab': key, text: label,
+				on: { click: () => {
+					if (P.tab === key && !P.album && !open) return;
+					P.tab = key;
+					clearSel();
+					if (pp) pp.close();
+					if (key === 'albums') loadAlbums();
+					else if (key === 'timeline') loadTimeline();
+					else { pp.show(key); render(); }
+				} },
+			}));
+			// Drive 1.16: Zeitachse | Karte | Personen (| Alben)
+			if (pp) for (const sg of PPS.segments(o.getMe(), t)) tab(sg.key, sg.label);
+			else {
+				tab('timeline', t('drive.photos.timeline'));
+				if (f.albums) tab('albums', t('drive.photos.albums'));
+			}
 			head.append(el('h2', { class: 'dsv-h', text: t('drive.photos.title') }), tabs, el('span', { class: 'dv-grow' }));
-			if (P.tab === 'timeline' && canSearch()) {
+			if ((P.tab === 'timeline' || ppOn()) && P.tab !== 'albums' && canSearch()) {
 				const focused = document.activeElement === qInput;
-				qInput.placeholder = t('drive.ki.photos.placeholder');
+				qInput.placeholder = t(ppOn() ? 'drive.pp.search.placeholder' : 'drive.ki.photos.placeholder');
 				qInput.setAttribute('aria-label', t('drive.ki.photos.label'));
 				if (qInput.value.trim() !== P.query && !focused) qInput.value = P.query;
-				head.appendChild(el('label', { class: 'dv-search dpv-search' }, [icon('search', 15), qInput]));
+				head.appendChild(qWrap);
 				if (focused) qInput.focus();
 			}
-			if (P.tab === 'timeline') {
+			if (P.tab === 'timeline' && !open) {
 				const areaId = nextId('dpv-area');
 				const sel = el('select', { id: areaId, class: 'dv-input dpv-select', 'aria-label': t('drive.photos.area') });
 				for (const c of PS.areaChoices(o.getAreas(), o.areaLabel, t)) sel.appendChild(el('option', { value: c.id, text: c.label }));
@@ -356,7 +406,7 @@
 					head.appendChild(jump);
 				}
 			}
-			if (P.tab === 'timeline' || (P.album && P.album.album.canEdit)) {
+			if ((P.tab === 'timeline' && !open) || (P.tab === 'albums' && P.album && P.album.album.canEdit)) {
 				head.appendChild(el('button', { type: 'button', class: `btn btn-sm ${P.selecting ? 'btn-sec' : 'btn-ghost'}`, 'aria-pressed': P.selecting ? 'true' : 'false', on: { click: () => { if (P.selecting) clearSel(); else P.selecting = true; keepScroll(render); } } }, [icon('check', 14), el('span', { text: t('drive.photos.select') })]));
 			}
 			if (P.tab === 'albums' && !P.album) {
@@ -373,6 +423,9 @@
 			renderHead();
 			renderSel();
 			clear(body);
+			body.classList.remove('is-map');
+			// Drive 1.16: the map, people, a place or a person
+			if (pp && (pp.hasOpen() || P.tab === 'map' || P.tab === 'people') && pp.render(P.tab, body)) return;
 			if (P.loading) { body.appendChild(el('div', { class: 'dv-empty', text: t('drive.loading') })); return; }
 			if (P.error) {
 				body.appendChild(el('div', { class: 'dv-empty' }, [icon('alert', 26, '1.6'), el('span', { text: err(P.error) }), el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('drive.retry'), on: { click: () => reload() } })]));
@@ -384,17 +437,21 @@
 
 		/** Drive 1.14: the hits of a photo search — chips, how many, the photos, where the labels come from. */
 		function renderSearch() {
+			const marks = pp ? pp.marksEl(P.marks) : null;
+			if (marks) body.appendChild(marks);
 			const chips = el('div', { class: 'dv-ki-chips dpv-chips', role: 'group', 'aria-label': t('drive.ki.photos.chips') });
-			for (const c of KS().photoChips(P.query, P.terms)) {
+			for (const c of KS() ? KS().photoChips(P.query, P.terms) : []) {
 				chips.appendChild(el('button', { type: 'button', class: `dv-chip${c.on ? ' is-on' : ''}`, 'aria-pressed': c.on ? 'true' : 'false', 'data-term': c.term, text: c.label, on: { click: () => { const q = KS().photoToggle(P.query, c.term); qInput.value = q; search(q); } } }));
 			}
-			body.appendChild(chips);
+			if (chips.firstChild) body.appendChild(chips);
 			const n = P.total !== null ? P.total : P.items.length;
-			body.appendChild(el('div', { class: 'dpv-month-h dpv-hits' }, [el('span', { class: 'dpv-month-name', text: DSPlural('drive.photos.count', n) }), el('span', { class: 'dpv-month-n', text: t('drive.ki.photos.source') })]));
-			if (!P.items.length) body.appendChild(el('div', { class: 'dv-empty' }, [icon('image', 28, '1.6'), el('span', { text: t('drive.ki.photos.none') })]));
+			const labels = !!KS() && meFeats().includes('photoSearch');
+			body.appendChild(el('div', { class: 'dpv-month-h dpv-hits' }, [el('span', { class: 'dpv-month-name', text: DSPlural('drive.photos.count', n) }), labels ? el('span', { class: 'dpv-month-n', text: t('drive.ki.photos.source') }) : null]));
+			if (!P.items.length) body.appendChild(el('div', { class: 'dv-empty' }, [icon('image', 28, '1.6'), el('span', { text: t(ppOn() ? 'drive.pp.search.none' : 'drive.ki.photos.none') })]));
 			else body.appendChild(grid(P.items));
 			moreFoot(P.next);
-			body.appendChild(el('p', { class: 'dv-ki-note dpv-search-note', text: t('drive.ki.photos.note') }));
+			if (ppOn()) body.appendChild(el('p', { class: 'dv-ki-note dpv-search-note', text: t('drive.pp.sug.tip') }));
+			if (labels) body.appendChild(el('p', { class: 'dv-ki-note dpv-search-note', text: t('drive.ki.photos.note') }));
 		}
 
 		function renderTimeline() {
@@ -527,7 +584,7 @@
 				const box = el('span', { class: 'dpv-big' }, [icon(p.kind === 'video' ? 'video' : 'image', 40, '1.4')]);
 				stage.appendChild(box);
 				picture(box, p, true);
-				meta.textContent = [PS.photoWhen(p, locale()), p.kind === 'video' ? t('drive.photos.video') : ''].filter(Boolean).join(' · ');
+				meta.textContent = [PS.photoWhen(p, locale()), pp ? pp.placeText(p) : '', p.kind === 'video' ? t('drive.photos.video') : ''].filter(Boolean).join(' · ');
 				prev.disabled = i === 0;
 				next.disabled = i >= list.length - 1;
 				clear(dlg.foot);
@@ -717,12 +774,27 @@
 			dlg.foot.append(errEl, el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }), ok);
 		}
 
+		// Drive 1.16: places and people (drive-places-people-view.js)
+		const pp = root.GCDrivePlacesPeopleView && PPS ? root.GCDrivePlacesPeopleView.create({
+			api, t, getLocale: o.getLocale, toast, host, ui: o.ui, getMe: o.getMe, errorText: err,
+			previewUrl, picture, grid,
+			render: () => { if (P.shown) render(); },
+			search: (q) => { qInput.value = q; search(q); },
+			resetInput: () => { qInput.value = P.query; },
+			openSettings: typeof o.openSettings === 'function' ? o.openSettings : null,
+			onOpen: () => { clearSel(); body.scrollTop = 0; },
+		}) : null;
+		if (pp) pp.attachSuggest(qInput, qWrap);
+
 		return {
 			el: wrap,
 			show() {
 				P.shown = true;
 				wrap.hidden = false;
 				if (P.tab === 'albums' && !feats().albums) P.tab = 'timeline';
+				const pf = PPS ? PPS.features(o.getMe()) : { places: false, people: false };
+				if ((P.tab === 'map' && !pf.places) || (P.tab === 'people' && !pf.people)) { P.tab = 'timeline'; if (pp) pp.close(); }
+				if (pp && pp.hasOpen() && !pf.places && !pf.people) pp.close();
 				reload();
 			},
 			hide() {
