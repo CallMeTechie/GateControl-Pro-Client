@@ -3008,6 +3008,8 @@ driveView = driveApi && window.GCDriveView && $('#page-drive')
 		onDemandApi: window.gatecontrol.driveOnDemand || null,
 		// Drive-Einstellungen › Benachrichtigungen: die Drive-Themen der Mitteilungen (stumm auf diesem PC)
 		notifyApi: window.gatecontrol.notify || null,
+		// Drive 1.18: the overview's "Mail-Anhänge zum Ablegen" opens Mail › „Zum Ablegen“
+		openMailFiling: () => openMail({ kind: 'filing' }),
 		onStatus: (st) => {
 			const show = !!st && st.state === 'available';
 			$('#nav-drive').hidden = !show;

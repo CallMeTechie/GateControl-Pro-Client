@@ -6,7 +6,7 @@ const { setupWithApiKey } = require('./support/ui');
 // Drive 1.7 on the page "Drive" (only with the features `me` reports; the
 // plugin is the core's fake Drive server, support/drive-mock.js): a folder
 // back to an earlier state (preview, run, "Rückgängig"), "Fotos" (timeline
-// with previews by the node, "Vor einem Jahr", the large view, photos into a
+// with previews by the node, the large view — "Vor einem Jahr" is on the overview since 1.18 —, photos into a
 // new album, the album with the photo frame switch, deleting it) and
 // "Speicher" (total, areas, largest files, duplicates into the trash).
 // Selectors by id/class, texts in both languages.
@@ -18,7 +18,12 @@ async function openDrive(page) {
   await expect(page.locator('#nav-drive')).toBeVisible();
   await page.locator('#nav-drive').click();
   await expect(page.locator('#page-drive')).toHaveClass(/active/);
-  return page.locator('#page-drive');
+  const root = page.locator('#page-drive');
+  // Drive 1.18: Drive opens on "Übersicht"; these tests work in "Dateien"
+  const files = root.locator('.dv-pages [data-page="files"]');
+  await expect(files.or(root.locator('.dv-gate:visible')).first()).toBeVisible();
+  if (await files.isVisible()) await files.click();
+  return root;
 }
 
 test.describe('drive 1.7', () => {
@@ -68,7 +73,7 @@ test.describe('drive 1.7', () => {
     await expect(root.locator('.dv-tt-btn')).toBeVisible();
   });
 
-  test('Fotos: timeline, "Vor einem Jahr", large view, a new album, the photo frame', async ({ launchApp, mock }) => {
+  test('Fotos: timeline, large view, a new album, the photo frame', async ({ launchApp, mock }) => {
     const d = await mock.setDrive({ features: ['photos', 'albums', 'frame', 'links'] });
     const bilder = d.srv.mutate.dir(1, 'Bilder');
     const now = new Date();
@@ -82,9 +87,9 @@ test.describe('drive 1.7', () => {
     const pv = root.locator('.dpv');
     await expect(pv).toBeVisible();
     await expect(root.locator('.dv-list-wrap')).toBeHidden();
-    // 4 new photos, the one of a year ago, Foto.jpg (in the timeline and in "Vor einem Jahr")
+    // 4 new photos, the one of a year ago, Foto.jpg ("Vor einem Jahr" is on the overview since Drive 1.18)
     await expect(pv.locator('.dpv-month .dpv-tile')).toHaveCount(6);
-    await expect(pv.locator('.dpv-mem .dpv-tile')).toHaveCount(1);
+    await expect(pv.locator('.dpv-mem')).toHaveCount(0);
     await expect(pv.locator('.dpv-month .dpv-tile img').first()).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('drive-photos.png') });
 

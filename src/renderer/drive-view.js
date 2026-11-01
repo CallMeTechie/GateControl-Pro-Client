@@ -75,6 +75,12 @@
  * of the app locales; view logic without DOM: drive-state.js
  * (window.GCDriveState).
  *
+ * Drive 1.18 (mockup WinStart): the page has three parts, "Übersicht | Dateien | Fotos" next to the title; Drive
+ * opens on "Übersicht" (drive-overview-view.js: the tiles of what is to be done, opened lately, new in the family,
+ * memories, people, places and the storage). "Dateien" is the folder (with search, trash, links, deadlines), "Fotos"
+ * the photos (Zeitachse | Karte | Personen, without "Vor einem Jahr", which is on the overview). The page chosen is
+ * not kept: coming back to Drive shows the overview again; a push or a link to a file still opens its folder.
+ *
  * Note: server text only ever goes into textContent / attributes; icons are
  * built from static path data with createElementNS (no innerHTML).
  */
@@ -84,6 +90,7 @@
 	const DS = root.GCDriveState;
 	const MS = root.GCDriveMenuState;
 	const BS = root.GCDriveBulkState;
+	const OVS = root.GCDriveOverviewState;
 	const NS = 'http://www.w3.org/2000/svg';
 	const ICONS = {
 		cloud: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z',
@@ -388,7 +395,7 @@
 			access: null,
 			areas: [],
 			areaId: remembered('gc.drive.area'),
-			view: 'folder',     // folder | search | trash | links | sync | photos | storage
+			view: 'overview',   // overview (Drive 1.18) | folder | search | trash | links | sync | photos | storage
 			folderId: null,
 			folder: null,
 			sort: DS.SORTS.includes(remembered('gc.drive.sort')) ? remembered('gc.drive.sort') : 'name',
@@ -433,6 +440,8 @@
 		const rootEl = el('div', { class: 'dv' });
 		o.root.appendChild(rootEl);
 		refs.h = el('h1', { class: 'dv-h', text: t('drive.title') });
+		// Drive 1.18: Übersicht | Dateien | Fotos
+		refs.pages = el('div', { class: 'seg dv-seg dv-pages', role: 'tablist', hidden: true });
 		refs.sub = el('span', { class: 'dv-sub' });
 		refs.searchLabel = el('label', { class: 'dv-sr', for: nextId('dv-q') });
 		refs.search = el('input', { id: refs.searchLabel.getAttribute('for'), type: 'search', class: 'dv-search-in', maxlength: '100', on: { input: onSearchInput, keydown: onSearchKey } });
@@ -499,6 +508,22 @@
 		};
 		const photosView = root.GCDrivePhotosView && typeof api.photos === 'function' ? root.GCDrivePhotosView.mount(extra) : null;
 		const storageView = root.GCDriveStorageView && typeof api.storage === 'function' ? root.GCDriveStorageView.mount(extra) : null;
+		// Drive 1.18: "Übersicht" (drive-overview-view.js) — its tiles lead into the files, the photos, the deadlines
+		const overviewView = root.GCDriveOverviewView && root.GCDriveOverviewState && typeof api.overview === 'function' ? root.GCDriveOverviewView.mount({
+			...extra,
+			now,
+			areaLabel: (areaId) => DS.areaLabel(S.areas.find((a) => a.id === areaId), t),
+			openFile: (n) => openNode(n),
+			openFiles: () => openFiles(),
+			openDeadlines: () => openDeadlines(),
+			openPhotos: (target) => openPhotos(target),
+			showPhotos: (items, start) => { if (photosView) photosView.lightbox(items, start); },
+			nameDialog: photosView && photosView.nameDialog ? (p, onClose) => photosView.nameDialog(p, onClose) : null,
+			openToFile: typeof o.openMailFiling === 'function' ? () => o.openMailFiling() : null,
+			openStorage: () => openExtra('storage'),
+			syncSummary: () => S.syncSummary,
+			openSync: syncView ? () => openSync() : null,
+		}) : null;
 		// Drive 1.11: the Drive settings (the gear)
 		const settingsView = root.GCDriveSettingsView ? root.GCDriveSettingsView.mount({
 			api, t, getLocale: o.getLocale, toast, ui: { el, icon, clear, openDialog }, syncView, onDemand: !!o.onDemandApi, notifyApi: o.notifyApi || null,
@@ -523,7 +548,7 @@
 				S.previews.clear();
 			},
 		}) : null;
-		const VIEWS = { sync: syncView, photos: photosView, storage: storageView, settings: settingsView };
+		const VIEWS = { sync: syncView, photos: photosView, storage: storageView, settings: settingsView, overview: overviewView };
 		// Drive 1.8 'docAi' (drive-docs-view.js) and 1.9 'vault' (drive-vault-view.js)
 		const docs = root.GCDriveDocsView && typeof api.insight === 'function' ? root.GCDriveDocsView.create({
 			api, t, getLocale: o.getLocale, ui: { el, icon, clear, openDialog }, host, toast, now, errorText: DS.errorText,
@@ -558,12 +583,13 @@
 			openSettings: () => openSettingsView('vaults'),
 		}) : null;
 		const vaultOn = () => !!vaultUi && root.GCDriveVaultState.vaultAvailable(S.me, S.vaultStatus);
-		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.selBar, refs.listWrap, refs.keys, ki ? ki.bar : null, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null]);
+		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.selBar, refs.listWrap, refs.keys, ki ? ki.bar : null, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null, overviewView ? overviewView.el : null]);
 		refs.empty = el('div', { class: 'dv-gate', hidden: true });
 		refs.main = el('div', { class: 'dv-main' }, [refs.side, refs.pane]);
 		rootEl.append(
 			el('div', { class: 'dv-head' }, [
 				el('div', { class: 'dv-head-tx' }, [refs.h, refs.sub]),
+				refs.pages,
 				el('span', { class: 'dv-grow' }),
 				el('div', { class: 'dv-search' }, [icon('search', 15), refs.searchLabel, refs.search]),
 				refs.modes,
@@ -611,10 +637,13 @@
 		});
 		// Drive changed elsewhere (push `changed`) / back in the window: what is shown loads again
 		const live = DS.throttle(() => liveRefresh(), 2000);
+		// Drive 1.18: the overview follows the changes too, at most every 15 s
+		const overviewLive = DS.throttle(() => { if (S.shown && S.view === 'overview' && overviewView) overviewView.refresh(); }, 15000);
 		if (typeof api.onRemote === 'function') {
 			api.onRemote((ev) => {
 				if (ki) ki.onRemote();
-				if (S.shown && DS.liveRelevant(ev, { view: S.view, areaId: S.folder ? S.folder.node.areaId : S.areaId })) live.request();
+				if (S.shown && S.view === 'overview') overviewLive.request();
+				else if (S.shown && DS.liveRelevant(ev, { view: S.view, areaId: S.folder ? S.folder.node.areaId : S.areaId })) live.request();
 				else if (!S.shown) S.dirty = true;
 			});
 		}
@@ -713,7 +742,7 @@
 				const a = DS.currentArea(S.areas, S.areaId);
 				await loadFolder(S.folderId || (a && a.rootId), { quiet: true, fallback: a && a.rootId });
 			} else if (S.view === 'sync') openSync();
-			else if (S.view === 'photos' || S.view === 'storage') openExtra(S.view);
+			else if (S.view === 'photos' || S.view === 'storage' || S.view === 'overview') openExtra(S.view);
 			else if (S.view === 'trash') await loadTrash();
 			else if (S.view === 'links') await loadLinks();
 			else if (S.view === 'search') await runSearch();
@@ -815,7 +844,42 @@
 		function extraAvailable(view) {
 			if (view === 'photos') return !!photosView && DS.hasFeature(S.me, 'photos');
 			if (view === 'storage') return !!storageView && DS.hasFeature(S.me, 'storage');
+			if (view === 'overview') return !!overviewView;
 			return false;
+		}
+
+		/** Drive 1.18 "Dateien": the folder shown last (or the area's top). */
+		function openFiles() {
+			refs.search.value = '';
+			S.searchMode = 'auto';
+			backToFolder();
+		}
+
+		/** Drive 1.18 "Fotos", from a tile of the overview at a tab, a person or a place ({ tab?, person?, place?, name? }). */
+		function openPhotos(target = null) {
+			if (!extraAvailable('photos')) return;
+			if (photosView && typeof photosView.prepare === 'function') photosView.prepare(target || {});
+			openExtra('photos');
+		}
+
+		/** Übersicht | Dateien | Fotos next to the title (only while Drive can be used). */
+		function renderPages() {
+			const on = !!(S.access && S.access.usable && S.areas.length && overviewView);
+			refs.pages.hidden = !on;
+			clear(refs.pages);
+			if (!on) return;
+			refs.pages.setAttribute('aria-label', t('drive.ov.page.label'));
+			const cur = OVS.pageOf(S.view);
+			for (const p of OVS.pages({ overview: true, photos: extraAvailable('photos') }, t)) {
+				refs.pages.appendChild(el('button', {
+					type: 'button', role: 'tab', 'data-page': p.key, class: cur === p.key ? 'on' : '', 'aria-selected': cur === p.key ? 'true' : 'false', text: p.label,
+					on: { click: () => {
+						if (p.key === 'overview') { refs.search.value = ''; S.query = ''; openExtra('overview'); }
+						else if (p.key === 'files') { if (cur !== 'files' || S.view !== 'folder') openFiles(); }
+						else openPhotos({});
+					} },
+				}));
+			}
 		}
 
 		function openExtra(view) {
@@ -1838,6 +1902,7 @@
 			refs.bar.hidden = inSync;
 			refs.listWrap.hidden = inSync;
 			for (const [k, v] of Object.entries(VIEWS)) if (v && k !== S.view) v.hide();
+			renderPages();
 			renderSide();
 			renderBar();
 			renderModes();
@@ -2247,7 +2312,10 @@
 		return {
 			show() {
 				S.shown = true;
+				// Drive 1.18: Drive opens on the overview (the page chosen last is not kept)
+				if (overviewView) S.view = 'overview';
 				if (S.dirty || !S.me) reload();
+				else if (S.view === 'overview') openExtra('overview');
 				else refreshView();
 				maybeAskConflict();
 			},

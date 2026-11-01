@@ -28,7 +28,12 @@ async function openDrive(page) {
   await expect(page.locator('#nav-drive')).toBeVisible();
   await page.locator('#nav-drive').click();
   await expect(page.locator('#page-drive')).toHaveClass(/active/);
-  return page.locator('#page-drive');
+  const root = page.locator('#page-drive');
+  // Drive 1.18: Drive opens on "Übersicht"; these tests work in "Dateien"
+  const files = root.locator('.dv-pages [data-page="files"]');
+  await expect(files.or(root.locator('.dv-gate:visible')).first()).toBeVisible();
+  if (await files.isVisible()) await files.click();
+  return root;
 }
 
 test.describe('drive 1.8 / 1.9', () => {

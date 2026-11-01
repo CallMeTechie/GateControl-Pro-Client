@@ -2623,7 +2623,7 @@
 			/**
 			 * A push target: { kind: 'message', messageId, accountId } | { kind: 'outbox', outboxId } | Phase 2:
 			 * { kind: 'event', eventId, occurrence } (a reminder) | { kind: 'invitation', invitationId } | { kind: 'calendar' }
-			 * | the start page: { kind: 'contact', contactId } | { kind: 'contacts' }.
+			 * | the start page: { kind: 'contact', contactId } | { kind: 'contacts' } | Drive 1.18: { kind: 'filing' }.
 			 */
 			async open(context) {
 				S.shown = true;
@@ -2644,6 +2644,8 @@
 					return;
 				}
 				if (context.kind === 'outbox') { go({ kind: 'outbox' }); return; }
+				// Drive 1.18: the overview's "Mail-Anhänge zum Ablegen"
+				if (context.kind === 'filing') { if (has('drive')) go({ kind: 'filing' }); return; }
 				if (context.kind === 'message' && context.messageId) {
 					setArea('mail');
 					if (S.view.kind !== 'box') go(S.lastBox);
