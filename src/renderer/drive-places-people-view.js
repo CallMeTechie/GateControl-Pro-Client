@@ -440,8 +440,10 @@
 			body.appendChild(el('div', { class: 'dpp-top' }, [backBtn(t('drive.pp.backMap'))]));
 			if (x.loading && !x.items.length) { body.appendChild(loadingEl()); return; }
 			if (x.error) { body.appendChild(errorEl(x.error, () => loadOpen())); return; }
-			const mini = mapView({ interactive: false });
-			mini.box.classList.add('dpp-mini');
+			// one small map per place shown (kept while it is open)
+			if (!x.mini) { x.mini = mapView({ interactive: false }); x.mini.box.classList.add('dpp-mini'); }
+			const mini = x.mini;
+			mini.relabel();
 			const pts = x.items.filter((p) => p.geo).map((p) => ({ lat: p.geo.lat, lon: p.geo.lon }));
 			const head = el('div', { class: 'dpp-place-head card' }, [mini.box, el('div', { class: 'dpp-place-tx' }, [
 				el('h2', { class: 'dpp-title', text: x.name || t('drive.pp.place.unknown') }),
