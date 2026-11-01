@@ -2521,6 +2521,180 @@
         "none": "No photos with these terms.",
         "note": "Photos not backed up from a phone (e.g. from a PC) have no terms yet. They are added the next time the phone app is opened."
       }
+    },
+    "pp": {
+      "seg": {
+        "timeline": "Timeline",
+        "map": "Map",
+        "people": "People"
+      },
+      "photos": {
+        "one": "1 photo",
+        "other": "{{count}} photos"
+      },
+      "days": {
+        "one": "1 day",
+        "other": "{{count}} days"
+      },
+      "backMap": "Back",
+      "backPeople": "Back",
+      "search": {
+        "placeholder": "Place, person or content",
+        "none": "No photos match all the words."
+      },
+      "sug": {
+        "title": "Suggestions",
+        "person": "Person",
+        "place": "Place",
+        "placeIn": "Place · {{sub}}",
+        "label": "On the photo",
+        "none": "No place, person or content matches “{{q}}”.",
+        "tip": "Tip: combine words – “Mum Hamburg” finds photos of Mum in Hamburg.",
+        "marks": "Recognised:"
+      },
+      "map": {
+        "label": "Map of the photos – drag to move, mouse wheel or plus and minus to zoom",
+        "inView": "Places in view",
+        "zoomIn": "Zoom in",
+        "zoomOut": "Zoom out",
+        "attribution": "© OpenStreetMap contributors",
+        "several": "Several places – click to zoom in",
+        "none": "No photos with a place yet. The phones back up where a photo was taken, and so does this PC when it syncs.",
+        "noneHere": "No photos here. Move the map or zoom out."
+      },
+      "place": {
+        "unknown": "Place",
+        "people": "People on these photos",
+        "empty": "No photos at this place."
+      },
+      "progress": {
+        "title": "Recognising faces · {{count}}",
+        "count": "{{done}} of {{total}} photos",
+        "phones": "Your phones recognise the faces, on Wi-Fi and while charging. No picture leaves your server."
+      },
+      "people": {
+        "named": {
+          "one": "1 named",
+          "other": "{{count}} named"
+        },
+        "unnamedN": {
+          "one": "1 without a name yet",
+          "other": "{{count}} without a name yet"
+        },
+        "namedTitle": "Named",
+        "whoTitle": "Who is this?",
+        "whoHint": "Naming makes them searchable",
+        "name": "Name",
+        "moreUnnamed": "{{count}} more without a name",
+        "hiddenTitle": "Hidden",
+        "hiddenShow": "Show",
+        "hiddenHide": "Hide list",
+        "hiddenText": "Hidden faces don't appear in the search and aren't asked about again.",
+        "unhide": "Show again",
+        "noName": "No name",
+        "settings": "Settings for places and people",
+        "none": "No people yet. Once your phones have recognised faces, they appear here.",
+        "offTitle": "Recognising people is off",
+        "offText": "Switch it on in the settings. Your phones recognise the faces; Drive keeps only face features, no pictures with third parties.",
+        "offOpen": "Open settings",
+        "phonesNote": "Your phones recognise the faces. Names and groups are the same on all your devices, and only you see them."
+      },
+      "person": {
+        "rename": "Rename",
+        "merge": "Merge",
+        "hide": "Hide",
+        "hiddenDone": "Hidden",
+        "shownDone": "Shown again",
+        "linkedFamily": "Linked with family › {{name}}",
+        "linkedContact": "Linked with contact › {{name}}",
+        "askTitle": "Is this {{name}} too?",
+        "askText": {
+          "one": "1 photo where the recognition is unsure – as a toddler or in profile, for example.",
+          "other": "{{count}} photos where the recognition is unsure – as a toddler or in profile, for example."
+        },
+        "askAll": "Yes, all",
+        "askEach": "Check one by one",
+        "askDone": "All checked.",
+        "yes": "Yes",
+        "no": "No",
+        "confirmed": {
+          "one": "1 photo assigned",
+          "other": "{{count}} photos assigned"
+        },
+        "together": "Together with",
+        "togetherHint": "Photos with both",
+        "places": "Places",
+        "empty": "No photos.",
+        "mergeTitle": "Merge “{{name}}” with …",
+        "mergeText": "Both become one person with all the photos.",
+        "mergeNone": "There is no other person with a name yet."
+      },
+      "name": {
+        "title": "Who is this?",
+        "label": "Name",
+        "placeholder": "e.g. Grandma Gerda",
+        "fromFamily": "From family and contacts",
+        "noSuggestions": "No suggestion – type the name.",
+        "family": "Family",
+        "contact": "Contact",
+        "contactMail": "Contact · {{email}}",
+        "named": "already named ({{count}} photos)",
+        "familyNamed": "Family · already named ({{count}} photos)",
+        "oftenWith": "often with {{name}}",
+        "alike": "Looks like {{name}}",
+        "alikeText": "The same person? Then both are merged.",
+        "merge": "Merge",
+        "save": "Save",
+        "empty": "Please enter a name.",
+        "long": "The name is too long.",
+        "savedTitle": "“{{name}}” saved",
+        "savedText": "You now find {{count}} photos by searching for “{{name}}”. If the name exists already, both are merged.",
+        "mergedTitle": "Merged with {{name}}",
+        "mergedText": "{{name}} now has {{count}} photos.",
+        "hiddenTitle": "Hidden",
+        "hiddenText": {
+          "one": "This photo no longer appears under People.",
+          "other": "These {{count}} photos no longer appear under People."
+        },
+        "undo": "Undo",
+        "next": "Next person",
+        "finish": "Done"
+      },
+      "set": {
+        "title": "Places and people",
+        "failed": "The settings could not be loaded.",
+        "places": "Places",
+        "people": "People",
+        "keepGeo": "Back up where photos were taken",
+        "keepGeoDesc": "The photo's location goes to your server too – needed for the map and the search by place.",
+        "stripGeoOnShare": "Remove the place when sharing",
+        "stripGeoOnShareDesc": "Share links and GateDrop send photos without their location.",
+        "deleteGeo": "Delete saved places",
+        "deleteGeoDesc": "The places of all photos you uploaded – the photos stay.",
+        "deleteGeoBtn": "Delete places",
+        "deleteGeoTitle": "Delete saved places?",
+        "deleteGeoText": "The places of all photos you uploaded are deleted. The photos stay. New photos bring their place again while “Back up where photos were taken” is on.",
+        "geoDeleted": {
+          "one": "Place of 1 photo deleted",
+          "other": "Places of {{count}} photos deleted"
+        },
+        "recognize": "Recognise people",
+        "recognizeDesc": "Find faces in your photos so you can search for people.",
+        "howTitle": "How it works",
+        "how1": "Your phones recognise the faces themselves, on Wi-Fi and while charging.",
+        "how2": "Only face features (numbers) reach your server, no pictures with third parties.",
+        "how3": "Only you see your people and names.",
+        "how4": "Switching it off deletes all face data.",
+        "peopleKids": "Include children's folders",
+        "peopleKidsDesc": "Photos in the children's folders. Default: off.",
+        "deleteFaces": "Delete all face data",
+        "deleteFacesDesc": "Names, groups and features – the photos stay.",
+        "deleteFacesBtn": "Delete",
+        "deleteFacesTitle": "Delete all face data?",
+        "deleteFacesText": "Names, groups and face features are deleted on all your devices, and “Recognise people” is switched off. The photos stay.",
+        "facesDeleted": "All face data deleted",
+        "phones": "Your phones recognise the faces – this PC recognises none."
+      }
     }
   },
   "mail": {

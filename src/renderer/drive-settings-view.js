@@ -14,7 +14,11 @@
  *   5. Daten auf diesem Gerät — the cache (opened files, previews) with its size and "Leeren".
  *   6. Benachrichtigungen — Drive's topics of the app's notifications (deadline reminders, vault requests), switched
  *      on this PC (the app's mute list; no new server API).
- * Everything is kept on this PC except the AI switches (Drive).
+ *   Drive 1.16 'photoPlaces' / 'photoPeople' (only with the features): "Orte und Personen" (Mockup 7) — "Aufnahmeort
+ *      mitsichern" (keepGeo), "Ort beim Teilen entfernen" (only when Drive reports it), "Gespeicherte Orte löschen";
+ *      "Personen erkennen" (off: how it works; switching it off deletes all face data after asking), "Kinderordner
+ *      einbeziehen", "Alle Gesichtsdaten löschen" (after asking). The faces are found by the phones only.
+ * Everything is kept on this PC except the AI switches and "Orte und Personen" (Drive, per person).
  *
  * Mounted by drive-view.js (helpers el / icon / clear / openDialog). Logic: drive-menu-state.js; texts:
  * drive.settings.*, drive.lock.*. Server text only via textContent.
@@ -54,7 +58,9 @@
 		let shown = false;
 		let cache = null;
 		let notify = null;
+		let photo = null;
 		let focusKey = null;
+		const PPS = root.GCDrivePlacesPeopleState;
 
 		const wrap = el('div', { class: 'dset', hidden: true });
 		const head = el('div', { class: 'dsv-head' });
@@ -94,6 +100,8 @@
 			if (v) body.append(v);
 			const ai = docAi(p);
 			if (ai) body.append(ai);
+			const pp = placesPeople(p);
+			if (pp) body.append(pp);
 			body.append(view(p), data(), notifications());
 			if (focusKey) {
 				const back = wrap.querySelector(`[data-key="${CSS.escape(focusKey)}"]`);
@@ -210,6 +218,87 @@
 			return card('ai', t('drive.docAi.label'), null, kids);
 		}
 
+		// Drive 1.16: Orte und Personen
+		function ppOn(me) {
+			if (!PPS || typeof api.photoSettings !== 'function') return null;
+			const f = PPS.features(me);
+			return f.places || f.people ? f : null;
+		}
+
+		function placesPeople(p) {
+			if (!ppOn(p.me)) return null;
+			if (!photo) return card('places', t('drive.pp.set.title'), t(photo === false ? 'drive.pp.set.failed' : 'drive.loading'), []);
+			const rows = PPS.settingsRows(photo, p.me);
+			const kids = [];
+			if (rows.places) {
+				kids.push(el('h4', { class: 'dset-sub lbl', text: t('drive.pp.set.places') }));
+				for (const r of rows.places) {
+					const id = nextId('dset-pp');
+					kids.push(row(t(`drive.pp.set.${r.key}`), t(`drive.pp.set.${r.key}Desc`), sw(`pp-${r.key}`, r.on, id, () => setPhoto({ [r.key]: !r.on })), id));
+				}
+				kids.push(row(t('drive.pp.set.deleteGeo'), t('drive.pp.set.deleteGeoDesc'),
+					el('button', { type: 'button', class: 'btn btn-sec btn-sm dv-danger', 'data-key': 'pp-delete-geo', on: { click: () => askDeleteGeo() } }, [icon('trash', 14), el('span', { text: t('drive.pp.set.deleteGeoBtn') })])));
+			}
+			if (rows.people) {
+				kids.push(el('h4', { class: 'dset-sub lbl', text: t('drive.pp.set.people') }));
+				const id = nextId('dset-pp');
+				kids.push(row(t('drive.pp.set.recognize'), t('drive.pp.set.recognizeDesc'), sw('pp-people', rows.people.on, id, () => (rows.people.on ? askDeleteFaces() : setPhoto({ people: true }))), id));
+				if (!rows.people.on) {
+					kids.push(el('div', { class: 'dset-how' }, [
+						el('b', { text: t('drive.pp.set.howTitle') }),
+						...['how1', 'how2', 'how3', 'how4'].map((k) => el('span', { class: 'dv-p', text: `• ${t(`drive.pp.set.${k}`)}` })),
+					]));
+				} else {
+					for (const r of rows.people.rows) {
+						const rid = nextId('dset-pp');
+						kids.push(row(t(`drive.pp.set.${r.key}`), t(`drive.pp.set.${r.key}Desc`), sw(`pp-${r.key}`, r.on, rid, () => setPhoto({ [r.key]: !r.on })), rid));
+					}
+					kids.push(row(t('drive.pp.set.deleteFaces'), t('drive.pp.set.deleteFacesDesc'),
+						el('button', { type: 'button', class: 'btn btn-sec btn-sm dv-danger', 'data-key': 'pp-delete-faces', on: { click: () => askDeleteFaces() } }, [icon('trash', 14), el('span', { text: t('drive.pp.set.deleteFacesBtn') })])));
+				}
+				kids.push(el('p', { class: 'dsv-foot dv-p', text: t('drive.pp.set.phones') }));
+			}
+			return card('places', t('drive.pp.set.title'), null, kids);
+		}
+
+		async function loadPhoto() {
+			if (!ppOn(o.page().me)) return;
+			const r = await Promise.resolve(api.photoSettings()).catch(() => null);
+			photo = r && r.ok ? r : false;
+			if (shown) render();
+		}
+
+		async function setPhoto(patch) {
+			const r = await call(() => api.setPhotoSettings(patch));
+			if (!r) return;
+			photo = r;
+			if (r.deleted !== null && r.deleted !== undefined && patch.people === false) toast(t('drive.pp.set.facesDeleted'), 'success');
+			render();
+		}
+
+		/** "Alle Gesichtsdaten löschen" (also switching "Personen erkennen" off): asks first. */
+		function askDeleteFaces() {
+			confirmDialog({ title: t('drive.pp.set.deleteFacesTitle'), text: t('drive.pp.set.deleteFacesText'), ok: t('drive.pp.set.deleteFacesBtn'), run: () => setPhoto({ people: false }) });
+		}
+
+		function askDeleteGeo() {
+			confirmDialog({
+				title: t('drive.pp.set.deleteGeoTitle'), text: t('drive.pp.set.deleteGeoText'), ok: t('drive.pp.set.deleteGeoBtn'),
+				run: async () => {
+					const r = await call(() => api.deletePhotoGeo());
+					if (r) toast(t(`drive.pp.set.geoDeleted.${r.deleted === 1 ? 'one' : 'other'}`, { count: r.deleted }), 'success');
+				},
+			});
+		}
+
+		function confirmDialog({ title, text, ok, run }) {
+			const dlg = o.ui.openDialog({ title, closeLabel: t('drive.close') });
+			const btn = el('button', { type: 'button', class: 'btn btn-danger', 'data-key': 'pp-confirm', text: ok });
+			btn.addEventListener('click', async () => { btn.disabled = true; await run(); dlg.close(true); });
+			dlg.body.append(el('p', { class: 'dv-p', text }));
+			dlg.foot.append(el('span', { class: 'dv-grow' }), el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }), btn);
+		}
+
 		// 4. Ansicht
 		function view(p) {
 			const id = nextId('dset-sort');
@@ -288,15 +377,16 @@
 				loadCache();
 				loadNotify();
 				refreshLock();
+				loadPhoto();
 			},
 			hide() {
 				shown = false;
 				wrap.hidden = true;
 				if (o.syncView && o.syncView.hideSettings) o.syncView.hideSettings();
 			},
-			refresh() { if (shown) { render(); loadCache(); refreshLock(); } },
+			refresh() { if (shown) { render(); loadCache(); refreshLock(); loadPhoto(); } },
 			relabel() { if (shown) render(); },
-			/** Scrolls to a section ('backup', 'vaults', 'ai', 'view', 'data', 'notify'). */
+			/** Scrolls to a section ('backup', 'vaults', 'ai', 'places', 'view', 'data', 'notify'). */
 			focus(section) {
 				const c = wrap.querySelector(`[data-section="${CSS.escape(String(section || ''))}"]`);
 				if (c && typeof c.scrollIntoView === 'function') c.scrollIntoView({ block: 'start' });

@@ -2521,6 +2521,180 @@
         "none": "Keine Fotos mit diesen Begriffen.",
         "note": "Fotos, die nicht vom Handy gesichert wurden (z. B. vom PC), haben noch keine Begriffe. Sie werden beim nächsten Öffnen auf dem Handy nachgetragen."
       }
+    },
+    "pp": {
+      "seg": {
+        "timeline": "Zeitachse",
+        "map": "Karte",
+        "people": "Personen"
+      },
+      "photos": {
+        "one": "1 Foto",
+        "other": "{{count}} Fotos"
+      },
+      "days": {
+        "one": "1 Tag",
+        "other": "{{count}} Tage"
+      },
+      "backMap": "Zurück",
+      "backPeople": "Zurück",
+      "search": {
+        "placeholder": "Ort, Person oder Inhalt",
+        "none": "Keine Fotos passen zu allen Begriffen."
+      },
+      "sug": {
+        "title": "Vorschläge",
+        "person": "Person",
+        "place": "Ort",
+        "placeIn": "Ort · {{sub}}",
+        "label": "Bildinhalt",
+        "none": "Kein Ort, keine Person und kein Inhalt passt zu „{{q}}“.",
+        "tip": "Tipp: Mehrere Begriffe verbinden – „Mama Hamburg“ findet Fotos mit Mama in Hamburg.",
+        "marks": "Erkannt:"
+      },
+      "map": {
+        "label": "Karte der Fotos – ziehen zum Verschieben, Mausrad oder Plus und Minus zum Zoomen",
+        "inView": "Orte im Bild",
+        "zoomIn": "Vergrößern",
+        "zoomOut": "Verkleinern",
+        "attribution": "© OpenStreetMap-Mitwirkende",
+        "several": "Mehrere Orte – zum Vergrößern klicken",
+        "none": "Noch keine Fotos mit Ort. Die Handys sichern den Aufnahmeort mit, der PC beim Abgleich auch.",
+        "noneHere": "Hier gibt es keine Fotos. Verschiebe oder verkleinere die Karte."
+      },
+      "place": {
+        "unknown": "Ort",
+        "people": "Personen auf diesen Fotos",
+        "empty": "Keine Fotos an diesem Ort."
+      },
+      "progress": {
+        "title": "Gesichter werden erkannt · {{count}}",
+        "count": "{{done}} von {{total}} Fotos",
+        "phones": "Gesichter erkennen deine Handys, im WLAN und beim Laden. Kein Bild verlässt deinen Server."
+      },
+      "people": {
+        "named": {
+          "one": "1 benannt",
+          "other": "{{count}} benannt"
+        },
+        "unnamedN": {
+          "one": "1 noch ohne Namen",
+          "other": "{{count}} noch ohne Namen"
+        },
+        "namedTitle": "Benannt",
+        "whoTitle": "Wer ist das?",
+        "whoHint": "Benennen macht sie suchbar",
+        "name": "Benennen",
+        "moreUnnamed": "{{count}} weitere ohne Namen",
+        "hiddenTitle": "Ausgeblendet",
+        "hiddenShow": "Anzeigen",
+        "hiddenHide": "Verbergen",
+        "hiddenText": "Ausgeblendete Gesichter erscheinen nicht in der Suche und werden nicht mehr gefragt.",
+        "unhide": "Einblenden",
+        "noName": "Ohne Namen",
+        "settings": "Einstellungen für Orte und Personen",
+        "none": "Noch keine Personen. Sobald deine Handys Gesichter erkannt haben, erscheinen sie hier.",
+        "offTitle": "Personen erkennen ist aus",
+        "offText": "Schalte es in den Einstellungen ein. Gesichter erkennen deine Handys; Drive speichert nur Gesichtsmerkmale, keine Bilder bei Dritten.",
+        "offOpen": "Zu den Einstellungen",
+        "phonesNote": "Gesichter erkennen deine Handys. Namen und Gruppen sind auf allen deinen Geräten gleich, und nur du siehst sie."
+      },
+      "person": {
+        "rename": "Umbenennen",
+        "merge": "Zusammenführen",
+        "hide": "Ausblenden",
+        "hiddenDone": "Ausgeblendet",
+        "shownDone": "Wieder eingeblendet",
+        "linkedFamily": "Verknüpft mit Familie › {{name}}",
+        "linkedContact": "Verknüpft mit Kontakt › {{name}}",
+        "askTitle": "Ist das auch {{name}}?",
+        "askText": {
+          "one": "1 Foto, bei dem die Erkennung unsicher ist – etwa als Kleinkind oder im Profil.",
+          "other": "{{count}} Fotos, bei denen die Erkennung unsicher ist – etwa als Kleinkind oder im Profil."
+        },
+        "askAll": "Ja, alle",
+        "askEach": "Einzeln prüfen",
+        "askDone": "Alles geprüft.",
+        "yes": "Ja",
+        "no": "Nein",
+        "confirmed": {
+          "one": "1 Foto zugeordnet",
+          "other": "{{count}} Fotos zugeordnet"
+        },
+        "together": "Zusammen mit",
+        "togetherHint": "Fotos mit beiden",
+        "places": "Orte",
+        "empty": "Keine Fotos.",
+        "mergeTitle": "„{{name}}“ zusammenführen mit …",
+        "mergeText": "Beide werden eine Person mit allen Fotos.",
+        "mergeNone": "Es gibt noch keine andere Person mit Namen."
+      },
+      "name": {
+        "title": "Wer ist das?",
+        "label": "Name",
+        "placeholder": "z. B. Oma Gerda",
+        "fromFamily": "Aus Familie und Kontakten",
+        "noSuggestions": "Kein Vorschlag – tippe den Namen ein.",
+        "family": "Familie",
+        "contact": "Kontakt",
+        "contactMail": "Kontakt · {{email}}",
+        "named": "bereits benannt ({{count}} Fotos)",
+        "familyNamed": "Familie · bereits benannt ({{count}} Fotos)",
+        "oftenWith": "oft mit {{name}}",
+        "alike": "Sieht aus wie {{name}}",
+        "alikeText": "Gleiche Person? Dann werden beide zusammengeführt.",
+        "merge": "Zusammenführen",
+        "save": "Speichern",
+        "empty": "Bitte einen Namen eingeben.",
+        "long": "Der Name ist zu lang.",
+        "savedTitle": "„{{name}}“ gespeichert",
+        "savedText": "{{count}} Fotos findest du jetzt mit der Suche nach „{{name}}“. Gibt es den Namen schon, werden beide zusammengeführt.",
+        "mergedTitle": "Mit {{name}} zusammengeführt",
+        "mergedText": "{{name}} hat jetzt {{count}} Fotos.",
+        "hiddenTitle": "Ausgeblendet",
+        "hiddenText": {
+          "one": "Dieses Foto erscheint nicht mehr unter Personen.",
+          "other": "Diese {{count}} Fotos erscheinen nicht mehr unter Personen."
+        },
+        "undo": "Rückgängig",
+        "next": "Nächste Person",
+        "finish": "Fertig"
+      },
+      "set": {
+        "title": "Orte und Personen",
+        "failed": "Die Einstellungen konnten nicht geladen werden.",
+        "places": "Orte",
+        "people": "Personen",
+        "keepGeo": "Aufnahmeort mitsichern",
+        "keepGeoDesc": "Die Ortsangabe des Fotos geht mit auf deinen Server – nötig für Karte und Ortssuche.",
+        "stripGeoOnShare": "Ort beim Teilen entfernen",
+        "stripGeoOnShareDesc": "Freigabe-Links und GateDrop verschicken Fotos ohne Ortsangabe.",
+        "deleteGeo": "Gespeicherte Orte löschen",
+        "deleteGeoDesc": "Die Orte aller Fotos, die du hochgeladen hast – die Fotos bleiben.",
+        "deleteGeoBtn": "Orte löschen",
+        "deleteGeoTitle": "Gespeicherte Orte löschen?",
+        "deleteGeoText": "Die Orte aller Fotos, die du hochgeladen hast, werden gelöscht. Die Fotos bleiben. Neue Fotos bringen ihren Ort wieder mit, solange „Aufnahmeort mitsichern“ an ist.",
+        "geoDeleted": {
+          "one": "Ort von 1 Foto gelöscht",
+          "other": "Orte von {{count}} Fotos gelöscht"
+        },
+        "recognize": "Personen erkennen",
+        "recognizeDesc": "Gesichter in deinen Fotos finden, damit du nach Personen suchen kannst.",
+        "howTitle": "So funktioniert es",
+        "how1": "Deine Handys erkennen die Gesichter selbst, im WLAN und beim Laden.",
+        "how2": "Auf deinem Server landen nur Gesichtsmerkmale (Zahlen), keine Bilder bei Dritten.",
+        "how3": "Nur du siehst deine Personen und Namen.",
+        "how4": "Ausschalten löscht alle Gesichtsdaten.",
+        "peopleKids": "Kinderordner einbeziehen",
+        "peopleKidsDesc": "Fotos in den Ordnern der Kinder. Standard: aus.",
+        "deleteFaces": "Alle Gesichtsdaten löschen",
+        "deleteFacesDesc": "Namen, Gruppen und Merkmale – die Fotos bleiben.",
+        "deleteFacesBtn": "Löschen",
+        "deleteFacesTitle": "Alle Gesichtsdaten löschen?",
+        "deleteFacesText": "Namen, Gruppen und Gesichtsmerkmale werden auf allen deinen Geräten gelöscht, „Personen erkennen“ wird ausgeschaltet. Die Fotos bleiben.",
+        "facesDeleted": "Alle Gesichtsdaten gelöscht",
+        "phones": "Gesichter erkennen deine Handys – dieser PC erkennt keine Gesichter."
+      }
     }
   },
   "mail": {
