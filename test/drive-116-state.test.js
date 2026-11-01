@@ -68,6 +68,13 @@ describe('the map', () => {
     assert.equal(rows[0].cover.id, 9);
     assert.equal(rows[1].sub, 'August 2023');
     assert.equal(rows[2].sub, 'NRW · Deutschland');
+    // the places in the box of the view (all their photos), also those in a cluster of several places
+    const lat = { 'g:1': [53.55, 9.99], 'g:2': [39.57, 2.65], 'g:3': [50.94, 6.96] };
+    const located = places.map((p) => ({ ...p, lat: lat[p.key][0], lon: lat[p.key][1], count: { 'g:1': 214, 'g:2': 96, 'g:3': 1204 }[p.key] }));
+    assert.deepEqual(PPS.placeRows([{ key: null, count: 1418 }], located, { locale: 'de', bbox: [5, 49, 11, 55] }).map((r) => [r.name, r.count]), [['Köln', 1204], ['Hamburg', 214]]);
+    assert.deepEqual(PPS.placeRows([{ key: 'g:1', count: 14 }], located, { locale: 'de', bbox: [5, 49, 11, 55] }).map((r) => [r.name, r.count]), [['Köln', 1204], ['Hamburg', 214]]);
+    assert.equal(PPS.inBox(0, 179.5, [170, -10, -170, 10]), true);
+    assert.equal(PPS.inBox(0, 160, [170, -10, -170, 10]), false);
     assert.equal(PPS.spanText(at(2026, 3, 1), at(2026, 7, 1), 'de'), 'März – Juli 2026');
     assert.equal(PPS.spanText(at(2026, 3, 1), at(2026, 7, 1), 'en'), 'March – July 2026');
     assert.equal(PPS.countryName('ES', 'en'), 'Spain');

@@ -275,10 +275,11 @@
 		const mapSplit = el('div', { class: 'dpp-split' }, [map.box, aside]);
 		map.onMove(() => loadClusters());
 
+		/** Once: a view that shows every place (when the map has its size; a map still being laid out waits). */
 		function fitOnce() {
 			if (S.fitted || !S.places) return;
 			const { w, h } = map.size();
-			if (!w || !h) return;
+			if (w < 200 || h < 150) return;
 			S.fitted = true;
 			const v = PPS.fitView(S.places.map((p) => ({ lat: p.lat, lon: p.lon })), w, h, { maxZoom: 12 });
 			map.center(v.lat, v.lon, v.zoom);
@@ -287,6 +288,11 @@
 		let clusterSeq = 0;
 		async function loadClusters() {
 			if (!map.box.isConnected) return;
+			if (!S.fitted && S.places) {
+				fitOnce();
+				// the view moved: its clusters come with the move
+				if (S.fitted) return;
+			}
 			const v = map.view();
 			if (!v.w || !v.h) return;
 			const seq = ++clusterSeq;
@@ -336,7 +342,7 @@
 			clear(aside);
 			aside.appendChild(el('div', { class: 'dpp-aside-h', text: t('drive.pp.map.inView') }));
 			if (S.placesErr || S.clusterErr) { aside.appendChild(el('p', { class: 'dv-p dpp-aside-note', text: err(S.placesErr || S.clusterErr) })); return; }
-			const rows = PPS.placeRows(S.clusters, S.places, { locale: locale() });
+			const rows = PPS.placeRows(S.clusters, S.places, { locale: locale(), bbox: map.size().w ? map.view().bbox : null });
 			if (!rows.length) {
 				aside.appendChild(el('p', { class: 'dv-p dpp-aside-note', text: S.places && !S.places.length ? t('drive.pp.map.none') : t('drive.pp.map.noneHere') }));
 				return;

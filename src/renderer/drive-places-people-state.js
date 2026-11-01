@@ -163,18 +163,28 @@
 		return [p.region && p.region !== p.name ? p.region : '', countryName(p.country, locale)].filter(Boolean).join(' · ');
 	}
 
+	/** Is a point inside a box [w, s, e, n] (w > e: across the date line)? */
+	function inBox(lat, lon, box) {
+		if (!Array.isArray(box) || box.length !== 4 || !Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+		const [w, s, e, n] = box;
+		return lat >= s && lat <= n && (w <= e ? lon >= w && lon <= e : lon >= w || lon <= e);
+	}
+
 	/**
-	 * "Orte im Bild": the clusters of the view that are one place, together per place (most photos first), with the
-	 * place's name and time span (photos/places) → [{ key, name, sub, count, cover }]; clusters of several places are
-	 * left out (they show on the map only).
+	 * "Orte im Bild": the places in the box of the view (photos/places, with all their photos) and the places of the
+	 * clusters there that are one place, most photos first, with the time span → [{ key, name, sub, count, cover }].
+	 * A cluster of several places only shows on the map; its places are in the list by their position.
 	 */
-	function placeRows(clusters, places, { locale } = {}) {
+	function placeRows(clusters, places, { locale, bbox = null } = {}) {
 		const byKey = new Map(arr(places).map((p) => [p.key, p]));
 		const rows = new Map();
+		for (const p of arr(places)) {
+			if (bbox && inBox(p.lat, p.lon, bbox)) rows.set(p.key, { key: p.key, count: Number(p.count) || 0, cover: p.cover || null, whole: true });
+		}
 		for (const c of arr(clusters)) {
 			if (!c || !c.key) continue;
-			const r = rows.get(c.key) || { key: c.key, count: 0, cover: c.cover || null };
-			r.count += Number(c.count) || 0;
+			const r = rows.get(c.key) || { key: c.key, count: 0, cover: c.cover || null, whole: false };
+			if (!r.whole) r.count += Number(c.count) || 0;
 			if (!r.cover && c.cover) r.cover = c.cover;
 			rows.set(c.key, r);
 		}
@@ -417,7 +427,7 @@
 	return {
 		fmt, features, segments,
 		TILE, MIN_ZOOM, MAX_ZOOM, clampZoom, worldPx, lonLat, tileGrid, viewBbox, fitView, screenPos,
-		spanText, countryName, placeWhere, placeRows, byDay, placeSub, peopleOn,
+		spanText, countryName, placeWhere, inBox, placeRows, byDay, placeSub, peopleOn,
 		initials, toneOf, groupPeople, peopleSub, progressOf, faceCrop, yearsText, personSub, contactText, byYear, uncertainPreview, nameSub, nameChoices, nameError,
 		suggestionRows, withLabel, settingsRows,
 	};
