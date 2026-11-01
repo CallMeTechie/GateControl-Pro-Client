@@ -2672,7 +2672,10 @@
         },
         "undo": "Undo",
         "next": "Next person",
-        "finish": "Done"
+        "finish": "Done",
+        "skip": "Skip",
+        "allSeenTitle": "All reviewed",
+        "allSeenText": "You have gone through everyone without a name. Skipped people stay under People."
       },
       "set": {
         "title": "Places and people",

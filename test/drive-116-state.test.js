@@ -130,6 +130,46 @@ describe('people', () => {
     assert.ok(PPS.toneOf('Lea') >= 0 && PPS.toneOf('Lea') < 5);
   });
 
+  it('"Wer ist das?" as a round: each person once, also on an old list, then "Alle durchgesehen"', () => {
+    // a small Drive: five without a name; naming, hiding and merging change it, skipping does not
+    const people = [9, 8, 7, 6, 5].map((n, i) => ({ id: i + 1, name: null, count: n, hidden: false }));
+    // the old rule (the first without a name other than the one on the dialog) on the list the page had
+    let id = 1;
+    const old = [id];
+    for (let i = 0; i < 5; i++) { id = PPS.groupPeople(people).unnamed.find((q) => String(q.id) !== String(id)).id; old.push(id); }
+    assert.deepEqual(old, [1, 2, 1, 2, 1, 2]);
+
+    // the round: named, skipped, hidden, named into another one (merged), skipped — then through
+    const seen = new Set(['1']);
+    const order = [1];
+    people[0].name = 'Mama';
+    for (const step of ['skip', 'hide', 'merge', 'skip']) {
+      const n = PPS.nextToName(people, seen);
+      seen.add(String(n.id));
+      order.push(n.id);
+      if (step === 'hide') n.hidden = true;
+      if (step === 'merge') { people.splice(people.indexOf(n), 1); people[0].count += n.count; }
+    }
+    assert.equal(PPS.nextToName(people, seen), null);
+    assert.deepEqual(order, [1, 2, 3, 4, 5]);
+    // skipped ones stay without a name for the next round
+    assert.deepEqual(PPS.groupPeople(people).unnamed.map((q) => q.id), [2, 5]);
+    assert.equal(PPS.nextToName(people, new Set(['2'])).id, 5);
+
+    // GET people failed: the old list (everyone still without a name) — the round still never comes back
+    const stale = [1, 2, 3].map((n) => ({ id: n, name: null, count: 10 - n, hidden: false }));
+    const s2 = new Set([1]);
+    assert.equal(PPS.nextToName(stale, s2).id, 2);
+    s2.add(2);
+    assert.equal(PPS.nextToName(stale, s2).id, 3);
+    s2.add('3');
+    assert.equal(PPS.nextToName(stale, s2), null);
+    // ids as numbers or strings, a list of ids, nothing at all
+    assert.equal(PPS.nextToName(stale, ['1', 2]).id, 3);
+    assert.equal(PPS.nextToName(null, null), null);
+    assert.equal(PPS.nextToName(stale, null).id, 1);
+  });
+
   it('a face cut out of a photo: the face in the middle, the frame always covered', () => {
     // a face in the middle of a 1000 × 800 picture into 100 px
     const c = PPS.faceCrop([0.4, 0.4, 0.2, 0.2], 1000, 800, 100);

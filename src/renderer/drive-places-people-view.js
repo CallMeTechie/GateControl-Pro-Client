@@ -574,7 +574,7 @@
 			const d = x.detail;
 			const p = d.person;
 			const actions = el('div', { class: 'dpp-actions' }, [
-				el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => nameDialog(p, { rename: !!p.name }) } }, [icon('pen', 14), el('span', { text: t(p.name ? 'drive.pp.person.rename' : 'drive.pp.people.name') })]),
+				el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => nameDialog(p, { rename: !!p.name, round: false }) } }, [icon('pen', 14), el('span', { text: t(p.name ? 'drive.pp.person.rename' : 'drive.pp.people.name') })]),
 				el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => mergeDialog(p) } }, [icon('users', 14), el('span', { text: t('drive.pp.person.merge') })]),
 				el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: async () => { const r = await setHidden(p, !p.hidden); if (r) { if (r.person) x.detail.person = r.person; o.render(); } } } }, [icon('eye', 14), el('span', { text: t(p.hidden ? 'drive.pp.people.unhide' : 'drive.pp.person.hide') })]),
 			]);
@@ -717,14 +717,38 @@
 			return r && r.ok && Array.isArray(r.items) ? r.items.filter((c) => c && c.name && c.source !== 'group') : [];
 		}
 
-		/** Names a person ("Wer ist das?" / "Umbenennen"), with "Sieht aus wie …" and "Ausblenden"; `then` after it is done. */
-		function nameDialog(p, { rename = false, onClose = null } = {}) {
+		/**
+		 * Names a person ("Wer ist das?" / "Umbenennen"), with "Sieht aus wie …" and "Ausblenden"; `onClose(changed)` after
+		 * it is done. As a `round` (from "Personen" and the overview) also "Überspringen" and "Nächste Person": each person
+		 * comes at most once, at the end "Alle durchgesehen". `round` is true or the round going on ({ seen, changed }).
+		 */
+		function nameDialog(p, { rename = false, onClose = null, round = !rename } = {}) {
+			// everyone this round has shown (named, hidden, merged or skipped): never again in it, even on an old list
+			const R = round ? (typeof round === 'object' ? round : { seen: new Set(), changed: false }) : null;
+			if (R) R.seen.add(String(p.id));
+			let going = false;
+			let busy = false;
 			const dlg = openDialog({ title: t(rename ? 'drive.pp.person.rename' : 'drive.pp.name.title'), host: o.host, closeLabel: t('drive.close'), onClose: () => {
+				if (R) R.changed = R.changed || !!done;
+				// on to the next person: that one loads the people again and ends the round
+				if (going) return;
 				if (done) loadPeople({ quiet: true }).then(() => { if (S.open && S.open.kind === 'person') loadOpen(); });
 				// Drive 1.18: the overview's "Wer ist das?" loads again
-				if (typeof onClose === 'function') onClose(!!done);
+				if (typeof onClose === 'function') onClose(R ? R.changed : !!done);
 			} });
+
+			/** "Nächste Person" / "Überspringen": GET people afresh, the next one the round has not shown, else "Alle durchgesehen". */
+			async function next() {
+				going = true;
+				dlg.close(null);
+				await loadPeople({ quiet: true });
+				const n = PPS.nextToName(peopleNow(), R.seen);
+				if (n) nameDialog(n, { onClose, round: R });
+				else allSeen(R, onClose);
+			}
+
 			dlg.box.classList.add('dpp-dlg', 'dpp-name-dlg');
+			dlg.box.dataset.person = String(p.id);
 			let done = null;
 			let contact = p.contact || null;
 			let detail = null;
@@ -792,28 +816,36 @@
 				const patch = { name };
 				if (contact && contact.name === name) patch.contact = contact;
 				const before = { name: p.name || '', contact: p.contact || null };
+				busy = true;
 				const r = await Promise.resolve(api.updatePerson(p.id, patch)).catch(fail);
+				busy = false;
 				save.disabled = false;
 				if (!r || !r.ok) { errEl.textContent = err(r); return; }
 				const count = (detail && detail.person && detail.person.count) || p.count || 0;
+				if (R && r.mergedInto !== null && r.mergedInto !== undefined) R.seen.add(String(r.mergedInto));
 				if (r.mergedInto !== null && r.mergedInto !== undefined) finish({ kind: 'merge', title: t('drive.pp.name.mergedTitle', { name: r.person.name || name }), text: t('drive.pp.name.mergedText', { name: r.person.name || name, count: PPS.fmt(r.person.count, locale()) }) });
 				else finish({ kind: 'save', title: t('drive.pp.name.savedTitle', { name }), text: t('drive.pp.name.savedText', { name, count: PPS.fmt(count, locale()) }), undo: () => api.updatePerson(p.id, before) });
 			}
 
 			async function merge(s) {
+				busy = true;
 				const r = await Promise.resolve(api.mergePerson(p.id, s.id)).catch(fail);
+				busy = false;
 				if (!r || !r.ok) { errEl.textContent = err(r); return; }
+				if (R) R.seen.add(String(s.id));
 				finish({ kind: 'merge', title: t('drive.pp.name.mergedTitle', { name: s.name }), text: t('drive.pp.name.mergedText', { name: s.name, count: PPS.fmt(r.person.count, locale()) }) });
 			}
 
 			hide.addEventListener('click', async () => {
+				busy = true;
 				const r = await Promise.resolve(api.updatePerson(p.id, { hidden: true })).catch(fail);
+				busy = false;
 				if (!r || !r.ok) { errEl.textContent = err(r); return; }
 				finish({ kind: 'hide', title: t('drive.pp.name.hiddenTitle'), text: t(`drive.pp.name.hiddenText.${p.count === 1 ? 'one' : 'other'}`, { count: PPS.fmt(p.count, locale()) }), undo: () => api.updatePerson(p.id, { hidden: false }) });
 			});
 			save.addEventListener('click', submit);
 
-			/** The short confirmation: what happened, "Rückgängig" (not after merging), the next person without a name. */
+			/** The short confirmation: what happened, "Rückgängig" (not after merging), in a round "Nächste Person". */
 			function finish(d) {
 				done = d;
 				clear(dlg.body);
@@ -824,22 +856,36 @@
 					el('b', { class: 'dpp-name-h', text: d.title }),
 					el('span', { class: 'dpp-sub', text: d.text }),
 				]));
-				const nextOne = () => PPS.groupPeople(peopleNow()).unnamed.find((q) => String(q.id) !== String(p.id));
 				const undo = d.undo ? el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.pp.name.undo'), on: { click: async () => {
 					const r = await Promise.resolve(d.undo()).catch(fail);
 					if (!r || !r.ok) { toast(err(r), 'error'); return; }
 					done = { kind: 'undo' };
 					dlg.close(null);
 				} } }) : null;
-				const nx = rename ? null : nextOne();
 				dlg.foot.append(el('span', { class: 'dv-grow' }), undo,
-					nx ? el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.pp.name.next'), on: { click: async () => { dlg.close(null); await loadPeople({ quiet: true }); const n2 = nextOne(); if (n2) nameDialog(n2); } } })
+					R ? el('button', { type: 'button', class: 'btn btn-pri dpp-next', text: t('drive.pp.name.next'), on: { click: next } })
 						: el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.pp.name.finish'), on: { click: () => dlg.close(null) } }));
 				if (S.open && S.open.kind === 'person' && d.kind === 'merge') S.open = null;
 			}
 
-			dlg.foot.append(el('span', { class: 'dv-grow' }), hide, save);
+			// in a round: on to the next one without naming this one (it stays under "Wer ist das?")
+			const skip = R ? el('button', { type: 'button', class: 'btn btn-ghost dpp-skip', text: t('drive.pp.name.skip'), on: { click: () => { if (!busy) next(); } } }) : null;
+			dlg.foot.append(skip, el('span', { class: 'dv-grow' }), hide, save);
 			setTimeout(() => { input.focus(); input.select(); }, 0);
+		}
+
+		/** The end of a round of "Wer ist das?": nobody without a name is left that it has not shown. */
+		function allSeen(R, onClose) {
+			const dlg = openDialog({ title: t('drive.pp.name.allSeenTitle'), host: o.host, closeLabel: t('drive.close'), onClose: () => {
+				if (typeof onClose === 'function') onClose(R.changed);
+			} });
+			dlg.box.classList.add('dpp-dlg', 'dpp-name-dlg', 'dpp-all-seen');
+			dlg.body.appendChild(el('div', { class: 'dpp-done', role: 'status' }, [
+				el('span', { class: 'dpp-done-ic' }, [icon('check', 26, '2.4')]),
+				el('b', { class: 'dpp-name-h', text: t('drive.pp.name.allSeenTitle') }),
+				el('span', { class: 'dpp-sub', text: t('drive.pp.name.allSeenText') }),
+			]));
+			dlg.foot.append(el('span', { class: 'dv-grow' }), el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.back'), on: { click: () => dlg.close(null) } }));
 		}
 
 		// ── Search: suggestions while typing, marks ──────

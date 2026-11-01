@@ -2672,7 +2672,10 @@
         },
         "undo": "Rückgängig",
         "next": "Nächste Person",
-        "finish": "Fertig"
+        "finish": "Fertig",
+        "skip": "Überspringen",
+        "allSeenTitle": "Alle durchgesehen",
+        "allSeenText": "Du hast alle Personen ohne Namen durchgesehen. Übersprungene findest du weiter unter Personen."
       },
       "set": {
         "title": "Orte und Personen",
