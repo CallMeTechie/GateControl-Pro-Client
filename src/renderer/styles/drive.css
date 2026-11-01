@@ -485,6 +485,7 @@
 .dset-safety { font-size: 14px; white-space: nowrap; }
 .dset-count { min-width: 28px; text-align: right; font-weight: 600; color: var(--muted); }
 .dset-empty { padding: 4px 0 14px; }
+.dset-target { width: 220px; }
 
 /* Drive 1.12: the selection (check boxes, the green bar, its menu, the shortcuts, dragging onto a folder) */
 .dv-row.has-cb { grid-template-columns: 28px minmax(0, 1fr) 150px 96px 52px; user-select: none; }
@@ -554,6 +555,9 @@
 .dv-choice-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .dv-choice-h { font-size: 13.5px; font-weight: 600; }
 .dv-choice-sub { font-size: 12px; color: var(--muted); }
+/* Drive 1.17: "In welchen Kalender?" — the mail calendars under their account, with their colour */
+.dv-dlt-acc { margin: 8px 0 0; }
+.dv-dlt-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
 .dv-cf-hint { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.45; color: var(--muted); }
 .dv-cf-hint svg { flex-shrink: 0; color: var(--acc-t); margin-top: 1px; }
 

@@ -3,7 +3,9 @@
  *
  * Only with the features `me` reports; the AI only suggests, the person takes it:
  * - "Fristen" (D2): the deadlines of every file the person reads by month — kind, day and "in N Tagen", the file
- *   (opens its details), "In den Familienkalender" / "Im Familienkalender ✓" ('deadlineCalendar') and the reminder.
+ *   (opens its details), "In den Familienkalender" / "Im Familienkalender ✓" ('deadlineCalendar') and the reminder;
+ *   Drive 1.17 ('deadlineMailCalendar') "In Kalender eintragen" asks for the calendar when more than one is possible
+ *   (the area's target first) — the family calendar or one of the mail plugin — then "Im Kalender · Outlook ✓".
  * - "Ablegen" (D4): after a document went up and Drive recognised it ('docAi'), a bar "Vorschlag · Ablegen als … in
  *   …" with "An die Zahlung am … erinnern", "Übernehmen", "Anderer Ordner" and ✕. It waits for the recognition up to a
  *   minute (Drive's live event or a look every few seconds), else it stays away.
@@ -77,11 +79,60 @@
 			return sel;
 		}
 
-		/** "In den Familienkalender" of deadline `d` → the button (it turns into "Im Familienkalender ✓"). */
+		/** Drive 1.17 ('deadlineMailCalendar'): the calendars a deadline can go to and my target per area; null: the family calendar only. */
+		let dlTargets = null;
+
+		async function loadTargets() {
+			if (!feats().mailCalendar || typeof api.deadlineCalendars !== 'function') { dlTargets = null; return null; }
+			const [c, r] = await Promise.all([
+				Promise.resolve(api.deadlineCalendars()).catch(() => null),
+				Promise.resolve(api.deadlineTargets()).catch(() => null),
+			]);
+			dlTargets = c && c.ok ? { calendars: c, rows: r && r.ok ? r.targets : [] } : null;
+			return dlTargets;
+		}
+
+		/** "In welchen Kalender?" with the area's target first → the target, or null when cancelled. */
+		function pickTarget(card, targets) {
+			return new Promise((resolve) => {
+				const dlg = openDialog({ title: t('drive.ki.dl.pickTitle'), host: o.host, closeLabel: t('drive.close'), onClose: (v) => resolve(v || null) });
+				let choice = KS.preselect(dlTargets.rows, card.areaId, targets);
+				const name = `dv-dlt-${card.id}`;
+				const opts = [];
+				const kids = [];
+				for (const g of KS.targetChoices(dlTargets.calendars, { t, mail: true, off: false })) {
+					if (g.account) kids.push(el('span', { class: 'lbl dv-dlt-acc', text: g.account }));
+					for (const opt of g.options) {
+						const input = el('input', { type: 'radio', name, value: opt.value });
+						input.checked = KS.targetValue(choice) === opt.value;
+						input.addEventListener('change', () => { if (input.checked) { choice = opt.target; paint(); } });
+						const l = el('label', { class: 'dv-choice', 'data-choice': opt.value }, [input, el('span', { class: 'dv-choice-tx' }, [
+							el('span', { class: 'dv-choice-h' }, [opt.color ? el('span', { class: 'dv-dlt-dot', style: `background:${opt.color}` }) : null, g.account ? opt.name || opt.label : opt.label]),
+						])]);
+						opts.push(l);
+						kids.push(l);
+					}
+				}
+				const paint = () => { for (const l of opts) l.classList.toggle('is-on', l.getAttribute('data-choice') === KS.targetValue(choice)); };
+				paint();
+				dlg.body.append(el('fieldset', { class: 'dv-choices' }, [el('legend', { class: 'lbl', text: card.title }), ...kids]));
+				dlg.foot.append(
+					el('span', { class: 'dv-grow' }),
+					el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }),
+					el('button', { type: 'button', class: 'btn btn-pri dv-dlt-ok', text: t('drive.ki.dl.pickOk'), on: { click: () => dlg.close(choice) } }),
+				);
+			});
+		}
+
+		/**
+		 * "In den Familienkalender" of deadline `d` → the button (it turns into "Im Familienkalender ✓"); Drive 1.17 with
+		 * more than one calendar "In Kalender eintragen" asks which one ("Im Kalender · Outlook ✓").
+		 */
 		function calendarBtn(d, card, onDone) {
 			const b = el('button', { type: 'button', class: 'btn btn-sec btn-sm dv-ki-cal' });
+			const targets = () => (dlTargets ? KS.deadlineTargets(dlTargets.calendars, true) : []);
 			const paint = () => {
-				const v = KS.calendarButton(card, t);
+				const v = KS.calendarButton(card, t, { any: targets().some((x) => x.kind === 'mail') });
 				clear(b);
 				b.classList.toggle('is-done', v.done);
 				b.disabled = v.done;
@@ -90,15 +141,25 @@
 			paint();
 			b.addEventListener('click', async () => {
 				if (card.calendar) return;
+				const list = targets();
+				let target = null;
+				if (KS.asksTarget(list)) {
+					target = await pickTarget(card, list);
+					if (!target) return;
+				} else if (list.length === 1) {
+					target = list[0];
+				}
 				b.disabled = true;
-				const r = await Promise.resolve(api.calendar(d.id)).catch(fail);
+				const r = await Promise.resolve(target && target.kind === 'mail' ? api.calendar(d.id, target) : api.calendar(d.id)).catch(fail);
 				if (r && r.ok) {
 					Object.assign(d, r.deadline);
 					card.calendar = true;
-					o.toast(t('drive.ki.dl.added'), 'success');
+					card.entry = r.deadline && r.deadline.calendar ? r.deadline.calendar.target || null : null;
+					o.toast(t(target && target.kind === 'mail' ? 'drive.ki.dl.addedAny' : 'drive.ki.dl.added'), 'success');
 					if (onDone) onDone(r.deadline);
 				} else {
-					o.toast(r && r.code === 'familie_unavailable' ? t('drive.err.familieUnavailable') : o.errorText(r, t), 'error');
+					const code = r && r.code;
+					o.toast(code === 'familie_unavailable' ? t('drive.err.familieUnavailable') : code === 'mail_unavailable' ? t('drive.err.mailUnavailable') : o.errorText(r, t), 'error');
 				}
 				paint();
 			});
@@ -109,7 +170,7 @@
 		async function renderDeadlines(list, { onOpen } = {}) {
 			clear(list);
 			list.appendChild(el('div', { class: 'dv-empty', text: t('drive.loading') }));
-			const r = await Promise.resolve(api.deadlines()).catch(fail);
+			const [r] = await Promise.all([Promise.resolve(api.deadlines()).catch(fail), loadTargets()]);
 			clear(list);
 			if (!r || !r.ok) {
 				list.appendChild(el('div', { class: 'dv-empty' }, [icon('alert', 26, '1.6'), el('span', { text: o.errorText(r, t) })]));
@@ -416,7 +477,7 @@
 						if (!d || !card.isConnected) return;
 						const c = KS.deadlineCard(d, { t, locale: o.getLocale(), now: now(), calendar: true });
 						const b = calendarBtn(d, c);
-						b.querySelector('span').textContent = t('drive.ki.ask.toCalendar');
+						if (!c.calendar && !(dlTargets && KS.deadlineTargets(dlTargets.calendars, true).some((x) => x.kind === 'mail'))) b.querySelector('span').textContent = t('drive.ki.ask.toCalendar');
 						b.title = `${c.tag}: ${c.title} · ${c.day}`;
 						acts.appendChild(b);
 					}).catch(() => {});

@@ -9,7 +9,9 @@
  *      sperren nach …" (1 / 3 / 5 / 15 minutes, never), "Beim Verlassen sperren" (window minimized or closed into the
  *      tray), "Jetzt sperren", this PC's safety number, "Freigegeben für" (the vaults this PC has keys for).
  *   3. KI für Dokumente — a switch per area one may write to (PATCH areas/<id> { docAi }); "Tresore werden nie von
- *      der KI gelesen."
+ *      der KI gelesen." Under an area with AI on "Fristen aus <Bereich>": Drive 1.17 ('deadlineMailCalendar') my target
+ *      — "Nicht eintragen", "Familienkalender" or a calendar of the mail plugin by account; Drive 1.14
+ *      ('deadlineCalendar') a switch into the family calendar.
  *   4. Ansicht — the sorting of the lists (the same as the bar's).
  *   5. Daten auf diesem Gerät — the cache (opened files, previews) with its size and "Leeren".
  *   6. Benachrichtigungen — Drive's topics of the app's notifications (deadline reminders, vault requests), switched
@@ -59,6 +61,8 @@
 		let cache = null;
 		let notify = null;
 		let photo = null;
+		/** Drive 1.17: { calendars, targets } of deadlines/calendars and deadlines/targets; null: not there. */
+		let dl = null;
 		let focusKey = null;
 		const PPS = root.GCDrivePlacesPeopleState;
 
@@ -186,36 +190,95 @@
 			if (typeof api.setDocAi !== 'function') return null;
 			const list = MS.docAiAreas(p.areas, p.me);
 			if (!list.length) return null;
-			const kids = list.map((x) => {
+			const KS = root.GCDriveKiState;
+			const kids = [];
+			for (const x of list) {
 				const id = nextId('dset-ai');
-				return row(DS.areaLabel(x.area, t), t('drive.docAi.hint'), sw(`ai-${x.areaId}`, x.on, id, async () => {
+				kids.push(row(DS.areaLabel(x.area, t), t('drive.docAi.hint'), sw(`ai-${x.areaId}`, x.on, id, async () => {
 					const r = await call(() => api.setDocAi(x.areaId, !x.on));
 					if (!r) return;
 					const on = r.area && typeof r.area.docAi === 'boolean' ? r.area.docAi : !x.on;
 					o.docAiChanged(x.areaId, on);
 					toast(t(on ? 'drive.docAi.onDone' : 'drive.docAi.offDone', { area: DS.areaLabel(x.area, t) }), 'success');
+					// the targets follow the areas with AI for documents
+					if (dl) loadTargets();
 					render();
-				}), id);
-			});
-			// Drive 1.14 'deadlineCalendar': new deadlines of an area into the family calendar on their own
-			const KS = root.GCDriveKiState;
-			const cal = KS && typeof api.setDeadlinesToCalendar === 'function' ? KS.calendarAreas(p.areas, p.me) : [];
-			if (cal.length) {
-				kids.push(el('h4', { class: 'dset-sub lbl', text: t('drive.ki.dl.autoTitle') }));
-				for (const x of cal) {
-					const id = nextId('dset-cal');
-					kids.push(row(DS.areaLabel(x.area, t), t('drive.ki.dl.autoHint'), sw(`cal-${x.areaId}`, x.on, id, async () => {
-						const r = await call(() => api.setDeadlinesToCalendar(x.areaId, !x.on));
-						if (!r) return;
-						const on = r.area && typeof r.area.deadlinesToCalendar === 'boolean' ? r.area.deadlinesToCalendar : !x.on;
-						if (typeof o.calendarChanged === 'function') o.calendarChanged(x.areaId, on);
-						toast(t(on ? 'drive.ki.dl.autoOn' : 'drive.ki.dl.autoOff', { area: DS.areaLabel(x.area, t) }), 'success');
-						render();
-					}), id));
-				}
+				}), id));
+				// under it "Fristen aus <Bereich>": Drive 1.17 the target (family / mail calendar), else Drive 1.14 the switch
+				const d = KS ? KS.deadlineRow(x.area, p.me, dl ? dl.targets : null) : null;
+				if (d && d.kind === 'target' && typeof api.setDeadlineTarget === 'function') kids.push(targetRow(x.area, d));
+				else if (d && d.kind === 'switch' && typeof api.setDeadlinesToCalendar === 'function') kids.push(calendarSwitch(x.area, d));
 			}
 			kids.push(el('p', { class: 'dsv-foot dv-p', text: t('drive.settings.ai.vaults') }));
 			return card('ai', t('drive.docAi.label'), null, kids);
+		}
+
+		/** Drive 1.14 'deadlineCalendar': "Fristen aus <Bereich>" as a switch into the family calendar. */
+		function calendarSwitch(area, d) {
+			const id = nextId('dset-cal');
+			const label = DS.areaLabel(area, t);
+			return row(t('drive.ki.dl.from', { area: label }), t('drive.ki.dl.autoHint'), sw(`cal-${d.areaId}`, d.on, id, async () => {
+				const r = await call(() => api.setDeadlinesToCalendar(d.areaId, !d.on));
+				if (!r) return;
+				const on = r.area && typeof r.area.deadlinesToCalendar === 'boolean' ? r.area.deadlinesToCalendar : !d.on;
+				if (typeof o.calendarChanged === 'function') o.calendarChanged(d.areaId, on);
+				toast(t(on ? 'drive.ki.dl.autoOn' : 'drive.ki.dl.autoOff', { area: label }), 'success');
+				render();
+			}), id);
+		}
+
+		/**
+		 * Drive 1.17 'deadlineMailCalendar': "Fristen aus <Bereich>" with my target — "Nicht eintragen", "Familienkalender"
+		 * or a mail calendar by account ("Outlook · Kalender").
+		 */
+		function targetRow(area, d) {
+			const KS = root.GCDriveKiState;
+			const id = nextId('dset-dlt');
+			const label = DS.areaLabel(area, t);
+			const groups = KS.targetChoices(dl.calendars, { t, mail: true });
+			const current = KS.targetValue(d.target);
+			const sel = el('select', { class: 'inp dsv-select dset-target', 'aria-labelledby': id, 'data-key': `dlt-${d.areaId}` });
+			let found = false;
+			for (const g of groups) {
+				const parent = g.account ? el('optgroup', { label: g.account }) : sel;
+				for (const opt of g.options) {
+					const x = el('option', { value: opt.value, text: opt.label });
+					if (opt.value === current) { x.selected = true; found = true; }
+					parent.appendChild(x);
+				}
+				if (parent !== sel) sel.appendChild(parent);
+			}
+			// a target no longer offered (a calendar gone, Familie away): shown as it is until something else is picked
+			if (!found) {
+				const x = el('option', { value: current, text: KS.targetText(d.target, dl.calendars, t) });
+				x.selected = true;
+				sel.insertBefore(x, sel.firstChild);
+			}
+			sel.addEventListener('change', async () => {
+				const target = KS.targetFromValue(sel.value, dl.calendars);
+				sel.disabled = true;
+				const r = await call(() => api.setDeadlineTarget(d.areaId, target));
+				sel.disabled = false;
+				if (r && Array.isArray(r.targets)) {
+					dl.targets = r.targets;
+					toast(t('drive.ki.dl.targetSet', { area: label, target: KS.targetText(target, dl.calendars, t) }), 'success');
+				}
+				render();
+			});
+			return row(t('drive.ki.dl.from', { area: label }), t('drive.ki.dl.fromHint'), sel, id);
+		}
+
+		/** Drive 1.17: the calendars and my targets (null while not known: the switches of Drive 1.14). */
+		async function loadTargets() {
+			const me = o.page().me;
+			const KS = root.GCDriveKiState;
+			if (!KS || !KS.features(me).mailCalendar || typeof api.deadlineTargets !== 'function') { dl = null; return; }
+			const [c, r] = await Promise.all([
+				Promise.resolve(api.deadlineCalendars()).catch(() => null),
+				Promise.resolve(api.deadlineTargets()).catch(() => null),
+			]);
+			dl = r && r.ok && Array.isArray(r.targets) ? { calendars: c && c.ok ? c : { family: false, mail: [] }, targets: r.targets } : null;
+			if (shown) render();
 		}
 
 		// Drive 1.16: Orte und Personen
@@ -378,13 +441,14 @@
 				loadNotify();
 				refreshLock();
 				loadPhoto();
+				loadTargets();
 			},
 			hide() {
 				shown = false;
 				wrap.hidden = true;
 				if (o.syncView && o.syncView.hideSettings) o.syncView.hideSettings();
 			},
-			refresh() { if (shown) { render(); loadCache(); refreshLock(); loadPhoto(); } },
+			refresh() { if (shown) { render(); loadCache(); refreshLock(); loadPhoto(); loadTargets(); } },
 			relabel() { if (shown) render(); },
 			/** Scrolls to a section ('backup', 'vaults', 'ai', 'places', 'view', 'data', 'notify'). */
 			focus(section) {
