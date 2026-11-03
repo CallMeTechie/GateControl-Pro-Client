@@ -28,6 +28,11 @@ use std::time::{Duration, Instant};
 pub const POLL_INTERVAL: Duration = Duration::from_secs(45);
 /// Eine lokale Änderung gilt als fertig, wenn so lange nichts mehr kam.
 pub const SETTLE: Duration = Duration::from_secs(2);
+/// Änderungen, die bis auf so viel gleichzeitig zur Ruhe kommen, bilden einen Schub: Ist die
+/// erste Datei SETTLE lang ruhig, kommen die wenige Millisekunden später geänderten mit. Sonst
+/// teilt ein Ordner, der in einem Rutsch geändert wird, sich je nach Timing in zwei Schübe auf,
+/// und die Prüfung auf Massenänderungen sieht nur einen Teil davon.
+pub const BATCH_GRACE: Duration = Duration::from_millis(500);
 /// Solange Drive das Gerät gestoppt hat: so oft fragen, ob es wieder frei ist.
 pub const LOCKED_RECHECK: Duration = Duration::from_secs(300);
 const FETCH_WORKERS: usize = 4;
@@ -914,7 +919,11 @@ fn run_loop<P: Platform>(
             continue;
         }
         let now = Instant::now();
-        let settled: Vec<PathBuf> = settling.iter().filter(|(_, t)| now.duration_since(**t) >= SETTLE).map(|(p, _)| p.clone()).collect();
+        let settled: Vec<PathBuf> = if settling.values().any(|t| now.duration_since(*t) >= SETTLE) {
+            settling.iter().filter(|(_, t)| now.duration_since(**t) + BATCH_GRACE >= SETTLE).map(|(p, _)| p.clone()).collect()
+        } else {
+            Vec::new()
+        };
         if !deleted.is_empty() && now.duration_since(last_delete) >= SETTLE {
             if let Some(e) = engine.as_mut() {
                 for (n, p) in deleted.drain(..) {
