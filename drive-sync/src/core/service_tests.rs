@@ -484,19 +484,27 @@ fn drive_stops_the_device_and_the_pro_client_frees_it() {
 
 #[test]
 fn the_local_check_asks_and_keep_pauses() {
-    local_check(None);
+    local_check(None, Duration::ZERO);
+}
+
+/// Die 8 Änderungen kommen über 350 ms verteilt (langsame Platte, Virenscanner): sie bilden
+/// trotzdem einen Schub, die Prüfung sieht alle 8, nichts geht vorher hoch.
+#[test]
+fn the_local_check_takes_changes_a_moment_apart_as_one_batch() {
+    local_check(None, Duration::from_millis(50));
 }
 
 /// Die Änderungen kommen in zwei Schüben: der erste (4 von 25, unter der Schwelle von 20 %)
 /// geht hoch, der zweite löst die Prüfung aus – mit allen 8 Dateien des Zeitfensters.
 #[test]
 fn the_local_check_counts_an_earlier_batch_below_the_threshold() {
-    local_check(Some(4));
+    local_check(Some(4), Duration::ZERO);
 }
 
 /// 25 Briefe hoch, dann 8 davon verrauscht. `split`: nach so vielen Dateien länger als
-/// SETTLE warten, damit sie als eigener Schub verarbeitet werden.
-fn local_check(split: Option<usize>) {
+/// SETTLE (und BATCH_GRACE) warten, damit sie als eigener Schub verarbeitet werden. `gap`:
+/// Pause zwischen den verrauschten Dateien.
+fn local_check(split: Option<usize>, gap: Duration) {
     let c = started();
     let dir = p(&c.plat.root, &["Meine Dateien", "Briefe"]);
     c.plat.fs.user_mkdir(&dir);
@@ -515,7 +523,9 @@ fn local_check(split: Option<usize>) {
     let w = c.plat.watcher.lock().unwrap();
     for i in 0..8 {
         if split == Some(i) {
-            std::thread::sleep(SETTLE + Duration::from_millis(300));
+            std::thread::sleep(SETTLE + BATCH_GRACE + Duration::from_millis(300));
+        } else if i > 0 && !gap.is_zero() {
+            std::thread::sleep(gap);
         }
         let f = dir.join(format!("brief{i}.txt"));
         c.plat.fs.user_write(&f, &noise);
@@ -532,6 +542,9 @@ fn local_check(split: Option<usize>) {
     assert!(held <= commits + below, "{held} {commits}");
     if let Some(n) = split {
         assert_eq!(held, commits + n);
+        assert_eq!(s.count, 8);
+    } else if !gap.is_zero() {
+        assert_eq!(held, commits);
         assert_eq!(s.count, 8);
     }
     // „Pausiert lassen“
