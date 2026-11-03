@@ -27,6 +27,8 @@
 	const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 	const str = (v) => (v === null || v === undefined ? '' : String(v));
+	// Messenger 1.11: the host's virus scan (scan-state.js; absent in an app without it: nothing shown)
+	const SCAN = (typeof self !== 'undefined' && self.GCScanState) || (typeof require === 'function' ? (() => { try { return require('./scan-state'); } catch { return null; } })() : null);
 	const localeTag = (locale) => (locale === 'en' ? 'en-GB' : 'de-DE');
 
 	/** Person (member / peer / people entry) of a conversation by user id. */
@@ -432,12 +434,48 @@
 	/** Error text for a code of the core / plugin. */
 	function errorText(res, t) {
 		const code = res && typeof res === 'object' ? res.code : res;
+		// Messenger 1.11: 423 quarantined | scan_pending | scan_blocked of a file, 422 infected, 503 scan_unavailable
+		const scanText = SCAN ? SCAN.refusalText(res && typeof res === 'object' ? res : { code }, t) : null;
+		if (scanText) return scanText;
 		if (code) {
 			const key = `chat.error.${code}`;
 			const v = t(key);
 			if (v !== key) return v;
 		}
 		return t('chat.error.failed');
+	}
+
+	/**
+	 * Messenger 1.11: the file of a message and the virus scan → null (nothing to show) or { kind, blocked, warn, title,
+	 * text }. Blocked (the receiver's and the sender's view): „Wird auf Viren geprüft …“ / „Datei gesperrt“ with the
+	 * reason instead of picture, player or file; marked: a warning line under the file.
+	 */
+	function mediaScan(m, t) {
+		const scan = m && m.media && m.media.scan;
+		const kind = SCAN ? SCAN.view(scan) : null;
+		if (!kind) return null;
+		const finding = scan.finding ? str(scan.finding).slice(0, 200) : '';
+		const out = { kind, blocked: SCAN.isBlocked(scan), warn: kind === 'warning', title: '', text: '' };
+		switch (kind) {
+			case 'checking': out.title = t('scan.checking'); out.text = t('ui.scan.afterCheck'); break;
+			case 'malware': out.title = t('scan.fileBlocked'); out.text = finding ? t('ui.scan.foundOf', { finding }) : t('ui.scan.found'); break;
+			case 'unscannable': out.title = t('scan.scanBlocked'); break;
+			case 'warning': out.text = SCAN.reason(scan, t); break;
+			case 'notCheckable': out.text = t('scan.notCheckable'); break;
+			default: out.title = t('scan.fileBlocked');
+		}
+		return out;
+	}
+
+	/**
+	 * Messenger 1.11: a message the host refused because of its file (422 infected, 423 scan_blocked) → { text, retry: false }
+	 * („Nicht gesendet – Schadsoftware gefunden“, never sent again); else null.
+	 */
+	function notSentText(m, t) {
+		const code = m && m.error;
+		if (code === 'infected') return m.finding ? t('scan.notSentOf', { finding: str(m.finding).slice(0, 200) }) : t('scan.notSent');
+		if (code === 'scan_blocked') return t('scan.notSentUnscannable');
+		return null;
 	}
 
 	/** Text for an unavailable messenger (status().reason). */
@@ -1213,6 +1251,8 @@
 		composerBlock,
 		fileBadge,
 		errorText,
+		mediaScan,
+		notSentText,
 		unavailableText,
 		waveform,
 		recordingMime,

@@ -1086,10 +1086,14 @@
 			} else {
 				if (m.replyTo) b.appendChild(quoteEl(m.replyTo, c, cx));
 				if (m.replyStory) b.appendChild(storyQuoteEl(m.replyStory, c, cx));
-				if (m.kind === 'image') b.appendChild(imageEl(m));
+				// Messenger 1.11: a file the host's virus scan checks or blocked — the state instead of picture / player / file
+				const sc = CS.mediaScan(m, t);
+				if (sc && sc.blocked && (m.kind === 'image' || m.kind === 'voice' || m.kind === 'file')) b.appendChild(blockedEl(m, sc));
+				else if (m.kind === 'image') b.appendChild(imageEl(m));
 				else if (m.kind === 'voice') b.appendChild(voiceEl(m));
 				else if (m.kind === 'file') b.appendChild(CS.videoInfo(m) ? videoEl(m, cx) : fileEl(m, cx));
 				else if (m.kind === 'location') b.appendChild(locationEl(m));
+				if (sc && !sc.blocked && sc.text) b.appendChild(el('div', { class: `cv-scan-line${sc.warn ? ' is-warn' : ''}` }, [sc.warn ? icon('shield', 12) : null, el('span', { text: sc.text })]));
 				const rb = richKind ? richBody(m, c, cx) : null;
 				if (rb) b.appendChild(rb);
 				if (m.undecryptable) b.appendChild(el('div', { class: 'cv-text cv-dim', text: t('chat.msg.undecryptable') }));
@@ -1102,10 +1106,13 @@
 				mine ? ticks(it.status) : null,
 			]);
 			b.appendChild(meta);
+			// Messenger 1.11: refused because of the file (malware / not checkable) — not sent again
+			const notSent = m.pending && m.failed ? CS.notSentText(m, t) : null;
 			if (m.pending && m.failed) {
 				b.appendChild(el('div', { class: 'cv-failed' }, [
-					el('span', { text: t('chat.outbox.failed', { error: CS.errorText(m.error, t) }) }),
-					el('button', { type: 'button', class: 'btn btn-sec btn-xs', on: { click: () => api.retry(m.clientId) } }, [icon('retry', 13), t('chat.outbox.retry')]),
+					notSent ? icon('shield', 13) : null,
+					el('span', { text: notSent || t('chat.outbox.failed', { error: CS.errorText(m.error, t) }) }),
+					notSent ? null : el('button', { type: 'button', class: 'btn btn-sec btn-xs', on: { click: () => api.retry(m.clientId) } }, [icon('retry', 13), t('chat.outbox.retry')]),
 					el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('chat.outbox.discard'), on: { click: () => { for (const map of [S.local, S.localVideo]) { const u = map.get(m.clientId); if (u) { URL.revokeObjectURL(u); map.delete(m.clientId); } } api.discard(m.clientId); } } }),
 				]));
 			} else if (m.pending && m.error) {
@@ -1279,6 +1286,22 @@
 			ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
 			document.addEventListener('keydown', onKey, true);
 			rootEl.appendChild(ov);
+		}
+
+		/**
+		 * Messenger 1.11: the file of a message the virus scan checks or blocked — for the receiver and the sender —
+		 * „Wird auf Viren geprüft …“ / „Datei gesperrt“ with the reason; no picture, player, open or save.
+		 */
+		function blockedEl(m, sc) {
+			const name = (m.meta && m.meta.fileName) || '';
+			return el('div', { class: `cv-scan-box${sc.kind === 'checking' ? ' is-checking' : ''}`, role: 'note' }, [
+				el('span', { class: 'cv-scan-ic' }, [icon('shield', 18)]),
+				el('span', { class: 'cv-file-tx' }, [
+					el('b', { text: sc.title }),
+					sc.text ? el('span', { class: 'cv-file-sub', text: sc.text }) : null,
+					name ? el('span', { class: 'cv-file-sub cv-scan-name', text: name }) : null,
+				]),
+			]);
 		}
 
 		function fileCard(m, cx) {
@@ -1620,13 +1643,26 @@
 			], { wide: true, onOpen: () => locate() }).then(() => { st.open = false; clearTimeout(st.revTimer); });
 		}
 
+		/** Messenger 1.11: a file the virus scan marked (not blocked) — „Nur öffnen, wenn du vertraust“ first → true. */
+		function askScan(m) {
+			const sc = CS.mediaScan(m, t);
+			if (!sc || !sc.warn || !root.GCScanState) return Promise.resolve(true);
+			const q = root.GCScanState.warnAsk(m.media.scan, (m.meta && m.meta.fileName) || '', t);
+			return dialog(q.title, el('p', { class: 'cv-dlg-msg', text: q.text }), [
+				{ label: t('chat.common.cancel'), value: false },
+				{ label: q.confirm, danger: true, value: true },
+			]).then((v) => v === true);
+		}
+
 		async function openMedia(m) {
+			if (!(await askScan(m))) return;
 			const r = await api.openMedia(m.media.id, (m.meta && m.meta.fileName) || null).catch((e) => ({ ok: false, error: e && e.message }));
 			if (r && r.ok) return;
 			if (r && r.code === 'unsafe') toast(t('chat.msg.unsafe'), 'warning');
 			else toast(CS.errorText(r, t), 'error');
 		}
 		async function saveMedia(m) {
+			if (!(await askScan(m))) return;
 			const r = await api.saveMedia(m.media.id, (m.meta && m.meta.fileName) || null).catch((e) => ({ ok: false, error: e && e.message }));
 			if (r && r.ok) toast(t('chat.msg.saved', { path: r.path }), 'success');
 			else if (!(r && r.cancelled)) toast(CS.errorText(r, t), 'error');

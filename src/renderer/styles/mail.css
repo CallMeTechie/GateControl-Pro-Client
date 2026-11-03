@@ -160,6 +160,10 @@
 .ml-att-sug { display: flex; flex-direction: column; gap: 3px; padding: 9px 12px; border-radius: 12px; background: var(--bg); }
 .ml-att-sugname { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
 .ml-att-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Mail 1.8: an attachment the host's virus scan blocked or removed */
+.ml-att.is-blocked .ml-att-name { color: var(--muted); }
+.ml-att .scan-chip { margin-top: -4px; }
+.ml-catt .scan-chip { flex-shrink: 0; }
 .ml-att-saved { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--acc-t); }
 .ml-check { width: 16px; height: 16px; accent-color: var(--acc); flex: none; }
 .ml-check-row { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); cursor: pointer; }

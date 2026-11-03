@@ -162,6 +162,8 @@
 		if (num(f.held) > 0) v.detail.push(plural(t, 'drive.sync.held', f.held));
 		if (num(f.conflicts) > 0) v.detail.push(plural(t, 'drive.sync.conflicts', f.conflicts));
 		if (num(f.skipped) > 0) v.detail.push(plural(t, 'drive.sync.skipped', f.skipped));
+		// Drive 1.19: files the virus scan blocks are not loaded onto this PC (no failure)
+		if (num(f.blocked) > 0) v.detail.push(num(f.blocked) === 1 ? t('scan.syncBlockedOne') : t('scan.syncBlockedMany', { count: num(f.blocked) }));
 		return v;
 	}
 

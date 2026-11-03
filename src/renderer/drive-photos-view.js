@@ -29,6 +29,7 @@
 	const PS = root.GCDrivePhotosState;
 	const BS = root.GCDriveBulkState;
 	const PPS = root.GCDrivePlacesPeopleState;
+	const SCAN = root.GCScanState;
 	const fail = (err) => ({ ok: false, code: (err && err.code) || 'failed', error: err && err.message });
 	let uid = 0;
 	const nextId = (p) => `${p}-${++uid}`;
@@ -346,10 +347,19 @@
 			}, [
 				box,
 				p.kind === 'video' ? el('span', { class: 'dpv-play', 'aria-hidden': 'true' }, [icon('play', 12)]) : null,
+				// Drive 1.19: the host's virus scan (blocked: no picture)
+				scanMark(p),
 				P.selecting ? el('span', { class: 'dpv-check', 'aria-hidden': 'true' }, on ? [icon('check', 12, '3')] : []) : null,
 			]);
 			b.setAttribute('aria-label', p.name);
 			return b;
+		}
+
+		/** The mark of the virus scan on a tile (Drive 1.19), or null. */
+		function scanMark(p) {
+			const c = SCAN ? SCAN.chip(p.scan, t) : null;
+			if (!c || c.tone === 'quiet') return null;
+			return el('span', { class: 'dpv-scan', 'data-tone': c.tone, title: c.title, 'aria-label': c.text }, [icon('shield', 12)]);
 		}
 
 		function grid(list) {
@@ -577,21 +587,36 @@
 				next.disabled = i >= list.length - 1;
 				clear(dlg.foot);
 				const me = o.getMe();
+				// Drive 1.19: blocked by the virus scan — the reason instead of "Speichern unter" / "Öffnen"
+				const blocked = SCAN && SCAN.isBlocked(p.scan);
+				const c = SCAN ? SCAN.chip(p.scan, t) : null;
+				if (c) meta.appendChild(el('div', { class: 'scan-reason dpv-scan-reason', 'data-tone': c.tone, role: 'note' }, [icon('shield', 14), el('span', { text: SCAN.reason(p.scan, t) })]));
 				dlg.foot.append(
 					el('span', { class: 'dv-grow' }),
 					p.parentId ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { dlg.close(null); o.openFolder(p.parentId); } } }, [icon('folder', 14), el('span', { text: t('drive.search.showFolder') })]) : null,
 					me && me.links && me.links.node ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => portal(p.id) } }, [icon('cloud', 14), el('span', { text: t('drive.portal.open') })]) : null,
 					feats().albums ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => addDialog([p.id]) } }, [icon('plus', 14), el('span', { text: t('drive.photos.addTo') })]) : null,
-					el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => saveAs(p) } }, [icon('down', 14), el('span', { text: t('drive.saveAs') })]),
-					el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: () => openFile(p) } }, [icon('open', 14), el('span', { text: t('drive.open') })]),
+					blocked ? null : el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => saveAs(p) } }, [icon('down', 14), el('span', { text: t('drive.saveAs') })]),
+					blocked ? null : el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: () => openFile(p) } }, [icon('open', 14), el('span', { text: t('drive.open') })]),
 				);
 			}
 			show();
 		}
 
-		async function openFile(p) {
+		async function openFile(p, asked = false) {
+			// Drive 1.19: marked by the virus scan (not blocked) — ask first
+			if (!asked && SCAN && SCAN.isWarning(p.scan)) {
+				const q = SCAN.warnAsk(p.scan, p.name, t);
+				const dlg = openDialog({ title: q.title, host, closeLabel: t('drive.close') });
+				dlg.body.append(el('p', { class: 'dv-p', text: q.text }));
+				dlg.foot.append(
+					el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }),
+					el('button', { type: 'button', class: 'btn btn-danger', text: q.confirm, on: { click: () => { dlg.close(null); openFile(p, true); } } }),
+				);
+				return;
+			}
 			const r = await Promise.resolve(api.open(p.id)).catch(fail);
-			if (!r || !r.ok) toast(err(r), 'error');
+			if (!r || !r.ok) toast(err(r), r && r.code === 'scan_pending' ? 'info' : 'error');
 		}
 
 		async function saveAs(p) {
