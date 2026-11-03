@@ -365,6 +365,11 @@
       "quietNoPortal": "Das Portal ist erreichbar, sobald das VPN verbunden ist.",
       "killSwitchNote": "Hinweis zum Kill-Switch",
       "saveFailed": "Einstellung konnte nicht gespeichert werden: {{ error }}"
+    },
+    "scan": {
+      "afterCheck": "Die Datei öffnet sich nach der Prüfung.",
+      "found": "Schadsoftware gefunden",
+      "foundOf": "Schadsoftware gefunden ({{finding}})"
     }
   },
   "vault": {
@@ -3027,7 +3032,8 @@
     "warn": {
       "password": "Das Passwort für den Link bitte getrennt mitteilen.",
       "too_large": "Anhänge zu groß – große Drive-Dateien gehen als Link.",
-      "no_subject": "Die Mail hat keinen Betreff."
+      "no_subject": "Die Mail hat keinen Betreff.",
+      "attachment_blocked": "Ein Anhang ist gesperrt (Schadsoftware) und kann nicht gesendet werden."
     },
     "schedule": {
       "title": "Senden planen",

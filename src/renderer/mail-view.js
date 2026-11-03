@@ -558,8 +558,12 @@
 					const w = R.atts && R.atts.get(c.attachmentId);
 					if (w && !w.inFlight) w.run();
 					if (R.pics && R.pics.waiting.has(c.attachmentId)) reloadPictures(R);
+					// Mail 1.8 'scan': the virus scan of the attachment changed → its state again
+					if (!w && has('scan')) refreshScan(R.message.id);
 				}
 			}
+			// Mail 1.8 'scan': the virus scan of an attachment of the draft open in the editor changed
+			if (c && c.draftId && S.compose && S.compose.draftId === c.draftId) refreshDraftScan(c.draftId);
 			const v = S.view;
 			if (!c || !c.accountId || v.kind !== 'box' || v.box === 'all' || v.box === c.accountId) reloadSoon();
 			else loadMe().then(renderMenu);
@@ -1002,6 +1006,27 @@
 		}
 
 		/** The open mail again (its body has come: the live event, or "Erneut versuchen"); not marked read again. */
+		/** Mail 1.8 'scan': the attachments of the open mail again (their virus scan), quietly. */
+		async function refreshScan(id) {
+			const R = S.read;
+			if (!R || !R.message || R.message.id !== id) return;
+			const r = await call(api.message(id, { markRead: false }));
+			if (S.read !== R || !r || !r.ok || !r.message) return;
+			R.message.attachments = r.message.attachments;
+			renderPane();
+		}
+
+		/** Mail 1.8 'scan': the attachments and warnings of the draft being written again (their virus scan). */
+		async function refreshDraftScan(draftId) {
+			const C = S.compose;
+			const r = await call(api.draft(draftId));
+			if (S.compose !== C || !C || !r || !r.ok || !r.draft) return;
+			const byId = new Map(r.draft.attachments.map((a) => [a.id, a]));
+			C.atts = C.atts.map((a) => (a.id && byId.has(a.id) ? { ...a, scan: byId.get(a.id).scan } : a));
+			C.warnings = r.draft.warnings;
+			renderComposeParts();
+		}
+
 		async function refreshBody(id) {
 			const R = S.read;
 			if (!R || !R.message || R.message.id !== id || R.bodyBusy) return;
@@ -1190,7 +1215,7 @@
 			if (atts.length) {
 				const box = el('div', { class: 'ml-atts' });
 				for (const a of atts) box.append(attCard(m, a, R));
-				if (atts.length > 1 && has('drive') && atts.some((a) => !a.savedTo)) {
+				if (atts.filter((a) => !MS.attScan(a, t).blocked).length > 1 && has('drive') && atts.some((a) => !a.savedTo && !MS.attScan(a, t).blocked)) {
 					box.append(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => saveAll(m) } }, [icon('cloud', 14), el('span', { text: t('mail.drive.saveAll') })]));
 				}
 				scroll.append(box);
@@ -1294,13 +1319,20 @@
 			const [bg, fg] = TONE[ft.tone] || TONE.muted;
 			tag.style.background = bg;
 			tag.style.color = fg;
-			const card = el('div', { class: 'ml-card ml-att' });
+			// Mail 1.8 'scan': blocked / removed → the reason instead of open, save and "In Drive ablegen"
+			const sc = MS.attScan(a, t);
+			const card = el('div', { class: `ml-card ml-att${sc.blocked ? ' is-blocked' : ''}` });
 			card.append(el('div', { class: 'ml-att-top' }, [
 				tag,
 				el('span', { class: 'ml-att-tx' }, [el('span', { class: 'ml-att-name', text: a.name, title: a.name }), attSub]),
-				el('button', { type: 'button', class: 'ml-ib', title: t('mail.att.open'), 'aria-label': t('mail.att.open'), on: { click: () => openAtt(m, a) } }, [icon('open', 15)]),
-				el('button', { type: 'button', class: 'ml-ib', title: t('mail.att.save'), 'aria-label': t('mail.att.save'), on: { click: () => saveAtt(m, a) } }, [icon('down', 15)]),
+				sc.blocked ? null : el('button', { type: 'button', class: 'ml-ib', title: t('mail.att.open'), 'aria-label': t('mail.att.open'), on: { click: () => openAtt(m, a) } }, [icon('open', 15)]),
+				sc.blocked ? null : el('button', { type: 'button', class: 'ml-ib', title: t('mail.att.save'), 'aria-label': t('mail.att.save'), on: { click: () => saveAtt(m, a) } }, [icon('down', 15)]),
 			]));
+			if (sc.chip) card.append(scanChip(sc.chip));
+			if (sc.blocked) {
+				card.append(el('div', { class: 'scan-reason', 'data-tone': sc.chip ? sc.chip.tone : 'blocked', role: 'note' }, [icon('shield', 14), el('span', { text: sc.reason })]));
+				return card;
+			}
 			if (!has('drive')) return card;
 			if (a.savedTo) {
 				card.append(el('div', { class: 'ml-att-saved' }, [icon('check', 14), el('span', { text: t('mail.drive.savedIn', { where: a.savedTo.where || '' }) })]));
@@ -1324,6 +1356,27 @@
 			]));
 			if (m.from.email) card.append(el('label', { class: 'ml-check-row' }, [remember, el('span', { text: t('mail.drive.remember', { sender }) })]));
 			return card;
+		}
+
+		/** The chip of the virus scan (scan-state.js chip()) — the long text as tooltip. */
+		function scanChip(c) {
+			return el('span', { class: 'scan-chip', 'data-tone': c.tone, 'data-scan': c.kind, title: c.title }, [c.tone === 'quiet' ? null : icon('shield', 12), el('span', { text: c.text })]);
+		}
+
+		/** Mail 1.8 'scan': a marked attachment (not blocked) — „Nur öffnen, wenn du vertraust“ first → true to go on. */
+		function askScan(a) {
+			const sc = MS.attScan(a, t);
+			if (!sc.warn || !root.GCScanState) return Promise.resolve(true);
+			const q = root.GCScanState.warnAsk(a.scan, a.name, t);
+			return new Promise((resolve) => {
+				let yes = false;
+				const dlg = openDialog({ title: q.title, closeLabel: t('mail.close'), onClose: () => resolve(yes) });
+				dlg.body.append(el('p', { class: 'ml-p', text: q.text }));
+				dlg.foot.append(
+					el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.cancel'), on: { click: () => dlg.close() } }),
+					el('button', { type: 'button', class: 'btn btn-danger', text: q.confirm, on: { click: () => { yes = true; dlg.close(); } } }),
+				);
+			});
 		}
 
 		/** Another mail of the conversation: sender, date and preview; unfolds to its body and "Mail öffnen". */
@@ -1469,7 +1522,9 @@
 		async function openAtt(m, a) {
 			const R = S.read;
 			if (!R || !R.atts || R.atts.has(a.id)) return;
-			const w = { tries: 0, timer: null, inFlight: false, run: null };
+			if (MS.attScan(a, t).blocked) { toast(MS.attScan(a, t).reason, 'error'); return; }
+			if (!(await askScan(a)) || S.read !== R || R.atts.has(a.id)) return;
+			const w = { tries: 0, scanTries: 0, timer: null, inFlight: false, run: null };
 			w.run = async () => {
 				clearTimeout(w.timer);
 				w.timer = null;
@@ -1483,9 +1538,20 @@
 					w.timer = setTimeout(w.run, b.waitMs);
 					return;
 				}
+				// Mail 1.8: the virus scan still checks the copy — "Wird geprüft …", again after its Retry-After (twice)
+				const wait = root.GCScanState ? root.GCScanState.retryDelay(r, w.scanTries) : null;
+				if (wait) {
+					if (!w.scanTries) toast(errText(r), 'info');
+					w.scanTries++;
+					w.timer = setTimeout(w.run, wait);
+					return;
+				}
 				R.atts.delete(a.id);
 				attLabel(R, a);
 				if (r && r.ok) return;
+				// blocked or removed meanwhile: show it so
+				if (r && r.scan) { a.scan = r.scan; renderPane(); }
+				else if (r && r.code === 'attachment_removed') { a.scan = { state: 'infected', blocked: true, finding: null, removed: true }; renderPane(); }
 				if (r && r.code === 'unsafe') { toast(t('mail.att.unsafe'), 'error'); return; }
 				toast(attErr(r), 'error');
 			};
@@ -1495,6 +1561,8 @@
 		}
 
 		async function saveAtt(m, a) {
+			if (MS.attScan(a, t).blocked) { toast(MS.attScan(a, t).reason, 'error'); return; }
+			if (!(await askScan(a))) return;
 			const r = await call(api.saveAttachment(m.id, a.id, { name: a.name }));
 			if (r && r.ok) toast(t('mail.att.saved'), 'success');
 			else if (r && r.code !== 'cancelled') toast(attErr(r), 'error');
@@ -1602,7 +1670,7 @@
 			if (!S.outbox.length) rows.append(el('div', { class: 'ml-empty' }, [icon('check', 26), el('p', { class: 'ml-p', text: t('mail.outbox.empty') })]));
 			for (const x of S.outbox) {
 				const acc = MS.accountOf(S.me, x.accountId);
-				const st = x.state === 'failed' ? t('mail.outbox.failed', { error: x.error || '' }) : x.state === 'sending' ? t('mail.outbox.sending') : t('mail.outbox.waiting', { at: MS.fullDate(x.sendAt, lang()) });
+				const st = x.state === 'failed' ? t('mail.outbox.failed', { error: MS.outboxError(x.error, t) }) : x.state === 'sending' ? t('mail.outbox.sending') : t('mail.outbox.waiting', { at: MS.fullDate(x.sendAt, lang()) });
 				rows.append(el('div', { class: `ml-card ml-file${x.state === 'failed' ? ' is-failed' : ''}` }, [
 					el('div', { class: 'ml-att-top' }, [icon(x.state === 'failed' ? 'alert' : 'clock', 18), el('span', { class: 'ml-att-tx' }, [
 						el('span', { class: 'ml-att-name', text: x.subject || t('mail.noSubject') }),
@@ -1810,6 +1878,7 @@
 			const r = await call(api.send(d.id, sendAt));
 			C.busy = false;
 			if (r && r.code === 'attachments_unsupported') { C.unsupported = true; renderComposeParts(); toast(t('mail.compose.msUnsupported'), 'error'); return; }
+			if (r && r.code === 'attachment_blocked') { askRemoveBlocked(r, sendAt); return; }
 			if (!r || !r.ok) { toast(errText(r), 'error'); renderComposeParts(); return; }
 			closeCompose();
 			startUndo(r);
@@ -1924,13 +1993,23 @@
 					el('span', { class: 'ml-ftag ml-ftag-sm', text: a.as === 'link' ? t('mail.att.link') : ft.tag }),
 					el('span', { class: 'ml-catt-name', text: a.name }),
 					a.size ? el('span', { class: 'ml-sub', text: MS.bytes(a.size, lang()) }) : null,
+					// Mail 1.8 'scan': a forwarded attachment the virus scan blocks (it cannot be sent)
+					MS.attScan(a, t).chip ? scanChip(MS.attScan(a, t).chip) : null,
 					el('button', { type: 'button', class: 'ml-rcpt-x', 'aria-label': t('mail.att.remove', { name: a.name }), on: { click: () => { C.atts = C.atts.filter((x) => x !== a); renderComposeParts(); scheduleSave(); } } }, [icon('close', 11)]),
 				]));
 			}
 			if (C.uploading) composeParts.atts.append(el('span', { class: 'ml-catt is-busy', text: t('mail.compose.uploadingN', { count: C.uploading }) }));
 			composeParts.atts.hidden = !C.atts.length && !C.uploading;
 			clear(composeParts.warn);
-			for (const w of C.warnings) composeParts.warn.append(el('div', { class: `ml-banner${w.kind === 'too_large' ? ' is-info' : ''}` }, [icon('alert', 14), el('span', { text: w.text || t(`mail.warn.${w.kind}`) })]));
+			for (const w of C.warnings) {
+				// Mail 1.8: an attachment the virus scan blocks — „Entfernen“ takes it out of the draft
+				const blockedAtt = w.kind === 'attachment_blocked' ? C.atts.find((a) => (w.attachmentId ? a.id === w.attachmentId : MS.attScan(a, t).blocked)) : null;
+				composeParts.warn.append(el('div', { class: `ml-banner${w.kind === 'too_large' ? ' is-info' : w.kind === 'attachment_blocked' ? ' is-err' : ''}` }, [
+					icon(w.kind === 'attachment_blocked' ? 'shield' : 'alert', 14),
+					el('span', { class: 'ml-grow', text: w.text || t(`mail.warn.${w.kind}`) }),
+					blockedAtt ? el('button', { type: 'button', class: 'btn btn-sec btn-xs', text: t('scan.remove'), on: { click: () => removeAtt(blockedAtt) } }) : null,
+				]));
+			}
 			if (C.unsupported && !msBlocked(C)) C.unsupported = false;
 			if (msBlocked(C)) {
 				composeParts.warn.append(el('div', { class: 'ml-banner is-err' }, [
@@ -1941,6 +2020,39 @@
 			}
 			composeParts.warn.hidden = !composeParts.warn.childNodes.length;
 			if (composeParts.sendBtn) composeParts.sendBtn.disabled = !!C.busy;
+		}
+
+		/** Takes an attachment out of the draft (saved at once). */
+		function removeAtt(a) {
+			const C = S.compose;
+			if (!C) return;
+			C.atts = C.atts.filter((x) => x !== a && !(a.id && x.id === a.id));
+			C.warnings = C.warnings.filter((w) => !(w.kind === 'attachment_blocked' && (!w.attachmentId || w.attachmentId === a.id)));
+			renderComposeParts();
+			return saveDraft();
+		}
+
+		/**
+		 * Mail 1.8: sending refused with 409 attachment_blocked { attachmentId, name } — „Der Anhang <name> ist gesperrt
+		 * (Schadsoftware) – entfernen?“; „Entfernen“ takes it out and sends again.
+		 */
+		function askRemoveBlocked(r, sendAt) {
+			const C = S.compose;
+			if (!C) return;
+			const aid = r.attachmentId || (r.detail && r.detail.attachmentId);
+			const att = C.atts.find((a) => a.id && a.id === aid) || null;
+			if (att && r.scan) att.scan = r.scan;
+			renderComposeParts();
+			const dlg = openDialog({ title: t('scan.fileBlocked'), closeLabel: t('mail.close') });
+			dlg.body.append(el('p', { class: 'ml-p', text: errText(r) }));
+			dlg.foot.append(
+				el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.cancel'), on: { click: () => dlg.close() } }),
+				att ? el('button', { type: 'button', class: 'btn btn-danger', text: t('scan.remove'), on: { click: async () => {
+					dlg.close();
+					const d = await removeAtt(att);
+					if (d && S.compose === C) send(sendAt);
+				} } }) : null,
+			);
 		}
 
 		async function addFiles(paths, dropped) {

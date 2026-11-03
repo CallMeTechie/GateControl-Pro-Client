@@ -52,6 +52,8 @@
 		let uid = 0;
 		const nextId = (p) => `${p}-${++uid}`;
 		const has = (f) => DS.hasFeature(o.getMe(), f);
+		// Drive 1.19: „x gesperrte Dateien fehlen“ (the virus scan left them out of a ZIP / link), or null
+		const scanSkipped = (r) => (root.GCScanState && r ? root.GCScanState.skippedText(r.blocked, t) : null);
 
 		// ── the note at the bottom ("… verschoben · Rückgängig") ─
 		const snackText = el('span', { class: 'dv-snack-tx' });
@@ -395,7 +397,8 @@
 		async function zip(items, name) {
 			if (!has('zip')) { toast(t('drive.bulk.why.needs112'), 'error'); return; }
 			const r = await Promise.resolve(api.zip(items.map((x) => x.id), name || (items.length === 1 ? items[0].name.replace(/\.[^.]+$/, '') : null))).catch(fail);
-			if (r && r.ok) toast(t('drive.saved', { path: r.path }), 'success');
+			// Drive 1.19: files the virus scan blocks are not in the ZIP
+			if (r && r.ok) toast([t('drive.saved', { path: r.path }), scanSkipped(r)].filter(Boolean).join(' '), r.blocked ? 'info' : 'success');
 			else if (r && (r.reason === 'mixed' || r.reason === 'too_many')) toast(t('drive.bulk.why.zipLimit'), 'error');
 			else if (!r || !r.cancelled) toast(DS.errorText(r, t), 'error');
 		}
@@ -441,6 +444,8 @@
 					el('div', { class: 'dv-share-ok' }, [icon('check', 16), el('span', { text: t('drive.share.created') })]),
 					el('div', { class: 'dv-share-urlrow' }, [url, el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => { if (typeof o.copyText === 'function') o.copyText(r.link.url); } } }, [icon('copy', 14), el('span', { text: t('drive.share.copy') })])]),
 					draft.pin ? el('span', { class: 'dv-pick-note', text: t('drive.share.pinNote') }) : null,
+					// Drive 1.19: files the virus scan blocks are left out of the link
+					scanSkipped(r) ? el('span', { class: 'dv-pick-note', text: scanSkipped(r) }) : null,
 				].filter(Boolean));
 			});
 			dlg.body.append(form, result);

@@ -48,6 +48,7 @@
 		lock: 'M6 11h12v10H6z|M8 11V7a4 4 0 0 1 8 0v4',
 		users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2|M9 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M22 21v-2a4 4 0 0 0-3-3.87|M16 3.13a4 4 0 0 1 0 7.75',
 		cloud: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z',
+		shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
 	};
 
 	function icon(name, size = 16, stroke = '2') {
@@ -408,7 +409,7 @@
 		function trackSendToast(p) {
 			const st = p.dir === 'out' ? sendToasts.get(p.id) : null;
 			if (!st) return;
-			if (p.phase === 'error') updateSendToast(st, { error: GS.errorText({ code: p.code }, t) });
+			if (p.phase === 'error') updateSendToast(st, { error: GS.errorText(p, t) });
 			else updateSendToast(st, { phase: p.phase, sent: p.sent, total: p.total, via: p.via });
 		}
 
@@ -475,6 +476,8 @@
 			if (s.text) body.push(el('span', { class: 'gd-row-text', text: s.text.length > 400 ? `${s.text.slice(0, 400)}…` : s.text }));
 			if (s.link && !s.text) body.push(el('span', { class: 'gd-row-text mono', text: s.link }));
 			if (v.note) body.push(el('span', { class: 'gd-row-note', text: v.note }));
+			// GateDrop 1.4: files the virus scan checks or blocked (no download) — name and chip
+			for (const x of v.scan || []) body.push(el('span', { class: 'gd-row-scan' }, [el('span', { class: 'gd-row-scan-name', text: x.name }), el('span', { class: 'scan-chip', 'data-tone': x.chip.tone, 'data-scan': x.chip.kind, title: x.chip.title }, [x.chip.tone === 'quiet' ? null : icon('shield', 12), el('span', { text: x.chip.text })])]));
 			return el('div', { class: `gd-row${S.focusSend && S.focusSend === s.id ? ' is-focus' : ''}`, 'data-id': s.id }, [
 				rowIcon(v.kind), el('div', { class: 'gd-row-tx' }, body), el('div', { class: 'gd-row-act' }, actions),
 			]);
@@ -802,6 +805,8 @@
 				r = { ok: false, code: err && err.code };
 			}
 			if (!r || r.ok === false) {
+				// GateDrop 1.4: a file the virus scan refused goes out of the selection of "Erneut versuchen"
+				if (r && r.code === 'infected' && r.name) draft.files = draft.files.filter((f) => f.name !== r.name);
 				updateSendToast(st, { error: GS.errorText(r, t) });
 				return;
 			}

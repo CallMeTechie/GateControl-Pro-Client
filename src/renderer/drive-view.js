@@ -88,6 +88,7 @@
 	'use strict';
 
 	const DS = root.GCDriveState;
+	const SCAN = root.GCScanState;
 	const MS = root.GCDriveMenuState;
 	const BS = root.GCDriveBulkState;
 	const OVS = root.GCDriveOverviewState;
@@ -1029,14 +1030,28 @@
 			}
 		}
 
-		async function openNode(n) {
+		async function openNode(n, { asked = false, tries = 0 } = {}) {
 			// Drive 1.9: a vault this PC has no key for opens on its card ("Zugriff anfragen")
 			if (n.isDir) { refs.search.value = ''; S.query = ''; loadFolder(n.id); return; }
 			if (n.encrypted && n.locked) { toast(t('drive.err.vaultLocked'), 'error'); return; }
+			// Drive 1.19: blocked by the virus scan → the reason instead; marked → ask first
+			if (SCAN.isBlocked(n.scan)) { toast(SCAN.reason(n.scan, t), SCAN.view(n.scan) === 'checking' ? 'info' : 'error'); return; }
+			if (!asked && SCAN.isWarning(n.scan)) {
+				const q = SCAN.warnAsk(n.scan, n.name, t);
+				confirmDialog({ title: q.title, text: q.text, confirm: q.confirm, danger: true, run: async () => { openNode(n, { asked: true }); return { ok: true }; } });
+				return;
+			}
 			const r = await Promise.resolve(api.open(n.id)).catch(fail);
 			if (r && r.ok) return;
 			if (r && r.code === 'unsafe') {
 				toast(t('drive.err.unsafe'), 'error');
+				return;
+			}
+			// still being checked: say so, and open it once the check is done (Retry-After, twice at most)
+			const wait = SCAN.retryDelay(r, tries);
+			if (wait) {
+				if (!tries) toast(SCAN.refusalText(r, t), 'info');
+				setTimeout(() => { if (S.shown) openNode(n, { asked: true, tries: tries + 1 }); }, wait);
 				return;
 			}
 			done(r);
@@ -1499,7 +1514,9 @@
 			const acts = DS.actionsFor(n, writable, S.me);
 			const items = [];
 			const item = (ic, label, fn, danger) => items.push(el('button', { type: 'button', role: 'menuitem', class: `dv-menu-item${danger ? ' is-danger' : ''}`, on: { click: () => { closeMenu(); fn(); } } }, [icon(ic, 15), el('span', { text: label })]));
-			item(n.isDir ? 'folder' : 'open', t('drive.open'), () => openNode(n));
+			// Drive 1.19: a file the virus scan blocks — the reason instead of "Öffnen" / "Speichern unter" / "Teilen"
+			if (acts.blocked) items.push(el('div', { class: 'dv-menu-item dv-menu-note', role: 'note', 'data-scan': acts.blocked }, [icon('shield', 15), el('span', { text: SCAN.reason(n.scan, t) })]));
+			if (!acts.blocked) item(n.isDir ? 'folder' : 'open', t('drive.open'), () => openNode(n));
 			if (acts.saveAs) item('down', t('drive.saveAs'), () => saveAs(n));
 			if (S.view === 'search' && n.parentId) item('folder', t('drive.search.showFolder'), () => { refs.search.value = ''; S.query = ''; loadFolder(n.parentId); });
 			if (acts.share) item('link', t('drive.share.menu'), () => shareDialog(n));
@@ -1845,10 +1862,18 @@
 				if (r && r.ok && r.data) return URL.createObjectURL(new Blob([r.data], { type: r.mime || 'image/jpeg' }));
 				S.previews.delete(mediaId);
 				if (r && r.code === 'preview_pending' && tries < 3) return new Promise((res) => setTimeout(() => res(previewUrl(mediaId, tries + 1)), 4000));
+				// Drive 1.19: the virus scan still checks the file — again after its Retry-After (twice at most)
+				const wait = SCAN.retryDelay(r, tries);
+				if (wait) return new Promise((res) => setTimeout(() => res(previewUrl(mediaId, tries + 1)), wait));
 				return null;
 			}).catch(() => { S.previews.delete(mediaId); return null; });
 			S.previews.set(mediaId, p);
 			return p;
+		}
+
+		/** The chip of the virus scan (scan-state.js chip()) — the long text as tooltip. */
+		function scanChip(c) {
+			return el('span', { class: 'scan-chip', 'data-tone': c.tone, 'data-scan': c.kind, title: c.title }, [c.tone === 'quiet' ? null : icon('shield', 12), el('span', { text: c.text })]);
 		}
 
 		function thumb(v) {
@@ -2197,6 +2222,8 @@
 					// Drive 1.8: the kind of document Drive recognised
 					v.doc && root.GCDriveDocsState ? el('span', { class: 'dv-doc', 'data-doc': v.doc }, [icon(root.GCDriveDocsState.docIcon(v.doc), 12), el('span', { text: root.GCDriveDocsState.docKindLabel(v.doc, t) })]) : null,
 					v.vault ? el('span', { class: 'dv-doc dv-enc' }, [icon('lock', 12), el('span', { text: t('drive.vault.badge') })]) : null,
+					// Drive 1.19: the host's virus scan
+					v.scan ? scanChip(v.scan) : null,
 					fresh ? el('span', { class: 'dv-new', text: t('drive.bulk.newHere') }) : null,
 				]),
 			]);

@@ -32,6 +32,8 @@
 	const AREA_RANK = { mine: 0, family: 1, child: 2, team: 3 };
 
 	const str = (v) => (v === null || v === undefined ? '' : String(v));
+	// Drive 1.19 'scan': the host's virus scan (scan-state.js; window.GCScanState in the app, required in the tests)
+	const SCAN = (typeof self !== 'undefined' && self.GCScanState) || (typeof require === 'function' ? require('./scan-state') : null);
 	const pad = (n) => String(n).padStart(2, '0');
 	const localeTag = (l) => (l === 'en' ? 'en-GB' : 'de-DE');
 
@@ -187,7 +189,8 @@
 	}
 
 	/**
-	 * One row of a list: { id, name, kind, badge, sub, date, size, isDir, preview, mediaId, doc, encrypted, locked, vault }.
+	 * One row of a list: { id, name, kind, badge, sub, date, size, isDir, preview, mediaId, doc, encrypted, locked, vault, scan }.
+	 * scan (Drive 1.19): the chip of the host's virus scan ({ kind, tone, text, title }) or null; blocked: no preview.
 	 * doc (Drive 1.8 'docAi'): the kind of document Drive recognised ('invoice' …) while insight.status is ready;
 	 * vault (Drive 1.9): the folder is a vault folder; locked: a vault node without a key on this PC (no name).
 	 */
@@ -213,12 +216,13 @@
 			date: when(stamp, now, locale, t),
 			size: n.isDir ? '' : formatBytes(n.size || 0, locale),
 			isDir: !!n.isDir,
-			preview: !!n.preview && !!n.mediaId && !n.encrypted,
+			preview: !!n.preview && !!n.mediaId && !n.encrypted && !SCAN.isBlocked(n.scan),
 			mediaId: n.mediaId || null,
 			doc: !n.isDir && !n.encrypted && n.insight && n.insight.status === 'ready' && n.insight.kind ? n.insight.kind : null,
 			encrypted: !!n.encrypted,
 			locked,
 			vault: !!(n.encrypted && n.vaultRoot),
+			scan: n.isDir ? null : SCAN.chip(n.scan, t),
 		};
 	}
 
@@ -292,18 +296,21 @@
 	}
 
 	/**
-	 * What a row's menu offers: { open, saveAs, share, rename, move, versions, remove, portal, timeTravel, details, office }.
+	 * What a row's menu offers: { open, saveAs, share, rename, move, versions, remove, portal, timeTravel, details, office,
+	 * blocked, warn }.
 	 * A vault's nodes (Drive 1.9): no links, no moves, no time travel, no AI, no office; without the key only "In den
-	 * Papierkorb".
+	 * Papierkorb". A file the virus scan blocks (Drive 1.19): not opened, saved, shared or opened in the browser —
+	 * `blocked` is the reason shown instead; `warn`: marked only, opening asks first.
 	 */
 	function actionsFor(node, writable, me) {
 		const n = node || {};
 		const enc = !!n.encrypted;
 		const locked = enc && !!n.locked;
+		const blocked = !n.isDir && SCAN.isBlocked(n.scan);
 		return {
-			open: !locked,
-			saveAs: !n.isDir && !locked,
-			share: !!writable && !enc,
+			open: !locked && !blocked,
+			saveAs: !n.isDir && !locked && !blocked,
+			share: !!writable && !enc && !blocked,
 			rename: !!writable && !locked,
 			move: !!writable && !enc,
 			versions: !n.isDir && !locked,
@@ -315,7 +322,10 @@
 			// Drive 1.8 'docAi': "Details" (what Drive recognised, its deadlines)
 			details: !n.isDir && !enc && hasFeature(me, 'docAi'),
 			// Drive 1.9 'office': 'edit' | 'view' | null
-			office: officeMode(n, writable, me),
+			office: blocked ? null : officeMode(n, writable, me),
+			// Drive 1.19 'scan': why it does not open (blocked), the question before opening (marked)
+			blocked: blocked ? SCAN.view(n.scan) : null,
+			warn: !n.isDir && SCAN.isWarning(n.scan),
 		};
 	}
 
@@ -593,6 +603,8 @@
 	/** A chat message whose file can go into Drive (Messenger 1.10, `integrations.drive`). */
 	function chatCanSave(m, me) {
 		if (!m || m.pending || !m.media || !['image', 'voice', 'file'].includes(m.kind)) return false;
+		// Messenger 1.11: a file the virus scan blocks is not handed to Drive
+		if (SCAN.isBlocked(m.media.scan)) return false;
 		return !!(me && me.integrations && me.integrations.drive === true);
 	}
 
@@ -630,8 +642,14 @@
 		familie_unavailable: 'familieUnavailable', mail_unavailable: 'mailUnavailable', not_picture: 'notPicture', no_language: 'noOcr', scan_no_file: 'scanNoFile',
 	};
 
-	/** The text of a failed answer ({ ok: false, code }) — Drive's codes and those of the plugins passing them on. */
+	/**
+	 * The text of a failed answer ({ ok: false, code }) — Drive's codes and those of the plugins passing them on; the
+	 * virus scan's refusals (Drive 1.19: 423 scan_pending | quarantined | scan_blocked, 422 infected, 503
+	 * scan_unavailable) in its own words.
+	 */
 	function errorText(res, t) {
+		const scanText = SCAN.refusalText(res, t);
+		if (scanText) return scanText;
 		const code = res && typeof res.code === 'string' ? res.code : 'failed';
 		const key = CODES[code];
 		return key ? t(`drive.err.${key}`) : t('drive.err.generic', { code });

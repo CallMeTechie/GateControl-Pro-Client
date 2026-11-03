@@ -75,6 +75,10 @@
 .gd-row-meta { font-size: 12.5px; color: var(--muted); }
 .gd-row-text { font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; padding: 6px 10px; border-radius: 8px; background: var(--panel2); margin-top: 2px; }
 .gd-row-note { font-size: 12.5px; color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
+/* GateDrop 1.4: a file the host's virus scan checks / blocked / marked */
+.gd-row-scan { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; }
+.gd-row-scan-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.gd-row-scan .scan-chip { flex-shrink: 0; }
 .gd-row-act { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; flex-shrink: 0; }
 .gd-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
 .gd-st { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 7px; font-size: 11.5px; font-weight: 600; background: var(--panel2); color: var(--muted); }

@@ -22,6 +22,9 @@
 })(typeof self !== 'undefined' ? self : this, function () {
 	'use strict';
 
+	// GateDrop 1.4: the host's virus scan (scan-state.js; absent in an app without it: nothing shown)
+	const SCAN = (typeof self !== 'undefined' && self.GCScanState) || (typeof require === 'function' ? (() => { try { return require('./scan-state'); } catch { return null; } })() : null);
+
 	const APP_ROUTE = 'plg-gatecontrol-gatedrop';
 	const TABS = ['received', 'sent', 'links'];
 	const EXPIRES = ['1h', '1d', '7d', 'once'];
@@ -247,7 +250,15 @@
 			note: s.note || null,
 			canShow: Array.isArray(s.local) && s.local.length > 0,
 			canSave: !s.localOnly && items.some((it) => it.mediaId) && !(Array.isArray(s.local) && s.local.length),
+			// GateDrop 1.4: the files the virus scan checks / blocks / marked — [{ name, chip }] (blocked: no download)
+			scan: scanItems(items, t),
 		};
+	}
+
+	/** The files of a send with a virus scan chip → [{ name, chip: { kind, tone, text, title } }]. */
+	function scanItems(items, t) {
+		if (!SCAN) return [];
+		return (items || []).map((it) => ({ name: str(it && it.name), chip: SCAN.chip(it && it.scan, t) })).filter((x) => x.chip);
 	}
 
 	/**
@@ -259,12 +270,14 @@
 			const status = STATUS.includes(d.status) ? d.status : 'pending';
 			const label = d.kind === 'drive' ? (d.targetName || t('drive.gatedrop.target')) : (d.targetName || d.target || t(`gatedrop.kind.${d.kind}`));
 			const full = status === 'waiting';
+			// GateDrop 1.4: handing on failed because the virus scan blocked the file meanwhile
+			const scanWhy = status === 'failed' && SCAN ? SCAN.refusalText({ code: d.error }, t) : null;
 			return {
 				label,
 				kind: d.kind,
 				status,
 				text: full ? t('gatedrop.status.waiting', { device: label })
-					: t(`gatedrop.status.${status}`) + (d.via && (status === 'delivered' || status === 'opened') ? ` · ${t(`gatedrop.via.${d.via}`)}` : ''),
+					: t(`gatedrop.status.${status}`) + (d.via && (status === 'delivered' || status === 'opened') ? ` · ${t(`gatedrop.via.${d.via}`)}` : '') + (scanWhy ? ` – ${scanWhy}` : ''),
 				full,
 				tone: status === 'failed' || status === 'expired' ? 'err' : status === 'pending' || status === 'waiting' ? 'muted' : 'ok',
 			};
@@ -320,6 +333,8 @@
 		if (p.phase === 'upload') return t('gatedrop.progress.upload', { percent: pc });
 		if (p.phase === 'direct') return t('gatedrop.progress.direct', { percent: pc });
 		if (p.phase === 'download') return t('gatedrop.progress.download', { percent: pc });
+		// GateDrop 1.4: the host still checks a file — sent right after
+		if (p.phase === 'scanning') return t('scan.sendWaiting');
 		return null;
 	}
 
@@ -342,6 +357,7 @@
 		if (j.phase === 'failed') return { tone: 'busy', text: t('gatedrop.progress.failed'), percent: null };
 		if (j.phase === 'upload' || j.phase === 'direct') return { tone: 'busy', text: progressText(j, t), percent: percent(j.sent, j.total) };
 		if (j.phase === 'sent') return { tone: 'busy', text: t('gatedrop.sendToast.transferring'), percent: null };
+		if (j.phase === 'scanning') return { tone: 'busy', text: progressText(j, t), percent: null };
 		return { tone: 'busy', text: t('gatedrop.sendToast.preparing'), percent: null };
 	}
 
@@ -356,6 +372,9 @@
 	/** A failed answer ({ ok: false, code }) → text. */
 	function errorText(res, t) {
 		const code = res && res.code;
+		// GateDrop 1.4: 422 infected / 423 scan_blocked { name } (nothing was sent), 503 scan_unavailable, 423 of a download
+		const scanText = SCAN ? SCAN.refusalText(res, t) : null;
+		if (scanText) return scanText;
 		if (ERRORS.includes(code)) return t(`gatedrop.error.${code}`);
 		if (code === 'auth') return t('gatedrop.error.forbidden');
 		if (code === 'too_many') return t('gatedrop.dialog.tooMany');

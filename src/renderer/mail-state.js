@@ -26,6 +26,9 @@
 })(typeof self !== 'undefined' ? self : this, function () {
 	'use strict';
 
+	// Mail 1.8 'scan': the host's virus scan (scan-state.js; window.GCScanState in the app, required in the tests)
+	const SCAN = (typeof self !== 'undefined' && self.GCScanState) || (typeof require === 'function' ? (() => { try { return require('./scan-state'); } catch { return null; } })() : null);
+
 	const DAY = 24 * 60 * 60 * 1000;
 	const ROLE_ORDER = ['inbox', 'drafts', 'sent', 'archive', 'junk', 'trash'];
 	const SWIPES = ['archive', 'delete', 'read', 'none'];
@@ -494,6 +497,23 @@
 		conflict: 'conflict', read_only: 'read_only', feature_off: 'feature_off', not_supported: 'not_supported', send_failed: 'send_failed',
 		invitation_outdated: 'invitation_outdated', invalid_vcard: 'invalid_vcard', invalid_ics: 'invalid_ics', dav_unavailable: 'dav_unavailable',
 	};
+
+	/**
+	 * Mail 1.8 'scan': what an attachment offers → { chip, blocked, warn, reason } — blocked or removed: no open,
+	 * save, "In Drive ablegen" (the reason instead); marked: asked before it opens / is saved.
+	 */
+	function attScan(a, t) {
+		const scan = a && a.scan;
+		if (!SCAN || !scan) return { chip: null, blocked: false, warn: false, reason: null };
+		const blocked = SCAN.isBlocked(scan);
+		return { chip: SCAN.chip(scan, t), blocked, warn: SCAN.isWarning(scan), reason: blocked ? SCAN.reason(scan, t) : null };
+	}
+
+	/** The text of a failed outbox entry (`error`: a code, e.g. Mail 1.8 attachment_blocked, or the server's text). */
+	function outboxError(error, t) {
+		const scanText = SCAN ? SCAN.refusalText({ code: error }, t) : null;
+		return scanText || str(error);
+	}
 
 	/** The text of a failed answer ({ code, detail }); the server's hint for a refused login. */
 	// ── Accounts as the Outlook app shows them (Mail 1.1.2) ─────
@@ -1364,6 +1384,9 @@
 	}
 
 	function errorText(r, t, lang) {
+		// Mail 1.8: 423 quarantined | scan_pending | scan_blocked, 410 attachment_removed, 409 attachment_blocked, 422 infected
+		const scanText = SCAN ? SCAN.refusalText(r, t) : null;
+		if (scanText) return scanText;
 		const code = str(r && r.code);
 		const hint = r && r.detail && r.detail.hint ? (lang === 'en' ? r.detail.hint.en || r.detail.hint.de : r.detail.hint.de || r.detail.hint.en) : null;
 		const key = ERR_KEYS[code] || (/^http_5/.test(code) ? 'offline' : 'failed');
@@ -1416,6 +1439,8 @@
 		undoLeft,
 		canReplyAll,
 		attachmentBytes,
+		attScan,
+		outboxError,
 		providerRows,
 		freeColor,
 		quotaView,

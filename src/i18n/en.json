@@ -365,6 +365,11 @@
       "quietNoPortal": "The portal is available once the VPN is connected.",
       "killSwitchNote": "Kill switch note",
       "saveFailed": "Setting could not be saved: {{ error }}"
+    },
+    "scan": {
+      "afterCheck": "The file opens once the check is done.",
+      "found": "Malware found",
+      "foundOf": "Malware found ({{finding}})"
     }
   },
   "vault": {
@@ -3027,7 +3032,8 @@
     "warn": {
       "password": "Please share the link's password separately.",
       "too_large": "Attachments too large – big Drive files go as a link.",
-      "no_subject": "The mail has no subject."
+      "no_subject": "The mail has no subject.",
+      "attachment_blocked": "An attachment is blocked (malware) and cannot be sent."
     },
     "schedule": {
       "title": "Schedule send",
