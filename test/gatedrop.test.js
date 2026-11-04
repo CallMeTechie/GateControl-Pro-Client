@@ -186,6 +186,78 @@ describe('gatedrop-state', () => {
     assert.deepEqual(GS.sortLinks([{ ...active, token: 'old', expiresAt: NOW - 5 }, active], NOW).map((x) => x.token), [active.token, 'old']);
   });
 
+  it('GateDrop 1.5 sent list: bereitgestellt / empfangen / abgeholt only with pickedAt; older plugins "zugestellt"', () => {
+    const view = (deliveries, extra = {}) => GS.sentView({ id: '9', items: [{ name: 'a' }], deliveries, ...extra }, { t, locale: 'de', now: NOW });
+    const s = view([
+      { kind: 'device', target: '43', targetName: 'Pixel', status: 'delivered', via: 'server', pickedAt: null },
+      { kind: 'device', target: '44', targetName: 'Tablet', status: 'delivered', via: 'direct', pickedAt: NOW - 60000 },
+      { kind: 'person', target: '8', targetName: 'Anna', status: 'delivered', via: 'server', pickedAt: null },
+      { kind: 'person', target: '9', targetName: 'Ben', status: 'delivered', via: 'server', pickedAt: NOW },
+      { kind: 'device', target: '45', targetName: 'Alt', status: 'delivered', via: 'server' },
+      { kind: 'nas', target: '/Fotos', targetName: 'Fotos', status: 'delivered', via: 'server', pickedAt: NOW },
+      { kind: 'person', target: '10', targetName: 'Cleo', status: 'opened', via: 'server', pickedAt: NOW },
+    ]);
+    assert.deepEqual(s.deliveries.map((d) => [d.text, d.tone]), [
+      ['gatedrop.status.provided · gatedrop.via.server', 'muted'],
+      ['gatedrop.status.received · gatedrop.via.direct', 'ok'],
+      ['gatedrop.status.provided · gatedrop.via.server', 'muted'],
+      ['gatedrop.status.picked · gatedrop.via.server', 'ok'],
+      // no pickedAt key at all (GateDrop < 1.5): as before
+      ['gatedrop.status.delivered · gatedrop.via.server', 'ok'],
+      ['gatedrop.status.delivered · gatedrop.via.server', 'ok'],
+      ['gatedrop.status.opened · gatedrop.via.server', 'ok'],
+    ]);
+  });
+
+  it('GateDrop 1.5 sent list: "vom Admin entfernt" instead of "abgelaufen", "nicht alle Dateien angekommen"', () => {
+    const view = (deliveries, extra = {}) => GS.sentView({ id: '9', items: [{ name: 'a' }], deliveries, ...extra }, { t, locale: 'de', now: NOW });
+    const removed = view([
+      { kind: 'device', target: '43', targetName: 'Pixel', status: 'expired', via: null, error: 'removed', pickedAt: null },
+      { kind: 'person', target: '8', targetName: 'Anna', status: 'opened', via: 'server', pickedAt: NOW },
+    ], { removed: true, at: NOW - 3600000 });
+    assert.deepEqual(removed.deliveries.map((d) => [d.text, d.tone]), [['gatedrop.status.removed', 'err'], ['gatedrop.status.opened · gatedrop.via.server', 'ok']]);
+    assert.match(removed.meta, /^gatedrop\.list\.removed · /);
+    // the send removed, the delivery only expired (no error): removed too
+    assert.equal(view([{ kind: 'device', target: '43', status: 'expired' }], { removed: true }).deliveries[0].text, 'gatedrop.status.removed');
+    // expired on its own (retention): still "abgelaufen", no removed line
+    const expired = view([{ kind: 'device', target: '43', status: 'expired' }]);
+    assert.equal(expired.deliveries[0].text, 'gatedrop.status.expired');
+    assert.doesNotMatch(expired.meta, /removed/);
+    // the receiving device reported fewer bytes: the reason goes along
+    assert.deepEqual(GS.deliveryState({ kind: 'device', status: 'failed', error: 'incomplete' }), { key: 'failed', tone: 'err' });
+    assert.equal(view([{ kind: 'device', target: '43', targetName: 'Pixel', status: 'failed', error: 'incomplete' }]).deliveries[0].text, 'gatedrop.status.failed – gatedrop.status.incomplete');
+    assert.equal(view([{ kind: 'device', target: '43', status: 'delivered', via: 'server', error: 'incomplete', pickedAt: null }]).deliveries[0].text, 'gatedrop.status.provided · gatedrop.via.server – gatedrop.status.incomplete');
+  });
+
+  it('GateDrop 1.5 retention text: limits.retention, else retentionDays, else 7 days', () => {
+    assert.equal(GS.retentionText(null, t), 'gatedrop.retentionDays(gatedrop.days.other(7))');
+    assert.equal(GS.retentionText({ retentionDays: 14, retention: null }, t), 'gatedrop.retentionDays(gatedrop.days.other(14))');
+    assert.equal(GS.retentionText({ retentionDays: 7, retention: { afterPickupDays: 7, unpickedDays: 7 } }, t), 'gatedrop.retentionDays(gatedrop.days.other(7))');
+    assert.equal(GS.retentionText({ retentionDays: 14, retention: { afterPickupDays: 1, unpickedDays: 14 } }, t), 'gatedrop.retentionSplit(gatedrop.days.one,gatedrop.days.other(14))');
+    assert.equal(GS.retentionText({ retentionDays: 30, retention: { afterPickupDays: 0, unpickedDays: 30 } }, t), 'gatedrop.retentionNow(gatedrop.days.other(30))');
+    // "after the pick-up" never longer than what is not picked up
+    assert.equal(GS.retentionText({ retention: { afterPickupDays: 7, unpickedDays: 3 } }, t), 'gatedrop.retentionDays(gatedrop.days.other(3))');
+    const dir = coreDir();
+    if (dir) {
+      const read = (lang) => JSON.parse(fs.readFileSync(path.join(dir, 'src', 'i18n', 'locales', `${lang}.json`), 'utf8')).gatedrop;
+      const de = read('de');
+      const en = read('en');
+      const real = (g) => (key, p) => {
+        const v = key.split('.').slice(1).reduce((o, k) => (o ? o[k] : undefined), g);
+        return String(v).replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => String(p[k]));
+      };
+      assert.equal(GS.retentionText(null, real(de)), 'Empfangenes bleibt 7 Tage auf dem Server.');
+      assert.equal(GS.retentionText({ retention: { afterPickupDays: 1, unpickedDays: 14 } }, real(de)), 'Empfangenes bleibt nach der Abholung 1 Tag, sonst 14 Tage auf dem Server.');
+      assert.equal(GS.retentionText({ retention: { afterPickupDays: 0, unpickedDays: 30 } }, real(de)), 'Empfangenes wird nach der Abholung vom Server gelöscht, nicht Abgeholtes bleibt 30 Tage.');
+      assert.equal(GS.retentionText({ retention: { afterPickupDays: 3, unpickedDays: 7 } }, real(en)), 'Received items stay on the server for 3 days after they are picked up, otherwise for 7 days.');
+      assert.equal(de.status.removed, 'vom Admin entfernt');
+      assert.equal(de.status.provided, 'bereitgestellt');
+      assert.equal(de.error.gone, 'Der Versand ist abgelaufen oder wurde vom Admin entfernt.');
+    }
+    // 410 gone (expired or removed by an administrator): its own text
+    assert.equal(GS.errorText({ ok: false, code: 'gone' }, t), 'gatedrop.error.gone');
+  });
+
   it('progress, rejected files, errors, merging, navigation', () => {
     assert.equal(GS.progressText({ phase: 'upload', sent: 1, total: 4 }, t), 'gatedrop.progress.upload(25)');
     assert.equal(GS.progressText({ phase: 'done' }, t), null);
@@ -362,7 +434,8 @@ describe('GateDrop page wiring', () => {
     for (const src of [view, state, html]) for (const m of src.matchAll(/['"`](gatedrop\.[a-zA-Z0-9_.]+[a-zA-Z0-9_])['"`]/g)) keys.add(m[1]);
     for (const x of GS.EXPIRES) keys.add(`gatedrop.expires.${x}`);
     for (const x of GS.TABS) keys.add(`gatedrop.tab.${x}`);
-    for (const x of ['pending', 'direct', 'delivered', 'opened', 'failed', 'expired']) keys.add(`gatedrop.status.${x}`);
+    for (const x of ['pending', 'direct', 'delivered', 'opened', 'failed', 'expired', 'provided', 'received', 'picked', 'removed', 'incomplete']) keys.add(`gatedrop.status.${x}`);
+    for (const x of ['one', 'other']) keys.add(`gatedrop.days.${x}`);
     for (const x of ['direct', 'server']) keys.add(`gatedrop.via.${x}`);
     for (const x of ['device', 'person', 'nas', 'link']) keys.add(`gatedrop.kind.${x}`);
     for (const x of ['directory', 'too_large', 'empty', 'missing', 'too_many', 'invalid']) keys.add(`gatedrop.rejected.${x}`);

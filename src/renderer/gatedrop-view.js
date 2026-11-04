@@ -142,6 +142,7 @@
 			accessBusy: false,
 			folderBusy: false,    // folder dialog open / resetting
 			runAs: null,          // system.runAs(): another Windows user runs the app
+			limits: null,         // GET targets `limits`: how long received files stay on the server (GateDrop 1.5 retention)
 		};
 
 		// ── Page skeleton ────────────────────────────────────
@@ -189,7 +190,7 @@
 				]),
 				refs.explorerRow,
 				refs.accessRow,
-				el('span', { class: 'gd-side-note', text: t('gatedrop.retention') }),
+				refs.retention = el('span', { class: 'gd-side-note gd-retention', text: GS.retentionText(S.limits, t) }),
 			]);
 
 			refs.jobs = el('div', { class: 'gd-jobs', 'aria-live': 'polite' });
@@ -363,6 +364,18 @@
 			S.accessBusy = false;
 			if (r) S.access = r;
 			renderAccess();
+		}
+
+		/** "Empfangenes bleibt … auf dem Server" — the administrator's retention (GateDrop 1.5), from GET targets. */
+		function applyLimits(r) {
+			if (!r || r.ok === false || !r.limits) return;
+			S.limits = r.limits;
+			if (refs.retention) refs.retention.textContent = GS.retentionText(S.limits, t);
+		}
+
+		async function loadLimits() {
+			if (typeof api.targets !== 'function') return;
+			try { applyLimits(await api.targets({})); } catch { /* keeps the text it has */ }
 		}
 
 		async function loadExplorer() {
@@ -572,7 +585,7 @@
 		function sentRow(s) {
 			const v = GS.sentView(s, { t, locale: locale(), now: now() });
 			const chips = el('div', { class: 'gd-chips' }, v.deliveries.map((d) => el('span', { class: `gd-st gd-st-${d.tone}`, text: d.full ? d.text : `${d.label}: ${d.text}` })));
-			return el('div', { class: 'gd-row' }, [
+			return el('div', { class: 'gd-row', 'data-id': s.id }, [
 				rowIcon('up'),
 				el('div', { class: 'gd-row-tx' }, [el('b', { class: 'gd-row-title', text: v.title }), el('span', { class: 'gd-row-meta', text: v.meta }), v.deliveries.length ? chips : null]),
 			]);
@@ -699,7 +712,7 @@
 			let r;
 			try { r = await api.targets({ refresh }); } catch (err) { r = { ok: false, code: err && err.code }; }
 			if (!D.open) return;
-			if (r && r.ok) D.targets = r;
+			if (r && r.ok) { D.targets = r; applyLimits(r); }
 			else D.loadError = r || { code: 'failed' };
 			renderDialog();
 		}
@@ -941,6 +954,7 @@
 			if (!was && available()) {
 				loadExplorer();
 				loadAccess();
+				loadLimits();
 				if (S.shown) reload(false);
 			}
 			if (!available() && D.open && S.status && S.status.state === 'unavailable') closeDialog();
@@ -970,6 +984,7 @@
 			S.shown = true;
 			if (!S.explorer) loadExplorer();
 			if (!S.access && available()) loadAccess();
+			if (available()) loadLimits();
 			if (S.dirty.has(S.tab) || !S.lists[S.tab]) load(S.tab);
 		}
 

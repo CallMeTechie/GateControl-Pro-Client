@@ -31,7 +31,8 @@
 	const MAX_ITEMS = 20;
 	const MAX_TEXT = 20000;
 	// folder_missing / folder_readonly: "Speicherort für empfangene Dateien" (a folder that is gone / not writable)
-	const ERRORS = ['unavailable', 'target_unavailable', 'network', 'timeout', 'too_large', 'quota_exceeded', 'no_target', 'missing', 'changed', 'forbidden', 'invalid', 'folder_missing', 'folder_readonly'];
+	// gone (410): the send expired or an administrator removed its files (GateDrop 1.5)
+	const ERRORS = ['unavailable', 'target_unavailable', 'network', 'timeout', 'too_large', 'quota_exceeded', 'no_target', 'missing', 'changed', 'forbidden', 'invalid', 'folder_missing', 'folder_readonly', 'gone'];
 	// Who may send to this PC (GateDrop 1.2.0): only its owner, or everyone of the GateControl.
 	const ACCESS = ['self', 'everyone'];
 	// waiting (GateDrop 1.1.0): the own device was offline, the send waits until it is online again.
@@ -275,6 +276,22 @@
 	}
 
 	/**
+	 * The word of a delivery's state → { key, tone } (key: gatedrop.status.<key>). GateDrop 1.5:
+	 *   - `delivered` of a device / person: with `pickedAt` "empfangen" (device) / "abgeholt" (person), without it only
+	 *     "bereitgestellt" — only when the plugin names `pickedAt` at all; an older plugin leaves it out: "zugestellt";
+	 *   - `expired` because an administrator removed the files (error `removed`, or the send `removed`): "vom Admin entfernt".
+	 */
+	function deliveryState(d, s) {
+		const status = STATUS.includes(d && d.status) ? d.status : 'pending';
+		if (status === 'expired' && ((d && d.error === 'removed') || (s && s.removed))) return { key: 'removed', tone: 'err' };
+		if (status === 'delivered' && d && (d.kind === 'device' || d.kind === 'person') && Object.prototype.hasOwnProperty.call(d, 'pickedAt')) {
+			if (!d.pickedAt) return { key: 'provided', tone: 'muted' };
+			return { key: d.kind === 'device' ? 'received' : 'picked', tone: 'ok' };
+		}
+		return { key: status, tone: status === 'failed' || status === 'expired' ? 'err' : status === 'pending' || status === 'waiting' ? 'muted' : 'ok' };
+	}
+
+	/**
 	 * Sent send → { title, meta, deliveries: [{ label, kind, status, text, full, tone }] }.
 	 * full: `text` names the target itself ("Wartet, bis „Pixel“ online ist"), shown without the label.
 	 */
@@ -283,23 +300,53 @@
 			const status = STATUS.includes(d.status) ? d.status : 'pending';
 			const label = d.kind === 'drive' ? (d.targetName || t('drive.gatedrop.target')) : (d.targetName || d.target || t(`gatedrop.kind.${d.kind}`));
 			const full = status === 'waiting';
+			const st = deliveryState(d, s);
 			// GateDrop 1.4: handing on failed because the virus scan blocked the file meanwhile
 			const scanWhy = status === 'failed' && SCAN ? SCAN.refusalText({ code: d.error }, t) : null;
+			// GateDrop 1.5: the receiving device reported fewer bytes than the files have
+			const why = d.error === 'incomplete' ? ` – ${t('gatedrop.status.incomplete')}` : '';
 			return {
 				label,
 				kind: d.kind,
 				status,
 				text: full ? t('gatedrop.status.waiting', { device: label })
-					: t(`gatedrop.status.${status}`) + (d.via && (status === 'delivered' || status === 'opened') ? ` · ${t(`gatedrop.via.${d.via}`)}` : '') + (scanWhy ? ` – ${scanWhy}` : ''),
+					: t(`gatedrop.status.${st.key}`) + (d.via && (status === 'delivered' || status === 'opened') ? ` · ${t(`gatedrop.via.${d.via}`)}` : '') + (scanWhy ? ` – ${scanWhy}` : '') + why,
 				full,
-				tone: status === 'failed' || status === 'expired' ? 'err' : status === 'pending' || status === 'waiting' ? 'muted' : 'ok',
+				tone: st.tone,
 			};
 		});
 		const meta = [];
+		// GateDrop 1.5: an administrator removed the files from the server
+		if (s.removed) meta.push(t('gatedrop.list.removed'));
 		if (s.to) meta.push(t('gatedrop.list.to', { name: s.to }));
 		else if (deliveries.length) meta.push(t('gatedrop.list.to', { name: deliveries.map((d) => d.label).join(', ') }));
 		if (s.at) meta.push(when(s.at, now, locale, t));
 		return { title: sendTitle(s, t), meta: meta.join(' · '), deliveries };
+	}
+
+	/** "1 Tag" / "7 Tage" */
+	function daysText(n, t) {
+		return n === 1 ? t('gatedrop.days.one') : t('gatedrop.days.other', { n });
+	}
+
+	/**
+	 * How long received files stay on the server (GET targets `limits`, core normalizeTargets) → text. GateDrop 1.5:
+	 * `retention { afterPickupDays, unpickedDays }` set by an administrator (after the pick-up 0 = at once); older
+	 * plugins: `retentionDays`; nothing loaded yet: 7 days.
+	 */
+	function retentionText(limits, t) {
+		const l = limits && typeof limits === 'object' ? limits : {};
+		const r = l.retention && typeof l.retention === 'object' ? l.retention : null;
+		const ok = (n) => Number.isSafeInteger(n) && n >= 0;
+		if (r && ok(r.afterPickupDays) && ok(r.unpickedDays) && r.unpickedDays > 0) {
+			if (r.afterPickupDays < r.unpickedDays) {
+				if (r.afterPickupDays === 0) return t('gatedrop.retentionNow', { unpicked: daysText(r.unpickedDays, t) });
+				return t('gatedrop.retentionSplit', { after: daysText(r.afterPickupDays, t), unpicked: daysText(r.unpickedDays, t) });
+			}
+			return t('gatedrop.retentionDays', { days: daysText(r.unpickedDays, t) });
+		}
+		const n = ok(l.retentionDays) && l.retentionDays > 0 ? l.retentionDays : 7;
+		return t('gatedrop.retentionDays', { days: daysText(n, t) });
 	}
 
 	/** Link state: active | expired | locked | ended */
@@ -466,6 +513,8 @@
 		sendTitle,
 		receivedView,
 		sentView,
+		deliveryState,
+		retentionText,
 		linkState,
 		linkView,
 		sortLinks,
