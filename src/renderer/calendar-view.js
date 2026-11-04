@@ -24,6 +24,22 @@
  * Offline (the core's cache) the calendar shows what it has and greys out
  * every change ("Offline – geht wieder mit Verbindung").
  *
+ * Mail 1.9.0 (only with the features of `me`; without them nothing changes):
+ * `freeBusy` — the section „Frei/Gebucht“ in the event dialog (a bar per
+ * person and resource, the chosen time framed, who cannot then, „Vorschläge,
+ * bei denen alle können“; mockup Planer); `resources` — „Ressource buchen“
+ * beside „Neuer Termin“ (kinds, the day as a bar per resource, „Buchen“ /
+ * „Anfrage an … senden“; mockup Ressource), resources as attendees of an event
+ * and „Meine Buchungen“; `bookingRequests` — „Anfragen · n“ with Offen /
+ * Erledigt / Meine Buchungen, Freigeben, Ablehnen, „Trotzdem freigeben“
+ * (mockup Anfragen); `calendarSharing` — „Teilen“ in the menu of an own
+ * GateControl calendar (people and groups at Frei/Gebucht, Lesen, Bearbeiten,
+ * „Frei/Gebucht für alle in GateControl“) and „Mit mir geteilt“ in the menu
+ * (a ring instead of a filled tick, „neu“ until shown; mockup Teilen). Items
+ * of a calendar shared at „Frei/Gebucht“ (and private ones) never open: only
+ * „Gebucht · <Zeit> · <Kalender> · Frei/Gebucht“. Free/busy, resources and
+ * requests are never kept offline.
+ *
  * Built by mail-view.js through GCCalendarView.create(ctx) with the Mail
  * page's helpers (ctx); pure logic in mail-state.js (GCMailState). Server
  * text only goes into textContent / attributes; an event's HTML description
@@ -64,11 +80,21 @@
 			shown: false,
 			scrollTop: null,
 			invites: [],
+			// Mail 1.9.0
+			openCount: 0,         // GET bookings?state=open counts.open („Anfragen · n“)
+			resources: null,      // GET resources (the event dialog's „Ressource hinzufügen …“)
+			reqView: null,        // the open dialog „Buchungsanfragen“: { reload }
+			shareView: null,      // the open dialog „Kalender teilen“ / „Mit mir geteilt“: { reload }
 		};
 
+		const has = (f) => ctx.has(f);
 		const cals = () => (C.cals && C.cals.calendars) || [];
 		const overlays = () => (C.cals && C.cals.overlays) || [];
-		const calOf = (id) => cals().find((c) => c.id === id) || null;
+		// Mail 1.9.0: the calendars shared with the person („Mit mir geteilt“), as calendars for colours and the dialog
+		const sharedCals = () => (has('calendarSharing') && C.cals && C.cals.shared) || [];
+		const allCals = () => [...cals(), ...MS.sharedAsCalendars(sharedCals())];
+		const calOf = (id) => allCals().find((c) => c.id === id) || null;
+		const colorOf = (x) => MS.itemColor(x, allCals(), overlays());
 		const offlineNote = () => t('mail.cal.offlineHint');
 
 		// ── Loading ──────────────────────────────────────
@@ -83,8 +109,16 @@
 					C.view = r.prefs.view === 'day' || r.prefs.view === 'month' || r.prefs.view === 'list' ? r.prefs.view : 'week';
 					C.workWeek = !!r.prefs.workWeek;
 				}
+				if (!r.offline) loadOpenCount();
 			} else if (!C.cals) C.error = errText(r);
 			return r;
+		}
+
+		/** „Anfragen · n“ (Mail 1.9.0, bookingRequests): the open requests the person decides on. */
+		async function loadOpenCount() {
+			if (!has('bookingRequests') || !api.bookings) { C.openCount = 0; return; }
+			const r = await call(api.bookings('open'));
+			if (r && r.ok) { C.openCount = r.counts.open; if (C.shown) renderMain(); }
 		}
 
 		async function loadInvites() {
@@ -105,7 +139,7 @@
 			if (!keep) { C.items = []; C.overlays = []; }
 			C.loading = true;
 			renderMain();
-			const r = await call(api.events({ from: C.range.from, to: C.range.to, calendars: MS.visibleIds(cals(), overlays()) }));
+			const r = await call(api.events({ from: C.range.from, to: C.range.to, calendars: MS.visibleIds(cals(), overlays(), sharedCals()) }));
 			if (seq !== C.seq) return;
 			C.loading = false;
 			if (r && r.ok) {
@@ -125,7 +159,7 @@
 			const to = MS.addDays(from, 30);
 			C.loading = true;
 			renderMain();
-			const r = await call(api.events({ from, to, calendars: MS.visibleIds(cals(), overlays()) }));
+			const r = await call(api.events({ from, to, calendars: MS.visibleIds(cals(), overlays(), sharedCals()) }));
 			C.loading = false;
 			if (r && r.ok) {
 				const seen = new Set([...C.items, ...C.overlays].map((x) => x.key));
@@ -156,8 +190,8 @@
 			return null;
 		}
 
-		function tick(color, on) {
-			const b = el('span', { class: `cal-ck${on ? ' on' : ''}`, 'aria-hidden': 'true' }, [on ? icon('check', 12, '3') : null]);
+		function tick(color, on, ring = false) {
+			const b = el('span', { class: `cal-ck${on ? ' on' : ''}${ring ? ' is-ring' : ''}`, 'aria-hidden': 'true' }, [on ? icon('check', 12, '3') : null]);
 			b.style.setProperty('--c', color);
 			return b;
 		}
@@ -187,12 +221,27 @@
 					side.append(b);
 				}
 			}
+			// Mail 1.9.0: „Mit mir geteilt“ — a ring in the colour (filled tick = shown), „neu“ until shown once
+			if (sharedCals().length) {
+				side.append(el('div', { class: 'ml-lab', text: t('mail.share.withMe') }));
+				for (const x of sharedCals()) {
+					side.append(el('button', {
+						type: 'button', class: 'ml-it cal-it cal-it-shared', role: 'switch', 'aria-checked': x.visible ? 'true' : 'false', title: `${x.name} · ${MS.sharedInfo(x, t)}`,
+						on: { click: () => toggleVisible({ ...x, kind: 'shared' }), contextmenu: (e) => { e.preventDefault(); calMenu(e, { ...x, kind: 'shared' }); } },
+					}, [
+						tick(x.color, x.visible, true),
+						el('span', { class: 'ml-it-tx', text: x.name }),
+						!x.accepted ? el('span', { class: 'cal-it-new', text: t('mail.share.new') }) : el('span', { class: 'cal-it-def', text: x.owner.name }),
+					]));
+				}
+			}
 			// the calendar widget of the start page (Mail 1.4.0; window.GCHomePins, hidden there with servers before)
 			const pins = root.GCHomePins || null;
 			const pinned = !!(pins && pins.hasCalendar());
 			side.append(el('div', { class: 'cal-side-acts' }, [
 				el('button', { type: 'button', class: 'ml-it cal-add', disabled: C.calsOffline || null, on: { click: () => addCalendar() } }, [icon('plus', 16), el('span', { class: 'ml-it-tx', text: t('mail.cal.add') })]),
 				el('button', { type: 'button', class: 'ml-it cal-add', disabled: C.calsOffline || null, on: { click: () => addSubscription() } }, [icon('link', 16), el('span', { class: 'ml-it-tx', text: t('mail.cal.subscribe') })]),
+				has('calendarSharing') && api.shared ? el('button', { type: 'button', class: 'ml-it cal-add cal-withme', disabled: C.calsOffline || null, on: { click: () => withMeDialog() } }, [icon('share', 16), el('span', { class: 'ml-it-tx', text: t('mail.share.withMe') })]) : null,
 				pins && pins.calendarSupported() ? el('button', { type: 'button', class: `ml-it cal-add cal-pin${pinned ? ' on' : ''}`, 'aria-pressed': pinned ? 'true' : 'false', on: { click: () => {
 					pins.setCalendar(!pinned);
 					toast(t(pinned ? 'home.cal.unpin' : 'home.cal.pinned'), 'success');
@@ -203,8 +252,15 @@
 
 		async function toggleVisible(x) {
 			const visible = !x.visible;
-			const r = await call(x.kind === 'overlay' ? api.updateOverlay(x.id, { visible }) : api.updateCalendar(x.id, { visible }));
+			const r = await call(x.kind === 'overlay' ? api.updateOverlay(x.id, { visible }) : (x.kind === 'shared' ? api.updateShared(x.id, { visible }) : api.updateCalendar(x.id, { visible })));
 			if (!r || !r.ok) { toast(errText(r), 'error'); return; }
+			if (x.kind === 'shared') {
+				const it = sharedCals().find((y) => y.id === x.id);
+				if (it && r.item) Object.assign(it, r.item);
+				ctx.renderMenu();
+				loadRange({ keep: true });
+				return;
+			}
 			const list = x.kind === 'overlay' ? overlays() : cals();
 			const it = list.find((y) => y.id === x.id);
 			if (it) it.visible = visible;
@@ -214,6 +270,13 @@
 
 		function calMenu(e, x) {
 			const items = [['mail.cal.menu.color', 'image', () => pickColor(x)]];
+			// Mail 1.9.0: a calendar shared with the person — show / hide; an own GateControl calendar — „Teilen“
+			if (x.kind === 'shared') {
+				items.push([x.visible ? 'mail.share.hide' : 'mail.share.show', 'calendar', () => toggleVisible(x)]);
+				ctx.popMenu(e.clientX, e.clientY, items);
+				return;
+			}
+			if (x.kind === 'calendar' && x.source === 'local' && has('calendarSharing') && api.shares) items.push(['mail.share.menu', 'share', () => shareDialog(x)]);
 			if (x.kind === 'calendar') {
 				items.push([x.notify ? 'mail.cal.menu.notifyOff' : 'mail.cal.menu.notifyOn', 'clock', async () => {
 					const r = await call(api.updateCalendar(x.id, { notify: !x.notify }));
@@ -235,7 +298,7 @@
 			for (const c of MS.COLORS) {
 				const b = el('button', { type: 'button', role: 'radio', class: `ml-color${c === x.color ? ' on' : ''}`, 'aria-checked': c === x.color ? 'true' : 'false', 'aria-label': c, on: { click: async () => {
 					dlg.close();
-					const r = await call(x.kind === 'overlay' ? api.updateOverlay(x.id, { color: c }) : api.updateCalendar(x.id, { color: c }));
+					const r = await call(x.kind === 'overlay' ? api.updateOverlay(x.id, { color: c }) : (x.kind === 'shared' ? api.updateShared(x.id, { color: c }) : api.updateCalendar(x.id, { color: c })));
 					if (!r || !r.ok) { toast(errText(r), 'error'); return; }
 					await loadCalendars();
 					ctx.renderMenu();
@@ -361,12 +424,16 @@
 				root.GCMailUI.seg(MS.VIEWS.map((v) => [v, t(`mail.cal.view.${v}`)]), C.view, (v) => go(v), t('mail.cal.viewLabel')),
 				C.view === 'week' ? el('label', { class: 'cal-ww' }, [sw(C.workWeek, t('mail.cal.workWeek'), (on) => { C.workWeek = on; call(api.calSettings({ workWeek: on })); go(); }), el('span', { text: t('mail.cal.workWeek') })]) : null,
 				el('button', { type: 'button', class: 'ml-ib', title: t('mail.refresh'), 'aria-label': t('mail.refresh'), on: { click: () => reloadSoon(true) } }, [icon('refresh', 16)]),
+				// Mail 1.9.0: „Anfragen · n“ (bookingRequests) or „Meine Buchungen“ (resources)
+				has('bookingRequests') && api.bookings ? el('button', { type: 'button', class: `btn btn-ghost btn-sm cal-requests${C.openCount ? ' has-open' : ''}`, disabled: C.calsOffline || null, on: { click: () => requestsDialog(C.openCount ? 'open' : 'mine') } }, [icon('inbox', 15), el('span', { text: C.openCount ? t('mail.res.requestsN', { n: C.openCount }) : t('mail.res.requests') })])
+					: (has('resources') && api.bookings ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm cal-requests', disabled: C.calsOffline || null, on: { click: () => requestsDialog('mine') } }, [icon('inbox', 15), el('span', { text: t('mail.res.mine') })]) : null),
 				el('button', { type: 'button', class: 'btn btn-pri btn-sm cal-new', disabled: C.offline || C.calsOffline || null, title: C.offline ? offlineNote() : null, on: { click: () => openEditor(null) } }, [icon('plus', 15), el('span', { text: t('mail.cal.newEvent') })]),
+				has('resources') && api.resources ? el('button', { type: 'button', class: 'btn btn-sec btn-sm cal-book', disabled: C.offline || C.calsOffline || null, title: C.offline ? offlineNote() : null, on: { click: () => bookDialog() } }, [icon('resource', 15), el('span', { text: t('mail.res.book') })]) : null,
 			]);
 			main.append(head);
 			// chips of the visible calendars: a click hides / shows
 			const chips = el('div', { class: 'ml-chips cal-chips', role: 'group', 'aria-label': t('mail.cal.visible') });
-			for (const x of [...cals().map((c) => ({ ...c, kind: 'calendar' })), ...overlays().map((o) => ({ ...o, kind: 'overlay' }))]) {
+			for (const x of [...cals().map((c) => ({ ...c, kind: 'calendar' })), ...sharedCals().map((c) => ({ ...c, kind: 'shared' })), ...overlays().map((o) => ({ ...o, kind: 'overlay' }))]) {
 				if (!x.visible) continue;
 				chips.append(el('button', { type: 'button', class: 'ml-chip cal-chip', 'aria-pressed': 'true', title: t('mail.cal.hide', { name: x.name }), on: { click: () => toggleVisible(x) } }, [tick(x.color, true), el('span', { text: x.name })]));
 			}
@@ -388,6 +455,8 @@
 		}
 
 		function blockTitle(x) {
+			// Mail 1.9.0: a free/busy (or private) item of a shared calendar: „Gebucht · 13:00–14:30 · Team · Frei/Gebucht“
+			if (x.shared && !x.eventId) { const c = calOf(x.calendarId); return [x.title, MS.eventTimeText(x, lang(), t), c ? c.name : null, t('mail.share.levels.freebusy')].filter(Boolean).join(' · '); }
 			const parts = [x.title || t('mail.cal.noTitle'), MS.eventTimeText(x, lang(), t)];
 			if (x.location) parts.push(x.location);
 			if (x.overlayId) parts.push(t('mail.cal.readOnly'));
@@ -397,7 +466,7 @@
 		}
 
 		function itemClasses(x) {
-			return [x.overlayId ? 'is-overlay' : '', x.myResponse === 'needs_action' ? 'is-open' : '', x.status === 'cancelled' ? 'is-cancelled' : '', x.busy === 'free' ? 'is-free' : '',
+			return [x.overlayId ? 'is-overlay' : '', x.shared ? 'is-shared' : '', x.shared && !x.eventId ? 'is-busyonly' : '', x.busy === 'tentative' && x.shared ? 'is-tentative' : '', x.myResponse === 'needs_action' ? 'is-open' : '', x.status === 'cancelled' ? 'is-cancelled' : '', x.busy === 'free' ? 'is-free' : '',
 				C.sheet && C.sheet.item && C.sheet.item.key === x.key ? 'on' : ''].filter(Boolean).join(' ');
 		}
 
@@ -426,7 +495,7 @@
 				for (const x of MS.allDayOn(all, d)) {
 					anyAllDay = true;
 					const b = el('button', { type: 'button', class: `cal-ad ${itemClasses(x)}`, title: blockTitle(x), on: { click: () => openSheet(x) } }, [el('span', { text: x.title || t('mail.cal.noTitle') })]);
-					b.style.setProperty('--c', MS.itemColor(x, cals(), overlays()));
+					b.style.setProperty('--c', colorOf(x));
 					cell.append(b);
 				}
 				allRow.append(cell);
@@ -457,7 +526,7 @@
 						el('span', { class: 'cal-ev-t', text: x.title || t('mail.cal.noTitle') }),
 						b.height >= 40 ? el('span', { class: 'cal-ev-s', text: [MS.eventTimeText(x, lang(), t), x.location, x.overlayId ? t('mail.cal.readOnly') : (x.myResponse === 'needs_action' ? t('mail.cal.openInvite') : null)].filter(Boolean).join(' · ') }) : null,
 					]);
-					ev.style.setProperty('--c', MS.itemColor(x, cals(), overlays()));
+					ev.style.setProperty('--c', colorOf(x));
 					ev.style.top = `${(b.top / 60) * HOUR_PX}px`;
 					ev.style.height = `${Math.max(18, (b.height / 60) * HOUR_PX - 2)}px`;
 					ev.style.left = `calc(${(b.col / b.cols) * 100}% + 2px)`;
@@ -490,7 +559,7 @@
 						!x.allDay ? el('span', { class: 'cal-mtime', text: MS.hhmm(x.start) }) : null,
 						el('span', { class: 'cal-mtitle', text: x.title || t('mail.cal.noTitle') }),
 					]);
-					b.style.setProperty('--c', MS.itemColor(x, cals(), overlays()));
+					b.style.setProperty('--c', colorOf(x));
 					cell.append(b);
 				}
 				if (list.length > 3) cell.append(el('button', { type: 'button', class: 'cal-mmore', text: t('mail.cal.more', { count: list.length - 3 }), on: { click: () => go('day', d) } }));
@@ -513,7 +582,7 @@
 						el('span', { class: 'cal-ag-time', text: MS.eventTimeText(x, lang(), t) }),
 						el('span', { class: 'cal-ag-tx' }, [el('span', { class: 'cal-ag-title', text: x.title || t('mail.cal.noTitle') }), x.location || x.overlayId ? el('span', { class: 'ml-sub', text: [x.location, x.overlayId ? t('mail.cal.readOnly') : null].filter(Boolean).join(' · ') }) : null]),
 					]);
-					row.style.setProperty('--c', MS.itemColor(x, cals(), overlays()));
+					row.style.setProperty('--c', colorOf(x));
 					scroll.append(row);
 				}
 			}
@@ -526,6 +595,8 @@
 
 		async function openSheet(item, { quiet = false } = {}) {
 			const seq = ++C.sheetSeq;
+			// Mail 1.9.0: a free/busy item of a shared calendar never opens — only its time and calendar
+			if (!MS.itemOpens(item)) { C.sheet = { item, busyOnly: true }; renderMain(); return; }
 			if (!quiet || !C.sheet) C.sheet = { item, event: null, loading: !item.overlayId, error: null };
 			renderMain();
 			if (item.overlayId) return;
@@ -550,7 +621,7 @@
 			const S = C.sheet;
 			const x = S.event || S.item;
 			const box = el('aside', { class: 'cal-sheet', role: 'dialog', 'aria-label': x.title || t('mail.cal.event') });
-			const color = MS.itemColor(x, cals(), overlays());
+			const color = colorOf(x);
 			box.style.setProperty('--c', color);
 			box.append(el('div', { class: 'cal-sh-head' }, [
 				el('span', { class: 'cal-sh-bar' }),
@@ -568,7 +639,9 @@
 			if (x.status === 'cancelled') scroll.append(el('div', { class: 'ml-banner is-err' }, [icon('alert', 14), el('span', { text: t('mail.cal.cancelled') })]));
 			const cal = x.calendarId ? calOf(x.calendarId) : null;
 			const ov = x.overlayId ? overlays().find((o) => o.id === x.overlayId) : null;
-			if (cal || ov) scroll.append(sheetRow('calendar', [el('span', { class: 'cal-sh-cal' }, [dot(color), el('span', { text: (cal || ov).name })]), ov ? el('span', { class: 'ml-sub', text: t('mail.cal.readOnlyLong') }) : null]));
+			if (cal || ov) scroll.append(sheetRow('calendar', [el('span', { class: 'cal-sh-cal' }, [dot(color), el('span', { text: (cal || ov).name })]), ov ? el('span', { class: 'ml-sub', text: t('mail.cal.readOnlyLong') }) : null,
+				cal && cal.shared ? el('span', { class: 'ml-sub', text: MS.sharedInfo(cal, t) }) : null]));
+			if (S.busyOnly) { scroll.append(el('p', { class: 'ml-note', text: t('mail.share.busyOnly') })); return box; }
 			if (x.location) {
 				scroll.append(sheetRow('folder', [el('button', { type: 'button', class: 'cal-link', title: t('mail.cal.openMap'), text: x.location, on: { click: () => openUrl(`https://www.openstreetmap.org/search?query=${encodeURIComponent(x.location)}`) } })]));
 			}
@@ -690,18 +763,19 @@
 		/** The dialog of a new (ev null, at { start, end }) or an existing event. */
 		async function openEditor(ev, at = null) {
 			if (!C.cals) await loadCalendars();
-			const writable = cals().filter((c) => c.writable);
+			// Mail 1.9.0: calendars shared at „Bearbeiten“ too (without attendees)
+			const writable = allCals().filter((c) => c.writable);
 			if (!writable.length) { toast(t('mail.cal.noWritable'), 'error'); return; }
 			const prefs = (C.cals && C.cals.prefs) || {};
 			let F;
-			if (ev) F = MS.eventForm(ev, prefs, cals());
+			if (ev) F = MS.eventForm(ev, prefs, allCals());
 			else {
 				const base = at || (() => { const s = MS.slotAt(new Date(C.anchor).setHours(0, 0, 0, 0), Math.max(9 * 60, (new Date().getHours() + 1) * 60)); return s; })();
-				F = MS.eventForm({ start: base.start, end: base.end, allDay: false, calendarId: prefs.defaultCalendarId }, prefs, cals());
+				F = MS.eventForm({ start: base.start, end: base.end, allDay: false, calendarId: prefs.defaultCalendarId }, prefs, allCals());
 			}
 			const zone = (ev && ev.timeZone) || deviceZone() || '';
 			// a change sends only what changed (a series keeps its own times when they were not touched)
-			const before = ev ? MS.eventBody(MS.eventForm(ev, prefs, cals()), { hadOnline: !!ev.online }) : null;
+			const before = ev ? MS.eventBody(MS.eventForm(ev, prefs, allCals()), { hadOnline: !!ev.online }) : null;
 			const dlg = openDialog({ title: ev ? t('mail.cal.editTitle') : t('mail.cal.newEvent'), wide: true, closeLabel: t('mail.close'), cls: 'cal-edit' });
 			const field = (label, input, cls) => el('label', { class: `ml-field${cls ? ` ${cls}` : ''}` }, [el('span', { class: 'ml-sub', text: label }), input]);
 			const title = el('input', { type: 'text', class: 'ml-input cal-in-title', maxlength: '255', value: F.title, placeholder: t('mail.cal.titlePh'), 'aria-label': t('mail.cal.titleLabel') });
@@ -709,7 +783,7 @@
 			const calSel = el('select', { class: 'ml-input', 'aria-label': t('mail.cal.calendar') });
 			for (const c of writable) calSel.append(el('option', { value: String(c.id), text: c.name, selected: c.id === F.calendarId || null }));
 			calSel.disabled = !!ev;
-			const allDaySw = sw(F.allDay, t('mail.cal.allDay'), (on) => { F.allDay = on; drawTimes(); });
+			const allDaySw = sw(F.allDay, t('mail.cal.allDay'), (on) => { F.allDay = on; drawTimes(); planner.refresh(); });
 			const times = el('div', { class: 'cal-times' });
 			const drawTimes = () => {
 				clear(times);
@@ -721,8 +795,9 @@
 					F.startDate = sd.value;
 					const now = MS.fromYmd(sd.value);
 					if (before !== null && end !== null && now !== null) { F.endDate = MS.ymd(MS.addDays(now, Math.round((end - before) / 86400000))); ed.value = F.endDate; }
+					planner.refresh();
 				});
-				ed.addEventListener('change', () => { F.endDate = ed.value; });
+				ed.addEventListener('change', () => { F.endDate = ed.value; planner.refresh(); });
 				if (F.allDay) {
 					times.append(field(t('mail.cal.from'), sd), field(t('mail.cal.to'), ed));
 				} else {
@@ -734,11 +809,14 @@
 						F.startTime = st.value;
 						const s1 = MS.localMs(F.startDate, st.value);
 						if (s0 !== null && e0 !== null && s1 !== null) { const e1 = s1 + (e0 - s0); F.endDate = MS.ymd(e1); F.endTime = MS.hhmm(e1); et.value = F.endTime; ed.value = F.endDate; }
+						planner.refresh();
 					});
-					et.addEventListener('change', () => { F.endTime = et.value; });
+					et.addEventListener('change', () => { F.endTime = et.value; planner.refresh(); });
 					times.append(el('div', { class: 'cal-pair' }, [field(t('mail.cal.from'), sd), field(t('mail.cal.time'), st)]), el('div', { class: 'cal-pair' }, [field(t('mail.cal.to'), ed), field(t('mail.cal.time'), et)]));
 				}
 			};
+			// Mail 1.9.0: „Frei/Gebucht“ for the day of the event (filled below, once the dialog stands)
+			let planner = { el: null, refresh() {} };
 			drawTimes();
 			const tzIn = el('input', { type: 'text', class: 'ml-input', value: zone, maxlength: '64', spellcheck: 'false', 'aria-label': t('mail.cal.timeZone') });
 			const tz = el('details', { class: 'cal-tz' }, [el('summary', { class: 'ml-sub', text: t('mail.cal.timeZoneIs', { zone: zone || '—' }) }), field(t('mail.cal.timeZone'), tzIn)]);
@@ -835,13 +913,57 @@
 			const attInput = ctx.recipientInput({
 				label: t('mail.cal.attendees'),
 				list: () => F.attendees,
-				onChange: (list) => { F.attendees = list; drawVia(); },
+				onChange: (list) => { F.attendees = list; drawVia(); drawRes(); planner.refresh(); },
 			});
 			attBox.append(attInput, via);
-			calSel.addEventListener('change', () => { F.calendarId = Number(calSel.value); drawOnline(); drawRem(); drawVia(); });
+			// Mail 1.9.0: resources (lilac chips, „Ressource hinzufügen …“) — GateControl calendars only; a shared calendar has no attendees
+			const resBox = el('div', { class: 'cal-res' });
+			const sharedNote = el('p', { class: 'ml-note cal-shared-note', text: t('mail.share.noAttendees') });
+			const drawRes = () => {
+				clear(resBox);
+				const c = calOf(F.calendarId);
+				const shared = !!(c && c.shared);
+				attBox.hidden = shared;
+				sharedNote.hidden = !shared;
+				const can = has('resources') && api.resources && c && c.source === 'local' && !shared;
+				resBox.hidden = !can && !F.resources.length;
+				if (resBox.hidden) return;
+				const chips = el('span', { class: 'ml-rcpts cal-res-chips' });
+				for (const r of F.resources) {
+					const chip = el('span', { class: 'ml-rcpt cal-res-chip', title: r.name || '' }, [
+						icon('resource', 12), el('span', { text: r.name || t('mail.res.label') }),
+						el('button', { type: 'button', class: 'ml-rcpt-x', 'aria-label': t('mail.res.remove', { name: r.name || '' }), on: { click: () => { F.resources = F.resources.filter((x) => x !== r); drawRes(); planner.refresh(); } } }, [icon('close', 11)]),
+					]);
+					chip.style.setProperty('--c', MS.RESOURCE_COLOR);
+					chips.append(chip);
+				}
+				const pick = el('select', { class: 'ml-input ml-input-sm cal-res-add', 'aria-label': t('mail.res.add'), disabled: !can || null }, [el('option', { value: '', text: t('mail.res.add') })]);
+				const fill = () => {
+					for (const r of C.resources || []) {
+						if (!r.address || F.resources.some((x) => x.email === r.address)) continue;
+						pick.append(el('option', { value: String(r.id), text: r.approval === 'approval' ? `${r.name} · ${t('mail.res.needsOk')}` : r.name }));
+					}
+				};
+				if (C.resources) fill();
+				else if (can) call(api.resources({})).then((x) => { if (x && x.ok) { C.resources = x.items; fill(); } });
+				pick.addEventListener('change', () => {
+					const r = (C.resources || []).find((x) => String(x.id) === pick.value);
+					if (r) { F.resources = F.resources.concat({ email: r.address, name: r.name }); drawRes(); planner.refresh(); }
+				});
+				resBox.append(el('div', { class: 'ml-field' }, [el('span', { class: 'ml-sub', text: t('mail.res.label') }), el('span', { class: 'cal-res-row' }, [chips, pick])]));
+				if (!can && F.resources.length) resBox.append(el('p', { class: 'ml-note', text: t('mail.res.onlyLocal') }));
+				else if (F.resources.length && !F.attendees.length) resBox.append(el('p', { class: 'ml-note', text: t('mail.res.hint') }));
+			};
+			calSel.addEventListener('change', () => { F.calendarId = Number(calSel.value); drawOnline(); drawRem(); drawVia(); drawRes(); });
 			drawOnline();
 			drawRem();
 			drawVia();
+			drawRes();
+			planner = plannerSection(() => F, (start, end) => {
+				F.startDate = MS.ymd(start); F.startTime = MS.hhmm(start); F.endDate = MS.ymd(end); F.endTime = MS.hhmm(end);
+				drawTimes();
+				planner.refresh();
+			});
 			const busy = el('select', { class: 'ml-input ml-input-sm', 'aria-label': t('mail.cal.showAs') }, ['busy', 'tentative', 'free', 'oof'].map((v) => el('option', { value: v, text: t(`mail.cal.busy.${v}`), selected: v === F.busy || null })));
 			busy.addEventListener('change', () => { F.busy = busy.value; });
 			const priv = sw(F.private, t('mail.cal.private'), (on) => { F.private = on; });
@@ -855,7 +977,7 @@
 				field(t('mail.cal.repeat'), recSel), recMore,
 				field(t('mail.cal.location'), place), online,
 				el('div', { class: 'ml-field' }, [el('span', { class: 'ml-sub', text: t('mail.cal.reminders') }), rem]),
-				attBox,
+				attBox, sharedNote, resBox, planner.el,
 				el('div', { class: 'cal-pair' }, [field(t('mail.cal.showAs'), busy), el('label', { class: 'ml-check-row' }, [priv, el('span', { text: t('mail.cal.private') })])]),
 				field(t('mail.cal.description'), desc),
 			);
@@ -867,6 +989,9 @@
 			async function doSave(again = null) {
 				err.textContent = '';
 				attInput.flush();
+				// a calendar shared at „Bearbeiten“ takes no attendees (the server would refuse: shared_attendees)
+				const target = calOf(F.calendarId);
+				if (target && target.shared && !ev) { F.attendees = []; F.resources = []; }
 				const body = MS.eventBody(F, { hadOnline: !!(ev && ev.online) });
 				if (body.error) { err.textContent = t(`mail.cal.bad.${body.error}`); return; }
 				if (tzIn.value.trim() && tzIn.value.trim() !== zone) body.timeZone = tzIn.value.trim();
@@ -904,7 +1029,10 @@
 				if (!r || !r.ok) { err.textContent = errText(r); return; }
 				dlg.close();
 				const sent = r.sent ? r.sent.mail + r.sent.internal : 0;
-				toast(sent ? t('mail.cal.savedSent', { count: sent }) : t('mail.saved'), 'success');
+				// Mail 1.9.0: resources among the attendees → „Anfrage für Firmenwagen gesendet“ / „Raum 1 gebucht“
+				const booked = MS.bookingsToast(r.bookings, t);
+				toast(booked || (sent ? t('mail.cal.savedSent', { count: sent }) : t('mail.saved')), 'success');
+				if (r.bookings && r.bookings.length) loadOpenCount();
 				if (r.event) {
 					if (!ev) { C.anchor = r.event.start; }
 					C.sheet = { item: r.event, event: r.event };
@@ -922,6 +1050,459 @@
 				el('button', { type: 'button', class: 'btn btn-sec cal-reload', text: t('mail.cal.conflictReload'), on: { click: () => { dlg.close(); then('reload'); } } }),
 				el('button', { type: 'button', class: 'btn btn-pri cal-mine', text: t('mail.cal.conflictMine'), on: { click: () => { dlg.close(); then('mine'); } } }),
 			);
+		}
+
+		// ── Mail 1.9.0: free/busy, resources, requests, sharing ─
+
+		/** A bar of [from, to): the blocks (free / busy / tentative / unknown / ask), the chosen time framed. */
+		function fbBar(blocks, from, to, { gap = 'free', frame = null, sel = false, small = false } = {}) {
+			const b = el('div', { class: `cal-bar${small ? ' is-small' : ''}`, 'aria-hidden': 'true' });
+			for (const seg of MS.barSegments(blocks, from, to, gap)) {
+				const part = el('span', { class: `cal-bar-${seg.status}` });
+				part.style.width = `${seg.pct.toFixed(3)}%`;
+				b.append(part);
+			}
+			if (frame && frame[1] > from && frame[0] < to) {
+				const a = Math.max(from, frame[0]);
+				const z = Math.min(to, frame[1]);
+				const box = el('span', { class: sel ? 'cal-bar-selbox' : 'cal-bar-win' });
+				box.style.left = `${(((a - from) / (to - from)) * 100).toFixed(3)}%`;
+				box.style.width = `${(((z - a) / (to - from)) * 100).toFixed(3)}%`;
+				b.append(box);
+			}
+			return b;
+		}
+
+		function fbScale(from, to) {
+			return el('div', { class: 'cal-scale', 'aria-hidden': 'true' }, MS.scaleHours(from, to).map((h) => el('span', { text: String(h) })));
+		}
+
+		function fbLegend(kinds) {
+			return el('div', { class: 'cal-legend' }, kinds.map((k) => el('span', {}, [el('span', { class: `cal-sw cal-bar-${k}` }), el('span', { text: t(`mail.fb.legend.${k}`) })])));
+		}
+
+		function kindIcon(kind, color) {
+			const s = el('span', { class: 'cal-kind', 'aria-hidden': 'true' }, [icon(['room', 'vehicle', 'device'].includes(kind) ? kind : 'resource', 18)]);
+			s.style.setProperty('--c', color || '#8C96A5');
+			return s;
+		}
+
+		/**
+		 * The section „Frei/Gebucht“ of the event dialog (mockup Planer; only with `freeBusy`): get() → the form, set(start, end)
+		 * takes a suggestion over. → { el, refresh() } — asked again 250 ms after a change of attendees, day, time, all-day.
+		 */
+		function plannerSection(get, set) {
+			if (!has('freeBusy') || !api.freeBusy) return { el: null, refresh() {} };
+			const box = el('div', { class: 'cal-fb', 'aria-live': 'polite' });
+			const head = el('div', { class: 'cal-fb-head' });
+			const rows = el('div', { class: 'cal-fb-rows' });
+			const msg = el('div', { class: 'cal-fb-msg' });
+			const sugg = el('div', { class: 'cal-fb-sugg' });
+			box.append(head, el('div', { class: 'ml-card cal-fb-card' }, [rows, msg]), el('div', { class: 'ml-sub cal-fb-t', text: t('mail.fb.suggestions') }), sugg,
+				el('p', { class: 'ml-note', text: t('mail.fb.note') }), fbLegend(['free', 'busy', 'tentative', 'unknown']));
+			let timer = null;
+			let seq = 0;
+			let last = null;
+			const wh = () => (C.cals && C.cals.prefs && C.cals.prefs.workHours) || null;
+			const drawHead = (q, win) => {
+				clear(head);
+				head.append(el('span', { class: 'cal-fb-title', text: t('mail.fb.title') }), el('span', { class: 'ml-sub', text: win ? MS.fbHead(q.day, win, lang(), t) : '' }));
+			};
+			const draw = (q, fb, s) => {
+				const win = MS.fbWindow(q.day, wh(), q.start, q.end);
+				drawHead(q, win);
+				clear(rows);
+				for (const row of fb.items) {
+					const unknown = row.state !== 'ok';
+					const label = MS.fbLabel(row, t);
+					const av = el('span', { class: `ml-av cal-fb-av${row.kind === 'resource' ? ' is-res' : ''}`, text: row.kind === 'self' ? t('mail.fb.you') : MS.initials({ name: label, email: row.email }) });
+					rows.append(el('div', { class: `cal-fb-row${unknown ? ' is-unknown' : ''}${row.kind === 'resource' ? ' is-res' : ''}`, title: unknown ? `${label} · ${t('mail.fb.unknownRow')}` : label }, [
+						el('span', { class: 'cal-fb-who' }, [av, el('span', { class: 'cal-fb-name', text: label })]),
+						fbBar(unknown ? [] : row.blocks, win.from, win.to, { gap: unknown ? 'unknown' : 'free', frame: q.allDay ? null : [q.start, q.end] }),
+					]));
+				}
+				rows.append(el('div', { class: 'cal-fb-row is-scale' }, [el('span'), fbScale(win.from, win.to)]));
+				clear(msg);
+				if (!q.allDay && q.end) {
+					const m = MS.fbMessage(fb.items, q.start, q.end, t);
+					msg.className = `cal-fb-msg${m.ok ? ' is-ok' : ' is-bad'}`;
+					msg.append(icon(m.ok ? 'check' : 'alert', 14), el('span', { text: m.text }));
+				}
+				clear(sugg);
+				const items = (s && s.items) || [];
+				if (!items.length) sugg.append(el('span', { class: 'ml-sub', text: t('mail.fb.noSuggestions') }));
+				for (const x of items) {
+					const on = !q.allDay && x.start === q.start;
+					const label = MS.suggestionLabel(x.start, q.day, lang());
+					sugg.append(el('button', { type: 'button', class: `ml-chip cal-fb-chip${on ? ' on' : ''}`, 'aria-pressed': on ? 'true' : 'false', title: t('mail.fb.takeSuggestion', { time: label }), text: label, on: { click: () => {
+						const f = get();
+						const dur = f.allDay ? x.end - x.start : Math.max(5 * 60000, (MS.localMs(f.endDate || f.startDate, f.endTime) || 0) - (MS.localMs(f.startDate, f.startTime) || 0));
+						f.allDay = false;
+						set(x.start, x.start + (dur > 0 ? dur : x.end - x.start));
+					} } }));
+				}
+			};
+			const refresh = () => {
+				clearTimeout(timer);
+				timer = setTimeout(async () => {
+					const q = MS.plannerQuery(get());
+					if (!q || !box.isConnected) return;
+					const my = ++seq;
+					if (C.offline || C.calsOffline) { drawHead(q, null); clear(rows); clear(sugg); clear(msg); msg.append(el('span', { class: 'ml-sub', text: t('mail.fb.offline') })); return; }
+					const from = q.day;
+					const to = MS.addDays(q.day, 1);
+					const key = JSON.stringify([q.day, q.attendees, q.allDay ? 0 : q.duration]);
+					const [fb, s] = await Promise.all([
+						call(api.freeBusy({ from, to, attendees: q.attendees })),
+						last && last.key === key ? Promise.resolve(last.s) : call(api.suggestTimes({ duration: q.duration, from: Math.max(Date.now(), from), attendees: q.attendees, limit: 4 })),
+					]);
+					if (my !== seq || !box.isConnected) return;
+					if (!fb || !fb.ok) { clear(msg); msg.className = 'cal-fb-msg is-bad'; msg.append(el('span', { text: errText(fb) })); return; }
+					last = { key, s: s && s.ok ? s : { items: [] } };
+					draw(q, fb, last.s);
+				}, 250);
+			};
+			drawHead(MS.plannerQuery(get()) || { day: Date.now() }, null);
+			rows.append(el('p', { class: 'ml-sub', text: t('mail.fb.loading') }));
+			refresh();
+			return { el: box, refresh };
+		}
+
+		/** „Ressource buchen“ (mockup Ressource): kinds, day and time, each resource's day as a bar, „Buchen“ / „Anfrage an … senden“. */
+		function bookDialog() {
+			const now = new Date();
+			const hr = Math.min(22, now.getHours() + 1);
+			const anchorDay = MS.ymd(Math.max(C.anchor, Date.now()));
+			const st = { kind: 'all', sel: null, list: [], seq: 0 };
+			const dlg = openDialog({ title: t('mail.res.title'), wide: true, closeLabel: t('mail.close'), cls: 'cal-book-dlg' });
+			const date = el('input', { type: 'date', class: 'ml-input', value: anchorDay, 'aria-label': t('mail.res.day') });
+			const t1 = el('input', { type: 'time', class: 'ml-input', step: '300', value: `${String(hr).padStart(2, '0')}:00`, 'aria-label': t('mail.res.from') });
+			const t2 = el('input', { type: 'time', class: 'ml-input', step: '300', value: `${String(hr + 1).padStart(2, '0')}:00`, 'aria-label': t('mail.res.to') });
+			const title = el('input', { type: 'text', class: 'ml-input', maxlength: '255', placeholder: t('mail.res.titlePh'), 'aria-label': t('mail.res.titleLabel') });
+			const chips = el('div', { class: 'ml-chips cal-kinds', role: 'group', 'aria-label': t('mail.res.kinds') });
+			const list = el('div', { class: 'cal-res-list' });
+			const err = el('span', { class: 'ml-dlg-err', role: 'alert' });
+			const span = () => MS.resourceSpan(date.value, t1.value, t2.value);
+			const drawChips = () => {
+				clear(chips);
+				for (const k of MS.resourceKinds(st.list)) {
+					chips.append(el('button', { type: 'button', class: `ml-chip${st.kind === k ? ' on' : ''}`, 'aria-pressed': st.kind === k ? 'true' : 'false', text: t(`mail.res.kind.${k}`), on: { click: () => { st.kind = k; drawChips(); drawList(); } } }));
+				}
+			};
+			const drawList = () => {
+				clear(list);
+				const s = span();
+				const day = MS.fromYmd(date.value) ?? Date.now();
+				const win = MS.fbWindow(day, null, s ? s.start : null, s ? s.end : null);
+				const shown = st.list.filter((r) => st.kind === 'all' || r.kind === st.kind);
+				if (!shown.length) list.append(el('p', { class: 'ml-p', text: t('mail.res.none') }));
+				for (const r of shown) {
+					const on = st.sel === r.id;
+					const card = el('div', { class: `ml-card cal-res-card${on ? ' on' : ''}`, 'data-resource': String(r.id) }, [
+						el('button', { type: 'button', class: 'cal-res-head', 'aria-pressed': on ? 'true' : 'false', on: { click: () => { st.sel = on ? null : r.id; drawList(); } } }, [
+							kindIcon(r.kind, r.color),
+							el('span', { class: 'cal-res-tx' }, [el('span', { class: 'cal-res-name', text: r.name }), el('span', { class: 'ml-sub', text: MS.resourceSub(r, t) })]),
+						]),
+						fbBar(MS.resourceBlocks(r), win.from, win.to, { frame: on && s ? [s.start, s.end] : null, sel: true }),
+						fbScale(win.from, win.to),
+					]);
+					if (on) {
+						const label = r.approval === 'approval' ? t('mail.res.requestTo', { who: MS.approversText(r, t) }) : t('mail.res.bookNow');
+						const chosen = `${t('mail.res.chosen', { from: t1.value, to: t2.value })}${title.value.trim() ? ` · ${title.value.trim()}` : ''}`;
+						card.append(el('div', { class: 'cal-res-chosen' }, [
+							el('span', { class: 'ml-grow', text: chosen }),
+							el('button', { type: 'button', class: 'btn btn-pri btn-sm cal-res-book', text: label, on: { click: (e) => book(r, e.currentTarget) } }),
+						]));
+					}
+					list.append(card);
+				}
+			};
+			const load = async () => {
+				err.textContent = '';
+				const day = MS.fromYmd(date.value);
+				if (day === null) return;
+				const my = ++st.seq;
+				const r = await call(api.resources({ from: day, to: MS.addDays(day, 1) }));
+				if (my !== st.seq || dlg.closed) return;
+				if (!r || !r.ok) { err.textContent = errText(r); return; }
+				st.list = r.items;
+				C.resources = r.items;
+				if (!MS.resourceKinds(st.list).includes(st.kind)) st.kind = 'all';
+				drawChips();
+				drawList();
+			};
+			const book = async (r, btn) => {
+				err.textContent = '';
+				const s = span();
+				if (!s) { err.textContent = t('mail.res.badTime'); return; }
+				btn.disabled = true;
+				const x = await call(api.book(r.id, { title: title.value.trim() || r.name, start: s.start, end: s.end, timeZone: deviceZone() || undefined }));
+				btn.disabled = false;
+				if (!x || !x.ok) { const msg = errText(x); if (x && x.code === 'resource_busy') await load(); err.textContent = msg; return; }
+				dlg.close();
+				const b = (x.bookings || [])[0];
+				toast(t(b && b.state === 'pending' ? 'mail.res.requested' : 'mail.res.booked', { name: r.name }), 'success');
+				if (x.event) C.anchor = x.event.start;
+				loadRange({ keep: true });
+			};
+			date.addEventListener('change', load);
+			for (const x of [t1, t2]) x.addEventListener('change', drawList);
+			title.addEventListener('input', () => { if (st.sel) drawList(); });
+			dlg.body.append(chips, el('div', { class: 'cal-res-when' }, [
+				el('label', { class: 'ml-field' }, [el('span', { class: 'ml-sub', text: t('mail.res.day') }), date]),
+				el('label', { class: 'ml-field' }, [el('span', { class: 'ml-sub', text: t('mail.res.from') }), t1]),
+				el('label', { class: 'ml-field' }, [el('span', { class: 'ml-sub', text: t('mail.res.to') }), t2]),
+			]), el('label', { class: 'ml-field' }, [el('span', { class: 'ml-sub', text: t('mail.res.titleLabel') }), title]), list, fbLegend(['free', 'busy', 'tentative', 'sel']));
+			dlg.foot.append(err, el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.close'), on: { click: () => dlg.close() } }));
+			list.append(el('p', { class: 'ml-p', text: t('mail.loading') }));
+			load();
+		}
+
+		/**
+		 * „Buchungsanfragen“ (mockup Anfragen): Offen · n / Erledigt / Meine Buchungen (without bookingRequests only the
+		 * own); `focus` a booking's id (a push): its card is scrolled to and marked.
+		 */
+		function requestsDialog(tab = 'open', focus = null) {
+			const tabs = MS.bookingTabs((ctx.me() && ctx.me().features) || []);
+			const V = { tab: tabs.includes(tab) ? tab : tabs[0], seq: 0, focus };
+			const dlg = openDialog({ title: t('mail.res.requests'), wide: true, closeLabel: t('mail.close'), cls: 'cal-req-dlg', onClose: () => { if (C.reqView === V) C.reqView = null; } });
+			const chips = el('div', { class: 'ml-chips cal-req-tabs', role: 'tablist', 'aria-label': t('mail.res.requests') });
+			const box = el('div', { class: 'cal-req-list' });
+			const drawTabs = () => {
+				clear(chips);
+				for (const k of tabs) {
+					chips.append(el('button', { type: 'button', role: 'tab', class: `ml-chip${V.tab === k ? ' on' : ''}`, 'aria-selected': V.tab === k ? 'true' : 'false',
+						text: k === 'open' ? t('mail.res.tab.open', { n: C.openCount }) : t(`mail.res.tab.${k}`), on: { click: () => { V.tab = k; drawTabs(); fill(); } } }));
+				}
+			};
+			const fill = async () => {
+				const want = V.tab;
+				const my = ++V.seq;
+				const r = await call(api.bookings(want));
+				if (my !== V.seq || dlg.closed) return;
+				clear(box);
+				if (!r || !r.ok) { box.append(el('p', { class: 'ml-p', text: errText(r) })); return; }
+				if (want === 'open' || has('bookingRequests')) {
+					if (want === 'open') C.openCount = r.counts.open;
+					drawTabs();
+					if (C.shown) renderMain();
+				}
+				if (!r.items.length) box.append(el('p', { class: 'ml-p', text: t(`mail.res.empty.${want}`) }));
+				for (const b of r.items) box.append(requestCard(b, want, fill));
+				if (V.focus) {
+					const card = box.querySelector(`[data-booking="${Number(V.focus)}"]`);
+					if (card) { card.classList.add('is-focus'); card.scrollIntoView({ block: 'nearest' }); }
+					V.focus = null;
+				}
+			};
+			V.reload = fill;
+			C.reqView = V;
+			drawTabs();
+			dlg.body.append(chips, box, el('p', { class: 'ml-note cal-req-note', text: t('mail.res.note') }));
+			dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.close'), on: { click: () => dlg.close() } }));
+			box.append(el('p', { class: 'ml-p', text: t('mail.loading') }));
+			fill();
+		}
+
+		function requestCard(b, tab, reload) {
+			const r = b.resource;
+			const pill = MS.bookingPill(b);
+			const acts = MS.bookingActions(b, tab);
+			const err = el('span', { class: 'ml-dlg-err', role: 'alert' });
+			const problem = b.state === 'pending' && ((b.violations || []).length || (b.conflicts || []).length);
+			const card = el('div', { class: `ml-card cal-req is-${pill.tone}`, 'data-booking': String(b.id) }, [
+				el('div', { class: 'cal-res-head is-static' }, [
+					kindIcon(r.kind, r.color),
+					el('span', { class: 'cal-res-tx' }, [el('span', { class: 'cal-res-name', text: r.name }), el('span', { class: 'ml-sub', text: tab === 'mine' ? b.title : [b.booker.name, b.title].filter(Boolean).join(' · ') })]),
+					el('span', { class: `cal-pill is-${pill.tone}`, text: t(`mail.res.pill.${pill.key}`) }),
+				]),
+				el('span', { class: 'cal-req-when', text: MS.bookingWhen(b, lang(), t) }),
+			]);
+			if (!b.allDay && b.state === 'pending') {
+				const win = MS.fbWindow(b.start, null, b.start, b.end);
+				card.append(fbBar(MS.requestBlocks(b), win.from, win.to, { small: true }));
+			}
+			const lines = MS.bookingLines(b, t, lang());
+			if (lines.length) card.append(el('span', { class: `ml-sub cal-req-lines${problem ? ' is-bad' : ''}`, text: lines.join(' · ') }));
+			const busy = (on) => { for (const x of card.querySelectorAll('button')) x.disabled = on; };
+			const decide = async (decision, override) => {
+				err.textContent = '';
+				busy(true);
+				const x = await call(api.decide(b.id, { decision, ...(override ? { override: true } : {}) }));
+				busy(false);
+				if (x && x.ok) { toast(t(decision === 'approve' ? 'mail.res.approved' : 'mail.res.declined'), 'success'); reload(); return; }
+				if (x && x.code === 'already_decided') { toast(t('mail.res.already', { name: (x.detail && x.detail.decidedBy && x.detail.decidedBy.name) || '' }), 'error'); reload(); return; }
+				err.textContent = errText(x);
+			};
+			if (acts.decide) {
+				card.append(el('div', { class: 'cal-answer' }, [
+					el('button', { type: 'button', class: 'btn btn-sec btn-sm cal-req-decline', text: t('mail.res.decline'), on: { click: () => decide('decline') } }),
+					acts.approve === 'approve' ? el('button', { type: 'button', class: 'btn btn-pri btn-sm cal-req-approve', text: t('mail.res.approve'), on: { click: () => decide('approve') } }) : null,
+					acts.approve === 'anyway' ? el('button', { type: 'button', class: 'btn btn-sec btn-sm cal-req-anyway', text: t('mail.res.approveAnyway'), on: { click: () => decide('approve', true) } }) : null,
+				]));
+			}
+			if (acts.cancel) {
+				card.append(el('div', { class: 'cal-answer' }, [el('button', { type: 'button', class: 'btn btn-ghost btn-sm cal-del cal-req-cancel', text: t('mail.res.cancel'), on: { click: async () => {
+					busy(true);
+					const x = await call(api.cancelBooking(b.id));
+					busy(false);
+					if (!x || !x.ok) { err.textContent = errText(x); return; }
+					toast(t('mail.res.cancelled'), 'success');
+					reload();
+					reloadSoon(false);
+				} } })]));
+			}
+			card.append(err);
+			return card;
+		}
+
+		/** „Mit mir geteilt“: the GateControl calendars shared with the person („Anzeigen“) and account calendars of other mailboxes. */
+		function withMeSection(err, onChange) {
+			const box = el('div', { class: 'ml-card cal-share-list' });
+			const load = async () => {
+				const r = await call(api.shared());
+				clear(box);
+				if (!r || !r.ok) { box.append(el('p', { class: 'ml-p', text: errText(r) })); return; }
+				const showBtn = (on, click) => el('button', { type: 'button', class: `btn btn-sm cal-show${on ? ' btn-pri on' : ' btn-sec'}`, 'aria-pressed': on ? 'true' : 'false', text: t('mail.share.show'), on: { click } });
+				for (const x of r.items) {
+					const sq = el('span', { class: `cal-sq${x.visible ? ' on' : ''}` });
+					sq.style.setProperty('--c', x.color);
+					box.append(el('div', { class: 'cal-share-row', 'data-shared': String(x.id) }, [sq,
+						el('span', { class: 'cal-res-tx' }, [el('span', { class: 'cal-res-name', text: t('mail.share.from', { name: x.name, owner: x.owner.name }) }),
+							el('span', { class: 'ml-sub', text: [t(`mail.share.levels.${x.level}`), x.group ? t('mail.share.via', { group: x.group }) : null, x.accepted ? null : t('mail.share.new')].filter(Boolean).join(' · ') })]),
+						showBtn(x.visible, async () => {
+							const u = await call(api.updateShared(x.id, { visible: !x.visible }));
+							if (!u || !u.ok) { err.textContent = errText(u); return; }
+							load();
+							onChange();
+						})]));
+				}
+				for (const x of r.accounts) {
+					const a = MS.accountOf(ctx.me(), x.accountId);
+					const sq = el('span', { class: `cal-sq${x.visible ? ' on' : ''}` });
+					sq.style.setProperty('--c', x.color);
+					box.append(el('div', { class: 'cal-share-row' }, [sq,
+						el('span', { class: 'cal-res-tx' }, [el('span', { class: 'cal-res-name', text: a ? t('mail.share.account', { name: x.name, account: a.name }) : x.name }),
+							el('span', { class: 'ml-sub', text: t('mail.share.accountSub', { owner: x.owner.email, level: t(`mail.share.levels.${x.writable ? 'write' : 'read'}`) }) })]),
+						showBtn(x.visible, async () => {
+							const u = await call(api.updateCalendar(x.calendarId, { visible: !x.visible }));
+							if (!u || !u.ok) { err.textContent = errText(u); return; }
+							load();
+							onChange();
+						})]));
+				}
+				if (!r.items.length && !r.accounts.length) box.append(el('p', { class: 'ml-p', text: t('mail.share.mineNone') }));
+			};
+			load();
+			return { el: box, reload: load };
+		}
+
+		const sharesChanged = async () => { await loadCalendars(); ctx.renderMenu(); loadRange({ keep: true }); };
+
+		/** „Mit mir geteilt“ alone (the menu, a share's push). */
+		function withMeDialog(focus = null) {
+			const dlg = openDialog({ title: t('mail.share.withMe'), wide: true, closeLabel: t('mail.close'), cls: 'cal-share-dlg', onClose: () => { if (C.shareView === V) C.shareView = null; } });
+			const err = el('span', { class: 'ml-dlg-err', role: 'alert' });
+			const mine = withMeSection(err, sharesChanged);
+			const V = { reload: () => mine.reload() };
+			C.shareView = V;
+			dlg.body.append(mine.el, el('p', { class: 'ml-note', text: t('mail.share.accountsNote') }));
+			dlg.foot.append(err, el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.close'), on: { click: () => dlg.close() } }));
+			if (focus) setTimeout(() => { const row = mine.el.querySelector(`[data-shared="${Number(focus)}"]`); if (row) row.classList.add('is-focus'); }, 600);
+		}
+
+		/** „Kalender teilen“ of an own GateControl calendar (mockup Teilen). */
+		function shareDialog(c) {
+			let level = 'read';
+			const dlg = openDialog({ title: t('mail.share.title'), wide: true, closeLabel: t('mail.close'), cls: 'cal-share-dlg', onClose: () => { if (C.shareView === V) C.shareView = null; } });
+			const err = el('span', { class: 'ml-dlg-err', role: 'alert' });
+			const sq = el('span', { class: 'cal-sq on' });
+			sq.style.setProperty('--c', c.color);
+			const input = el('input', { type: 'text', class: 'ml-input cal-share-q', maxlength: '60', autocomplete: 'off', spellcheck: 'false', placeholder: t('mail.share.searchPh'), 'aria-label': t('mail.share.add') });
+			const hits = el('div', { class: 'ml-sug-list cal-share-hits', role: 'listbox', hidden: true });
+			const listBox = el('div', { class: 'ml-card cal-share-list' });
+			const share = async (p) => {
+				err.textContent = '';
+				const r = await call(api.addShare(c.id, { type: p.type, id: p.id, level }));
+				if (!r || !r.ok) { err.textContent = r && r.code === 'limit' ? t('mail.share.limit', { max: (r.detail && r.detail.max) || 50 }) : errText(r); return; }
+				input.value = '';
+				hits.hidden = true;
+				toast(t('mail.share.added', { name: p.type === 'group' ? (p.sub || p.name) : p.name }), 'success');
+				loadShares();
+			};
+			let timer = null;
+			let q = 0;
+			input.addEventListener('input', () => {
+				clearTimeout(timer);
+				const v = input.value.trim();
+				if (v.length < 2) { hits.hidden = true; return; }
+				timer = setTimeout(async () => {
+					const my = ++q;
+					const r = await call(api.principals(v));
+					if (my !== q || dlg.closed) return;
+					clear(hits);
+					for (const p of (r && r.ok ? r.items : [])) {
+						const av = el('span', { class: 'ml-av ml-av-sm ml-sug-av', text: p.type === 'group' ? '' : (p.initials || MS.initials({ name: p.name })) });
+						if (p.type === 'group') av.append(icon('users', 14));
+						else if (p.color) av.style.background = p.color;
+						hits.append(el('button', { type: 'button', role: 'option', class: 'ml-sug-row', on: { mousedown: (e) => { e.preventDefault(); share(p); } } }, [av,
+							el('span', { class: 'ml-sug-tx' }, [el('span', { class: 'ml-sug-name', text: p.type === 'group' ? t('mail.share.groupEntry', { name: p.sub || p.name }) : p.name }),
+								p.type === 'group' && p.members !== null ? el('span', { class: 'ml-sub', text: t('mail.share.members', { n: p.members }) }) : null])]));
+					}
+					if (!hits.firstChild) hits.append(el('p', { class: 'ml-sub cal-share-none', text: t('mail.share.noHits') }));
+					hits.hidden = false;
+				}, 250);
+			});
+			input.addEventListener('blur', () => setTimeout(() => { hits.hidden = true; }, 150));
+			input.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !hits.hidden) { e.stopPropagation(); hits.hidden = true; } });
+			const levels = root.GCMailUI.seg(MS.SHARE_LEVELS.map((l) => [l, t(`mail.share.levels.${l}`)]), level, (v) => { level = v; }, t('mail.share.level'));
+			const fbSw = sw(!(C.cals && C.cals.prefs && C.cals.prefs.freeBusy === false), t('mail.fb.setting'), async (on) => {
+				const r = await call(api.calSettings({ freeBusy: on }));
+				if (!r || !r.ok) { err.textContent = errText(r); return; }
+				if (C.cals) C.cals.prefs = r.prefs;
+				toast(t('mail.fb.settingSaved'), 'success');
+			});
+			const loadShares = async () => {
+				const r = await call(api.shares(c.id));
+				if (dlg.closed) return;
+				clear(listBox);
+				if (!r || !r.ok) { listBox.append(el('p', { class: 'ml-p', text: errText(r) })); return; }
+				if (typeof r.freeBusy === 'boolean' && fbSw.classList.contains('on') !== r.freeBusy) { fbSw.classList.toggle('on', r.freeBusy); fbSw.setAttribute('aria-checked', r.freeBusy ? 'true' : 'false'); }
+				if (!r.items.length) listBox.append(el('p', { class: 'ml-p', text: t('mail.share.none') }));
+				for (const s of r.items) {
+					const av = el('span', { class: 'ml-av ml-av-sm', text: s.type === 'group' ? '' : MS.initials({ name: s.name }) });
+					if (s.type === 'group') av.append(icon('users', 14));
+					const sel = el('select', { class: 'ml-input ml-input-sm cal-share-level', 'aria-label': t('mail.share.levelFor', { name: s.name }) },
+						[...MS.SHARE_LEVELS.map((l) => el('option', { value: l, text: t(`mail.share.levels.${l}`), selected: s.level === l || null })), el('option', { value: 'remove', text: t('mail.share.remove') })]);
+					sel.addEventListener('change', async () => {
+						err.textContent = '';
+						const x = await call(sel.value === 'remove' ? api.removeShare(c.id, s.id) : api.updateShare(c.id, s.id, sel.value));
+						if (!x || !x.ok) err.textContent = errText(x);
+						loadShares();
+					});
+					listBox.append(el('div', { class: 'cal-share-row', 'data-share': String(s.id) }, [av,
+						el('span', { class: 'cal-res-tx' }, [el('span', { class: 'cal-res-name', text: s.name || '?' }), el('span', { class: 'ml-sub', text: MS.shareSub(s, t) })]), sel]));
+				}
+			};
+			const mine = withMeSection(err, sharesChanged);
+			const V = { reload: () => { loadShares(); mine.reload(); } };
+			C.shareView = V;
+			dlg.body.append(
+				el('div', { class: 'cal-share-head' }, [sq, el('span', { class: 'cal-res-name ml-grow', text: c.name }), el('span', { class: 'ml-sub', text: t('mail.share.gcCalendar') })]),
+				el('div', { class: 'ml-card cal-share-add' }, [
+					el('span', { class: 'cal-res-name', text: t('mail.share.add') }),
+					el('div', { class: 'cal-share-search' }, [input, hits]),
+					levels,
+					el('p', { class: 'ml-note', text: t('mail.share.levelsNote') }),
+				]),
+				el('div', { class: 'lbl', text: t('mail.share.sharedWith') }), listBox,
+				el('div', { class: 'ml-card' }, [el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow' }, [t('mail.fb.setting'), el('span', { class: 'ml-sub ml-block', text: t('mail.fb.settingHint') })]), fbSw])]),
+				el('div', { class: 'lbl', text: t('mail.share.withMe') }), mine.el,
+				el('p', { class: 'ml-note', text: t('mail.share.accountsNote') }),
+			);
+			dlg.foot.append(err, el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.close'), on: { click: () => dlg.close() } }));
+			listBox.append(el('p', { class: 'ml-p', text: t('mail.loading') }));
+			loadShares();
 		}
 
 		// ── Invitation card (the reading pane, the invitations) ─
@@ -951,7 +1532,7 @@
 			for (const o of inv.day || []) {
 				const clash = (inv.conflicts || []).some((c) => c.start === o.start && c.title === o.title);
 				const b = el('span', { class: `cal-mini-b${clash ? ' is-clash' : ''}`, text: o.title || '' });
-				b.style.setProperty('--c', MS.itemColor(o, cals(), overlays()));
+				b.style.setProperty('--c', colorOf(o));
 				place(o.start, o.end, b);
 			}
 			place(inv.start, inv.end, el('span', { class: 'cal-mini-b is-new', text: `${inv.title} (${t('mail.cal.new')})` }));
@@ -1102,9 +1683,26 @@
 			onLive(c) {
 				if (!c) return;
 				if (c.kind === 'calendars') { C.cals = null; if (C.shown) reloadSoon(true); return; }
+				// Mail 1.9.0: a share changed (recipient or owner) — the calendars, an open sharing dialog
+				if (c.kind === 'shares') { if (C.shareView) C.shareView.reload(); if (C.shown) reloadSoon(true); else C.cals = null; return; }
 				if (c.kind === 'invitation') { loadInvites(); if (C.shown) reloadSoon(false); return; }
 				if (C.shown) reloadSoon(false);
 			},
+			/** Mail 1.9.0, mail:resources live events: requests / own bookings / the list of resources changed. */
+			onResources(c) {
+				if (!c) return;
+				if (c.kind === 'resources') { C.resources = null; return; }
+				loadOpenCount();
+				if (C.reqView) C.reqView.reload();
+				if (c.kind === 'booking' && C.shown) reloadSoon(false);
+			},
+			/** A push: „Buchungsanfragen“ (tab, the booking's card). */
+			openRequests(tab, bookingId) { requestsDialog(tab || 'open', bookingId || null); },
+			/** A push: „Mit mir geteilt“ (the calendar shared). */
+			async openShared(calendarId) { if (!C.cals) { await loadCalendars(); ctx.renderMenu(); } withMeDialog(calendarId || null); },
+			/** The Mail settings' switch „Frei/Gebucht für alle in GateControl“: the calendar settings (loaded once). */
+			async calPrefs() { if (!C.cals) await loadCalendars(); return (C.cals && C.cals.prefs) || null; },
+			setCalPrefs(prefs) { if (C.cals && prefs) C.cals.prefs = prefs; },
 			openEvent,
 			openInvitation,
 			inviteCard,

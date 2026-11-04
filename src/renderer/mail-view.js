@@ -130,6 +130,12 @@
 		phone: 'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2',
 		star: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z',
 		pin: 'M9 3h6|M10 3v6l-3 4h10l-3-4V3|M12 13v8',
+		// Mail 1.9.0: the kinds of resources, sharing
+		room: 'M4 4h16v16H4z|M9 20v-5h6v5',
+		vehicle: 'M5 17h14l-1.5-6h-11z|M8 18.5a1.5 1.5 0 1 0 0 .01|M16 18.5a1.5 1.5 0 1 0 0 .01',
+		device: 'M3 6h14v10H3z|M17 10l4-2v8l-4-2',
+		resource: 'M12 3l9 5v8l-9 5-9-5V8z',
+		share: 'M18 3a3 3 0 1 0 0 6a3 3 0 1 0 0-6|M6 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6|M18 15a3 3 0 1 0 0 6a3 3 0 1 0 0-6|M8.6 13.5l6.8 4|M15.4 6.5l-6.8 4',
 	};
 	const TONE = { err: ['var(--err-bg)', 'var(--err)'], info: ['var(--info-bg)', 'var(--info)'], acc: ['var(--acc-bg)', 'var(--acc-t)'], warn: ['var(--warn-bg)', 'var(--warn)'], pro: ['var(--pro-bg)', 'var(--pro)'], muted: ['var(--panel2)', 'var(--muted)'] };
 	const SAVE_DELAY_MS = 2500;
@@ -2415,6 +2421,20 @@
 				el('div', { class: 'lbl', text: t('mail.settings.display') }),
 				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow' }, [t('mail.settings.darkMails'), el('span', { class: 'ml-sub ml-block', text: t('mail.settings.darkMailsHint') })]), sw(darkMails(), t('mail.settings.darkMails'), (v) => setDarkMails(v))]),
 			);
+			// Mail 1.9.0 (freeBusy): „Frei/Gebucht für alle in GateControl“ — the calendar settings, the same switch as in „Kalender teilen“
+			if (has('freeBusy') && calendar && api.calSettings) {
+				const row = el('div', { class: 'ml-set-row ml-set-fb' });
+				dlg.body.append(el('div', { class: 'lbl', text: t('mail.cal.title') }), row);
+				calendar.calPrefs().then((prefs) => {
+					if (!prefs || dlg.closed) return;
+					row.append(el('span', { class: 'ml-grow' }, [t('mail.fb.setting'), el('span', { class: 'ml-sub ml-block', text: t('mail.fb.settingHint') })]), sw(prefs.freeBusy !== false, t('mail.fb.setting'), async (on) => {
+						const r = await call(api.calSettings({ freeBusy: on }));
+						if (!r || !r.ok) { toast(errText(r), 'error'); return; }
+						calendar.setCalPrefs(r.prefs);
+						toast(t('mail.fb.settingSaved'), 'success');
+					}));
+				});
+			}
 			const q = MS.quotaView(me.limits, lang(), t);
 			if (q) {
 				const bar = el('div', { class: 'ml-quota-bar' }, [el('span')]);
@@ -2701,6 +2721,8 @@
 			if (c.kind === 'invitation' && c.messageId && S.read && S.read.message && S.read.message.id === c.messageId) reloadRead(c.messageId);
 		});
 		api.onContacts && api.onContacts((c) => { if (S.loaded && contacts) contacts.onLive(c); });
+		// Mail 1.9.0: booking requests / own bookings / the resources changed
+		api.onResources && api.onResources((c) => { if (S.loaded && calendar && (has('resources') || has('bookingRequests'))) calendar.onResources(c); });
 
 		o.root.addEventListener('keydown', (e) => {
 			if (!S.shown || e.defaultPrevented || e.key !== 'Escape' || S.area !== 'contacts' || !contacts) return;
@@ -2735,7 +2757,9 @@
 			/**
 			 * A push target: { kind: 'message', messageId, accountId } | { kind: 'outbox', outboxId } | Phase 2:
 			 * { kind: 'event', eventId, occurrence } (a reminder) | { kind: 'invitation', invitationId } | { kind: 'calendar' }
-			 * | the start page: { kind: 'contact', contactId } | { kind: 'contacts' } | Drive 1.18: { kind: 'filing' }.
+			 * | the start page: { kind: 'contact', contactId } | { kind: 'contacts' } | Drive 1.18: { kind: 'filing' }
+			 * | Mail 1.9.0: { kind: 'requests', bookingId } (a booking request) | { kind: 'bookings', bookingId } | { kind: 'shared',
+			 * calendarId } (a calendar shared with the person); the answer to a booking comes as { kind: 'event' }.
 			 */
 			async open(context) {
 				S.shown = true;
@@ -2748,11 +2772,14 @@
 					if (context.kind === 'contact' && context.contactId) contacts.openCard(context.contactId);
 					return;
 				}
-				if (context.kind === 'event' || context.kind === 'invitation' || context.kind === 'calendar') {
+				if (context.kind === 'event' || context.kind === 'invitation' || context.kind === 'calendar' || context.kind === 'requests' || context.kind === 'bookings' || context.kind === 'shared') {
 					if (!calendar || !has('calendar')) return;
 					setArea('calendar');
 					if (context.kind === 'event') calendar.openEvent(context.eventId, context.occurrence || null);
 					else if (context.kind === 'invitation') calendar.openInvitation(context.invitationId);
+					else if (context.kind === 'requests' && has('bookingRequests')) calendar.openRequests('open', context.bookingId || null);
+					else if ((context.kind === 'requests' || context.kind === 'bookings') && has('resources')) calendar.openRequests('mine', context.bookingId || null);
+					else if (context.kind === 'shared' && has('calendarSharing')) calendar.openShared(context.calendarId || null);
 					return;
 				}
 				if (context.kind === 'outbox') { go({ kind: 'outbox' }); return; }

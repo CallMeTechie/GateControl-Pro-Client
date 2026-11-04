@@ -496,7 +496,11 @@
 		// Phase 2: calendar and contacts
 		conflict: 'conflict', read_only: 'read_only', feature_off: 'feature_off', not_supported: 'not_supported', send_failed: 'send_failed',
 		invitation_outdated: 'invitation_outdated', invalid_vcard: 'invalid_vcard', invalid_ics: 'invalid_ics', dav_unavailable: 'dav_unavailable',
+		// Mail 1.9.0: resources and bookings
+		not_bookable: 'not_bookable', resource_busy: 'resource_busy', rule_violation: 'rule_violation', already_decided: 'already_decided',
 	};
+	/** Mail 1.9.0: `not_supported { what }` and `invalid { reason: 'past' }` in words. */
+	const NOT_SUPPORTED_KEYS = { resource: 'notSupportedResource', resource_series: 'resourceSeries', shared_attendees: 'sharedAttendees', share: 'notSupportedShare' };
 
 	/**
 	 * Mail 1.8 'scan': what an attachment offers → { chip, blocked, warn, reason } — blocked or removed: no open,
@@ -879,24 +883,25 @@
 	/**
 	 * The calendar list of the menu: [{ key, label, items: [{ kind: 'calendar' | 'overlay', id, name, color, visible, … }] }]
 	 * — "GateControl" (own calendars and subscriptions without an account), per account (its name), "Eingeblendet".
+	 * `kind` is the item's ('calendar'); a calendar's own kind (private / business / other) stays as `calKind`.
 	 */
 	function calendarGroups(calendars, overlays, me, t) {
 		const groups = [];
 		const own = (calendars || []).filter((c) => !c.accountId);
-		if (own.length) groups.push({ key: 'gc', label: t('mail.cal.groupOwn'), items: own.map((c) => ({ kind: 'calendar', ...c })) });
+		if (own.length) groups.push({ key: 'gc', label: t('mail.cal.groupOwn'), items: own.map((c) => ({ ...c, kind: 'calendar', calKind: c.kind })) });
 		for (const a of (me && me.accounts) || []) {
 			const list = (calendars || []).filter((c) => c.accountId === a.id);
-			if (list.length) groups.push({ key: `acc:${a.id}`, label: a.name, account: a, items: list.map((c) => ({ kind: 'calendar', ...c })) });
+			if (list.length) groups.push({ key: `acc:${a.id}`, label: a.name, account: a, items: list.map((c) => ({ ...c, kind: 'calendar', calKind: c.kind })) });
 		}
 		const orphans = (calendars || []).filter((c) => c.accountId && !((me && me.accounts) || []).some((a) => a.id === c.accountId));
-		if (orphans.length) groups.push({ key: 'other', label: t('mail.cal.groupOther'), items: orphans.map((c) => ({ kind: 'calendar', ...c })) });
+		if (orphans.length) groups.push({ key: 'other', label: t('mail.cal.groupOther'), items: orphans.map((c) => ({ ...c, kind: 'calendar', calKind: c.kind })) });
 		if ((overlays || []).length) groups.push({ key: 'overlays', label: t('mail.cal.groupOverlays'), items: overlays.map((o) => ({ kind: 'overlay', ...o })) });
 		return groups;
 	}
 
-	/** The ids for GET events: the visible calendars and overlays. */
-	function visibleIds(calendars, overlays) {
-		return [...(calendars || []).filter((c) => c.visible).map((c) => c.id), ...(overlays || []).filter((o) => o.visible).map((o) => o.id)];
+	/** The ids for GET events: the visible calendars and overlays (Mail 1.9.0: the shown shared calendars too). */
+	function visibleIds(calendars, overlays, shared = []) {
+		return [...(calendars || []).filter((c) => c.visible).map((c) => c.id), ...(shared || []).filter((c) => c.visible).map((c) => c.id), ...(overlays || []).filter((o) => o.visible).map((o) => o.id)];
 	}
 
 	/** The colour of an item: its calendar's / overlay's. */
@@ -964,7 +969,9 @@
 			startDate: sd, startTime: hhmm(start), endDate: ed, endTime: hhmm(end),
 			location: str(x.location), onlineUrl: x.online && x.online.provider !== 'teams' ? x.online.url : '', teams: !!(x.online && x.online.provider === 'teams'),
 			reminders: Array.isArray(x.reminders) ? x.reminders.slice(0, 3) : (Number.isFinite(x.reminder) ? [x.reminder] : (def === null || def === undefined ? [] : [def])),
-			attendees: (x.attendees && Array.isArray(x.attendees) ? x.attendees : []).filter((a) => !a.self && a.role !== 'resource').map((a) => ({ name: a.name || null, email: a.email })),
+			attendees: (x.attendees && Array.isArray(x.attendees) ? x.attendees : []).filter((a) => !a.self && a.role !== 'resource' && !isResourceAddress(a.email)).map((a) => ({ name: a.name || null, email: a.email })),
+			// Mail 1.9.0: resources among the attendees (booked, not invited)
+			resources: (x.attendees && Array.isArray(x.attendees) ? x.attendees : []).filter((a) => a.role === 'resource' || isResourceAddress(a.email)).map((a) => ({ name: a.name || null, email: a.email })),
 			busy: x.busy || 'busy', private: !!x.private, description: str(x.description),
 			recurrence: recurrenceForm(x.recurrence || null, start), etag: x.etag || null, occurrence: x.occurrence || null, recurring: !!x.recurring,
 		};
@@ -1002,6 +1009,8 @@
 		const rec = recurrenceBody(f.recurrence, startMs);
 		if (rec !== undefined) b.recurrence = rec;
 		b.attendees = (f.attendees || []).filter((a) => a && isEmail(a.email)).map((a) => (a.name ? { email: a.email, name: a.name } : { email: a.email }));
+		// Mail 1.9.0: resources go along as attendees with the role 'resource'
+		for (const r of f.resources || []) if (r && isEmail(r.email) && !b.attendees.some((a) => a.email.toLowerCase() === r.email.toLowerCase())) b.attendees.push({ email: r.email, ...(r.name ? { name: r.name } : {}), role: 'resource' });
 		b.busy = ['busy', 'free', 'tentative', 'oof'].includes(f.busy) ? f.busy : 'busy';
 		b.private = !!f.private;
 		return b;
@@ -1383,14 +1392,277 @@
 		return out;
 	}
 
+	// ── Mail 1.9.0: free/busy, shared calendars, resources ──
+
+	const RESOURCE_ADDRESS_RE = /^resource-\d{1,16}@resources\.gatecontrol\.invalid$/i;
+	const RES_KINDS = ['room', 'vehicle', 'device', 'other'];
+	const SHARE_LEVELS = ['freebusy', 'read', 'write'];
+	/** The colour of resources among the attendees (mockup Planer). */
+	const RESOURCE_COLOR = '#B79CFF';
+	const DEFAULT_WORK_HOURS = { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' };
+
+	/** Is it the address of a resource (only used as an attendee, never shown)? */
+	function isResourceAddress(v) { return RESOURCE_ADDRESS_RE.test(str(v).trim()); }
+
+	/** 'HH:MM' → minutes of the day (24:00 → 1440), or null. */
+	function hmMinutes(v) {
+		const m = /^(\d{2}):(\d{2})$/.exec(str(v));
+		if (!m) return null;
+		const n = Number(m[1]) * 60 + Number(m[2]);
+		return n <= 1440 ? n : null;
+	}
+
+	/** `min` minutes after the local midnight `day` (wall clock, also on DST days). */
+	function atMinutes(day, min) { const d = new Date(dayStart(day)); d.setHours(0, min, 0, 0); return d.getTime(); }
+
+	/**
+	 * The window of a day's bars (mockups Planer, Ressource): the working hours (8–18), widened to the chosen time
+	 * [start, end) when it lies on that day (from its full hour on) → { from, to }.
+	 */
+	function fbWindow(day, workHours, start = null, end = null) {
+		const d = dayStart(day);
+		const wh = workHours || DEFAULT_WORK_HOURS;
+		let from = atMinutes(d, hmMinutes(wh.from) ?? 480);
+		let to = atMinutes(d, hmMinutes(wh.to) ?? 1080);
+		if (Number.isFinite(start) && Number.isFinite(end) && end > start && dayStart(start) === d) {
+			from = Math.min(from, start - new Date(start).getMinutes() * MINUTE);
+			to = Math.max(to, Math.min(addDays(d, 1), end));
+		}
+		return { from, to };
+	}
+
+	/** The parts of a bar over [from, to): blocks clipped and in order, the gaps `gap` ('free' | 'unknown') → [{ status, start, end, pct }]. */
+	function barSegments(blocks, from, to, gap = 'free') {
+		const len = to - from;
+		if (!(len > 0)) return [];
+		const list = (blocks || []).map((b) => ({ start: Math.max(from, b.start), end: Math.min(to, b.end), status: b.status }))
+			.filter((b) => b.end > b.start).sort((a, b) => a.start - b.start);
+		const out = [];
+		let at = from;
+		const push = (status, a, z) => { if (z > a) out.push({ status, start: a, end: z, pct: ((z - a) / len) * 100 }); };
+		for (const b of list) {
+			if (b.start > at) push(gap, at, b.start);
+			push(b.status, Math.max(at, b.start), b.end);
+			at = Math.max(at, b.end);
+		}
+		push(gap, at, to);
+		return out;
+	}
+
+	/** The hours under a bar: every 2 hours (every 4 over more than 12). */
+	function scaleHours(from, to) {
+		const a = new Date(from).getHours();
+		const z = a + Math.round((to - from) / 3600000);
+		const step = z - a > 12 ? 4 : 2;
+		const out = [];
+		for (let h = a; h <= z; h += step) out.push(h % 24 === 0 && h > a ? 24 : h % 24);
+		return out;
+	}
+
+	/** The short name of a free/busy row: „Du“, a person's / resource's name, else the address before the @. */
+	function fbLabel(row, t) {
+		if (!row) return '';
+		if (row.kind === 'self') return t('mail.fb.you');
+		if (row.name) return row.name;
+		return str(row.email).split('@')[0];
+	}
+
+	/** Who cannot at [start, end) (busy first) → [{ name, kind, status }]; unknown rows count as neither. */
+	function fbClashes(rows, start, end) {
+		const out = [];
+		for (const r of rows || []) {
+			if (r.state !== 'ok') continue;
+			let st = null;
+			for (const b of r.blocks || []) if (b.start < end && b.end > start) st = b.status === 'busy' || st === 'busy' ? 'busy' : 'tentative';
+			if (st) out.push({ name: r.name, kind: r.kind, status: st, row: r });
+		}
+		return out.sort((a, b) => (a.status === 'busy' ? 0 : 1) - (b.status === 'busy' ? 0 : 1));
+	}
+
+	/**
+	 * The line under the bars → { ok, text }: „14:00 passt nicht für Tom (gebucht)“, „Zu dieser Zeit können alle“ or
+	 * „Alle, die man sehen kann, haben Zeit · unbekannt: Müller“.
+	 */
+	function fbMessage(rows, start, end, t) {
+		const bad = fbClashes(rows, start, end);
+		if (bad.length) return { ok: false, text: t('mail.fb.clash', { time: hhmm(start), list: bad.map((x) => `${fbLabel(x.row, t)} (${t(`mail.fb.status.${x.status}`)})`).join(', ') }) };
+		const unknown = (rows || []).filter((r) => r.state !== 'ok').map((r) => fbLabel(r, t));
+		return { ok: true, text: unknown.length ? t('mail.fb.allKnownFree', { list: unknown.join(', ') }) : t('mail.fb.allFree') };
+	}
+
+	/** „Do 5.11.“ / „Thu 05/11“ of a day. */
+	function dayShort(ms, locale) {
+		const tag = localeTag(locale);
+		const d = new Date(ms);
+		return `${d.toLocaleDateString(tag, { weekday: 'short' }).replace(/\.$/, '')} ${d.toLocaleDateString(tag, { day: 'numeric', month: 'numeric' })}`;
+	}
+
+	/** A suggestion's chip: „Do 15:00“ on the event's day, else „Fr 6.11. 9:00“. */
+	function suggestionLabel(start, day, locale) {
+		const d = new Date(start);
+		const time = `${d.getHours()}:${pad(d.getMinutes())}`;
+		if (dayStart(start) === dayStart(day)) return `${d.toLocaleDateString(localeTag(locale), { weekday: 'short' }).replace(/\.$/, '')} ${time}`;
+		return `${dayShort(start, locale)} ${time}`;
+	}
+
+	/** The head of the section „Frei/Gebucht“: „Do 5.11. · 08:00 bis 18:00 Uhr“. */
+	function fbHead(day, win, locale, t) {
+		return `${dayShort(day, locale)} · ${t('mail.fb.hours', { from: hhmm(win.from), to: win.to === addDays(dayStart(day), 1) ? '24:00' : hhmm(win.to) })}`;
+	}
+
+	/** What the planner asks for: the day, the times, the addresses of attendees and resources, the duration (min). */
+	function plannerQuery(f) {
+		const allDay = !!(f && f.allDay);
+		const start = allDay ? fromYmd(f.startDate) : localMs(f && f.startDate, f && f.startTime);
+		const end = allDay ? null : localMs((f && (f.endDate || f.startDate)), f && f.endTime);
+		if (start === null || start === undefined) return null;
+		const day = dayStart(start);
+		const attendees = [...(f.attendees || []), ...(f.resources || [])].map((a) => a && a.email).filter((e) => isEmail(e));
+		const duration = allDay || !end || end <= start ? 60 : Math.min(1440, Math.max(15, Math.round((end - start) / MINUTE)));
+		return { day, allDay, start: allDay ? null : start, end: allDay ? null : end, attendees: [...new Set(attendees)], duration };
+	}
+
+	/** „max. 1 Tag“, „max. 3 Tage“, „max. 4 Std.“ of a resource's longest booking. */
+	function maxText(min, t) {
+		const m = Number(min);
+		if (m % 1440 === 0) return m === 1440 ? t('mail.res.day1') : t('mail.res.days', { n: m / 1440 });
+		return t('mail.res.hours', { n: Math.round(m / 6) / 10 });
+	}
+
+	/** A rule (Violation or a resource's rule) in words. */
+	function ruleText(v, t) {
+		if (!v) return '';
+		if (v.rule === 'max_duration') return t('mail.res.ruleMax', { limit: maxText(v.limit, t) });
+		if (v.rule === 'horizon') return t('mail.res.ruleHorizon', { n: v.limit });
+		return t('mail.res.ruleHours', { from: v.from || '', to: v.to || '' });
+	}
+
+	/** Who approves a resource: its labels („Fuhrpark“), else „die Freigebenden“. */
+	function approversText(r, t) { return (r && r.approvers && r.approvers.length) ? r.approvers.join(', ') : t('mail.res.approvers'); }
+
+	/** The line under a resource's name: place · seats · equipment · „sagt automatisch zu“ / „Freigabe durch …“ · „max. 1 Tag“. */
+	function resourceSub(r, t) {
+		const parts = [];
+		if (r.location) parts.push(r.location);
+		if (r.seats) parts.push(t('mail.res.seats', { n: r.seats }));
+		if (r.equipment) parts.push(r.equipment);
+		parts.push(r.approval === 'approval' ? t('mail.res.by', { who: approversText(r, t) }) : t('mail.res.auto'));
+		if (r.rules && r.rules.maxMinutes) parts.push(t('mail.res.max', { limit: maxText(r.rules.maxMinutes, t) }));
+		return parts.join(' · ');
+	}
+
+	/** The kinds' chips: Alle, Räume, Fahrzeuge, Geräte (Sonstiges only when there is one). */
+	function resourceKinds(list) {
+		return ['all', 'room', 'vehicle', 'device', ...((list || []).some((r) => r.kind === 'other') ? ['other'] : [])];
+	}
+
+	/** A resource's busy times as bar blocks: booked → busy, a request → tentative. */
+	function resourceBlocks(r) {
+		return ((r && r.busy) || []).map((b) => ({ start: b.start, end: b.end, status: b.status === 'busy' ? 'busy' : 'tentative' }));
+	}
+
+	/** The day, from and to of the booking form → { start, end } (end > start), or null. */
+	function resourceSpan(date, from, to) {
+		const start = localMs(date, from);
+		const end = localMs(date, to);
+		return start !== null && end !== null && end > start ? { start, end } : null;
+	}
+
+	/** The pill of a booking → { tone: 'warn' | 'err' | 'acc' | 'muted', key }. */
+	function bookingPill(b) {
+		const problem = (b.violations || []).length || (b.conflicts || []).length;
+		if (b.state === 'pending') return problem ? { tone: 'err', key: 'conflict' } : { tone: 'warn', key: 'waiting' };
+		if (b.state === 'confirmed') return { tone: 'acc', key: 'confirmed' };
+		if (b.state === 'declined') return { tone: 'err', key: 'declined' };
+		return { tone: 'muted', key: 'cancelled' };
+	}
+
+	/** „Do 5.11. · 12:00 – 15:00“, all-day „Fr 6.11. – Sa 7.11. · ganztägig“. */
+	function bookingWhen(b, locale, t) {
+		if (b.allDay) {
+			const a = fromYmd(b.startDate) ?? b.start;
+			const z = fromYmd(b.endDate || b.startDate) ?? a;
+			return `${z !== a ? `${dayShort(a, locale)} – ${dayShort(z, locale)}` : dayShort(a, locale)} · ${t('mail.cal.allDay')}`;
+		}
+		return `${dayShort(b.start, locale)} · ${hhmm(b.start)} – ${hhmm(b.end)}`;
+	}
+
+	/** The lines of a booking card: broken rules, what is booked already, „Frei · Regeln erfüllt“, who decided, the comment. */
+	function bookingLines(b, t, locale) {
+		const lines = [];
+		if ((b.violations || []).length) lines.push(t('mail.res.breaks', { list: b.violations.map((v) => ruleText(v, t)).join(', ') }));
+		if ((b.conflicts || []).length) lines.push(t('mail.res.taken', { list: b.conflicts.map((c) => `${hhmm(c.start)}–${hhmm(c.end)}`).join(', ') }));
+		if (b.state === 'pending' && !lines.length) lines.push(t('mail.res.freeOk'));
+		if (b.state !== 'pending' && b.decidedBy) {
+			const when = b.decidedAt ? `${dayShort(b.decidedAt, locale)} ${hhmm(b.decidedAt)}` : '';
+			lines.push(`${t('mail.res.decidedBy', { name: b.decidedBy.name, when })}${b.override ? ` · ${t('mail.res.override')}` : ''}`);
+		}
+		if (b.comment) lines.push(`„${b.comment}“`);
+		return lines;
+	}
+
+	/** The buttons of a booking card → { decide, approve: 'approve' | 'anyway' | null, cancel }. */
+	function bookingActions(b, tab, now = Date.now()) {
+		const decide = tab === 'open' && !!b.canDecide && b.state === 'pending';
+		const approve = (b.conflicts || []).length ? null : ((b.violations || []).length ? 'anyway' : 'approve');
+		const cancel = tab === 'mine' && (b.state === 'pending' || b.state === 'confirmed') && b.end > now;
+		return { decide, approve: decide ? approve : null, cancel };
+	}
+
+	/** The tabs of „Buchungsanfragen“: open / done / mine for approvers, else only „Meine Buchungen“. */
+	function bookingTabs(features) {
+		return Array.isArray(features) && features.includes('bookingRequests') ? ['open', 'done', 'mine'] : ['mine'];
+	}
+
+	/** The bar of a request's day: what else is on (requests tentative) and the request itself („ask“). */
+	function requestBlocks(b) {
+		return [...(b.day || []).map((x) => ({ start: x.start, end: x.end, status: x.status === 'busy' ? 'busy' : 'tentative' })), { start: b.start, end: b.end, status: 'ask' }];
+	}
+
+	/** The toast of an answer with `bookings`: „Firmenwagen gebucht“ / „Anfrage für Firmenwagen gesendet“ (null without). */
+	function bookingsToast(bookings, t) {
+		const list = (bookings || []).filter((b) => b && (b.state === 'pending' || b.state === 'confirmed'));
+		if (!list.length) return null;
+		return list.map((b) => t(b.state === 'pending' ? 'mail.res.requested' : 'mail.res.booked', { name: (b.resource && b.resource.name) || '' })).join(' · ');
+	}
+
+	/** The calendars shared with the person as the calendar list knows them (colour, writable with „Bearbeiten“, `shared`). */
+	function sharedAsCalendars(shared) {
+		return (shared || []).map((x) => ({
+			id: x.id, source: 'local', accountId: null, name: x.name, color: x.color, kind: 'other', writable: x.level === 'write', visible: !!x.visible, notify: false,
+			isDefault: false, canInvite: false, canOnline: false, maxReminders: 3, state: 'ok', shared: x.level, owner: x.owner, via: x.via, group: x.group, accepted: !!x.accepted,
+		}));
+	}
+
+	/** „Geteilt von Sabine · Lesen“ (+ „über Vertrieb“) of a shared calendar. */
+	function sharedInfo(x, t) {
+		const level = t(`mail.share.levels.${SHARE_LEVELS.includes(x && (x.level || x.shared)) ? (x.level || x.shared) : 'read'}`);
+		const base = t('mail.share.info', { owner: (x && x.owner && x.owner.name) || '', level });
+		return x && x.group ? `${base} · ${t('mail.share.via', { group: x.group })}` : base;
+	}
+
+	/** The line under a share: „hat angenommen“ / „Einladung offen“ / „4 Personen“. */
+	function shareSub(s, t) {
+		if (s.type === 'group') return t('mail.share.members', { n: s.members || 0 });
+		return t(s.state === 'accepted' ? 'mail.share.state.accepted' : 'mail.share.state.pending');
+	}
+
+	/** Does the item open (a free/busy or private one of a shared calendar does not: no eventId)? */
+	function itemOpens(x) { return !!(x && (x.overlayId || x.eventId)); }
+
 	function errorText(r, t, lang) {
 		// Mail 1.8: 423 quarantined | scan_pending | scan_blocked, 410 attachment_removed, 409 attachment_blocked, 422 infected
 		const scanText = SCAN ? SCAN.refusalText(r, t) : null;
 		if (scanText) return scanText;
 		const code = str(r && r.code);
-		const hint = r && r.detail && r.detail.hint ? (lang === 'en' ? r.detail.hint.en || r.detail.hint.de : r.detail.hint.de || r.detail.hint.en) : null;
+		const d = (r && r.detail) || {};
+		const hint = d.hint ? (lang === 'en' ? d.hint.en || d.hint.de : d.hint.de || d.hint.en) : null;
+		// Mail 1.9.0: which kind of „not supported“, a booking in the past, the rules a refusal names
+		if (code === 'not_supported' && NOT_SUPPORTED_KEYS[d.what]) return t(`mail.err.${NOT_SUPPORTED_KEYS[d.what]}`);
+		if (code === 'invalid' && d.reason === 'past') return t('mail.err.past');
 		const key = ERR_KEYS[code] || (/^http_5/.test(code) ? 'offline' : 'failed');
-		const base = t(`mail.err.${key}`);
+		let base = t(`mail.err.${key}`);
+		if (code === 'rule_violation' && Array.isArray(d.violations) && d.violations.length) base = `${base} (${d.violations.map((v) => ruleText(v, t)).join(', ')})`;
 		return hint ? `${base} ${hint}` : base;
 	}
 
@@ -1530,5 +1802,38 @@
 		pinContact,
 		favoriteTiles,
 		upcomingDays,
+		// Mail 1.9.0: free/busy, shared calendars, resources
+		RES_KINDS,
+		SHARE_LEVELS,
+		RESOURCE_COLOR,
+		isResourceAddress,
+		fbWindow,
+		barSegments,
+		scaleHours,
+		fbLabel,
+		fbClashes,
+		fbMessage,
+		dayShort,
+		suggestionLabel,
+		fbHead,
+		plannerQuery,
+		maxText,
+		ruleText,
+		approversText,
+		resourceSub,
+		resourceKinds,
+		resourceBlocks,
+		resourceSpan,
+		bookingPill,
+		bookingWhen,
+		bookingLines,
+		bookingActions,
+		bookingTabs,
+		requestBlocks,
+		bookingsToast,
+		sharedAsCalendars,
+		sharedInfo,
+		shareSub,
+		itemOpens,
 	};
 });
