@@ -193,7 +193,9 @@
       "debug": "Debug",
       "time": "Zeit",
       "level": "Stufe",
-      "message": "Meldung"
+      "message": "Meldung",
+      "saved": "Protokoll gespeichert unter {{path}}",
+      "saveFailed": "Das Protokoll konnte nicht gespeichert werden ({{code}})."
     },
     "settings": {
       "tabConn": "Verbindung",
@@ -364,7 +366,9 @@
       "quietOpen": "Im Portal ändern",
       "quietNoPortal": "Das Portal ist erreichbar, sobald das VPN verbunden ist.",
       "killSwitchNote": "Hinweis zum Kill-Switch",
-      "saveFailed": "Einstellung konnte nicht gespeichert werden: {{ error }}"
+      "saveFailed": "Einstellung konnte nicht gespeichert werden: {{ error }}",
+      "toastBlocked": "Windows lässt die Benachrichtigungen von GateControl nicht zu – sie erscheinen deshalb nur hier in der App. Schalte sie unter Einstellungen › System › Benachrichtigungen für „GateControl Pro“ ein. Läuft die App mit dem Kennwort eines anderen Windows-Kontos, kann Windows sie nicht zeigen.",
+      "toastSettings": "Windows-Einstellungen öffnen"
     },
     "scan": {
       "afterCheck": "Die Datei öffnet sich nach der Prüfung.",
@@ -1260,7 +1264,8 @@
       "mailUnavailable": "Der Mail-Kalender ist gerade nicht erreichbar (Konto getrennt oder Anmeldung abgelaufen). Bitte das Konto in Mail neu anmelden. Die Erinnerung von Drive geht weiter.",
       "notPicture": "Nur Bilder lassen sich in ein Dokument umwandeln.",
       "noOcr": "Auf diesem PC ist keine Sprache für die Texterkennung installiert.",
-      "scanNoFile": "Drive hat kein Dokument erzeugt."
+      "scanNoFile": "Drive hat kein Dokument erzeugt.",
+      "server": "Drive hat auf dem Server einen Fehler gemeldet ({{code}}). Bitte später erneut versuchen – bleibt es so, Drive auf dem Server aktualisieren."
     },
     "sync": {
       "title": "Ordner sichern",

@@ -165,6 +165,13 @@ describe('gatedrop-state', () => {
     assert.equal(r.meta, 'gatedrop.list.from(Anna) · gatedrop.list.today(11:00)');
     assert.equal(r.canSave, true);
     assert.equal(r.canShow, false);
+    assert.equal(r.receiveError, null);
+    // the automatic download failed (core inbox() receiveError): why, "Speichern" again; being checked: it comes itself
+    const failed = { id: '7', items: [{ name: 'IMG_1.jpg', mediaId: 'x'.repeat(32) }], local: [] };
+    assert.equal(GS.receivedView({ ...failed, receiveError: 'timeout' }, { t, locale: 'de', now: NOW }).receiveError, 'gatedrop.receiveError.text(gatedrop.receiveError.timeout)');
+    assert.equal(GS.receivedView({ ...failed, receiveError: 'http_500' }, { t, locale: 'de', now: NOW }).receiveError, 'gatedrop.receiveError.text(gatedrop.receiveError.other(http_500))');
+    assert.equal(GS.receivedView({ ...failed, receiveError: 'scan_pending' }, { t, locale: 'de', now: NOW }).receiveError, 'gatedrop.receiveError.checking');
+    assert.equal(GS.receivedView({ ...failed, receiveError: 'timeout', local: [{ name: 'IMG_1.jpg', path: 'C:\\x' }] }, { t, locale: 'de', now: NOW }).receiveError, null);
     const s = GS.sentView({ id: '6', items: [{ name: 'a' }, { name: 'b' }], deliveries: [{ kind: 'device', target: 'tok', targetName: 'Pixel', status: 'delivered', via: 'direct' }, { kind: 'person', target: '8', status: 'failed' }] }, { t, locale: 'de', now: NOW });
     assert.equal(s.title, 'gatedrop.list.files(2)');
     assert.deepEqual(s.deliveries.map((d) => [d.label, d.tone]), [['Pixel', 'ok'], ['8', 'err']]);

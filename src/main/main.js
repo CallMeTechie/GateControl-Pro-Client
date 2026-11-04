@@ -30,7 +30,7 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut, protocol;
-let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, updateToast;
+let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, connectSteps, waitForHandshake, explorerShell, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, updateToast;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
@@ -76,7 +76,9 @@ try {
   // Shared helpers from core: update key loader, pure tunnel/portal logic,
   // kill-switch startup recovery, tray icon (unit-tested in core).
   ({ loadUpdatePublicKey } = require('@gatecontrol/client-core/src/utils/update-public-key'));
-  ({ reconnectDelay, shouldOpenPortal } = require('@gatecontrol/client-core/src/utils/tunnel-logic'));
+  ({ reconnectDelay, shouldOpenPortal, connectSteps, waitForHandshake } = require('@gatecontrol/client-core/src/utils/tunnel-logic'));
+  // "Im Ordner anzeigen" through explorer.exe (the elevated app's showItemInFolder can do nothing)
+  ({ explorerShell } = require('@gatecontrol/client-core/src/utils/reveal'));
   ({ createPortalOpener } = require('@gatecontrol/client-core/src/utils/portal'));
   ({ recoverKillSwitch } = require('@gatecontrol/client-core/src/lifecycle/killswitch-startup'));
   ({ createTrayIcon } = require('@gatecontrol/client-core/src/utils/tray-icon'));
@@ -149,6 +151,11 @@ const { t, setLocale, getLocale, registerTranslations, resolveLocale } = _i18nMo
 // Register Pro-specific translations
 registerTranslations('de', require('../i18n/de.json'));
 registerTranslations('en', require('../i18n/en.json'));
+
+// Every service, IPC handler and window guard gets Electron's shell with
+// showItemInFolder() through explorer.exe /select (core utils/reveal.js);
+// e2e runs keep the recorded showItemInFolder of the test hooks.
+shell = explorerShell(shell, { platform: e2e ? 'e2e' : process.platform, log: { warn: (...a) => log.warn(...a) } });
 
 // ── Logging ──────────────────────────────────────────────────
 log.transports.file.level = 'info';
@@ -334,6 +341,8 @@ const RESOURCES_PATH = app.isPackaged
 
 const WG_CONFIG_DIR = path.join(app.getPath('userData'), 'wireguard');
 const WG_CONFIG_FILE = path.join(WG_CONFIG_DIR, 'gatecontrol0.conf');
+// The connect asks the server for the config at most this long while a local one is there.
+const CONFIG_FETCH_LOCAL_MS = 6000;
 
 // ── Helpers ──────────────────────────────────────────────────
 // Opens the portal (https only). Asks the server for a fresh one-time login
@@ -647,6 +656,9 @@ async function connectTunnel() {
     log.debug('Reconnect already in progress, skipping connectTunnel');
     return;
   }
+  // Each step's duration goes into the log ("Connect steps: …"), so a slow
+  // connect shows where the time went.
+  const steps = connectSteps();
   try {
     log.info('Establishing tunnel connection...');
     if (connectionMonitor) connectionMonitor.stop();
@@ -658,11 +670,18 @@ async function connectTunnel() {
 
     if (serverUrl && apiKey) {
       let config = null;
+      // With a local config a slow or blocked server must not hold the
+      // connect for the client's full 15–25 s: CONFIG_FETCH_LOCAL_MS, then
+      // the local one (a changed config still comes with the next config check).
+      const haveLocal = fsSync.existsSync(WG_CONFIG_FILE);
+      let source = 'server';
       try {
-        config = await apiClient.fetchConfig();
+        config = await apiClient.fetchConfig(haveLocal ? { timeout: CONFIG_FETCH_LOCAL_MS } : {});
       } catch (err) {
+        source = /timeout/i.test(err.message || '') || err.code === 'ECONNABORTED' ? 'timeout, local' : 'failed, local';
         log.warn('Config fetch failed, using local config:', err.message);
       }
+      steps.done('config', config ? source : (source === 'server' ? 'none' : source));
       if (config) {
         // Fail-closed: a bad server answer must not clobber a good local
         // config (and must not become the tunnel config) — abort the connect.
@@ -677,27 +696,23 @@ async function connectTunnel() {
         store.set('tunnel.configPath', WG_CONFIG_FILE);
         rememberInternalDns();
         log.info('Configuration updated from server');
+        steps.done('config-write');
       }
     }
 
     if (store.get('tunnel.killSwitch', false)) {
       await killSwitchSvc.enable(WG_CONFIG_FILE);
+      steps.done('killswitch');
     }
 
     await wgService.connect(WG_CONFIG_FILE, store.get('tunnel.splitTunnel') ? store.get('tunnel.splitRoutes', '') : null);
+    steps.done('adapter');
 
     // Verify handshake before declaring connected — a stale config can
     // create the adapter successfully but never complete a handshake.
-    let handshakeOk = false;
-    for (let i = 0; i < 5; i++) {
-      await new Promise(r => setTimeout(r, 2000));
-      const stats = await wgService.getStats();
-      if (stats?.handshake) {
-        handshakeOk = true;
-        break;
-      }
-      log.debug(`Waiting for handshake (${i + 1}/5)...`);
-    }
+    // Asked right away and every 250 ms (up to 10 s), not after 2 s first.
+    const handshakeOk = await waitForHandshake(() => wgService.getStats(), { timeoutMs: 10000, intervalMs: 250 });
+    steps.done('handshake', handshakeOk ? null : 'none');
 
     if (!handshakeOk) {
       await wgService.disconnect();
@@ -710,7 +725,16 @@ async function connectTunnel() {
     updateTray('connected');
     broadcastState('connected');
 
+    if (connectionMonitor) connectionMonitor.start();
+
+    notify(t('notify.connected'), { collapseKey: 'tunnel' });
+    log.info('Tunnel connected successfully');
+    log.info(steps.summary());
+
     // ── Portal auto-open ─────────────────────────────────────
+    // Not in the connect's path any more: GET permissions (up to 15 s on a
+    // slow server, twice) ran before "connected" was done.
+    const since = tunnelState.connectedSince ? tunnelState.connectedSince.getTime() : Date.now();
     async function refreshPortalUrl() {
       await apiClient.getPermissions();
       portalUrl = apiClient.portalUrl;
@@ -718,22 +742,21 @@ async function connectTunnel() {
       // ponytail: getPermissions() catches internally; on failure portalUrl retains prior value
       if (!portalUrl) log.warn('portal url fetch returned empty');
     }
-    await refreshPortalUrl();
-    if (!portalUrl) { await new Promise(r => setTimeout(r, 1500)); await refreshPortalUrl(); }
-    updateTray('connected'); // refresh so portal tray item appears
-    if (mainWindow) mainWindow.webContents.send('portal-url', portalUrl);
-    const since = tunnelState.connectedSince ? tunnelState.connectedSince.getTime() : Date.now();
-    // Auto-open only on a user-initiated connect. The reconnect loop uses a
-    // separate path that never runs this block, so a reconnect can't re-open.
-    if (shouldOpenPortal({ portalUrl, autoOpenPortal, connectedSince: since, lastOpenedSince: portalOpenedSince })) {
-      portalOpenedSince = since;
-      openPortalSafe();
-    }
-
-    if (connectionMonitor) connectionMonitor.start();
-
-    notify(t('notify.connected'), { collapseKey: 'tunnel' });
-    log.info('Tunnel connected successfully');
+    (async () => {
+      const t0 = Date.now();
+      await refreshPortalUrl();
+      if (!portalUrl) { await new Promise(r => setTimeout(r, 1500)); await refreshPortalUrl(); }
+      log.info(`Portal URL after connect: ${Date.now() - t0} ms`);
+      if (!tunnelState.connected || !tunnelState.connectedSince || tunnelState.connectedSince.getTime() !== since) return;
+      updateTray('connected'); // refresh so portal tray item appears
+      if (mainWindow) mainWindow.webContents.send('portal-url', portalUrl);
+      // Auto-open only on a user-initiated connect. The reconnect loop uses a
+      // separate path that never runs this block, so a reconnect can't re-open.
+      if (shouldOpenPortal({ portalUrl, autoOpenPortal, connectedSince: since, lastOpenedSince: portalOpenedSince })) {
+        portalOpenedSince = since;
+        openPortalSafe();
+      }
+    })().catch((err) => log.warn('Portal URL after connect failed:', err.message));
 
     // Report OS hostname for internal DNS resolution (best-effort).
     // Server rate-limits to 3/min/token; calling once on connect is
@@ -769,6 +792,7 @@ async function connectTunnel() {
 
   } catch (err) {
     log.error('Tunnel connection failed:', err.message);
+    log.info(steps.summary('Connect steps (failed)'));
     updateTray('disconnected');
     broadcastState('error', err.message);
     notify(err.message, { title: t('notify.connectionError'), collapseKey: 'tunnel' });
@@ -1324,6 +1348,7 @@ function registerIpcHandlers() {
   const ctx = {
     app,
     dialog,
+    shell,
     getMainWindow: () => mainWindow,
     store,
     wgService,
@@ -1409,6 +1434,13 @@ app.on('ready', () => {
   // Windows toasts (and their buttons) belong to the AppUserModelID of the
   // Start-menu shortcut, which electron-builder sets to build.appId.
   app.setAppUserModelId('com.gatecontrol.client-pro');
+  // requireAdministrator: a UAC prompt answered with another account's
+  // password runs the app as that Windows user (its Downloads, %APPDATA%,
+  // %TEMP%; Windows refuses the toasts) — said once in the log.
+  try {
+    const ra = require('@gatecontrol/client-core/src/utils/session-user').runAs();
+    if (ra.differs) log.warn(`App runs as Windows user "${ra.processUser}", signed in is "${ra.sessionUser}" – files go to ${ra.profile}, toasts may be refused`);
+  } catch (err) { log.debug('Run-as check skipped:', err.message); }
   initializeServices();
 
   // Ältere Versionen haben mstsc global die Zertifikatswarnung abgewöhnt

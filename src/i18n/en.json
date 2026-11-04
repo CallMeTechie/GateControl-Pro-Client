@@ -193,7 +193,9 @@
       "debug": "Debug",
       "time": "Time",
       "level": "Level",
-      "message": "Message"
+      "message": "Message",
+      "saved": "Log saved to {{path}}",
+      "saveFailed": "The log could not be saved ({{code}})."
     },
     "settings": {
       "tabConn": "Connection",
@@ -364,7 +366,9 @@
       "quietOpen": "Change in the portal",
       "quietNoPortal": "The portal is available once the VPN is connected.",
       "killSwitchNote": "Kill switch note",
-      "saveFailed": "Setting could not be saved: {{ error }}"
+      "saveFailed": "Setting could not be saved: {{ error }}",
+      "toastBlocked": "Windows does not allow GateControl's notifications – they only appear here in the app. Switch them on for “GateControl Pro” under Settings › System › Notifications. If the app runs with the password of another Windows account, Windows cannot show them.",
+      "toastSettings": "Open Windows settings"
     },
     "scan": {
       "afterCheck": "The file opens once the check is done.",
@@ -1260,7 +1264,8 @@
       "mailUnavailable": "The mail calendar cannot be reached right now (account disconnected or sign-in expired). Please sign in to the account in Mail again. Drive's reminder still works.",
       "notPicture": "Only pictures can be converted into a document.",
       "noOcr": "No language for text recognition is installed on this PC.",
-      "scanNoFile": "Drive made no document."
+      "scanNoFile": "Drive made no document.",
+      "server": "Drive reported an error on the server ({{code}}). Please try again later – if it stays, update Drive on the server."
     },
     "sync": {
       "title": "Back up folders",

@@ -102,6 +102,8 @@
 	 * @param {HTMLElement} [o.toastHost] - the app's toast stack (bottom right) for the send toasts;
 	 *   without one they get an own stack in dialogHost
 	 * @param {() => number} [o.now]
+	 * @param {() => Promise<object>} [o.runAs] - window.gatecontrol.system.runAs: { differs, processUser, sessionUser }
+	 *   — the app runs as another Windows user: received files are in that user's Downloads (said below the folder)
 	 */
 	function mount(o) {
 		const api = o.api;
@@ -162,13 +164,22 @@
 
 			refs.listen = el('div', { class: 'gd-side-row' });
 			refs.folderPath = el('span', { class: 'gd-side-sub' });
+			// another Windows user runs the app (UAC with another account's password): its Downloads, not the signed-in person's
+			refs.runAs = el('span', { class: 'gd-side-sub gd-side-warn', role: 'note', hidden: true });
+			if (typeof o.runAs === 'function') {
+				Promise.resolve(o.runAs()).then((r) => {
+					if (!r || !r.differs) return;
+					refs.runAs.textContent = t('gatedrop.runAs', { user: r.processUser || '?', session: r.sessionUser || '?' });
+					refs.runAs.hidden = false;
+				}).catch(() => {});
+			}
 			refs.explorerRow = el('div', { class: 'gd-side-row', hidden: true });
 			refs.accessRow = el('div', { class: 'gd-side-row gd-access-row', hidden: true });
 			refs.side = el('div', { class: 'card gd-side' }, [
 				refs.listen,
 				el('div', { class: 'gd-side-row' }, [
 					el('span', { class: 'gd-side-ic' }, [icon('folder', 16)]),
-					el('div', { class: 'gd-side-tx' }, [el('b', { text: t('gatedrop.folderLabel') }), refs.folderPath]),
+					el('div', { class: 'gd-side-tx' }, [el('b', { text: t('gatedrop.folderLabel') }), refs.folderPath, refs.runAs]),
 					el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => call(api.openFolder()) } }, [el('span', { text: t('gatedrop.openFolder') })]),
 				]),
 				refs.explorerRow,
@@ -476,6 +487,8 @@
 			if (s.text) body.push(el('span', { class: 'gd-row-text', text: s.text.length > 400 ? `${s.text.slice(0, 400)}…` : s.text }));
 			if (s.link && !s.text) body.push(el('span', { class: 'gd-row-text mono', text: s.link }));
 			if (v.note) body.push(el('span', { class: 'gd-row-note', text: v.note }));
+			// the automatic download failed: why, and that "Speichern" tries again
+			if (v.receiveError) body.push(el('span', { class: 'gd-row-err', role: 'note', text: v.receiveError }));
 			// GateDrop 1.4: files the virus scan checks or blocked (no download) — name and chip
 			for (const x of v.scan || []) body.push(el('span', { class: 'gd-row-scan' }, [el('span', { class: 'gd-row-scan-name', text: x.name }), el('span', { class: 'scan-chip', 'data-tone': x.chip.tone, 'data-scan': x.chip.kind, title: x.chip.title }, [x.chip.tone === 'quiet' ? null : icon('shield', 12), el('span', { text: x.chip.text })])]));
 			return el('div', { class: `gd-row${S.focusSend && S.focusSend === s.id ? ' is-focus' : ''}`, 'data-id': s.id }, [

@@ -229,6 +229,8 @@ function install({ app, env }) {
     return state.installerLaunch === 'fail' ? 'Failed to open path' : '';
   };
   shell.openExternal = async (url) => { record('shell.openExternal', { url }); };
+  // "Im Ordner anzeigen": recorded (main.js keeps it in e2e runs instead of explorer.exe)
+  shell.showItemInFolder = (target) => { record('shell.showItemInFolder', { path: target }); };
 
   const setContextMenu = Tray.prototype.setContextMenu;
   Tray.prototype.setContextMenu = function e2eSetContextMenu(menu) {
@@ -282,6 +284,9 @@ function install({ app, env }) {
   // the event Electron emits for a click on the toast.
   const { Notification } = require('electron');
   const realShow = Notification.prototype.show;
+  // Linux runs (xvfb, no notification daemon): Electron says "not supported" and no toast is ever made — as on
+  // Windows they are made and recorded (show() of Electron then does nothing)
+  if (process.platform === 'linux' && typeof Notification.isSupported === 'function' && !Notification.isSupported()) Notification.isSupported = () => true;
   state.toasts = [];
   Notification.prototype.show = function e2eShow(...args) {
     const text = `${this.title || ''}\n${this.body || ''}\n${this.toastXml || ''}`;
@@ -295,6 +300,15 @@ function install({ app, env }) {
     if (!hit) return false;
     record('toast.click', { text: hit.text.slice(0, 200) });
     hit.n.emit('click', {});
+    return true;
+  };
+  // Windows refuses a toast (Electron's 'failed', e.g. E_ACCESSDENIED when the app's notifications are off)
+  state.failToast = (pattern, error = 'WinAPI: Show failed, ERROR (HRESULT: -2147024891)') => {
+    const re = new RegExp(pattern);
+    const hit = [...state.toasts].reverse().find((x) => re.test(x.text));
+    if (!hit) return false;
+    record('toast.failed', { text: hit.text.slice(0, 200) });
+    hit.n.emit('failed', {}, error);
     return true;
   };
   // Drops the downloaded installer (as if it was never fetched / cleaned up).
