@@ -229,6 +229,10 @@ describe('"In Drive speichern" in Chats, GateDrop, Schule', () => {
     };
     for (const [code, key] of Object.entries(cases)) assert.equal(DS.errorText({ ok: false, code }, t), key, code);
     assert.equal(DS.errorText({ ok: false, code: 'weird' }, t), 'drive.err.generic(code=weird)');
+    // an error on the server (Drive 1.19.0 "too many parameters" → 500): its own text with the code
+    assert.equal(DS.errorText({ ok: false, code: 'http_500' }, t), 'drive.err.server(code=http_500)');
+    assert.equal(DS.errorText({ ok: false, code: 'plugin_error' }, t), 'drive.err.server(code=plugin_error)');
+    assert.equal(DS.errorText({ ok: false, code: 'http_507' }, t), 'drive.err.quota');
     assert.equal(DS.errorText(null, t), 'drive.err.generic(code=failed)');
   });
 });

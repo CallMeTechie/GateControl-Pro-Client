@@ -1951,10 +1951,15 @@ $('#log-search').addEventListener('input', renderLogs);
 bindSeg($('#log-level-filter'), 'level', (lvl) => { logLevel = lvl; renderLogs(); });
 bindSeg($('#log-period-filter'), 'period', (period) => { logPeriod = period; refreshLogs(); });
 
-// Log export
-// Shows the log file in Explorer (shell:open-external only takes http(s)).
+// Log export: a copy where the person picks (Downloads by default), then
+// shown in the Explorer (core logs:save). It used to only "show" the log
+// file in its folder — from the elevated app that often did nothing.
 async function exportLogs() {
-	await logs.show();
+	if (typeof logs.save !== 'function') { await logs.show(); return; }
+	let r;
+	try { r = await logs.save(); } catch { r = { ok: false, code: 'failed' }; }
+	if (r && r.ok) showToast(t('ui.logs.saved', { path: r.path }), 'success');
+	else if (!(r && r.cancelled)) showToast(t('ui.logs.saveFailed', { code: (r && r.code) || 'failed' }), 'error');
 }
 $('#btn-export-logs').addEventListener('click', exportLogs);
 $('#btn-export-logs-adv').addEventListener('click', exportLogs);
@@ -2621,6 +2626,12 @@ if (notifyAvailable()) {
 		renderNotifySettings();
 		if (currentPage === 'inbox') renderInbox();
 	});
+	// Windows refused the toast (E_ACCESSDENIED: the app's notifications are
+	// off in Windows, or it runs as another Windows user): shown here instead.
+	notifyApi.onFallback?.((n) => {
+		if (!n || !n.title) return;
+		showToast(n.body ? `${n.title} – ${n.body}` : n.title, 'info', 8000);
+	});
 	notifyApi.onNavigate((evt) => {
 		const target = NS.navigateTarget(evt, shownPages());
 		if (target.page === 'inbox') {
@@ -2711,6 +2722,10 @@ function renderNotifySettings() {
 	dndBtn.dataset.active = view.dnd ? '1' : '';
 	$('#notify-dnd').hidden = !on;
 
+	// Windows refuses the app's notifications: why and where to switch them on
+	const blocked = $('#notify-toast-blocked');
+	if (blocked) blocked.hidden = !(inbox.status && inbox.status.toastsBlocked);
+
 	// Kill-switch note
 	const note = NS.killSwitchNote(inbox.status);
 	const noteEl = $('#notify-ks-note');
@@ -2767,6 +2782,8 @@ if (notifyAvailable()) {
 	bindSwitch(notifyEl.direct, (v) => saveNotifyPrefs({ direct: v }));
 	bindSwitch(notifyEl.toasts, (v) => saveNotifyPrefs({ toasts: v }));
 	bindSwitch(notifyEl.critical, (v) => saveNotifyPrefs({ criticalBypass: v }));
+
+	$('#notify-toast-settings')?.addEventListener('click', () => { Promise.resolve(shell.openExternal('ms-settings:notifications')).catch(() => {}); });
 
 	$('#notify-test').addEventListener('click', async () => {
 		const status = $('#notify-test-status');
@@ -2947,6 +2964,7 @@ gatedropView = gatedropApi && window.GCGateDropView && $('#page-gatedrop')
 		getLocale: () => window.gatecontrol.i18n.getLocale(),
 		toast: (msg, type) => showToast(msg, type || 'info'),
 		toastHost: $('#toasts'),
+		runAs: window.gatecontrol.system ? () => window.gatecontrol.system.runAs() : null,
 		onOpen: () => navigateTo('gatedrop'),
 		onStatus: (st) => {
 			const show = !!st && st.state === 'available';

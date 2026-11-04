@@ -252,7 +252,19 @@
 			canSave: !s.localOnly && items.some((it) => it.mediaId) && !(Array.isArray(s.local) && s.local.length),
 			// GateDrop 1.4: the files the virus scan checks / blocks / marked — [{ name, chip }] (blocked: no download)
 			scan: scanItems(items, t),
+			// the automatic download into this PC failed (core inbox() receiveError): the reason, "Speichern" tries again
+			receiveError: receiveErrorText(s, t),
 		};
+	}
+
+	/** Why a received send is not on this PC (core inbox() `receiveError`) → text, or null. */
+	function receiveErrorText(s, t) {
+		const code = s && typeof s.receiveError === 'string' ? s.receiveError : '';
+		if (!code || (Array.isArray(s.local) && s.local.length)) return null;
+		// still being checked by the virus scan: the chips say it, it comes on its own
+		if (code === 'scan_pending') return t('gatedrop.receiveError.checking');
+		const why = ['download_failed', 'timeout', 'network', 'not_found', 'gone'].includes(code) ? t(`gatedrop.receiveError.${code}`) : t('gatedrop.receiveError.other', { code });
+		return t('gatedrop.receiveError.text', { why });
 	}
 
 	/** The files of a send with a virus scan chip → [{ name, chip: { kind, tone, text, title } }]. */

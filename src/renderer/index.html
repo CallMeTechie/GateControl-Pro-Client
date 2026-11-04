@@ -608,6 +608,10 @@
 										<div class="grow"><div class="set-row-title" data-i18n="ui.notify.toasts">Windows-Benachrichtigung anzeigen</div><div class="set-row-desc" data-i18n="ui.notify.toastsDesc">sonst nur Zähler im Tray und in der App</div></div>
 										<button class="sw" id="notify-toasts" type="button" role="switch" aria-checked="false" data-i18n-aria-label="ui.notify.toasts" aria-label="Windows-Benachrichtigung anzeigen"><span></span></button>
 									</div>
+									<div class="note note-warn" id="notify-toast-blocked" role="note" hidden>
+										<span data-i18n="ui.notify.toastBlocked">Windows lässt die Benachrichtigungen von GateControl nicht zu – sie erscheinen deshalb nur hier in der App. Schalte sie unter Einstellungen › System › Benachrichtigungen für „GateControl Pro“ ein. Läuft die App mit dem Kennwort eines anderen Windows-Kontos, kann Windows sie nicht zeigen.</span>
+										<button class="btn btn-sec btn-sm" id="notify-toast-settings" type="button" data-i18n="ui.notify.toastSettings">Windows-Einstellungen öffnen</button>
+									</div>
 									<div class="set-row">
 										<div class="grow"><div class="set-row-title" data-i18n="ui.notify.critical">Kritisches auch bei „Nicht stören“</div><div class="set-row-desc" data-i18n="ui.notify.criticalDesc">als Windows-Alarm mit Ton</div></div>
 										<button class="sw" id="notify-critical" type="button" role="switch" aria-checked="false" data-i18n-aria-label="ui.notify.critical" aria-label="Kritisches auch bei Nicht stören"><span></span></button>

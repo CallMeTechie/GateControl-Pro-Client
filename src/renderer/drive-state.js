@@ -651,7 +651,9 @@
 		const scanText = SCAN.refusalText(res, t);
 		if (scanText) return scanText;
 		const code = res && typeof res.code === 'string' ? res.code : 'failed';
-		const key = CODES[code];
+		// an error on the server (HTTP 5xx, the plugin failed): a text of its own, the code kept for the support
+		const key = CODES[code] || (/^http_5\d\d$/.test(code) || code === 'internal' || code === 'plugin_error' ? 'server' : null);
+		if (key === 'server') return t('drive.err.server', { code });
 		return key ? t(`drive.err.${key}`) : t('drive.err.generic', { code });
 	}
 
