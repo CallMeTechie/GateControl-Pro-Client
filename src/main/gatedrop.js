@@ -2,8 +2,9 @@
 
 /**
  * GateDrop wiring (plugin gatecontrol-gatedrop): the core GateDropService
- * (send, receive into Downloads\GateControl, LAN listener on TCP 47731,
- * presence) for the app's lifetime, plus the app-side glue:
+ * (send, receive into Downloads\GateControl — or the folder chosen on the
+ * page —, LAN listener on TCP 47731, presence) for the app's lifetime, plus
+ * the app-side glue:
  *
  *   - "Senden an → GateDrop" in the Explorer: a shortcut in the user's SendTo
  *     folder while GateDrop is available and the setting `gatedrop.sendTo`
@@ -12,6 +13,10 @@
  *     the running app (handleArgv) → the send dialog opens.
  *   - Tray entry "GateDrop – Dateien senden …" (file dialog → send dialog).
  *   - A stop that is safe to call twice.
+ *
+ * Downloads and the SendTo folder are those of the person signed in, also
+ * when the app runs as another Windows user (UAC prompt answered with an admin
+ * account): core utils/user-folders.js instead of app.getPath().
  *
  * The IPC channels gatedrop:* come from the core handlers (registerBaseHandlers
  * with ctx.gatedrop / ctx.gatedropExplorer), so a server:setup resets it there.
@@ -47,6 +52,8 @@ const path = require('path');
  * @param {string} [o.execPath=process.execPath]
  * @param {object} [o.fs]
  * @param {Function} [o.onChange] - availability changed (tray refresh)
+ * @param {object} [o.userFolders] - core utils/user-folders createUserFolders() (tests);
+ *   default: one on app.getPath
  */
 function setupGateDrop({
   app, store, log, apiClient, notifications, GateDropService, gatedropShell,
@@ -54,11 +61,11 @@ function setupGateDrop({
   shell = null, clipboard = null, dialog = null, protocol, toastImagePath = null,
   showWindow, getMainWindow, t = (k) => k, manageShortcut = true,
   platform = process.platform, execPath = process.execPath, fs = require('fs'),
-  onChange = () => {}, service = null,
+  onChange = () => {}, service = null, userFolders = null,
 }) {
-  const downloadsDir = () => {
-    try { return path.join(app.getPath('downloads'), 'GateControl'); } catch { return path.join(require('os').homedir(), 'Downloads', 'GateControl'); }
-  };
+  // the folders of the person signed in (another Windows user may run the app)
+  const folders = userFolders || require('@gatecontrol/client-core/src/utils/user-folders').createUserFolders({ getPath: (k) => app.getPath(k), log });
+  const downloadsDir = () => path.join(folders.userPath('downloads'), 'GateControl');
 
   const firewall = !service && GateDropFirewall && platform === 'win32' ? new GateDropFirewall({ log, edition, exePath: execPath }) : null;
 
@@ -87,8 +94,9 @@ function setupGateDrop({
     if (st !== 'available' && st !== 'unavailable') return 'skipped';
     let appPath = null;
     try { appPath = app.isPackaged ? null : app.getAppPath(); } catch { appPath = null; }
+    // SendTo of the person signed in: Explorer shows only that one
     let appData;
-    try { appData = app.getPath('appData'); } catch { return 'failed'; }
+    try { appData = folders.userPath('appData'); } catch { return 'failed'; }
     return gatedropShell.syncSendToShortcut({
       enabled: st === 'available' && wantShortcut(),
       shell,
@@ -127,7 +135,8 @@ function setupGateDrop({
     showWindow();
     if (!dialog || typeof dialog.showOpenDialog !== 'function') return;
     const win = getMainWindow && getMainWindow();
-    const opts = { properties: ['openFile', 'multiSelections'] };
+    const start = folders.dialogPath('documents');
+    const opts = { properties: ['openFile', 'multiSelections'], ...(start ? { defaultPath: start } : {}) };
     const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
     if (r && !r.canceled && Array.isArray(r.filePaths) && r.filePaths.length) await gatedrop.compose(r.filePaths);
   }
