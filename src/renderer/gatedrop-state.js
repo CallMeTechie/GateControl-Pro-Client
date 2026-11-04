@@ -30,7 +30,8 @@
 	const EXPIRES = ['1h', '1d', '7d', 'once'];
 	const MAX_ITEMS = 20;
 	const MAX_TEXT = 20000;
-	const ERRORS = ['unavailable', 'target_unavailable', 'network', 'timeout', 'too_large', 'quota_exceeded', 'no_target', 'missing', 'changed', 'forbidden', 'invalid'];
+	// folder_missing / folder_readonly: "Speicherort für empfangene Dateien" (a folder that is gone / not writable)
+	const ERRORS = ['unavailable', 'target_unavailable', 'network', 'timeout', 'too_large', 'quota_exceeded', 'no_target', 'missing', 'changed', 'forbidden', 'invalid', 'folder_missing', 'folder_readonly'];
 	// Who may send to this PC (GateDrop 1.2.0): only its owner, or everyone of the GateControl.
 	const ACCESS = ['self', 'everyone'];
 	// waiting (GateDrop 1.1.0): the own device was offline, the send waits until it is online again.

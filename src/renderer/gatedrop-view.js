@@ -3,7 +3,8 @@
  *
  * The page "GateDrop": a drop zone ("Dateien hierher ziehen oder auswählen",
  * text or link), the state of this PC (direct receiving in the WLAN, the
- * folder Downloads\GateControl, "Senden an" in the Explorer, who may send
+ * folder Downloads\GateControl — "Ändern …" / "Zurücksetzen": the
+ * "Speicherort für empfangene Dateien" —, "Senden an" in the Explorer, who may send
  * to this PC: "Nur ich" / "Alle im GateControl-Netz"), running
  * transfers and the lists Empfangen / Gesendet / Links (show / open / save
  * received files, copy texts, end links).
@@ -102,8 +103,9 @@
 	 * @param {HTMLElement} [o.toastHost] - the app's toast stack (bottom right) for the send toasts;
 	 *   without one they get an own stack in dialogHost
 	 * @param {() => number} [o.now]
-	 * @param {() => Promise<object>} [o.runAs] - window.gatecontrol.system.runAs: { differs, processUser, sessionUser }
-	 *   — the app runs as another Windows user: received files are in that user's Downloads (said below the folder)
+	 * @param {() => Promise<object>} [o.runAs] - window.gatecontrol.system.runAs: { differs, processUser, sessionUser,
+	 *   sessionProfile, downloads, unreachable } — the app runs as another Windows user (UAC with an admin account):
+	 *   received files still go to the folder of the person signed in (said below the folder, with its path)
 	 */
 	function mount(o) {
 		const api = o.api;
@@ -138,6 +140,8 @@
 			explorer: null,       // { enabled, supported }
 			access: null,         // { supported, receiveFrom } who may send to this PC
 			accessBusy: false,
+			folderBusy: false,    // folder dialog open / resetting
+			runAs: null,          // system.runAs(): another Windows user runs the app
 		};
 
 		// ── Page skeleton ────────────────────────────────────
@@ -164,13 +168,14 @@
 
 			refs.listen = el('div', { class: 'gd-side-row' });
 			refs.folderPath = el('span', { class: 'gd-side-sub' });
-			// another Windows user runs the app (UAC with another account's password): its Downloads, not the signed-in person's
+			// "Speicherort für empfangene Dateien": Ändern … / Zurücksetzen
+			refs.folderActs = el('div', { class: 'gd-side-acts', hidden: true });
+			// another Windows user runs the app (UAC with another account's password): whose folder is used
 			refs.runAs = el('span', { class: 'gd-side-sub gd-side-warn', role: 'note', hidden: true });
 			if (typeof o.runAs === 'function') {
 				Promise.resolve(o.runAs()).then((r) => {
-					if (!r || !r.differs) return;
-					refs.runAs.textContent = t('gatedrop.runAs', { user: r.processUser || '?', session: r.sessionUser || '?' });
-					refs.runAs.hidden = false;
+					S.runAs = r && r.differs ? r : null;
+					renderRunAs();
 				}).catch(() => {});
 			}
 			refs.explorerRow = el('div', { class: 'gd-side-row', hidden: true });
@@ -179,7 +184,7 @@
 				refs.listen,
 				el('div', { class: 'gd-side-row' }, [
 					el('span', { class: 'gd-side-ic' }, [icon('folder', 16)]),
-					el('div', { class: 'gd-side-tx' }, [el('b', { text: t('gatedrop.folderLabel') }), refs.folderPath, refs.runAs]),
+					el('div', { class: 'gd-side-tx' }, [el('b', { text: t('gatedrop.folderLabel') }), refs.folderPath, refs.runAs, refs.folderActs]),
 					el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => call(api.openFolder()) } }, [el('span', { text: t('gatedrop.openFolder') })]),
 				]),
 				refs.explorerRow,
@@ -243,7 +248,10 @@
 				el('span', { class: `gd-side-ic${line.on ? ' is-on' : ''}` }, [icon('wifi', 16)]),
 				el('div', { class: 'gd-side-tx' }, tx),
 			);
-			refs.folderPath.textContent = (S.status && S.status.folder) || '';
+			const st = S.status || {};
+			refs.folderPath.textContent = st.folder ? (st.folderCustom ? `${st.folder} · ${t('gatedrop.folderCustom')}` : st.folder) : '';
+			renderFolderActs();
+			renderRunAs();
 			const ex = S.explorer;
 			refs.explorerRow.hidden = !ex || !ex.supported;
 			clear(refs.explorerRow);
@@ -258,6 +266,64 @@
 			}
 			renderAccess();
 		}
+
+		/** "Ändern …" (folder dialog) and, for a chosen folder, "Zurücksetzen" (Downloads\GateControl again). */
+		function renderFolderActs() {
+			if (!refs.folderActs) return;
+			clear(refs.folderActs);
+			const st = S.status || {};
+			if (typeof api.pickFolder === 'function') {
+				refs.folderActs.appendChild(el('button', {
+					type: 'button', class: 'btn btn-sec btn-sm', title: t('gatedrop.folderChangeTitle'), disabled: S.folderBusy,
+					on: { click: () => pickFolder() },
+				}, [el('span', { text: t('gatedrop.folderChange') })]));
+			}
+			if (st.folderCustom && typeof api.resetFolder === 'function') {
+				refs.folderActs.appendChild(el('button', {
+					type: 'button', class: 'btn btn-sec btn-sm', title: t('gatedrop.folderResetTitle', { folder: st.folderDefault || '' }), disabled: S.folderBusy,
+					on: { click: () => resetFolder() },
+				}, [el('span', { text: t('gatedrop.folderReset') })]));
+			}
+			refs.folderActs.hidden = !refs.folderActs.firstChild;
+		}
+
+		/** The note below the folder when another Windows user runs the app (whose folder, which path). */
+		function renderRunAs() {
+			if (!refs.runAs) return;
+			const r = S.runAs;
+			refs.runAs.hidden = !r;
+			if (!r) return;
+			const user = r.processUser || '?';
+			const session = r.sessionUser || '?';
+			let text = r.sessionProfile
+				? t('gatedrop.runAs', { user, session, path: (S.status && S.status.folder) || r.downloads || '' })
+				: t('gatedrop.runAsUnknown', { user, session });
+			if (r.sessionProfile && r.unreachable) text += ` ${t('gatedrop.runAsUnreachable', { folder: r.unreachable, user })}`;
+			refs.runAs.textContent = text;
+		}
+
+		/** The page's answer of pick / reset: the folder now used. */
+		function applyFolder(r) {
+			if (!r || r.ok === false || !S.status) return;
+			S.status = { ...S.status, folder: r.folder, folderCustom: !!r.custom, folderDefault: r.defaultFolder || S.status.folderDefault };
+		}
+
+		async function changeFolder(run) {
+			if (S.folderBusy) return;
+			S.folderBusy = true;
+			renderFolderActs();
+			try {
+				const r = await run();
+				if (r && r.ok === false) { if (r.code !== 'cancelled') toast(GS.errorText(r, t), 'error'); }
+				else applyFolder(r);
+			} catch (err) {
+				toast(GS.errorText({ code: err && err.code }, t), 'error');
+			}
+			S.folderBusy = false;
+			renderSide();
+		}
+		const pickFolder = () => changeFolder(() => api.pickFolder());
+		const resetFolder = () => changeFolder(() => api.resetFolder());
 
 		/** "Wer darf an diesen PC senden?" — hidden when the server does not offer it. */
 		function renderAccess() {

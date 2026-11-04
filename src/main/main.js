@@ -30,7 +30,7 @@ process.on('unhandledRejection', (reason) => {
 writeCrashLog('STARTUP', 'Process starting...');
 
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut, protocol;
-let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, connectSteps, waitForHandshake, explorerShell, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, updateToast;
+let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, connectSteps, waitForHandshake, explorerShell, userPath, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, updateToast;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
@@ -79,6 +79,8 @@ try {
   ({ reconnectDelay, shouldOpenPortal, connectSteps, waitForHandshake } = require('@gatecontrol/client-core/src/utils/tunnel-logic'));
   // "Im Ordner anzeigen" through explorer.exe (the elevated app's showItemInFolder can do nothing)
   ({ explorerShell } = require('@gatecontrol/client-core/src/utils/reveal'));
+  // the folders of the person signed in, also when another Windows user runs the app (UAC with an admin account)
+  ({ userPath } = require('@gatecontrol/client-core/src/utils/user-folders'));
   ({ createPortalOpener } = require('@gatecontrol/client-core/src/utils/portal'));
   ({ recoverKillSwitch } = require('@gatecontrol/client-core/src/lifecycle/killswitch-startup'));
   ({ createTrayIcon } = require('@gatecontrol/client-core/src/utils/tray-icon'));
@@ -1066,8 +1068,9 @@ function initializeServices() {
     isVpnUp: () => tunnelState.connected,
     // the PC's stable short id (Settings → About), shown on the page (read once)
     getDeviceKey: (() => { let key; return () => (key === undefined ? (key = shortDeviceId(getMachineFingerprint, log)) : key); })(),
+    // the folders of the person signed in, also when another Windows user runs the app (core utils/user-folders.js)
     knownFolders: () => ['desktop', 'documents', 'pictures', 'videos', 'music'].map((key) => {
-      try { return { key, path: app.getPath(key) }; } catch { return null; }
+      try { return { key, path: userPath(key) }; } catch { return null; }
     }).filter(Boolean),
     pushClient: notifications?.pushClient,
     ...(e2e ? { timing: { startMs: 1000, settleMs: 300, watchMs: 500 } } : {}),
@@ -1150,7 +1153,8 @@ function initializeServices() {
   if (e2e) e2e.vaultQuick = vaultQuick;
 
   // GateDrop: shown while the server lists the plugin; receives into
-  // Downloads\GateControl, listens on TCP 47731 in private networks.
+  // Downloads\GateControl of the person signed in (or the folder chosen on
+  // the page), listens on TCP 47731 in private networks.
   gatedrop = GateDropService && setupGateDrop ? setupGateDrop({
     app, store, log, apiClient, notifications,
     GateDropService, gatedropShell,
@@ -1435,11 +1439,12 @@ app.on('ready', () => {
   // Start-menu shortcut, which electron-builder sets to build.appId.
   app.setAppUserModelId('com.gatecontrol.client-pro');
   // requireAdministrator: a UAC prompt answered with another account's
-  // password runs the app as that Windows user (its Downloads, %APPDATA%,
-  // %TEMP%; Windows refuses the toasts) — said once in the log.
+  // password runs the app as that Windows user (its %APPDATA%, %TEMP%;
+  // Windows refuses the toasts). Files still go to the folders of the person
+  // signed in (core utils/user-folders.js, resolved here once) — said in the log.
   try {
-    const ra = require('@gatecontrol/client-core/src/utils/session-user').runAs();
-    if (ra.differs) log.warn(`App runs as Windows user "${ra.processUser}", signed in is "${ra.sessionUser}" – files go to ${ra.profile}, toasts may be refused`);
+    const ra = require('@gatecontrol/client-core/src/utils/user-folders').userFolders();
+    if (ra.differs) log.warn(`App runs as Windows user "${ra.processUser}", signed in is "${ra.sessionUser}" – files go to ${ra.downloads} (${ra.downloadsSource}), toasts may be refused`);
   } catch (err) { log.debug('Run-as check skipped:', err.message); }
   initializeServices();
 
