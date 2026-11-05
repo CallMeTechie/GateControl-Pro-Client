@@ -150,6 +150,8 @@
 		chevDown: 'M6 9l6 6 6-6',
 		folderPlus: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 10v6M9 13h6',
 		// Drive 1.16: places and people
+		// Drive 1.20: "offline verfügbar" (a phone with an arrow down)
+		offline: 'M7 3h10v18H7z|M11 18h2|M12 7v6|M9.5 10.5L12 13l2.5-2.5',
 		pin: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z|M12 7a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5',
 		minus: 'M5 12h14',
 	};
@@ -415,6 +417,7 @@
 			livePending: false,
 			vaultStatus: null, // Drive 1.9: { supported, device } of this PC
 			vaults: [],        // Drive 1.9: the vaults (pending requests, needsRotation)
+			offline: new Set(), // Drive 1.20: the node ids the person marked "offline verfügbar" (GET offline)
 			// Drive 1.11: the menu's tree (node id → { items, loading, error }), the unfolded nodes (kept on this PC),
 			// the vault lock's status, the last activity sent to the core
 			tree: new Map(),
@@ -709,6 +712,13 @@
 		}
 		const vaultOf = (id) => S.vaults.find((v) => v.id === id) || null;
 
+		/** Drive 1.20 'offline': which nodes the person keeps "offline verfügbar" (the tick of the row menu). */
+		async function loadOffline() {
+			if (!DS.hasFeature(S.me, 'offline') || typeof api.offline !== 'function') { S.offline = new Set(); return; }
+			const r = await Promise.resolve(api.offline()).catch(() => null);
+			if (r && r.ok) S.offline = new Set(r.ids);
+		}
+
 		async function reload() {
 			S.dirty = false;
 			S.loading = true;
@@ -734,6 +744,7 @@
 					if (mine) { S.open.add(mine.rootId); keepOpen(); }
 				}
 				await loadVaults();
+				await loadOffline();
 			} else {
 				S.areas = [];
 			}
@@ -1055,6 +1066,22 @@
 				return;
 			}
 			done(r);
+		}
+
+		/**
+		 * "Auf Mobilgeräten offline verfügbar" (Drive 1.20 'offline'): marks / unmarks a file or folder for the person.
+		 * The phones keep it, the home gateway holds it first (loads at LAN speed at home, also here); this PC keeps no
+		 * copy for it — that is "Immer auf diesem Gerät behalten" of "Dateien bei Bedarf".
+		 */
+		async function toggleOffline(n) {
+			const on = !S.offline.has(n.id);
+			const r = await Promise.resolve(api.setOffline(n.id, on)).catch(fail);
+			if (r && r.ok) {
+				if (on) S.offline.add(n.id); else S.offline.delete(n.id);
+				toast(t(on ? 'drive.offline.added' : 'drive.offline.removed', { name: n.name }), 'success');
+			} else if (r && r.code === 'invalid' && on) {
+				toast(t('drive.offline.max'), 'error');
+			} else done(r);
 		}
 
 		/** "Im Browser bearbeiten / ansehen" (Drive 1.9 'office'): the office address in the default browser. */
@@ -1532,6 +1559,8 @@
 			// Drive 1.14 'scanDocs': a picture becomes a document
 			if (ki && ki.available([n], writable)) item('file', t('drive.ki.scan.menu'), () => ki.scanDialog([n]));
 			if (acts.office) item('globe', t(acts.office === 'edit' ? 'drive.office.edit' : 'drive.office.view'), () => openOffice(n));
+			// Drive 1.20 'offline': a mark of the person (phones, home gateway) — not a copy on this PC
+			if (acts.offline) item('offline', t(S.offline.has(n.id) ? 'drive.offline.menuOff' : 'drive.offline.menuOn'), () => toggleOffline(n));
 			if (acts.portal) item('cloud', t('drive.portal.open'), () => openInPortal(n));
 			if (acts.remove) item('trash', t('drive.remove'), () => trashNode(n), true);
 			const menu = el('div', { class: 'dv-menu', role: 'menu' }, items);
