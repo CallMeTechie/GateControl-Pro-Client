@@ -323,6 +323,9 @@
 			details: !n.isDir && !enc && hasFeature(me, 'docAi'),
 			// Drive 1.9 'office': 'edit' | 'view' | null
 			office: blocked ? null : officeMode(n, writable, me),
+			// Drive 1.20 'offline': "Auf Mobilgeräten offline verfügbar" (a mark of the person, files and folders; the
+			// phones keep them, the home gateway holds them first — this PC keeps nothing extra: "Dateien bei Bedarf")
+			offline: !locked && hasFeature(me, 'offline'),
 			// Drive 1.19 'scan': why it does not open (blocked), the question before opening (marked)
 			blocked: blocked ? SCAN.view(n.scan) : null,
 			warn: !n.isDir && SCAN.isWarning(n.scan),

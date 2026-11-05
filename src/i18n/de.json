@@ -2054,6 +2054,13 @@
       "openedEdit": "Wird im Browser zum Bearbeiten geöffnet …",
       "openedView": "Wird im Browser geöffnet …"
     },
+    "offline": {
+      "menuOn": "Auf Mobilgeräten offline verfügbar",
+      "menuOff": "Auf Mobilgeräten nicht mehr offline verfügbar",
+      "added": "„{{name}}“ ist auf deinen Mobilgeräten offline verfügbar und liegt zu Hause im Zwischenspeicher des Heim-Gateways. Auf diesem PC: „Immer auf diesem Gerät behalten“ im Ordner „GateControl Drive“.",
+      "removed": "„{{name}}“ ist nicht mehr offline verfügbar.",
+      "max": "Höchstens 500 Dateien und Ordner können offline verfügbar sein."
+    },
     "import": {
       "menu": "Aus Google Drive / OneDrive importieren",
       "sub": "im Portal",

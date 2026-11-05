@@ -125,8 +125,8 @@ describe('rows, crumbs, menu', () => {
     assert.deepEqual(DS.sortQuery('name'), { sort: 'name', order: 'asc' });
     assert.deepEqual(DS.sortQuery('size'), { sort: 'size', order: 'desc' });
     assert.deepEqual(DS.sortQuery('weird'), { sort: 'name', order: 'asc' });
-    assert.deepEqual(DS.actionsFor(node(), true), { open: true, saveAs: true, share: true, rename: true, move: true, versions: true, remove: true, portal: false, timeTravel: false, details: false, office: null, blocked: null, warn: false });
-    assert.deepEqual(DS.actionsFor(node({ isDir: true }), false), { open: true, saveAs: false, share: false, rename: false, move: false, versions: false, remove: false, portal: false, timeTravel: false, details: false, office: null, blocked: null, warn: false });
+    assert.deepEqual(DS.actionsFor(node(), true), { open: true, saveAs: true, share: true, rename: true, move: true, versions: true, remove: true, portal: false, timeTravel: false, details: false, office: null, offline: false, blocked: null, warn: false });
+    assert.deepEqual(DS.actionsFor(node({ isDir: true }), false), { open: true, saveAs: false, share: false, rename: false, move: false, versions: false, remove: false, portal: false, timeTravel: false, details: false, office: null, offline: false, blocked: null, warn: false });
   });
 });
 

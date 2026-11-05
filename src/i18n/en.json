@@ -2054,6 +2054,13 @@
       "openedEdit": "Opening in the browser for editing …",
       "openedView": "Opening in the browser …"
     },
+    "offline": {
+      "menuOn": "Available offline on mobile devices",
+      "menuOff": "No longer available offline on mobile devices",
+      "added": "“{{name}}” is available offline on your mobile devices and kept in the home gateway's cache at home. On this PC: “Always keep on this device” in the folder “GateControl Drive”.",
+      "removed": "“{{name}}” is no longer available offline.",
+      "max": "At most 500 files and folders can be available offline."
+    },
     "import": {
       "menu": "Import from Google Drive / OneDrive",
       "sub": "in the portal",
