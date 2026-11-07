@@ -81,6 +81,8 @@
 			total: null,
 			// Drive 1.16: the people and places a search recognised
 			marks: null,
+			// Drive 1.25 'mediaFilter': '' (both) | 'image' | 'video'
+			media: '',
 		};
 		const previews = new Map();
 		const limit = PS.limiter(6);
@@ -148,8 +150,11 @@
 			P.next = null;
 			render();
 			const area = P.area || null;
+			// Drive 1.25: only pictures or only videos (sent only while Drive knows it)
+			const media = PS.mediaOf(P.media, o.getMe());
+			const mf = media ? { media } : {};
 			if (P.query && canSearch()) {
-				const r = await Promise.resolve(api.photos({ area, before, limit: PS.PAGE, q: P.query })).catch(fail);
+				const r = await Promise.resolve(api.photos({ area, before, limit: PS.PAGE, q: P.query, ...mf })).catch(fail);
 				if (seq !== P.seq) return;
 				P.loading = false;
 				if (!r || !r.ok) { P.error = r; render(); return; }
@@ -165,8 +170,8 @@
 			}
 			P.query = '';
 			const [page, months] = await Promise.all([
-				Promise.resolve(api.photos({ area, before, limit: PS.PAGE })).catch(fail),
-				Promise.resolve(api.photoMonths(area)).catch(fail),
+				Promise.resolve(api.photos({ area, before, limit: PS.PAGE, ...mf })).catch(fail),
+				Promise.resolve(media && typeof api.photoMonthsBy === 'function' ? api.photoMonthsBy(area, mf) : api.photoMonths(area)).catch(fail),
 			]);
 			if (seq !== P.seq) return;
 			P.loading = false;
@@ -188,7 +193,7 @@
 			const seq = P.seq;
 			const r = inAlbum
 				? await Promise.resolve(api.album(P.album.album.id, { before: cursor, limit: PS.PAGE })).catch(fail)
-				: await Promise.resolve(api.photos({ area: P.area || null, before: cursor, limit: PS.PAGE, ...(P.query ? { q: P.query } : {}) })).catch(fail);
+				: await Promise.resolve(api.photos({ area: P.area || null, before: cursor, limit: PS.PAGE, ...(P.query ? { q: P.query } : {}), ...(PS.mediaOf(P.media, o.getMe()) ? { media: P.media } : {}) })).catch(fail);
 			loadingMore = false;
 			if (seq !== P.seq) return;
 			if (!r || !r.ok) { toast(err(r), 'error'); return; }
@@ -342,11 +347,12 @@
 			picture(box, p);
 			const b = el('button', {
 				type: 'button', role: 'listitem', class: `dpv-tile${on ? ' is-sel' : ''}${P.selecting ? ' is-selecting' : ''}`, 'data-id': String(p.id),
-				'aria-pressed': P.selecting ? (on ? 'true' : 'false') : null, title: [p.name, PS.photoWhen(p, locale())].filter(Boolean).join(' · '),
+				'aria-pressed': P.selecting ? (on ? 'true' : 'false') : null, title: [p.name, PS.photoWhen(p, locale()), p.kind === 'video' && PS.durationText(p.durationMs) ? t('drive.photos.duration', { d: PS.durationText(p.durationMs) }) : ''].filter(Boolean).join(' · '),
 				on: { click: (e) => onTile(e, p, list, i) },
 			}, [
 				box,
-				p.kind === 'video' ? el('span', { class: 'dpv-play', 'aria-hidden': 'true' }, [icon('play', 12)]) : null,
+				// Drive 1.25: a video's length next to its play mark, where the phone sent it
+				p.kind === 'video' ? el('span', { class: `dpv-play${PS.durationText(p.durationMs) ? ' has-time' : ''}`, 'aria-hidden': 'true' }, [icon('play', 12), PS.durationText(p.durationMs) ? el('span', { text: PS.durationText(p.durationMs) }) : null]) : null,
 				// Drive 1.19: the host's virus scan (blocked: no picture)
 				scanMark(p),
 				P.selecting ? el('span', { class: 'dpv-check', 'aria-hidden': 'true' }, on ? [icon('check', 12, '3')] : []) : null,
@@ -407,6 +413,16 @@
 				sel.value = P.area;
 				sel.addEventListener('change', () => { P.area = sel.value; clearSel(); loadTimeline(); });
 				head.appendChild(sel);
+				// Drive 1.25 'mediaFilter': "Alle · Fotos · Videos"
+				if (f.media) {
+					const seg = el('div', { class: 'seg dv-seg dpv-media', role: 'radiogroup', 'aria-label': t('drive.photos.media.label') });
+					for (const c of PS.mediaChoices(t)) {
+						const onIt = P.media === c.key;
+						seg.appendChild(el('button', { type: 'button', role: 'radio', 'aria-checked': onIt ? 'true' : 'false', class: onIt ? 'on' : '', 'data-media': c.key || 'all', text: c.label,
+							on: { click: () => { if (P.media === c.key) return; P.media = c.key; clearSel(); loadTimeline(); } } }));
+					}
+					head.appendChild(seg);
+				}
 				if (P.months.length > 1 && !P.query) {
 					const jump = el('select', { class: 'dv-input dpv-select', 'aria-label': t('drive.photos.jump') });
 					jump.appendChild(el('option', { value: '', text: t('drive.photos.jump') }));

@@ -1059,7 +1059,12 @@
       "hint": "Found by the name or the recognised text of a scan",
       "in": "in {{path}}",
       "empty": "Nothing found.",
-      "showFolder": "Show folder"
+      "showFolder": "Show folder",
+      "media": {
+        "label": "Only photos or only videos",
+        "image": "Photos",
+        "video": "Videos"
+      }
     },
     "upload": {
       "button": "Upload",
@@ -1805,7 +1810,14 @@
         "deleteTitle": "Delete album “{{name}}”?",
         "deleteText": "Only the album is deleted – the photos stay in their folders.",
         "deleted": "Album deleted"
-      }
+      },
+      "media": {
+        "label": "Photos or videos",
+        "all": "All",
+        "images": "Photos",
+        "videos": "Videos"
+      },
+      "duration": "Length {{d}}"
     },
     "storage": {
       "title": "Storage",
