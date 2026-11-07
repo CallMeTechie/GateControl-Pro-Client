@@ -45,7 +45,8 @@ function createFakeHello() {
 /**
  * Windows Hello as a confirmation (core createConsentVerifier: available, verify) for the Drive vault lock: the next
  * answers from `answers` ('verified' | 'cancelled' | 'not_set_up' | …), `avail` what CheckAvailability says, every
- * dialog in `prompts` ({ message, window: true when the app window owned it }).
+ * dialog in `prompts` ({ message, window: true when the app window owned it }); `hold = true` keeps the next dialog
+ * open until `release(status)`.
  */
 function createFakeConsent() {
   const f = { answers: [], prompts: [], avail: { available: true, reason: null } };
@@ -55,6 +56,11 @@ function createFakeConsent() {
     async verify(message, { window = null } = {}) {
       if (!f.avail.available) return { status: f.avail.reason || 'unavailable' };
       f.prompts.push({ message, window: !!window });
+      if (f.hold) {
+        // the dialog stays open until the test answers: f.release('verified' | 'cancelled' | …)
+        f.hold = false;
+        return new Promise((resolve) => { f.release = (status = 'verified') => { f.release = null; resolve({ status }); }; });
+      }
       return { status: f.answers.length ? f.answers.shift() : 'verified' };
     },
   };

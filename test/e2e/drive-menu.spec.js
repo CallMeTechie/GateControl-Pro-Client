@@ -149,8 +149,16 @@ test.describe('drive 1.11: menu, vaults, lock, settings', () => {
     await expect.poll(async () => (await consent(app)).prompts).toBe(1);
     await expect(card).toBeVisible();
     await expect(card.locator('.dv-dlg-err')).toHaveCount(0);
-    // verified (the dialog owned by the app window)
+    await expect(card.locator('.dv-hello-wait')).toHaveCount(0);
+    // verified (the dialog owned by the app window); while it is open the card says where to look for it
+    await app.evaluate(() => { globalThis.__gcE2E.consent.fake.hold = true; });
     await card.locator('.dv-vault-unlock').click();
+    const wait = card.locator('.dv-hello-wait');
+    await expect(wait).toHaveText(/schau hinter dieses Fenster|look behind this window/);
+    await expect(wait).toHaveAttribute('role', 'status');
+    await expect(card.locator('.dv-vault-unlock')).toBeDisabled();
+    await page.screenshot({ path: test.info().outputPath('drive-vault-hello-waiting.png') });
+    await app.evaluate(() => globalThis.__gcE2E.consent.fake.release('verified'));
     await expect(root.locator('.dv-vgate')).toHaveCount(0);
     const c = await consent(app);
     expect(c.prompts).toBe(2);

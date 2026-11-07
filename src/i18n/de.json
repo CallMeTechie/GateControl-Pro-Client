@@ -2119,7 +2119,8 @@
         "policy": "Windows Hello ist auf diesem PC durch eine Richtlinie abgeschaltet. Frag die IT – oder schalte in den Drive-Einstellungen „Mit Windows Hello öffnen“ aus.",
         "busy": "Windows Hello ist gerade beschäftigt – versuch es gleich noch einmal.",
         "unavailable": "Windows Hello steht hier nicht zur Verfügung (zum Beispiel in einer Remotedesktop-Sitzung). Öffne den Tresor direkt am PC – oder schalte in den Drive-Einstellungen „Mit Windows Hello öffnen“ aus.",
-        "setup": "Windows Hello einrichten"
+        "setup": "Windows Hello einrichten",
+        "waiting": "Windows Hello ist geöffnet – falls du den Dialog nicht siehst, schau hinter dieses Fenster."
       },
       "after": {
         "one": "nach 1 Minute",

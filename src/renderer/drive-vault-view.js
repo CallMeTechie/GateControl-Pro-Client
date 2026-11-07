@@ -210,10 +210,19 @@
 				);
 				const acts = el('div', { class: 'dv-vgate-acts' });
 				if (can) {
-					const go = el('button', { type: 'button', class: 'btn btn-pri btn-sm dv-vault-unlock' }, [icon('lock', 14), el('span', { text: t(helloOn && lock && lock.enforced ? 'drive.lock.unlockHello' : 'drive.lock.unlock') })]);
+					const viaHello = !!(helloOn && lock && lock.enforced);
+					const go = el('button', { type: 'button', class: 'btn btn-pri btn-sm dv-vault-unlock' }, [icon('lock', 14), el('span', { text: t(viaHello ? 'drive.lock.unlockHello' : 'drive.lock.unlock') })]);
 					go.addEventListener('click', async () => {
 						go.disabled = true;
+						// Windows can open its Hello dialog behind this window: say so while it is open
+						const wait = viaHello ? el('div', { class: 'dv-note dv-hello-wait', role: 'status', text: t('drive.lock.hello.waiting') }) : null;
+						if (wait) {
+							const old = box.querySelector('.dv-dlg-err');
+							if (old) old.remove();
+							box.querySelector('.dv-vgate-tx').appendChild(wait);
+						}
 						const r = await Promise.resolve(vapi.unlock(vaultId)).catch(fail);
+						if (wait) wait.remove();
 						if (r && r.ok) { if (typeof o.unlocked === 'function') o.unlocked(vaultId); else o.changed(); return; }
 						go.disabled = false;
 						if (r && r.code === 'hello_cancelled') return;
