@@ -193,6 +193,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       driveSync: { on() {}, status: () => ({ ok: true, folders: [] }) },
       // … and Mail (mail:* channels; a core before Mail ignores it)
       mail: { on() {}, status: () => ({ state: 'unavailable' }) },
+      // … and Kameras im Heimnetz (cameras:* channels; a core before it ignores it)
+      cameras: { on() {}, status: () => ({ state: 'unavailable' }) },
     };
     const registered = registerProIpc(ipcMain, ctx);
     return { handlers, stored, written, calls, registered, apiClient };
@@ -232,6 +234,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       'chat:status', 'chat:conversations', 'chat:messages', 'chat:send', 'chat:open', 'chat:media', 'chat:media:save', 'chat:media:open',
       // Schule (core with services/school.js, opt-in via ctx.school)
       ...(fs.existsSync(path.join(coreDir, 'src', 'ipc', 'school-handlers.js')) ? ['school:status', 'school:timetable', 'school:changes', 'school:messages', 'school:absences', 'school:avatar'] : []),
+      // Kameras im Heimnetz (core with services/cameras.js, opt-in via ctx.cameras)
+      ...(fs.existsSync(path.join(coreDir, 'src', 'ipc', 'camera-handlers.js')) ? ['cameras:status', 'cameras:check', 'cameras:list', 'cameras:live', 'cameras:clips', 'cameras:still:save'] : []),
     ]) {
       assert.equal(typeof handlers[ch], 'function', ch);
     }

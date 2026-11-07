@@ -11,7 +11,7 @@ const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
 	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, gatedrop: gatedropApi, vault: vaultApi, drive: driveApi,
-	signin: signinApi, mail: mailApi,
+	signin: signinApi, mail: mailApi, cameras: camerasApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
 
@@ -193,6 +193,7 @@ function refreshTexts() {
 	vaultView?.relabel();
 	driveView?.relabel();
 	mailView?.relabel();
+	camerasView?.relabel();
 	homeView?.relabel();
 	notifyRoutesView?.render();
 }
@@ -213,6 +214,7 @@ let gatedropView = null; // gatedrop-view.js instance (GATEDROP section below)
 let vaultView = null; // vault-view.js instance (VAULT section below)
 let driveView = null; // drive-view.js instance (DRIVE section below)
 let mailView = null; // mail-view.js instance (MAIL section below)
+let camerasView = null; // camera-view.js instance (KAMERAS section below)
 let homeView = null; // home-view.js instance: pinned favourites and events on the start page (MAIL section below)
 let notifyRoutesView = null; // notify-routes.js in Settings › Benachrichtigungen
 let appVersion = '';
@@ -364,7 +366,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'gatedrop', 'mail', 'drive', 'vault', 'inbox', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'gatedrop', 'mail', 'drive', 'vault', 'kameras', 'inbox', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -412,6 +414,9 @@ function navigateTo(page, opts = {}) {
 	// Mail: accounts, folders and the list load when shown
 	if (page === 'mail' && prev !== 'mail') mailView?.show();
 	else if (prev === 'mail' && page !== 'mail') mailView?.hide();
+	// Kameras: live picture / stills and clips only while the page is shown
+	if (page === 'kameras' && prev !== 'kameras') camerasView?.show();
+	else if (prev === 'kameras' && page !== 'kameras') camerasView?.hide();
 	// Vault: footer in the status bar, secrets leave the screen with the page
 	if (page === 'vault' && prev !== 'vault') vaultView?.show();
 	else if (prev === 'vault' && page !== 'vault') vaultView?.hide();
@@ -452,8 +457,12 @@ function connectedSeconds() {
 }
 
 tunnel.onState((newState) => {
+	const was = connState();
 	state = { ...state, ...newState };
 	updateUI();
+	// Kameras: live video only through the VPN — the server decides anew when it comes up / goes down
+	const now = connState();
+	if ((was === 'connected') !== (now === 'connected')) camerasView?.networkChanged();
 });
 
 // Initial status
@@ -2466,6 +2475,16 @@ function renderInboxDetail() {
 		row.appendChild(btn);
 		detail.appendChild(row);
 	}
+	// Camera push ("Personen an der Kamera"): that camera on the page Kameras (Ring stays in the inbox).
+	const camCtx = window.GCCameraState && shownPages().includes('kameras') ? window.GCCameraState.entryContext(entry) : null;
+	if (camCtx) {
+		const row = h('div', 'inbox-actions');
+		const btn = h('button', 'btn btn-pri', t('cameras.inboxOpen'));
+		btn.type = 'button';
+		btn.addEventListener('click', () => openCameras(camCtx));
+		row.appendChild(btn);
+		detail.appendChild(row);
+	}
 	// Vault message (a shared vault, emergency access): open the page there.
 	const vaultCtx = window.GCVaultState && shownPages().includes('vault') ? window.GCVaultState.entryContext(entry) : null;
 	if (vaultCtx) {
@@ -2539,6 +2558,7 @@ function shownPages() {
 			: p === 'gatedrop' ? !!gatedropView && !$('#nav-gatedrop').hidden
 				: p === 'drive' ? !!driveView && !$('#nav-drive').hidden
 					: p === 'mail' ? !!mailView && !$('#nav-mail').hidden
+					: p === 'kameras' ? !!camerasView && !$('#nav-kameras').hidden
 					: p === 'vault' ? !!vaultView && !$('#nav-vault').hidden : true));
 }
 
@@ -2568,6 +2588,13 @@ function openGateDrop(context) {
 	if (!gatedropView) return;
 	gatedropView.open(context || null);
 	navigateTo('gatedrop');
+}
+
+/** Kameras on a push target ({ cameraId, eventId } of "Personen an der Kamera"), e.g. from a toast click. */
+function openCameras(context) {
+	if (!camerasView) return;
+	camerasView.open(context || null);
+	navigateTo('kameras');
 }
 
 /** Schule on a push target (child, day or message), e.g. from a toast click. */
@@ -2647,6 +2674,8 @@ if (notifyAvailable()) {
 			openDrive(target.context);
 		} else if (target.page === 'mail') {
 			openMail(target.context);
+		} else if (target.page === 'kameras') {
+			openCameras(target.context);
 		} else {
 			navigateTo(target.page);
 		}
@@ -3032,6 +3061,34 @@ driveView = driveApi && window.GCDriveView && $('#page-drive')
 			const show = !!st && st.state === 'available';
 			$('#nav-drive').hidden = !show;
 			if (!show && currentPage === 'drive' && st && st.state === 'unavailable') navigateTo('status');
+		},
+	})
+	: null;
+
+// ══════════════════════════════════════════════════════════
+//  KAMERAS (home cameras of the plugin gatecontrol-door 1.6 "Tür & Kamera")
+//  Data: window.gatecontrol.cameras (core CamerasService in main; pictures
+//  and video through gccam://); the page is built by camera-view.js
+//  (window.GCCameraView) with camera-state.js. The nav entry is shown only
+//  while the server has the plugin with home cameras and the person sees at
+//  least one. Ring and the locks stay in the portal.
+// ══════════════════════════════════════════════════════════
+camerasView = camerasApi && window.GCCameraView && $('#page-kameras')
+	? window.GCCameraView.mount({
+		root: $('#page-kameras'),
+		api: camerasApi,
+		t,
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		// "Schlösser und Ring im Portal": the plugin's portal tab (one-time login link)
+		openPortal: () => {
+			if (!currentPortalUrl) { showToast(t('cameras.portalOff'), 'info'); return; }
+			portal.open({ next: '/portal#plg-gatecontrol-door' }).catch(() => showToast(t('cameras.portalOff'), 'info'));
+		},
+		onStatus: (st) => {
+			const show = !!st && st.state === 'available';
+			$('#nav-kameras').hidden = !show;
+			if (!show && currentPage === 'kameras' && st && st.state === 'unavailable') navigateTo('status');
 		},
 	})
 	: null;

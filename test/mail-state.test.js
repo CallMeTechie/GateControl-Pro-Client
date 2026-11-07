@@ -227,7 +227,7 @@ describe('mail page wiring', () => {
     assert.match(html, /href="styles\/mail\.css"/);
     assert.match(html, /id="nav-mail"[^>]*hidden/);
     assert.match(html, /id="page-mail"/);
-    assert.match(html, /img-src 'self' data: blob: gcmail:;/);
+    assert.match(html, /img-src 'self' data: blob: gcmail:[^;]*;/);
     assert.doesNotMatch(html, /script-src[^;]*(unsafe-inline|gcmail)/);
   });
 
@@ -244,8 +244,11 @@ describe('mail page wiring', () => {
 
   it('main registers the gcmail: scheme before the app is ready and serves it through MailService', () => {
     const main = read('src', 'main', 'main.js');
-    const reg = main.indexOf('protocol.registerSchemesAsPrivileged([{ scheme: MailService.SCHEME');
+    // one call for all privileged schemes (Electron takes only one): gcmail: and the cameras' gccam:
+    const reg = main.indexOf('protocol.registerSchemesAsPrivileged(schemes)');
     assert.ok(reg > 0 && reg < main.indexOf("app.on('ready'"));
+    assert.ok(main.indexOf('schemes.push({ scheme: MailService.SCHEME') > 0 && main.indexOf('schemes.push({ scheme: MailService.SCHEME') < reg);
+    assert.equal(main.split('registerSchemesAsPrivileged(').length, 2, 'called once');
     assert.match(main, /protocol\.handle\(MailService\.SCHEME, \(req\) => mail\.handleProtocol\(req\)\)/);
     assert.match(main, /\n    mail,\n/, 'mail goes to registerBaseHandlers');
   });

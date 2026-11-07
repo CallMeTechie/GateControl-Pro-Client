@@ -456,6 +456,12 @@
 			if (page === 'schule' || page === 'gatedrop' || page === 'vault' || page === 'drive' || page === 'mail') return { page, id: null, context: evt.context && typeof evt.context === 'object' ? evt.context : null };
 			return { page, id: page === 'inbox' ? id : null };
 		}
+		// Kameras im Heimnetz: only a camera push the core's CamerasService claimed (context with cameraId) opens
+		// the page; Ring doorbell / motion and the locks (same route plg-gatecontrol-door) keep the inbox.
+		const ctx = evt && evt.context && typeof evt.context === 'object' ? evt.context : null;
+		if (route === 'plg-gatecontrol-door' && ctx && typeof ctx.cameraId === 'string' && /^c[0-9a-f]{15}$/.test(ctx.cameraId) && (!pages || pages.includes('kameras'))) {
+			return { page: 'kameras', id: null, context: ctx };
+		}
 		return { page: 'inbox', id };
 	}
 

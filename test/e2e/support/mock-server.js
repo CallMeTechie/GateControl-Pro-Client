@@ -41,6 +41,11 @@
  * `gatecontrol-gatedrop`. With it (support/gatedrop-mock.js) the list names
  * it and its routes go to the core's fake GateDrop server.
  *
+ * Tür & Kamera (home cameras): without `server.setDoor()` the plugin list has
+ * no `gatecontrol-door`. With it (support/door-mock.js) the list names it,
+ * cameras/home(/<id>/live|still|clips) answer from the test's data and
+ * /camera-media/<token>/<file> and /notify-media/<file> serve the fixtures.
+ *
  * Map ("Standort senden"): /osm/<z>/<x>/<y>.png answers a PNG tile and
  * /nominatim/search, /nominatim/reverse canned addresses (`setGeocode()`)
  * — the app's MapService points there in e2e mode (GC_E2E_MAP_URL).
@@ -64,6 +69,7 @@ const { createDrive } = require('./drive-mock');
 const { createMail } = require('./mail-mock');
 const { createGateDrop } = require('./gatedrop-mock');
 const { createSignin } = require('./signin-mock');
+const { createDoor } = require('./door-mock');
 
 const API_TOKEN = 'gc_e2e_test_token';
 // 1 × 1 PNG, served for every map tile
@@ -131,6 +137,7 @@ async function startMockServer() {
   let mail = null; // support/mail-mock.js, null = no Mail plugin
   let gatedrop = null; // support/gatedrop-mock.js, null = no GateDrop plugin
   let signin = null; // support/signin-mock.js, null = server before company sign-in (404)
+  let door = null; // support/door-mock.js, null = no Tür & Kamera plugin
   const acks = [];
   const prefs = [];
   let geocode = {
@@ -187,6 +194,12 @@ async function startMockServer() {
       }
       if (url.pathname === '/nominatim/search') return json(200, geocode.search);
       if (url.pathname === '/nominatim/reverse') return json(200, geocode.reverse);
+
+      // Camera media and push pictures (no login: the token is the permission)
+      if (url.pathname.startsWith('/camera-media/') || url.pathname.startsWith('/notify-media/')) {
+        if (door && door.serveMedia(req, url, res)) return undefined;
+        return json(404, { ok: false });
+      }
 
       if (!url.pathname.startsWith('/api/v1/client/')) return json(404, { ok: false });
       const route = url.pathname.slice('/api/v1/client/'.length);
@@ -254,6 +267,15 @@ async function startMockServer() {
         return json(200, { ok: true, token: API_TOKEN, peerId: PEER_ID, config: null });
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
+
+      if (door) {
+        // The plugin list names every plugin that is set.
+        if (route === 'plugins') {
+          const list = messenger ? [{ id: 'gatecontrol-messenger', name: 'Messenger', version: '1.0.0', tab: { label: 'Chats', icon: 'M0 0' } }] : [];
+          return json(200, { ok: true, plugins: [...list, ...[school, vault, drive, mail, gatedrop].filter(Boolean).map((x) => x.entry()), door.entry()] });
+        }
+        if (door.handle({ method: req.method, route, query: Object.fromEntries(url.searchParams) }, json)) return undefined;
+      }
 
       if (gatedrop) {
         // The plugin list names every plugin that is set.
@@ -412,6 +434,11 @@ async function startMockServer() {
     acks: () => acks.slice(),
     /** Canned Nominatim answers: { search: [results], reverse: result }. */
     setGeocode(g) { geocode = { ...geocode, ...g }; },
+    /** Enables Tür & Kamera with home cameras (support/door-mock.js); returns its state. */
+    setDoor(opts = {}) {
+      door = createDoor(opts);
+      return door;
+    },
     pushPrefs: () => prefs.slice(),
     /** Enables company sign-in (support/signin-mock.js); returns its state (issued codes, issueHandoff). */
     setSignin(opts = {}) {
