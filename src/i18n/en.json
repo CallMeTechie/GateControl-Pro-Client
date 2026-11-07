@@ -2822,6 +2822,22 @@
       },
       "empty": "Nothing new right now. Your files are under “Files”, the pictures under “Photos”."
     },
+    "viewer": {
+      "loading": "Loading …",
+      "noPicture": "The picture cannot be shown.",
+      "cannotPlay": "This PC cannot play this video ({{type}}) here – often the case with MKV or HEVC (H.265). Open it in another app.",
+      "tryAnyway": "Play anyway",
+      "failed": "The video cannot be loaded right now.",
+      "noPictureVideo": "Only the sound plays – this PC cannot show the picture of this video (often HEVC). It works with the HEVC extension from the Microsoft Store or in another app.",
+      "network": "The video stopped loading. Check the connection.",
+      "retry": "Try again",
+      "openOther": "Open in another app",
+      "play": "Play",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "fullscreen": "Full screen",
+      "share": "Share"
+    },
     "vv": {
       "inMemory": "Decrypted in memory only",
       "decrypting": "Decrypting …",

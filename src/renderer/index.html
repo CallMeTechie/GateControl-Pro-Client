@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: gcmail: gccam: gcvault:; media-src 'self' blob: mediastream: gccam: gcvault:; connect-src 'self' gcvault:; script-src 'self';">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: gcmail: gccam: gcdrive: gcvault:; media-src 'self' blob: mediastream: gccam: gcdrive: gcvault:; connect-src 'self' gcvault:; script-src 'self';">
 	<title>GateControl Pro</title>
 	<link rel="stylesheet" href="styles/app.css">
 	<link rel="stylesheet" href="styles/chat.css">
@@ -865,6 +865,9 @@
 	<script src="drive-photos-state.js"></script>
 	<script src="drive-places-people-state.js"></script>
 	<script src="drive-places-people-view.js"></script>
+	<!-- Drive 1.21: the large view of pictures and videos (zoom, streamed videos over gcdrive:) -->
+	<script src="drive-viewer-state.js"></script>
+	<script src="drive-viewer.js"></script>
 	<script src="drive-photos-view.js"></script>
 	<script src="drive-storage-state.js"></script>
 	<script src="drive-storage-view.js"></script>

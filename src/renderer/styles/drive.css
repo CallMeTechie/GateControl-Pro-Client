@@ -835,6 +835,25 @@ button.dov-store { cursor: pointer; }
 .dov-place:hover { color: var(--text); text-decoration: underline; }
 .dov-row:focus-visible, .dov-link:focus-visible, .dov-mem:focus-visible, .dov-face:focus-visible, .dov-map:focus-visible, .dov-place:focus-visible, .dov-store:focus-visible, .dov-sync:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 
+/* ── Drive 1.21: the large view of pictures and videos (drive-viewer.js) ── */
+.dvw-pic { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; user-select: none; }
+.dvw-pic.is-zoomed { cursor: grab; }
+.dvw-img { max-width: 100%; max-height: 100%; object-fit: contain; transform-origin: center center; transition: transform .08s ease-out; -webkit-user-drag: none; }
+.dvw-video { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.dvw-player { width: 100%; height: 100%; object-fit: contain; background: #000; border-radius: 12px; }
+.dvw-playbtn { width: 72px; height: 72px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .55); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.dvw-playbtn:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.dvw-note { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); max-width: min(480px, 90%); padding: 10px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line2); display: flex; flex-direction: column; gap: 8px; align-items: center; text-align: center; }
+.dvw-hint { margin: 0; font-size: 13px; line-height: 1.45; color: var(--text); }
+.dvw-acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.dvw-busy { position: absolute; left: 0; right: 0; bottom: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12.5px; color: var(--muted); pointer-events: none; }
+.dvw-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line2); border-top-color: var(--acc); animation: dvw-spin .8s linear infinite; }
+@keyframes dvw-spin { to { transform: rotate(360deg); } }
+.dvw-bar { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+.dvw-tools { display: flex; gap: 4px; }
+.dpv-stage:fullscreen { height: 100vh; border-radius: 0; background: #000; }
+@media (prefers-reduced-motion: reduce) { .dvw-img { transition: none; } .dvw-spin { animation: none; } }
+
 /* ── Drive plugin 1.22: the viewer of vault files (drive-vault-viewer.js) — the dialog's look, a larger box ── */
 .dv-dlg.dv-vv { width: min(1100px, 100%); height: 100%; }
 .dv-dlg.dv-vv .dv-dlg-body { flex-grow: 1; }
