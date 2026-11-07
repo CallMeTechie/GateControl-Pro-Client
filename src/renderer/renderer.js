@@ -2244,6 +2244,9 @@ const inbox = {
 	loaded: false,
 	status: null,
 	prefs: null,
+	// „Auch per E-Mail“ of plugin topics (core notify:email, GateControl 1.225.0)
+	email: null,
+	emailSaving: null,
 };
 
 function notifyAvailable() {
@@ -2714,6 +2717,9 @@ function renderNotifySettings() {
 		const line = h('div', 'set-row compact');
 		const label = h('div', 'grow set-row-title', row.label);
 		line.appendChild(label);
+		// GateControl 1.225.0: „Auch per E-Mail an …“ under the topic (per person, as in the portal)
+		const mail = NS.emailRow(inbox.email, row.id, inbox.emailSaving);
+		if (mail) label.appendChild(notifyEmailBox(row, mail));
 		const sw = h('button', 'sw');
 		sw.type = 'button';
 		sw.setAttribute('role', 'switch');
@@ -2765,6 +2771,39 @@ function renderNotifySettings() {
 	}
 
 	renderNotifyQuiet();
+}
+
+/** The box „Auch per E-Mail an <Adresse>“ of one topic; independent of the topic's switch. */
+function notifyEmailBox(row, mail) {
+	const box = h('label', 'notify-mail');
+	const cb = h('input', 'notify-mail-cb');
+	cb.type = 'checkbox';
+	cb.checked = mail.checked;
+	cb.disabled = mail.disabled;
+	cb.dataset.mail = row.id;
+	const text = t(mail.labelKey, mail.params);
+	box.append(cb, h('span', null, mail.noteKey ? `${text} · ${t(mail.noteKey)}` : text));
+	cb.addEventListener('change', () => saveNotifyEmail(row.id, cb.checked));
+	return box;
+}
+
+/** Reads the e-mail channel from the server (settings tab opened). */
+async function loadNotifyEmail() {
+	if (typeof notifyApi.email !== 'function') return;
+	const r = await notifyApi.email({ refresh: true }).catch(() => null);
+	if (r && typeof r === 'object') inbox.email = r;
+	renderNotifySettings();
+}
+
+async function saveNotifyEmail(id, enabled) {
+	if (typeof notifyApi.setEmail !== 'function' || inbox.emailSaving) return;
+	inbox.emailSaving = id;
+	renderNotifySettings();
+	const r = await notifyApi.setEmail(id, enabled).catch((err) => ({ ok: false, error: err?.message }));
+	inbox.emailSaving = null;
+	if (r && r.known !== undefined) inbox.email = r;
+	if (!r || !r.ok) showToast(t('ui.notify.saveFailed', { error: (r && r.error) || '' }), 'error');
+	renderNotifySettings();
 }
 
 function renderNotifyQuiet() {
@@ -2840,7 +2879,7 @@ if (notifyAvailable()) {
 		else portal.open({ next: '/portal#benachrichtigungen' });
 	});
 
-	$('#settings-tabs [data-tab="notify"]')?.addEventListener('click', () => { loadNotifyStatus(); refreshNotifyQuiet(); notifyRoutesView?.load(); });
+	$('#settings-tabs [data-tab="notify"]')?.addEventListener('click', () => { loadNotifyStatus(); refreshNotifyQuiet(); loadNotifyEmail(); notifyRoutesView?.load(); });
 
 	// "Wo Mitteilungen erscheinen" (core 1.191 push routes): GateControl, the
 	// family chat or an own chat per kind — the same view as in the chat

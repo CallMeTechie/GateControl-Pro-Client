@@ -412,6 +412,29 @@
 			.map((tp) => ({ id: tp.id, label: tp.label ? String(tp.label) : topicLabel([], tp.id), on: !muted.has(tp.id) }));
 	}
 
+	/**
+	 * „Auch per E-Mail an …“ under a topic's switch (GateControl 1.225.0): the
+	 * person's e-mail channel ({ known, topics: [{ id, enabled }], to, ready },
+	 * core notify:email) for topic `id` → null (no box: older server or no
+	 * channel for the topic) or { checked, disabled, labelKey, params, noteKey }.
+	 * Like the portal: greyed with the reason without an address or mail server;
+	 * all boxes wait while one is saved (`saving`).
+	 */
+	function emailRow(email, id, saving = null) {
+		if (!email || email.known !== true || !Array.isArray(email.topics)) return null;
+		const tp = email.topics.find((x) => x && x.id === id);
+		if (!tp) return null;
+		const to = typeof email.to === 'string' && email.to.trim() ? email.to.trim() : null;
+		const ready = email.ready === true;
+		return {
+			checked: tp.enabled === true,
+			disabled: !to || !ready || !!saving,
+			labelKey: to ? 'ui.notify.emailTo' : 'ui.notify.email',
+			params: to ? { address: to } : undefined,
+			noteKey: !ready ? 'ui.notify.emailNoSmtp' : (!to ? 'ui.notify.emailNoAddress' : null),
+		};
+	}
+
 	/** mutedTopics after switching one topic on/off. */
 	function toggleTopic(mutedTopics, id, on) {
 		const set = new Set(Array.isArray(mutedTopics) ? mutedTopics : []);
@@ -538,6 +561,7 @@
 		listHint,
 		statusView,
 		topicRows,
+		emailRow,
 		toggleTopic,
 		killSwitchNote,
 		badgeText,

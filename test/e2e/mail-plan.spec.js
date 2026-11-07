@@ -205,5 +205,22 @@ test.describe('mail – free/busy, shared calendars, resources (Mail 1.9.0)', ()
     await expect(set).toContainText(/Frei\/Gebucht für alle|Free\/busy for everybody/);
     await set.locator('.sw').click();
     await expect.poll(() => m.srv.state.pim.calPrefs.freeBusy).toBe(false);
+    // „Arbeitszeit“ next to it: Mon–Fri 8–18 by default; Saturday on, from 07:30
+    const wh = page.locator('.ml-dlg .ml-set-wh');
+    await expect(wh).toContainText(/Arbeitszeit|Working hours/);
+    await expect(wh.locator('.cal-wd.on')).toHaveCount(5);
+    await wh.locator('.cal-wd[data-day="6"]').click();
+    await expect.poll(() => (m.srv.state.pim.calPrefs.workHours || {}).days).toEqual([1, 2, 3, 4, 5, 6]);
+    await expect(wh.locator('.cal-wd.on')).toHaveCount(6);
+    await wh.locator('input[type="time"]').first().fill('07:30');
+    await wh.locator('input[type="time"]').first().dispatchEvent('change');
+    await expect.poll(() => (m.srv.state.pim.calPrefs.workHours || {}).from).toBe('07:30');
+    await wh.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath('plan-workhours.png') });
+    // „Bis“ before „Von“: not sent, the reason is shown
+    await wh.locator('input[type="time"]').nth(1).fill('06:00');
+    await wh.locator('input[type="time"]').nth(1).dispatchEvent('change');
+    await expect(wh.locator('.ml-dlg-err')).toBeVisible();
+    expect(m.srv.state.pim.calPrefs.workHours.to).toBe('18:00');
   });
 });
