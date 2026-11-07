@@ -32,7 +32,7 @@
 	const KINDS = ['person', 'vehicle', 'animal', 'motion'];
 	// Pills of the mockup: Person (warn), Auto (info), Tier / Bewegung (neutral)
 	const KIND_CLASS = { person: 'is-warn', vehicle: 'is-info', animal: 'is-neu', motion: 'is-neu' };
-	const ERROR_CODES = ['not_found', 'cam_offline', 'cam_unreachable', 'cam_not_ready', 'cam_needs_gc', 'cam_auth', 'cam_unsupported', 'cam_service', 'cam_not_allowed', 'no_image', 'rate_limited', 'too_soon', 'network', 'timeout'];
+	const ERROR_CODES = ['not_found', 'cam_offline', 'cam_unreachable', 'cam_not_ready', 'cam_needs_gc', 'cam_auth', 'cam_unsupported', 'cam_service', 'cam_not_allowed', 'cam_tls', 'no_image', 'rate_limited', 'too_soon', 'network', 'timeout'];
 	const MIN_REFRESH_MS = 20 * 1000;
 	const SNAPSHOT_REFRESH_MS = 9 * 60 * 1000; // the still's token lasts 10 min
 	const CARD_EVERY_MS = 30 * 1000;           // pictures of the cards
@@ -89,7 +89,9 @@
 		if (c.online) pills.push({ label: t('cameras.card.live'), cls: 'is-ok' });
 		else pills.push({ label: t('cameras.card.offline'), cls: 'is-err' });
 		if (c.online && c.state && c.state !== 'ok') pills.push({ label: t(`cameras.state.${c.state}`), cls: 'is-warn' });
-		const desc = [c.model, recordText(c.settings, t), c.settings && c.settings.record !== 'never' && c.settings.retentionDays ? t('cameras.card.retention', { days: c.settings.retentionDays }) : null]
+		// plugin 1.7.0: resolution and sound ("2560×1440 · mit Ton")
+		const res = Number.isSafeInteger(c.width) && Number.isSafeInteger(c.height) ? t('cameras.card.res', { w: c.width, h: c.height }) : null;
+		const desc = [c.model, res, c.audio ? t('cameras.card.withSound') : null, recordText(c.settings, t), c.settings && c.settings.record !== 'never' && c.settings.retentionDays ? t('cameras.card.retention', { days: c.settings.retentionDays }) : null]
 			.filter(Boolean).join(' · ');
 		const when = ago(c.snapshotAt, now, t, locale);
 		return {
@@ -101,6 +103,15 @@
 			picture: c.snapshotUrl || null,
 			offline: !c.online,
 		};
+	}
+
+	/**
+	 * The switch "Push bei Personen" (plugin 1.7.0) for camera c: { show, on } — only when the plugin knows the
+	 * own push (myPush true/false) and the administrator lets the camera push at all.
+	 */
+	function myPushView(c) {
+		const known = !!c && typeof c.myPush === 'boolean';
+		return { show: known && c.push !== false, on: known ? c.myPush : true };
 	}
 
 	function onlineCount(cameras) {
@@ -249,6 +260,7 @@
 		kindPill,
 		recordText,
 		cardView,
+		myPushView,
 		onlineCount,
 		pickCamera,
 		overlay,

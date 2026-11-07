@@ -141,6 +141,9 @@
 		refs.sound = el('button', { type: 'button', class: 'btn btn-sec cm-act', 'aria-pressed': 'false', on: { click: () => toggleSound() } }, [refs.soundIcon, refs.soundLabel]);
 		refs.back = el('button', { type: 'button', class: 'btn btn-ghost cm-back', hidden: true, on: { click: () => backToLive() } }, [icon('back', 15), el('span', { text: t('cameras.clips.back') })]);
 		refs.hint = el('p', { class: 'cm-hint' });
+		// plugin 1.7.0: this person's push "Personen an der Kamera" for the camera shown
+		refs.myPushIn = el('input', { type: 'checkbox', on: { change: () => setMyPush(refs.myPushIn.checked) } });
+		refs.myPush = el('label', { class: 'cm-mypush', hidden: true }, [refs.myPushIn, el('span', {}, [el('strong', { text: t('cameras.myPush') }), ' ', el('span', { class: 'cm-sub', text: t('cameras.myPushHint') })])]);
 
 		// clips
 		refs.clipsH = el('h2', { class: 'cm-h2', text: t('cameras.clips.title') });
@@ -157,6 +160,7 @@
 				refs.player,
 				el('div', { class: 'cm-acts' }, [refs.save, refs.full, refs.sound]),
 				el('div', { class: 'cm-under' }, [refs.back, refs.hint]),
+				refs.myPush,
 			]),
 			el('section', { class: 'cm-card cm-clipcard', 'aria-label': t('cameras.clips.title') }, [
 				el('div', { class: 'cm-card-head' }, [refs.clipsH, el('span', { class: 'cm-grow' }), refs.clipsCam]),
@@ -516,8 +520,30 @@
 			renderActions();
 		}
 
+		/** The own push of the camera shown (optimistic; reverted with a message when the server refuses). */
+		async function setMyPush(on) {
+			const c = camera();
+			if (!c || typeof api.setPush !== 'function') return;
+			const before = c.myPush;
+			c.myPush = on;
+			refs.myPushIn.disabled = true;
+			const res = await Promise.resolve(api.setPush(c.id, on)).catch((err) => ({ ok: false, code: (err && err.code) || 'failed' }));
+			refs.myPushIn.disabled = false;
+			if (res && res.ok) {
+				c.myPush = res.push;
+				if (o.toast) o.toast(t(res.push ? 'cameras.myPushOn' : 'cameras.myPushOff'), 'success');
+			} else {
+				c.myPush = before;
+				if (o.toast) o.toast(CS.errorText(res, t), 'error');
+			}
+			renderActions();
+		}
+
 		function renderActions() {
 			const c = camera();
+			const mp = CS.myPushView(c);
+			refs.myPush.hidden = !mp.show || typeof api.setPush !== 'function';
+			refs.myPushIn.checked = mp.on;
 			refs.save.disabled = !c || S.saving;
 			refs.save.classList.toggle('is-busy', S.saving);
 			const full = !!refs.player.ownerDocument.fullscreenElement;
