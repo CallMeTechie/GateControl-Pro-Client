@@ -84,8 +84,8 @@ describe('Fotos (drive-photos-state.js)', () => {
   const p = (id, ms, o = {}) => ({ id, name: `IMG_${id}.jpg`, kind: 'image', takenAt: ms, preview: true, mediaId: null, ...o });
 
   it('features from me', () => {
-    assert.deepEqual(PS.features({ features: ['photos', 'albums'] }), { photos: true, albums: true, frame: false });
-    assert.deepEqual(PS.features(null), { photos: false, albums: false, frame: false });
+    assert.deepEqual(PS.features({ features: ['photos', 'albums'] }), { photos: true, albums: true, frame: false, media: false });
+    assert.deepEqual(PS.features(null), { photos: false, albums: false, frame: false, media: false });
   });
 
   it('months: keys, labels, the start of a jump, groups with the counts of photos/months', () => {

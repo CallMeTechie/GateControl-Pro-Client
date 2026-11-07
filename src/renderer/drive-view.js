@@ -439,6 +439,8 @@
 			// Drive 1.14: the search field asks ('ask') or searches files; the question shown and its answer
 			searchMode: 'auto',
 			ask: null,
+			// Drive 1.25 'mediaFilter': the search's "Fotos" / "Videos" ('' | 'image' | 'video')
+			media: '',
 		};
 		const keepOpen = () => keep(MS.OPEN_KEY, MS.serializeOpen(S.open));
 
@@ -1009,7 +1011,9 @@
 			const q = S.query;
 			S.view = 'search';
 			if (!quiet || !S.results) { S.loading = true; render(); }
-			const r = await Promise.resolve(api.search(q)).catch(fail);
+			// Drive 1.25: only pictures or only videos among the hits (sent only while Drive knows it)
+			const media = (S.media === 'image' || S.media === 'video') && DS.hasFeature(S.me, 'mediaFilter') ? S.media : null;
+			const r = await Promise.resolve(media ? api.search(q, null, media) : api.search(q)).catch(fail);
 			if (S.view !== 'search' || S.query !== q) return;
 			S.loading = false;
 			S.results = r && r.ok ? r.items : null;
@@ -2190,6 +2194,16 @@
 			} else if (S.view === 'search') {
 				refs.bar.append(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { refs.search.value = ''; backToFolder(); } } }, [icon('back', 14), el('span', { text: t('drive.back') })]),
 					el('span', { class: 'dv-bar-h', text: t('drive.search.title', { q: S.query }) }));
+				// Drive 1.25 'mediaFilter': "Fotos" / "Videos" over the hits (a second click shows every hit again)
+				if (DS.hasFeature(S.me, 'mediaFilter')) {
+					const chips = el('div', { class: 'dv-search-media', role: 'group', 'aria-label': t('drive.search.media.label') });
+					for (const k of ['image', 'video']) {
+						const onIt = S.media === k;
+						chips.appendChild(el('button', { type: 'button', class: `dv-chip${onIt ? ' is-on' : ''}`, 'aria-pressed': onIt ? 'true' : 'false', 'data-media': k, text: t(`drive.search.media.${k}`),
+							on: { click: () => { S.media = onIt ? '' : k; runSearch(); } } }));
+					}
+					refs.bar.append(chips);
+				}
 				refs.sub.textContent = t('drive.search.hint');
 			} else if (S.view === 'ask' && S.ask) {
 				refs.bar.append(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { refs.search.value = ''; renderModes(); backToFolder(); } } }, [icon('back', 14), el('span', { text: t('drive.back') })]),

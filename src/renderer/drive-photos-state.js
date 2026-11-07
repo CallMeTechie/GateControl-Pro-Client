@@ -30,10 +30,31 @@
 		return t(`${key}.${count === 1 ? 'one' : 'other'}`, { ...(params || {}), count });
 	}
 
-	/** Which views this Drive offers: { photos, albums, frame } (me.features). */
+	/** Which views this Drive offers: { photos, albums, frame, media } (me.features; media: Drive 1.25 'mediaFilter'). */
 	function features(me) {
 		const f = me && Array.isArray(me.features) ? me.features : [];
-		return { photos: f.includes('photos'), albums: f.includes('albums'), frame: f.includes('frame') };
+		return { photos: f.includes('photos'), albums: f.includes('albums'), frame: f.includes('frame'), media: f.includes('mediaFilter') };
+	}
+
+	// ── Drive 1.25 'mediaFilter': only pictures or only videos ──
+
+	/** "Alle · Fotos · Videos" → [{ key: '' | 'image' | 'video', label }] */
+	function mediaChoices(t) {
+		return [{ key: '', label: t('drive.photos.media.all') }, { key: 'image', label: t('drive.photos.media.images') }, { key: 'video', label: t('drive.photos.media.videos') }];
+	}
+
+	/** The filter as sent: 'image' | 'video' while Drive knows it, else null (both). */
+	function mediaOf(v, me) {
+		return (v === 'image' || v === 'video') && features(me).media ? v : null;
+	}
+
+	/** A video's length on its tile: "0:07", "1:23", "1:02:03"; '' when unknown. */
+	function durationText(ms) {
+		if (!Number.isFinite(ms) || ms <= 0) return '';
+		const s = Math.round(ms / 1000);
+		const h = Math.floor(s / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
 	}
 
 	// ── Timeline ─────────────────────────────────────────
@@ -198,7 +219,7 @@
 	}
 
 	return {
-		PAGE, features,
+		PAGE, features, mediaChoices, mediaOf, durationText,
 		monthKey, monthLabel, monthStart, groupByMonth, mergePage, memoriesView, photoWhen, areaChoices,
 		albumView, editableAlbums, albumAreas, albumNameError, frameSwitch,
 		toggle, selectRange, chunks, limiter,

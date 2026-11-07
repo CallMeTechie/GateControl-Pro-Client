@@ -1171,8 +1171,11 @@
 		/** „Ressource buchen“ (mockup Ressource): kinds, day and time, each resource's day as a bar, „Buchen“ / „Anfrage an … senden“. */
 		function bookDialog() {
 			const now = new Date();
-			const hr = Math.min(22, now.getHours() + 1);
-			const anchorDay = MS.ymd(Math.max(C.anchor, Date.now()));
+			let hr = Math.min(22, now.getHours() + 1);
+			let dayMs = Math.max(C.anchor, Date.now());
+			// From 22:00 on the last slot of today (22–23) is over or nearly so: offer tomorrow 09:00 instead of a time in the past.
+			if (now.getHours() >= 22 && MS.ymd(dayMs) === MS.ymd(Date.now())) { dayMs = MS.addDays(Date.now(), 1); hr = 9; }
+			const anchorDay = MS.ymd(dayMs);
 			const st = { kind: 'all', sel: null, list: [], seq: 0 };
 			const dlg = openDialog({ title: t('mail.res.title'), wide: true, closeLabel: t('mail.close'), cls: 'cal-book-dlg' });
 			const date = el('input', { type: 'date', class: 'ml-input', value: anchorDay, 'aria-label': t('mail.res.day') });

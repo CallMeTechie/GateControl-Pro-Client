@@ -1059,7 +1059,12 @@
       "hint": "Gefunden über den Namen oder den erkannten Text eines Scans",
       "in": "in {{path}}",
       "empty": "Nichts gefunden.",
-      "showFolder": "Ordner zeigen"
+      "showFolder": "Ordner zeigen",
+      "media": {
+        "label": "Nur Fotos oder nur Videos",
+        "image": "Fotos",
+        "video": "Videos"
+      }
     },
     "upload": {
       "button": "Hochladen",
@@ -1805,7 +1810,14 @@
         "deleteTitle": "Album „{{name}}“ löschen?",
         "deleteText": "Nur das Album wird gelöscht – die Fotos bleiben in ihren Ordnern.",
         "deleted": "Album gelöscht"
-      }
+      },
+      "media": {
+        "label": "Fotos oder Videos",
+        "all": "Alle",
+        "images": "Fotos",
+        "videos": "Videos"
+      },
+      "duration": "Länge {{d}}"
     },
     "storage": {
       "title": "Speicher",
