@@ -1401,6 +1401,20 @@
 	const RESOURCE_COLOR = '#B79CFF';
 	const DEFAULT_WORK_HOURS = { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' };
 
+	/**
+	 * Working hours as the server takes them (`PUT calendar/settings { workHours }`): days 1 = Monday … 7 = Sunday,
+	 * at least one, no doubles (sorted); `from` < `to`, both 'HH:MM', `to` up to '24:00' — a picked 00:00 as the end is
+	 * the end of the day → { days, from, to } or null.
+	 */
+	function workHoursOf(days, from, to) {
+		const d = [...new Set(Array.isArray(days) ? days : [])].filter((x) => Number.isInteger(x) && x >= 1 && x <= 7).sort((a, b) => a - b);
+		const end = to === '00:00' ? '24:00' : to;
+		const a = hmMinutes(from);
+		const b = hmMinutes(end);
+		if (!d.length || a === null || b === null || a >= 1440 || a >= b) return null;
+		return { days: d, from, to: end };
+	}
+
 	/** Is it the address of a resource (only used as an attendee, never shown)? */
 	function isResourceAddress(v) { return RESOURCE_ADDRESS_RE.test(str(v).trim()); }
 
@@ -1808,6 +1822,8 @@
 		RESOURCE_COLOR,
 		isResourceAddress,
 		fbWindow,
+		workHoursOf,
+		DEFAULT_WORK_HOURS,
 		barSegments,
 		scaleHours,
 		fbLabel,

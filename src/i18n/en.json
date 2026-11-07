@@ -350,6 +350,10 @@
       "criticalDesc": "as a Windows alarm with sound",
       "topics": "Topics on this PC",
       "topicsEmpty": "The topics arrive from the server once the connection is up.",
+      "email": "Also by e-mail",
+      "emailTo": "Also by e-mail to {{ address }}",
+      "emailNoAddress": "Your account has no address for e-mails",
+      "emailNoSmtp": "E-mail is not set up on this server",
       "status": "Status",
       "server": "Server",
       "path": "Path",
@@ -3766,7 +3770,15 @@
       },
       "setting": "Free/busy for everybody in GateControl",
       "settingHint": "So everybody can invite you to meetings without seeing your events",
-      "settingSaved": "Saved"
+      "settingSaved": "Saved",
+      "workHours": "Working hours",
+      "workHoursHint": "Suggestions when everyone can only come from this time",
+      "workHoursDays": "Working days",
+      "workHoursFrom": "From",
+      "workHoursTo": "To",
+      "workHoursBad": "“To” has to be after “From”.",
+      "workHoursNoDay": "At least one day.",
+      "workHoursSaved": "Working hours saved"
     },
     "res": {
       "book": "Book a resource",

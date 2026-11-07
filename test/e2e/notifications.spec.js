@@ -252,6 +252,31 @@ test.describe('notification center', () => {
     await expect.poll(() => mock.pushStreams()).toBe(0);
   });
 
+  test('settings tab: „Auch per E-Mail“ under the plugin topics that have it, saved for the person', async ({ launchApp, mock }) => {
+    mock.setPush({
+      topics: TOPICS, items: [],
+      email: { topics: [{ id: 'plugin:skoda:charging', label: 'Fahrzeug · Laden abgeschlossen', enabled: true }], to: 'anna@example.com', ready: true },
+    });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await expect.poll(() => mock.pushStreams()).toBe(1);
+
+    await openSettingsTab(page, 'notify');
+    const box = page.locator('#notify-topics input[data-mail="plugin:skoda:charging"]');
+    await expect(box).toBeChecked();
+    await expect(page.locator('#notify-topics .notify-mail')).toHaveCount(1);
+    await expect(page.locator('#notify-topics .notify-mail')).toHaveText(/(Auch per E-Mail an|Also by e-mail to) anna@example\.com/);
+    await shot(page, 'notify-email');
+
+    // the person's choice goes to the server (only the e-mail channel), the topic's switch stays
+    await box.click();
+    await expect.poll(() => mock.pushPrefs().some((p) => Array.isArray(p.email_topics) && p.email_topics[0].id === 'plugin:skoda:charging' && p.email_topics[0].enabled === false)).toBe(true);
+    await expect(box).not.toBeChecked();
+    const sent = mock.pushPrefs().find((p) => Array.isArray(p.email_topics));
+    expect(Object.keys(sent)).toEqual(['email_topics']);
+    await expect(page.locator('#notify-topics [data-topic="plugin:skoda:charging"]')).toHaveAttribute('aria-checked', 'true');
+  });
+
   test('an old server without push: calm hints, nothing breaks', async ({ launchApp, mock }) => {
     const { page } = await launchApp();
     await setupWithApiKey(page, mock);

@@ -2424,7 +2424,8 @@
 			// Mail 1.9.0 (freeBusy): „Frei/Gebucht für alle in GateControl“ — the calendar settings, the same switch as in „Kalender teilen“
 			if (has('freeBusy') && calendar && api.calSettings) {
 				const row = el('div', { class: 'ml-set-row ml-set-fb' });
-				dlg.body.append(el('div', { class: 'lbl', text: t('mail.cal.title') }), row);
+				const whSlot = el('div');
+				dlg.body.append(el('div', { class: 'lbl', text: t('mail.cal.title') }), row, whSlot);
 				calendar.calPrefs().then((prefs) => {
 					if (!prefs || dlg.closed) return;
 					row.append(el('span', { class: 'ml-grow' }, [t('mail.fb.setting'), el('span', { class: 'ml-sub ml-block', text: t('mail.fb.settingHint') })]), sw(prefs.freeBusy !== false, t('mail.fb.setting'), async (on) => {
@@ -2433,6 +2434,8 @@
 						calendar.setCalPrefs(r.prefs);
 						toast(t('mail.fb.settingSaved'), 'success');
 					}));
+					// Mail 1.9.0: „Arbeitszeit“ — the window of „Frei/Gebucht“ and of the planner's suggestions
+					whSlot.append(workHoursRow(prefs.workHours || MS.DEFAULT_WORK_HOURS));
 				});
 			}
 			const q = MS.quotaView(me.limits, lang(), t);
@@ -2449,6 +2452,55 @@
 			dlg.body.append(addBtn);
 			dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.close'), on: { click: () => dlg.close() } }));
 			if (focusAdd) setTimeout(() => { addBtn.scrollIntoView({ block: 'nearest' }); addBtn.focus(); }, 30);
+		}
+
+		/** „Arbeitszeit“: the days and from … to; each valid change goes to `PUT calendar/settings { workHours }`. */
+		function workHoursRow(initial) {
+			let wh = { days: initial.days.slice(), from: initial.from, to: initial.to };
+			const box = el('div', { class: 'ml-set-wh' });
+			const err = el('span', { class: 'ml-dlg-err', role: 'alert', hidden: true });
+			const save = async (next) => {
+				err.hidden = true;
+				const r = await call(api.calSettings({ workHours: next }));
+				if (!r || !r.ok) { toast(errText(r), 'error'); draw(); return; }
+				calendar.setCalPrefs(r.prefs);
+				wh = (r.prefs && r.prefs.workHours) || next;
+				draw();
+				toast(t('mail.fb.workHoursSaved'), 'success');
+			};
+			const refuse = (key) => { err.textContent = t(key); err.hidden = false; };
+			const days = el('div', { class: 'cal-wdays', role: 'group', 'aria-label': t('mail.fb.workHoursDays') });
+			const from = el('input', { type: 'time', class: 'ml-input ml-input-sm', 'aria-label': t('mail.fb.workHoursFrom') });
+			const to = el('input', { type: 'time', class: 'ml-input ml-input-sm', 'aria-label': t('mail.fb.workHoursTo') });
+			const draw = () => {
+				clear(days);
+				for (let d = 1; d <= 7; d += 1) {
+					const on = wh.days.includes(d);
+					days.append(el('button', { type: 'button', class: `cal-wd${on ? ' on' : ''}`, 'aria-pressed': on ? 'true' : 'false', 'data-day': String(d), text: MS.weekdayName(MS.WEEKDAYS[d - 1], lang()), on: { click: () => {
+						const next = MS.workHoursOf(on ? wh.days.filter((x) => x !== d) : wh.days.concat(d), wh.from, wh.to);
+						if (!next) { refuse('mail.fb.workHoursNoDay'); return; }
+						save(next);
+					} } }));
+				}
+				from.value = wh.from;
+				to.value = wh.to === '24:00' ? '00:00' : wh.to;
+			};
+			const onTime = () => {
+				const next = MS.workHoursOf(wh.days, from.value, to.value);
+				if (!next) { refuse('mail.fb.workHoursBad'); return; }
+				if (next.from === wh.from && next.to === wh.to) return;
+				save(next);
+			};
+			from.addEventListener('change', onTime);
+			to.addEventListener('change', onTime);
+			draw();
+			box.append(
+				el('span', { class: 'ml-grow' }, [t('mail.fb.workHours'), el('span', { class: 'ml-sub ml-block', text: t('mail.fb.workHoursHint') })]),
+				days,
+				el('div', { class: 'ml-set-wh-time' }, [el('span', { class: 'ml-sub', text: t('mail.fb.workHoursFrom') }), from, el('span', { class: 'ml-sub', text: t('mail.fb.workHoursTo') }), to]),
+				err,
+			);
+			return box;
 		}
 
 		function openAccount(a) {
