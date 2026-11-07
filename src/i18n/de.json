@@ -350,6 +350,10 @@
       "criticalDesc": "als Windows-Alarm mit Ton",
       "topics": "Themen auf diesem PC",
       "topicsEmpty": "Die Themen kommen vom Server, sobald die Verbindung steht.",
+      "email": "Auch per E-Mail",
+      "emailTo": "Auch per E-Mail an {{ address }}",
+      "emailNoAddress": "Für E-Mails fehlt eine Adresse in deinem Konto",
+      "emailNoSmtp": "E-Mail ist auf diesem Server nicht eingerichtet",
       "status": "Status",
       "server": "Server",
       "path": "Weg",
@@ -3768,7 +3772,15 @@
       },
       "setting": "Frei/Gebucht für alle in GateControl",
       "settingHint": "Damit dich alle zu Besprechungen einladen können, ohne Termine zu sehen",
-      "settingSaved": "Gespeichert"
+      "settingSaved": "Gespeichert",
+      "workHours": "Arbeitszeit",
+      "workHoursHint": "Vorschläge, bei denen alle können, kommen nur aus dieser Zeit",
+      "workHoursDays": "Arbeitstage",
+      "workHoursFrom": "Von",
+      "workHoursTo": "Bis",
+      "workHoursBad": "„Bis“ muss nach „Von“ liegen.",
+      "workHoursNoDay": "Mindestens ein Tag.",
+      "workHoursSaved": "Arbeitszeit gespeichert"
     },
     "res": {
       "book": "Ressource buchen",

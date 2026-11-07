@@ -17,6 +17,32 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 const t = (key, params) => (params ? `${key}(${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(',')})` : key);
 const at = (y, mo, d, h = 0, mi = 0) => new Date(y, mo - 1, d, h, mi).getTime();
 
+describe('mail-state – working hours (Mail 1.9.0, `PUT calendar/settings { workHours }`)', () => {
+  it('only what the server takes: days 1…7 sorted, from before to, 00:00 as the end is 24:00', () => {
+    assert.deepEqual(MS.workHoursOf([5, 1, 3, 3], '07:30', '16:00'), { days: [1, 3, 5], from: '07:30', to: '16:00' });
+    assert.deepEqual(MS.workHoursOf([6], '20:00', '00:00'), { days: [6], from: '20:00', to: '24:00' });
+    assert.deepEqual(MS.workHoursOf([6], '20:00', '24:00'), { days: [6], from: '20:00', to: '24:00' });
+    assert.equal(MS.workHoursOf([], '08:00', '18:00'), null, 'at least one day');
+    assert.equal(MS.workHoursOf([1], '18:00', '08:00'), null, 'from after to');
+    assert.equal(MS.workHoursOf([1], '08:00', '08:00'), null);
+    assert.equal(MS.workHoursOf([8, 0], '08:00', '18:00'), null);
+    assert.equal(MS.workHoursOf([1], '', '18:00'), null, 'an empty time field');
+    assert.deepEqual(MS.DEFAULT_WORK_HOURS, { days: [1, 2, 3, 4, 5], from: '08:00', to: '18:00' });
+  });
+
+  it('the mail settings show „Arbeitszeit“ next to „Frei/Gebucht für alle“ (only with freeBusy); every text in de and en', () => {
+    const view = read('src', 'renderer', 'mail-view.js');
+    assert.match(view, /workHoursRow\(prefs\.workHours \|\| MS\.DEFAULT_WORK_HOURS\)/);
+    assert.match(view, /api\.calSettings\(\{ workHours: next \}\)/);
+    for (const lang of ['de', 'en']) {
+      const j = JSON.parse(read('src', 'i18n', `${lang}.json`));
+      for (const k of ['workHours', 'workHoursHint', 'workHoursDays', 'workHoursFrom', 'workHoursTo', 'workHoursBad', 'workHoursNoDay', 'workHoursSaved']) {
+        assert.equal(typeof j.mail.fb[k], 'string', `${lang} mail.fb.${k}`);
+      }
+    }
+  });
+});
+
 describe('mail-state – free/busy (mockup Planer)', () => {
   it('the window of a day: the working hours, widened to the chosen time from its full hour', () => {
     const day = at(2026, 11, 5);
