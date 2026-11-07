@@ -2119,7 +2119,8 @@
         "policy": "Windows Hello is turned off on this PC by a policy. Ask your IT – or switch off “Open with Windows Hello” in the Drive settings.",
         "busy": "Windows Hello is busy right now – try again in a moment.",
         "unavailable": "Windows Hello is not available here (for example in a remote desktop session). Open the vault at the PC itself – or switch off “Open with Windows Hello” in the Drive settings.",
-        "setup": "Set up Windows Hello"
+        "setup": "Set up Windows Hello",
+        "waiting": "Windows Hello is open – if you don’t see the dialog, look behind this window."
       },
       "after": {
         "one": "after 1 minute",
