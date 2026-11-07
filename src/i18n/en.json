@@ -2845,6 +2845,8 @@
     "vv": {
       "inMemory": "Decrypted in memory only",
       "decrypting": "Decrypting …",
+      "loading": "Loading …",
+      "docTooLarge": "Too large to view in the app (at most {{max}} MB). Open the file with another program or save it.",
       "lock": "Lock vaults now",
       "fit": "Fit",
       "zoomIn": "Zoom in",
