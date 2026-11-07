@@ -12,6 +12,8 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
+/** The host names of every http(s) address in `text` (parsed with URL, not matched by a pattern). */
+const hostsIn = (text) => (String(text).match(/\bhttps?:\/\/[^\s'"`)<>;]+/g) || []).map((u) => new URL(u).hostname);
 
 describe('drive-vault-viewer (Drive plugin 1.22)', () => {
   const html = read('src', 'renderer', 'index.html');
@@ -28,7 +30,7 @@ describe('drive-vault-viewer (Drive plugin 1.22)', () => {
     assert.match(csp, /media-src [^;]*gcvault:/);
     assert.match(csp, /connect-src 'self' gcvault:/);
     assert.doesNotMatch(csp, /(script|default|style|font)-src[^;]*gcvault/);
-    assert.doesNotMatch(csp, /https?:\/\//, 'no CDN');
+    assert.deepEqual(hostsIn(csp), [], 'no CDN');
   });
 
   it('main.js: the scheme with the core\'s privileges, served by the core', () => {
@@ -41,7 +43,7 @@ describe('drive-vault-viewer (Drive plugin 1.22)', () => {
     assert.match(read('src', 'renderer', 'vendor', 'pdfjs', 'LICENSE'), /Apache License/);
     assert.match(viewer, /import\(`\.\/\$\{PDF_LIB\}`\)/);
     assert.match(viewer, /isEvalSupported: false/);
-    assert.doesNotMatch(viewer, /https?:\/\/(?!www\.w3\.org)/, 'no address of the internet');
+    assert.deepEqual(hostsIn(viewer), [], 'no address of the internet');
   });
 
   it('nothing through innerHTML, no blob: or object URL, no storage; the page opens vault files in it', () => {
