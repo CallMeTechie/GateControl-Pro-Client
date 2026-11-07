@@ -103,6 +103,32 @@
 		return i > 0 && name.length - i <= 6 ? name.slice(i + 1).toUpperCase() : String((n && n.mime) || '');
 	}
 
+	// the document viewer (PDFs, texts, Markdown of normal files — drive-vault-viewer.js createDoc, core docView):
+	// the names as the core's drive-doc-view.js / drive-vault-view.js know them
+	const DOC_TEXT = new Set(['txt', 'text', 'log', 'csv', 'tsv', 'json', 'xml', 'yml', 'yaml', 'ini', 'conf', 'cfg', 'toml', 'env', 'sh', 'ps1',
+		'bat', 'js', 'ts', 'py', 'java', 'kt', 'c', 'h', 'cpp', 'cs', 'go', 'rs', 'sql', 'html', 'htm', 'css', 'vcf', 'ics']);
+	const DOC_MD = new Set(['md', 'markdown', 'mdown', 'mkd']);
+	const NOT_DOC = /^(jpe?g|jfif|png|gif|webp|avif|bmp|ico|heic|heif|mp4|m4v|mov|webm|mkv|ogv|avi|3gp|mp3|m4a|aac|ogg|oga|opus|wav|flac|doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp|rtf|pages|numbers|key)$/;
+
+	/**
+	 * 'pdf' | 'text' | 'markdown' | null — a file the document viewer shows (no folder, nothing of a vault, no picture
+	 * or video: those have the large view): by its name, else by its type.
+	 */
+	function docKindOf(n) {
+		if (!n || n.isDir || n.encrypted || kindOf(n)) return null;
+		const m1 = /\.([a-z0-9]{1,8})$/i.exec(String(n.name || ''));
+		const ext = m1 ? m1[1].toLowerCase() : '';
+		if (ext === 'pdf') return 'pdf';
+		if (DOC_MD.has(ext)) return 'markdown';
+		if (DOC_TEXT.has(ext)) return 'text';
+		if (NOT_DOC.test(ext)) return null;
+		const m = String(n.mime || '').split(';')[0].trim().toLowerCase();
+		if (m === 'application/pdf') return 'pdf';
+		if (m === 'text/markdown' || m === 'text/x-markdown') return 'markdown';
+		if ((m.startsWith('text/') && m !== 'text/html') || m === 'application/json' || m === 'application/xml') return 'text';
+		return null;
+	}
+
 	/** MediaError code → 'cannot' (the format / codec) | 'network' | 'other'. */
 	function trouble(code) {
 		if (code === 3 || code === 4) return 'cannot';
@@ -110,5 +136,5 @@
 		return 'other';
 	}
 
-	return { ZOOM_MAX, KEEP_MS, kindOf, itemOf, viewerList, zoomBy, clamp, transform, places, rareType, typeName, trouble };
+	return { ZOOM_MAX, KEEP_MS, kindOf, docKindOf, itemOf, viewerList, zoomBy, clamp, transform, places, rareType, typeName, trouble };
 });

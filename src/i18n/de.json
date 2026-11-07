@@ -2846,6 +2846,8 @@
     "vv": {
       "inMemory": "Nur im Speicher entschlüsselt",
       "decrypting": "Wird entschlüsselt …",
+      "loading": "Wird geladen …",
+      "docTooLarge": "Zu groß für die Ansicht in der App (höchstens {{max}} MB). Öffne die Datei mit einem anderen Programm oder speichere sie.",
       "lock": "Tresore jetzt sperren",
       "fit": "Einpassen",
       "zoomIn": "Vergrößern",
