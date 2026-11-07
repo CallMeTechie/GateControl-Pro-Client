@@ -41,6 +41,7 @@ let SchoolService;
 let DriveService, DriveSync;
 let MailService;
 let CamerasService;
+let DriveStreamService;
 let VaultService, windowsHello, windowsOcr, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
 let createDriveOnDemand, driveOnDemandExePath, parseDriveActionArgv, drivePathsOverlap;
@@ -115,6 +116,9 @@ try {
   // Kameras im Heimnetz (plugin gatecontrol-door 1.6 "Tür & Kamera"): live picture, stills and
   // clips (core services/cameras.js); absent in an older core.
   ({ CamerasService } = require('@gatecontrol/client-core'));
+  // Drive 1.21: the large view streams pictures and videos over gcdrive: (core services/drive-stream.js); absent in
+  // an older core (then "Dateien" opens them in the default program as before).
+  ({ DriveStreamService } = require('@gatecontrol/client-core'));
   // Vault (plugin gatecontrol-vault): end-to-end encrypted password manager
   // (core docs/vault.md); quick search window on Strg+Alt+P.
   ({ VaultService, windowsHello } = require('@gatecontrol/client-core'));
@@ -191,12 +195,15 @@ installWindowGuard(app, {
 // scheme has to be known before the app is ready).
 // Kameras: the page's <img> / <video> load the camera media (/camera-media/<token>/…
 // of the own server) through gccam: — served by the core CamerasService with the
-// client's connection, streamed (live.mp4, clips with Range). Electron takes the
-// privileged schemes in one call only.
+// client's connection, streamed (live.mp4, clips with Range). Drive 1.21: the
+// large view loads pictures and videos (/api/v1/client/plugins/gatecontrol-drive/
+// media/<id>, with Range) through gcdrive: — core DriveStreamService. Electron
+// takes the privileged schemes in one call only.
 if (protocol && typeof protocol.registerSchemesAsPrivileged === 'function') {
   const schemes = [];
   if (MailService) schemes.push({ scheme: MailService.SCHEME, privileges: { ...MailService.SCHEME_PRIVILEGES } });
   if (CamerasService && CamerasService.SCHEME) schemes.push({ scheme: CamerasService.SCHEME, privileges: { ...CamerasService.SCHEME_PRIVILEGES } });
+  if (DriveStreamService && DriveStreamService.SCHEME) schemes.push({ scheme: DriveStreamService.SCHEME, privileges: { ...DriveStreamService.SCHEME_PRIVILEGES } });
   if (schemes.length) protocol.registerSchemesAsPrivileged(schemes);
 }
 
@@ -305,6 +312,7 @@ let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
 let drive = null; // Drive (core DriveService), one per app lifetime
 let mail = null; // Mail (core MailService), one per app lifetime
 let cameras = null; // Kameras im Heimnetz (core CamerasService), one per app lifetime
+let driveStream = null; // Drive 1.21: the large view's gcdrive: (core DriveStreamService)
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
 let driveSyncTray = '';
 let driveOnDemandLocked = false; // letzter Status von gc-drive-sync: von Drive gestoppt?
@@ -1074,6 +1082,9 @@ function initializeServices() {
     tempDir: () => path.join(app.getPath('temp'), 'gatecontrol-cameras'),
   }) : null;
 
+  // Drive 1.21: pictures and videos of the large view, streamed with Range (gcdrive:)
+  driveStream = drive && DriveStreamService ? new DriveStreamService({ drive, log }) : null;
+
   // "Ordner sichern": folders of this PC backed up / synced with Drive. Runs
   // in the main process (tray), the state of each folder lives in
   // %APPDATA%\…\drive-sync (no tokens); deleted files go to the recycle bin.
@@ -1435,6 +1446,8 @@ function registerIpcHandlers() {
     drive,
     // drive:sync:* ("Ordner sichern"), reset on server:setup (core, opt-in with drive)
     driveSync,
+    // drive:stream / drive:stream:end (Drive 1.21's large view), its addresses end on server:setup
+    driveStream,
     // mail:* channels + events, reset on server:setup (core, opt-in)
     mail,
     // cameras:* channels + events, reset on server:setup (core, opt-in)
@@ -1533,6 +1546,10 @@ app.on('ready', () => {
     try { protocol.handle(CamerasService.SCHEME, (req) => cameras.handleProtocol(req)); } catch (err) { log.warn(`Camera protocol not registered: ${err.message}`); }
   }
   cameras?.start();
+  // Drive 1.21: pictures and videos of the large view (gcdrive:), streamed from the own server with Range.
+  if (driveStream && protocol && typeof protocol.handle === 'function') {
+    try { protocol.handle(DriveStreamService.SCHEME, (req) => driveStream.handleProtocol(req)); } catch (err) { log.warn(`Drive protocol not registered: ${err.message}`); }
+  }
   // "Ordner sichern": watches the folders, a full run shortly after start and every 15 min.
   driveSync?.start();
   // Drive „Dateien bei Bedarf“: startet gc-drive-sync.exe nur, wenn eingeschaltet.

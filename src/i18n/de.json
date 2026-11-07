@@ -2821,6 +2821,22 @@
         "open": "Karte der Fotos öffnen"
       },
       "empty": "Gerade gibt es nichts Neues. Deine Dateien findest du unter „Dateien“, die Bilder unter „Fotos“."
+    },
+    "viewer": {
+      "loading": "Wird geladen …",
+      "noPicture": "Das Bild lässt sich nicht anzeigen.",
+      "cannotPlay": "Dieses Video ({{type}}) kann der PC hier nicht abspielen – oft bei MKV oder HEVC (H.265). Öffne es in einer anderen App.",
+      "tryAnyway": "Trotzdem abspielen",
+      "failed": "Das Video lässt sich gerade nicht laden.",
+      "noPictureVideo": "Es läuft nur der Ton – das Bild dieses Videos (oft HEVC) kann der PC nicht zeigen. Mit der HEVC-Erweiterung aus dem Microsoft Store oder in einer anderen App geht es.",
+      "network": "Das Video lädt nicht weiter. Prüfe die Verbindung.",
+      "retry": "Noch mal versuchen",
+      "openOther": "In anderer App öffnen",
+      "play": "Abspielen",
+      "zoomIn": "Vergrößern",
+      "zoomOut": "Verkleinern",
+      "fullscreen": "Vollbild",
+      "share": "Teilen"
     }
   },
   "mail": {
