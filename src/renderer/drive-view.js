@@ -593,6 +593,13 @@
 			openSettings: () => openSettingsView('vaults'),
 		}) : null;
 		const vaultOn = () => !!vaultUi && root.GCDriveVaultState.vaultAvailable(S.me, S.vaultStatus);
+		// Drive plugin 1.22: a vault file opens in the app's own viewer, decrypted in memory (drive-vault-viewer.js)
+		const vaultViewer = root.GCDriveVaultViewer && api.vault && typeof api.vault.view === 'function' ? root.GCDriveVaultViewer.create({
+			api, t, ui: { el, icon, openDialog }, host, toast, errorText: DS.errorText,
+			openWith: (n) => openNode(n, { asked: true, external: true }),
+			saveAs: (n) => saveAs(n),
+			confirm: (title, text, confirm, run) => confirmDialog({ title, text, confirm, danger: true, run: async () => { run(); return { ok: true }; } }),
+		}) : null;
 		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.selBar, refs.listWrap, refs.keys, ki ? ki.bar : null, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null, overviewView ? overviewView.el : null]);
 		refs.empty = el('div', { class: 'dv-gate', hidden: true });
 		refs.main = el('div', { class: 'dv-main' }, [refs.side, refs.pane]);
@@ -1047,7 +1054,7 @@
 			}
 		}
 
-		async function openNode(n, { asked = false, tries = 0 } = {}) {
+		async function openNode(n, { asked = false, tries = 0, external = false } = {}) {
 			// Drive 1.9: a vault this PC has no key for opens on its card ("Zugriff anfragen")
 			if (n.isDir) { refs.search.value = ''; S.query = ''; loadFolder(n.id); return; }
 			if (n.encrypted && n.locked) { toast(t('drive.err.vaultLocked'), 'error'); return; }
@@ -1058,6 +1065,8 @@
 				confirmDialog({ title: q.title, text: q.text, confirm: q.confirm, danger: true, run: async () => { openNode(n, { asked: true }); return { ok: true }; } });
 				return;
 			}
+			// Drive plugin 1.22: a vault file in the viewer (in memory) — another program only on purpose ("Mit anderem Programm öffnen")
+			if (n.encrypted && vaultViewer && !external) { vaultViewer.open(n); return; }
 			// Drive 1.21: a picture or a video opens in the large view (drive-viewer.js) with the others of the list shown —
 			// zoom, the original, videos streamed (gcdrive:) — instead of a download into the default program
 			if (VS && photosView && VS.kindOf(n) && typeof api.stream === 'function') {
@@ -1076,7 +1085,7 @@
 			const wait = SCAN.retryDelay(r, tries);
 			if (wait) {
 				if (!tries) toast(SCAN.refusalText(r, t), 'info');
-				setTimeout(() => { if (S.shown) openNode(n, { asked: true, tries: tries + 1 }); }, wait);
+				setTimeout(() => { if (S.shown) openNode(n, { asked: true, tries: tries + 1, external }); }, wait);
 				return;
 			}
 			done(r);
@@ -1559,6 +1568,10 @@
 			if (acts.blocked) items.push(el('div', { class: 'dv-menu-item dv-menu-note', role: 'note', 'data-scan': acts.blocked }, [icon('shield', 15), el('span', { text: SCAN.reason(n.scan, t) })]));
 			if (!acts.blocked) item(n.isDir ? 'folder' : 'open', t('drive.open'), () => openNode(n));
 			if (acts.saveAs) item('down', t('drive.saveAs'), () => saveAs(n));
+			// Drive plugin 1.22: the explicit way out of a vault, asked first (the copy is not encrypted)
+			if (!acts.blocked && !n.isDir && n.encrypted && !n.locked && vaultViewer) {
+				item('open', t('drive.vv.openWith'), () => confirmDialog({ title: t('drive.vv.openWithTitle'), text: t('drive.vv.openWithText'), confirm: t('drive.vv.openWithGo'), danger: true, run: async () => { openNode(n, { asked: true, external: true }); return { ok: true }; } }));
+			}
 			if (S.view === 'search' && n.parentId) item('folder', t('drive.search.showFolder'), () => { refs.search.value = ''; S.query = ''; loadFolder(n.parentId); });
 			if (acts.share) item('link', t('drive.share.menu'), () => shareDialog(n));
 			if (acts.rename) item('pen', t('drive.rename'), () => renameNode(n));

@@ -2837,6 +2837,26 @@
       "zoomOut": "Verkleinern",
       "fullscreen": "Vollbild",
       "share": "Teilen"
+    },
+    "vv": {
+      "inMemory": "Nur im Speicher entschlüsselt",
+      "decrypting": "Wird entschlüsselt …",
+      "lock": "Tresore jetzt sperren",
+      "fit": "Einpassen",
+      "zoomIn": "Vergrößern",
+      "zoomOut": "Verkleinern",
+      "pages": "{{n}} Seiten",
+      "page": "Seite {{n}}",
+      "failed": "Diese Datei lässt sich hier nicht anzeigen.",
+      "pdfPassword": "Dieses PDF ist mit einem Kennwort geschützt und lässt sich hier nicht anzeigen.",
+      "office": "Office-Dateien lassen sich im Tresor nicht sicher anzeigen. Öffne die Datei bewusst mit einem anderen Programm oder speichere sie, wenn du sie brauchst.",
+      "heic": "HEIC-Fotos kann die App hier nicht anzeigen. Öffne das Foto bewusst mit einem anderen Programm oder in der Android-App.",
+      "other": "Für diese Art Datei gibt es keine Ansicht. Du kannst sie bewusst mit einem anderen Programm öffnen oder speichern.",
+      "tooLarge": "Zu groß für die Ansicht (höchstens {{max}} MB werden im Speicher entschlüsselt). Du kannst die Datei bewusst mit einem anderen Programm öffnen oder speichern.",
+      "openWith": "Mit anderem Programm öffnen",
+      "openWithTitle": "Tresor verlassen?",
+      "openWithText": "Das andere Programm bekommt die Datei unverschlüsselt: GateControl legt dafür eine Kopie im Temp-Ordner an und löscht sie nach etwa einer Minute wieder (später, solange das Programm sie noch offen hat, spätestens beim Sperren). Was das Programm selbst davon behält (Verlauf, Vorschaubilder, Kopien), schützt der Tresor nicht mehr.",
+      "openWithGo": "Trotzdem öffnen"
     }
   },
   "mail": {

@@ -2837,6 +2837,26 @@
       "zoomOut": "Zoom out",
       "fullscreen": "Full screen",
       "share": "Share"
+    },
+    "vv": {
+      "inMemory": "Decrypted in memory only",
+      "decrypting": "Decrypting …",
+      "lock": "Lock vaults now",
+      "fit": "Fit",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "pages": "{{n}} pages",
+      "page": "Page {{n}}",
+      "failed": "This file cannot be shown here.",
+      "pdfPassword": "This PDF is protected with a password and cannot be shown here.",
+      "office": "Office files in a vault cannot be shown safely. Open the file with another program on purpose or save it if you need it.",
+      "heic": "The app cannot show HEIC photos here. Open the photo with another program on purpose or in the Android app.",
+      "other": "There is no view for this kind of file. You can open it with another program or save it on purpose.",
+      "tooLarge": "Too large to view (at most {{max}} MB are decrypted in memory). You can open the file with another program or save it on purpose.",
+      "openWith": "Open with another program",
+      "openWithTitle": "Leave the vault?",
+      "openWithText": "The other program gets the file unencrypted: GateControl puts a copy into the temp folder for it and deletes it again after about a minute (later while the program still holds it, at the latest when the vaults lock). What the program itself keeps of it (history, previews, copies) is no longer protected by the vault.",
+      "openWithGo": "Open anyway"
     }
   },
   "mail": {

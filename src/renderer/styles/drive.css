@@ -853,3 +853,29 @@ button.dov-store { cursor: pointer; }
 .dvw-tools { display: flex; gap: 4px; }
 .dpv-stage:fullscreen { height: 100vh; border-radius: 0; background: #000; }
 @media (prefers-reduced-motion: reduce) { .dvw-img { transition: none; } .dvw-spin { animation: none; } }
+
+/* ── Drive plugin 1.22: the viewer of vault files (drive-vault-viewer.js) — the dialog's look, a larger box ── */
+.dv-dlg.dv-vv { width: min(1100px, 100%); height: 100%; }
+.dv-dlg.dv-vv .dv-dlg-body { flex-grow: 1; }
+.dv-vv-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dv-vv-mem { font-size: 12px; color: var(--muted); }
+.dv-vv-zoombar { display: inline-flex; align-items: center; gap: 4px; }
+.dv-vv-zoom { min-width: 56px; text-align: center; font-size: 12.5px; color: var(--muted); }
+.dv-vv-stage { flex-grow: 1; min-height: 240px; display: flex; flex-direction: column; }
+.dv-vv-wait { flex-grow: 1; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); }
+.dv-vv-spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line2); border-top-color: var(--info); animation: gcspin .9s linear infinite; }
+.dv-vv-pic { flex-grow: 1; display: flex; align-items: center; justify-content: center; overflow: auto; background: var(--panel2); border-radius: 10px; min-height: 0; }
+.dv-vv-img { display: block; max-width: 100%; max-height: 100%; user-select: none; }
+.dv-vv-img.is-zoomed { max-width: none; max-height: none; margin: auto; }
+.dv-vv-video { width: 100%; max-height: 100%; flex-grow: 1; background: #000; border-radius: 10px; }
+.dv-vv-pages { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px; background: var(--panel2); border-radius: 10px; }
+.dv-vv-slot { width: 100%; display: flex; justify-content: center; }
+.dv-vv-page { display: block; max-width: 100%; height: auto; background: #fff; border-radius: 4px; box-shadow: var(--shadow); }
+.dv-vv-text, .dv-vv-code { margin: 0; padding: 12px 14px; background: var(--panel2); border-radius: 10px; font: 13px/1.55 var(--font-mono, ui-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
+.dv-vv-md { padding: 4px 16px 12px; background: var(--panel2); border-radius: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+.dv-vv-md code { font: 12.5px var(--font-mono, ui-monospace, monospace); background: var(--panel); padding: 1px 5px; border-radius: 5px; }
+.dv-vv-md blockquote { margin: 8px 0; padding: 2px 12px; border-left: 3px solid var(--line2); color: var(--muted); }
+.dv-vv-note { display: flex; align-items: flex-start; gap: 10px; padding: 14px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line); }
+.dv-vv-note p { margin: 0; }
+.dv-vv-note.is-warn { border-color: var(--warn); }
+@media (prefers-reduced-motion: reduce) { .dv-vv-spin { animation: none; } }

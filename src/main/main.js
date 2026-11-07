@@ -197,13 +197,18 @@ installWindowGuard(app, {
 // of the own server) through gccam: — served by the core CamerasService with the
 // client's connection, streamed (live.mp4, clips with Range). Drive 1.21: the
 // large view loads pictures and videos (/api/v1/client/plugins/gatecontrol-drive/
-// media/<id>, with Range) through gcdrive: — core DriveStreamService. Electron
-// takes the privileged schemes in one call only.
+// media/<id>, with Range) through gcdrive: — core DriveStreamService.
+// Drive plugin 1.22: the viewer of vault files reads gcvault:// (the core decrypts
+// the chunks of each request in memory, only the ciphertext lies on the disk).
+// Electron takes the privileged schemes in one call only.
 if (protocol && typeof protocol.registerSchemesAsPrivileged === 'function') {
   const schemes = [];
   if (MailService) schemes.push({ scheme: MailService.SCHEME, privileges: { ...MailService.SCHEME_PRIVILEGES } });
   if (CamerasService && CamerasService.SCHEME) schemes.push({ scheme: CamerasService.SCHEME, privileges: { ...CamerasService.SCHEME_PRIVILEGES } });
   if (DriveStreamService && DriveStreamService.SCHEME) schemes.push({ scheme: DriveStreamService.SCHEME, privileges: { ...DriveStreamService.SCHEME_PRIVILEGES } });
+  // Drive plugin 1.22: the viewer of vault files — gcvault://v/<token>, decrypted in memory by the core (drive-vault-view.js)
+  const VaultViews = DriveService && DriveService.VaultViews;
+  if (VaultViews && VaultViews.SCHEME) schemes.push({ scheme: VaultViews.SCHEME, privileges: { ...VaultViews.SCHEME_PRIVILEGES } });
   if (schemes.length) protocol.registerSchemesAsPrivileged(schemes);
 }
 
@@ -1536,6 +1541,10 @@ app.on('ready', () => {
   school?.start();
   // Drive: availability check (the page shows while the server lists the plugin).
   drive?.start();
+  // Drive plugin 1.22: the vault viewer's bytes (gcvault:) — only tokens the page opened, revoked on close and lock
+  if (drive && typeof drive.handleVaultProtocol === 'function' && protocol && typeof protocol.handle === 'function') {
+    try { protocol.handle(DriveService.VaultViews.SCHEME, (req) => drive.handleVaultProtocol(req)); } catch (err) { log.warn(`Vault viewer protocol not registered: ${err.message}`); }
+  }
   // Mail: pictures of the reading frame (gcmail:), availability, live events.
   if (mail && protocol && typeof protocol.handle === 'function') {
     try { protocol.handle(MailService.SCHEME, (req) => mail.handleProtocol(req)); } catch (err) { log.warn(`Mail protocol not registered: ${err.message}`); }
