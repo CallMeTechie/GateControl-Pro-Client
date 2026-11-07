@@ -600,6 +600,12 @@
 			saveAs: (n) => saveAs(n),
 			confirm: (title, text, confirm, run) => confirmDialog({ title, text, confirm, danger: true, run: async () => { run(); return { ok: true }; } }),
 		}) : null;
+		// PDFs, texts and Markdown of normal files: the same viewer's pages, the file as "Öffnen" loads it (core docView)
+		const docViewer = root.GCDriveVaultViewer && typeof root.GCDriveVaultViewer.createDoc === 'function' && typeof api.docView === 'function' ? root.GCDriveVaultViewer.createDoc({
+			api, t, ui: { el, icon, openDialog }, host, toast, errorText: DS.errorText,
+			openWith: (n) => openNode(n, { asked: true, external: true }),
+			saveAs: (n) => saveAs(n),
+		}) : null;
 		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.selBar, refs.listWrap, refs.keys, ki ? ki.bar : null, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null, overviewView ? overviewView.el : null]);
 		refs.empty = el('div', { class: 'dv-gate', hidden: true });
 		refs.main = el('div', { class: 'dv-main' }, [refs.side, refs.pane]);
@@ -1075,6 +1081,8 @@
 				photosView.lightbox(list, start);
 				return;
 			}
+			// a PDF, text or Markdown in the document viewer — another program only on purpose ("Mit anderem Programm öffnen")
+			if (docViewer && !external && VS && VS.docKindOf(n)) { docViewer.open(n); return; }
 			const r = await Promise.resolve(api.open(n.id)).catch(fail);
 			if (r && r.ok) return;
 			if (r && r.code === 'unsafe') {

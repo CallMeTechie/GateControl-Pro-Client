@@ -15,6 +15,12 @@
  * …" stay the explicit way out — the first asks before (the copy is not encrypted).
  *
  * Data: window.gatecontrol.drive.vault.view / viewClose / protect / touch / onLock; texts: drive.vv.*.
+ *
+ * createDoc(): the same viewer for the PDFs, texts and Markdown of the normal files of Drive (not of a vault) — the
+ * same pages (pdf.js on <canvas>, text nodes), but the content is the file as "Öffnen" loads it anyway (core
+ * DriveService.docView: the copy in the temp folder, else a download; window.gatecontrol.drive.docView → a PDF's bytes,
+ * a text decoded). No content protection, no lock, a text can be selected and copied; "Mit anderem Programm öffnen"
+ * (no question: nothing of a vault) and "Speichern unter …" stay in the viewer. Too large ones say so, nothing loaded.
  */
 (function (root) {
 	'use strict';
@@ -105,6 +111,7 @@
 	}
 
 	/**
+	 * The vault's viewer.
 	 * @param {object} o
 	 * @param {object} o.api - window.gatecontrol.drive
 	 * @param {Function} o.t
@@ -117,12 +124,24 @@
 	 * @param {(title, text, confirm, run) => void} o.confirm - a question before the way out
 	 */
 	function create(o) {
-		const { api, t, host, toast } = o;
+		return make(o, true);
+	}
+
+	/**
+	 * The viewer of PDFs, texts and Markdown of normal Drive files (window.gatecontrol.drive.docView).
+	 * @param {object} o - as create(), without `confirm`: o.openWith opens at once (nothing of a vault)
+	 */
+	function createDoc(o) {
+		return make(o, false);
+	}
+
+	function make(o, vault) {
+		const { api, t, host } = o;
 		const { el, icon, openDialog } = o.ui;
-		const vapi = api.vault;
+		const vapi = vault ? api.vault : null;
 		let cur = null;
 
-		const touch = () => { try { vapi.touch(); } catch { /* gone */ } };
+		const touch = () => { if (!vapi) return; try { vapi.touch(); } catch { /* gone */ } };
 
 		/** Closes the viewer: the token revoked, what it showed dropped. */
 		function close() {
@@ -131,14 +150,16 @@
 			cur = null;
 			s.closed = true;
 			for (const fn of s.cleanups.splice(0).reverse()) { try { fn(); } catch { /* best effort */ } }
-			if (s.token) Promise.resolve(vapi.viewClose(s.token)).catch(() => {});
-			Promise.resolve(vapi.protect(false)).catch(() => {});
+			if (vapi) {
+				if (s.token) Promise.resolve(vapi.viewClose(s.token)).catch(() => {});
+				Promise.resolve(vapi.protect(false)).catch(() => {});
+			}
 			if (s.dlg && !s.dlg.closed) s.dlg.close();
 			return true;
 		}
 
 		// the vaults locked (time without use, window hidden, Windows locked, by hand): the viewer closes
-		if (typeof vapi.onLock === 'function') vapi.onLock((e) => { if (e && e.locked) close(); });
+		if (vapi && typeof vapi.onLock === 'function') vapi.onLock((e) => { if (e && e.locked) close(); });
 		root.addEventListener('beforeunload', () => close());
 
 		function note(text, warn) {
@@ -148,13 +169,20 @@
 		function wayOut(s) {
 			const acts = [];
 			acts.push(el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-vv-openwith', text: t('drive.vv.openWith'), on: { click: () => {
+				if (!vault) { close(); o.openWith(s.n); return; }
 				o.confirm(t('drive.vv.openWithTitle'), t('drive.vv.openWithText'), t('drive.vv.openWithGo'), () => { close(); o.openWith(s.n); });
 			} } }));
 			if (o.saveAs) acts.push(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: t('drive.saveAs'), on: { click: () => { close(); o.saveAs(s.n); } } }));
 			return acts;
 		}
 
-		/** Opens vault file `n` (a version: `versionId`). */
+		/** What the page shows of `n`: the vault's gcvault: address (decrypted in memory), else the file's bytes / text. */
+		async function load(n, versionId) {
+			if (vault) return vapi.view(n.id, versionId || null);
+			return api.docView(n.id);
+		}
+
+		/** Opens file `n` (of a vault: a version `versionId`). */
 		async function open(n, versionId) {
 			close();
 			const s = { n, closed: false, token: null, cleanups: [] };
@@ -162,25 +190,27 @@
 			const dlg = openDialog({ title: n.name, host, wide: true, closeLabel: t('drive.close'), onClose: () => { if (cur === s) close(); } });
 			s.dlg = dlg;
 			dlg.box.classList.add('dv-vv');
-			dlg.box.setAttribute('data-vault-viewer', '1');
-			const tools = el('div', { class: 'dv-vv-tools' }, [
+			dlg.box.setAttribute(vault ? 'data-vault-viewer' : 'data-doc-viewer', '1');
+			const tools = el('div', { class: 'dv-vv-tools' }, vault ? [
 				el('span', { class: 'dv-vv-mem', text: t('drive.vv.inMemory') }),
 				el('span', { class: 'dv-grow' }),
 				el('button', { type: 'button', class: 'dv-ib dv-vv-lock', title: t('drive.vv.lock'), 'aria-label': t('drive.vv.lock'), on: { click: () => { close(); Promise.resolve(vapi.lock()).catch(() => {}); } } }, [icon('lock', 16)]),
-			]);
-			const stage = el('div', { class: 'dv-vv-stage', 'aria-live': 'polite' }, [el('div', { class: 'dv-vv-wait' }, [el('span', { class: 'dv-vv-spin' }), el('span', { text: t('drive.vv.decrypting') })])]);
+			] : [el('span', { class: 'dv-grow' })]);
+			const stage = el('div', { class: 'dv-vv-stage', 'aria-live': 'polite' }, [el('div', { class: 'dv-vv-wait' }, [el('span', { class: 'dv-vv-spin' }), el('span', { text: t(vault ? 'drive.vv.decrypting' : 'drive.vv.loading') })])]);
 			dlg.body.append(tools, stage);
-			for (const ev of ['pointerdown', 'keydown', 'wheel', 'scroll']) dlg.box.addEventListener(ev, touch, { capture: true, passive: true });
-			dlg.box.addEventListener('contextmenu', (e) => e.preventDefault());
-			dlg.box.addEventListener('dragstart', (e) => e.preventDefault());
-			Promise.resolve(vapi.protect(true)).catch(() => {});
+			if (vault) {
+				for (const ev of ['pointerdown', 'keydown', 'wheel', 'scroll']) dlg.box.addEventListener(ev, touch, { capture: true, passive: true });
+				dlg.box.addEventListener('contextmenu', (e) => e.preventDefault());
+				dlg.box.addEventListener('dragstart', (e) => e.preventDefault());
+				Promise.resolve(vapi.protect(true)).catch(() => {});
+			}
 			let r;
 			try {
-				r = await vapi.view(n.id, versionId || null);
+				r = await load(n, versionId);
 			} catch (err) {
 				r = { ok: false, code: (err && err.code) || 'failed' };
 			}
-			if (s.closed) { if (r && r.token) Promise.resolve(vapi.viewClose(r.token)).catch(() => {}); return; }
+			if (s.closed) { if (vapi && r && r.token) Promise.resolve(vapi.viewClose(r.token)).catch(() => {}); return; }
 			stage.replaceChildren();
 			if (!r || !r.ok) {
 				stage.append(note(o.errorText ? o.errorText(r, t) : t('drive.vv.failed'), true));
@@ -188,21 +218,23 @@
 				return;
 			}
 			if (r.note) {
-				const key = { office: 'drive.vv.office', heic: 'drive.vv.heic', other: 'drive.vv.other', too_large: 'drive.vv.tooLarge' }[r.note] || 'drive.vv.other';
-				stage.append(note(t(key, { max: r.limitMb || 0 }), r.note === 'too_large'));
+				const key = !vault && r.note === 'too_large' ? 'drive.vv.docTooLarge'
+					: { office: 'drive.vv.office', heic: 'drive.vv.heic', other: 'drive.vv.other', too_large: 'drive.vv.tooLarge' }[r.note] || 'drive.vv.other';
+				stage.append(note(t(key, { max: r.limitMb || 0 }), r.note === 'too_large' || !vault));
 				dlg.foot.append(...wayOut(s));
 				return;
 			}
-			s.token = r.token;
+			s.token = r.token || null;
 			try {
-				if (r.kind === 'image') showImage(s, stage, r);
-				else if (r.kind === 'video' || r.kind === 'audio') showMedia(s, stage, r);
-				else if (r.kind === 'pdf') await showPdf(s, stage, r);
-				else await showText(s, stage, r, r.kind === 'markdown');
+				if (vault && r.kind === 'image') showImage(s, stage, r);
+				else if (vault && (r.kind === 'video' || r.kind === 'audio')) showMedia(s, stage, r);
+				else if (r.kind === 'pdf') await showPdf(s, stage, vault ? await bytesOf(s, r, 200 * MB) : r.data);
+				else if (r.kind === 'text' || r.kind === 'markdown') showText(s, stage, vault ? await textOf(s, r) : r.text, r.kind === 'markdown');
+				else throw new Error(`no page for ${r.kind}`);
 			} catch (err) {
 				if (s.closed) return;
 				// the reason only (never content of the file)
-				console.warn(`Vault viewer: ${(err && err.name) || 'Error'}: ${(err && err.message) || ''}`.slice(0, 300));
+				console.warn(`${vault ? 'Vault' : 'Drive'} viewer: ${(err && err.name) || 'Error'}: ${(err && err.message) || ''}`.slice(0, 300));
 				stage.replaceChildren(note(t('drive.vv.failed'), true));
 			}
 			if (!s.closed) dlg.foot.append(...wayOut(s));
@@ -254,9 +286,11 @@
 			return new Uint8Array(await res.arrayBuffer());
 		}
 
-		async function showPdf(s, stage, r) {
-			const [lib, bytes] = await Promise.all([loadPdfjs(), bytesOf(s, r, 200 * MB)]);
-			if (s.closed) { bytes.fill(0); return; }
+		/** `bytes` (a Uint8Array) as pages on <canvas>; for a vault file they are zeroed when it closes. */
+		async function showPdf(s, stage, input) {
+			const lib = await loadPdfjs();
+			const bytes = input instanceof Uint8Array ? input : new Uint8Array(input || []);
+			if (s.closed) { if (vault) bytes.fill(0); return; }
 			const task = lib.getDocument({
 				data: bytes, isEvalSupported: false, enableXfa: false, disableAutoFetch: true, disableStream: true, disableRange: true,
 				useSystemFonts: true, stopAtErrors: false, verbosity: 0,
@@ -266,7 +300,7 @@
 			s.cleanups.push(() => {
 				try { task.destroy(); } catch { /* gone */ }
 				try { if (doc) doc.destroy(); } catch { /* gone */ }
-				try { if (bytes.buffer.byteLength) bytes.fill(0); } catch { /* handed to the worker */ }
+				if (vault) { try { if (bytes.buffer.byteLength) bytes.fill(0); } catch { /* handed to the worker */ } }
 				for (const c of canvases) { c.width = 0; c.height = 0; }
 				canvases.length = 0;
 			});
@@ -325,13 +359,18 @@
 			await chain;
 		}
 
-		async function showText(s, stage, r, md) {
+		/** A vault text: fetched into memory, decoded, the bytes zeroed. */
+		async function textOf(s, r) {
 			const bytes = await bytesOf(s, r, 8 * MB);
-			if (s.closed) { bytes.fill(0); return; }
-			let text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+			if (s.closed) { bytes.fill(0); return ''; }
+			const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 			bytes.fill(0);
+			return text;
+		}
+
+		function showText(s, stage, text, md) {
+			if (s.closed) return;
 			const box = md ? el('div', { class: 'dv-vv-md' }, markdown(el, text)) : el('pre', { class: 'dv-vv-text', text });
-			text = null;
 			stage.append(box);
 			s.cleanups.push(() => { box.replaceChildren(); box.remove(); });
 		}
@@ -339,5 +378,5 @@
 		return { open, close, isOpen: () => !!cur };
 	}
 
-	root.GCDriveVaultViewer = { create, markdown };
+	root.GCDriveVaultViewer = { create, createDoc, markdown };
 }(typeof window !== 'undefined' ? window : globalThis));
