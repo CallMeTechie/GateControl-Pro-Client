@@ -280,6 +280,9 @@
 .ml-linkopts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; background: var(--bg); }
 .ml-linkopts[hidden] { display: none; }
 .ml-set-row { display: flex; align-items: center; gap: 12px; min-height: 40px; font-size: 13.5px; }
+.ml-set-wh { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 6px 0; font-size: 13.5px; }
+.ml-set-wh-time { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ml-set-wh-time .ml-input { width: auto; }
 .ml-remove { align-self: flex-start; margin-top: 6px; }
 .ml-colors { display: flex; gap: 8px; flex-wrap: wrap; }
 .ml-color { width: 26px; height: 26px; border-radius: 99px; border: 2px solid transparent; cursor: pointer; padding: 0; }

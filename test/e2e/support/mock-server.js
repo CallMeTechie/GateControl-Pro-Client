@@ -244,10 +244,17 @@ async function startMockServer() {
           return json(200, {
             ok: true, enabled: true, mode: null, muted_topics: [], restricted: false,
             ...(push.quiet !== undefined ? { quiet: push.quiet } : {}),
+            // GateControl 1.225.0: the person's e-mail channel of plugin topics
+            ...(push.email ? { email_topics: push.email.topics, email_to: push.email.to, email_ready: push.email.ready } : {}),
           });
         }
         if (route === 'push/prefs') {
-          prefs.push(JSON.parse(raw.toString('utf8') || '{}'));
+          const body = JSON.parse(raw.toString('utf8') || '{}');
+          prefs.push(body);
+          if (Array.isArray(body.email_topics)) {
+            if (!push.email || !body.email_topics.every((x) => push.email.topics.some((tp) => tp.id === x.id))) return json(400, { ok: false, error: 'invalid_email_topics' });
+            for (const x of body.email_topics) for (const tp of push.email.topics) if (tp.id === x.id) tp.enabled = x.enabled;
+          }
           return json(200, { ok: true });
         }
         if (route === 'push/test') {
@@ -379,9 +386,9 @@ async function startMockServer() {
     requests,
     setUpdate(offer) { update = offer; },
     setPolicy(p, version = 'e2e0000000000001') { policy = p; policyVersion = version; },
-    /** Enables push: { topics: [{ id, label }], items: [notification payloads] } (newest first). */
+    /** Enables push: { topics: [{ id, label }], items: [notification payloads] (newest first), email?: { topics: [{ id, label, enabled }], to, ready } }. */
     setPush(p) {
-      push = { topics: p.topics || [], items: [], quiet: p.quiet, state: p.state || null };
+      push = { topics: p.topics || [], items: [], quiet: p.quiet, state: p.state || null, email: p.email ? { topics: (p.email.topics || []).map((x) => ({ ...x })), to: p.email.to ?? null, ready: p.email.ready !== false } : null };
       for (const n of [...(p.items || [])].reverse()) addNotification(n);
     },
     /** Sends a notification to the open streams (and the inbox). */

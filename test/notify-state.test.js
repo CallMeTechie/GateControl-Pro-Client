@@ -346,6 +346,25 @@ describe('settings: Benachrichtigungen', () => {
     assert.deepEqual(NS.topicRows(null, null), []);
   });
 
+  it('„Auch per E-Mail“: a box only under topics with an e-mail channel, greyed with the reason like the portal', () => {
+    const email = { known: true, topics: [{ id: 'plugin:gatecontrol-mail:resource_request', label: 'Mail', enabled: true }], to: 'anna@example.com', ready: true };
+    assert.deepEqual(NS.emailRow(email, 'plugin:gatecontrol-mail:resource_request'),
+      { checked: true, disabled: false, labelKey: 'ui.notify.emailTo', params: { address: 'anna@example.com' }, noteKey: null });
+    assert.equal(NS.emailRow(email, 'security'), null, 'no channel, no box');
+    assert.equal(NS.emailRow({ known: false, topics: [] }, 'plugin:gatecontrol-mail:resource_request'), null, 'older server');
+    assert.equal(NS.emailRow(null, 'x'), null);
+    assert.equal(NS.emailRow(email, 'plugin:gatecontrol-mail:resource_request', 'plugin:gatecontrol-mail:mail').disabled, true, 'one change at a time');
+    const noSmtp = NS.emailRow({ ...email, ready: false }, 'plugin:gatecontrol-mail:resource_request');
+    assert.deepEqual([noSmtp.disabled, noSmtp.noteKey], [true, 'ui.notify.emailNoSmtp']);
+    const noAddr = NS.emailRow({ ...email, to: null }, 'plugin:gatecontrol-mail:resource_request');
+    assert.deepEqual([noAddr.disabled, noAddr.labelKey, noAddr.noteKey], [true, 'ui.notify.email', 'ui.notify.emailNoAddress']);
+    // every text in de and en
+    for (const lang of ['de', 'en']) {
+      const j = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'i18n', `${lang}.json`), 'utf8'));
+      for (const k of ['email', 'emailTo', 'emailNoAddress', 'emailNoSmtp']) assert.equal(typeof j.ui.notify[k], 'string', `${lang} ui.notify.${k}`);
+    }
+  });
+
   it('kill-switch note: warning when push only works through the tunnel', () => {
     assert.equal(NS.killSwitchNote({ killSwitch: { active: false, tunnelOnly: false } }), null);
     assert.deepEqual(NS.killSwitchNote({ killSwitch: { active: true, tunnelOnly: true } }), { tone: 'warn', key: 'push.tunnelOnly' });
