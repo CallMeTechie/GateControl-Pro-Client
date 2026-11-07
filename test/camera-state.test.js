@@ -227,3 +227,28 @@ describe('page wiring', () => {
     }
   });
 });
+
+describe('plugin 1.7.0: resolution, sound, own push, "Ansehen"', () => {
+  it('a card names the resolution and the sound', () => {
+    const v = CS.cardView(camera({ width: 2560, height: 1440, audio: true }), t, NOW, 'de-DE');
+    assert.equal(v.desc, 'Reolink RLC-510A · cameras.card.res(2560,1440) · cameras.card.withSound · cameras.card.motion(cameras.kinds.person, cameras.kinds.vehicle) · cameras.card.retention(14)');
+    // unknown (older plugin): as before
+    assert.ok(!CS.cardView(camera({ width: null, height: 1440 }), t, NOW, 'de-DE').desc.includes('cameras.card.res'));
+  });
+  it('the own push switch only when the plugin knows it and the camera pushes at all', () => {
+    assert.deepEqual(CS.myPushView(camera({ myPush: false })), { show: true, on: false });
+    assert.deepEqual(CS.myPushView(camera({ myPush: true, push: false })), { show: false, on: true });
+    assert.deepEqual(CS.myPushView(camera({ myPush: null })), { show: false, on: true });
+    assert.deepEqual(CS.myPushView(null), { show: false, on: true });
+  });
+  it('"Ansehen" on the toast (core: navigate with the camera context) opens the page on that camera', () => {
+    const ctx = { cameraId: CAM1, eventId: 'e000000000000002' };
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-door', id: 703, context: ctx }, ['kameras', 'inbox']), { page: 'kameras', id: null, context: ctx });
+  });
+  it('cam_tls has its own text; the page wires the switch', () => {
+    assert.equal(CS.errorText({ code: 'cam_tls' }, t), 'cameras.error.cam_tls');
+    const view = read('src', 'renderer', 'camera-view.js');
+    assert.match(view, /api\.setPush\(c\.id, on\)/);
+    assert.match(view, /cameras\.myPush/);
+  });
+});
