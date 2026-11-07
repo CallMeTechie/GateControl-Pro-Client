@@ -89,11 +89,14 @@
 
 	const DS = root.GCDriveState;
 	const SCAN = root.GCScanState;
+	const VS = root.GCDriveViewerState;
 	const MS = root.GCDriveMenuState;
 	const BS = root.GCDriveBulkState;
 	const OVS = root.GCDriveOverviewState;
 	const NS = 'http://www.w3.org/2000/svg';
 	const ICONS = {
+		// Drive 1.21: the large view (full screen)
+		expand: 'M4 9V4h5|M20 9V4h-5|M4 15v5h5|M20 15v5h-5',
 		cloud: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z',
 		folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
 		file: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z|M14 3v5h5',
@@ -498,6 +501,9 @@
 			openFolder: (id) => { refs.search.value = ''; S.query = ''; loadFolder(id); },
 			// Drive 1.16: the gear of "Personen" opens the settings "Orte und Personen"
 			openSettings: (section) => openSettingsView(section),
+			// Drive 1.21: "Teilen" in the large view (who may)
+			canShare: (n) => DS.actionsFor(n, !!(S.areas.find((a) => a.id === n.areaId) || {}).writable, S.me).share,
+			share: (n) => shareDialog(n),
 			// Drive 1.12: the selection of photos (ZIP, Verschieben / Kopieren nach …, Link, Löschen)
 			bulk: bulkUi ? {
 				actions: (items) => BS.actions(items, { me: S.me, writable: items.every((n) => !!(S.areas.find((a) => a.id === n.areaId) || {}).writable), vault: false }),
@@ -1050,6 +1056,14 @@
 			if (!asked && SCAN.isWarning(n.scan)) {
 				const q = SCAN.warnAsk(n.scan, n.name, t);
 				confirmDialog({ title: q.title, text: q.text, confirm: q.confirm, danger: true, run: async () => { openNode(n, { asked: true }); return { ok: true }; } });
+				return;
+			}
+			// Drive 1.21: a picture or a video opens in the large view (drive-viewer.js) with the others of the list shown —
+			// zoom, the original, videos streamed (gcdrive:) — instead of a download into the default program
+			if (VS && photosView && VS.kindOf(n) && typeof api.stream === 'function') {
+				const { list, start } = VS.viewerList(shownItems(), n);
+				if (asked) list[start] = { ...list[start], scanAsked: true };
+				photosView.lightbox(list, start);
 				return;
 			}
 			const r = await Promise.resolve(api.open(n.id)).catch(fail);

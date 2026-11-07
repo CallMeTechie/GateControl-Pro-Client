@@ -556,18 +556,41 @@
 		}
 
 		// ── Lightbox ─────────────────────────────────────
+		// Drive 1.21 (drive-viewer.js): pictures zoom and load their original, videos play here (gcdrive:, streamed
+		// with Range); also opened from "Dateien" with the pictures and videos of the folder (drive-view.js)
+		const viewer = root.GCDriveViewer && root.GCDriveViewerState ? root.GCDriveViewer.create({ api, t, ui: { el, icon, clear } }) : null;
+		const askWarned = (p, go) => {
+			const q = SCAN.warnAsk(p.scan, p.name, t);
+			const dlg = openDialog({ title: q.title, host, closeLabel: t('drive.close') });
+			dlg.body.append(el('p', { class: 'dv-p', text: q.text }));
+			dlg.foot.append(
+				el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }),
+				el('button', { type: 'button', class: 'btn btn-danger', text: q.confirm, on: { click: () => { dlg.close(null); go(); } } }),
+			);
+		};
 		function lightbox(list, start) {
 			let i = start;
+			let cur = null;      // the stage's picture or video (drive-viewer.js)
+			const typing = (e) => e.target && /^(INPUT|TEXTAREA|SELECT|VIDEO)$/.test(e.target.tagName || '');
 			const onKey = (e) => {
+				if (typing(e)) return;
 				if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); } else if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+				else if (cur && cur.kind === 'image' && (e.key === '+' || e.key === '=')) { e.preventDefault(); cur.by(1.5); }
+				else if (cur && cur.kind === 'image' && e.key === '-') { e.preventDefault(); cur.by(1 / 1.5); }
+				else if (cur && cur.kind === 'image' && e.key === '0') { e.preventDefault(); cur.reset(); }
+				else if (viewer && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); full(); }
 			};
-			const dlg = openDialog({ title: '', host, wide: true, closeLabel: t('drive.close'), onClose: () => document.removeEventListener('keydown', onKey) });
+			const dlg = openDialog({
+				title: '', host, wide: true, closeLabel: t('drive.close'),
+				onClose: () => { document.removeEventListener('keydown', onKey); if (cur) cur.destroy(); cur = null; },
+			});
 			dlg.box.classList.add('dpv-light');
 			const stage = el('div', { class: 'dpv-stage' });
 			const meta = el('div', { class: 'dpv-meta' });
+			const tools = el('div', { class: 'dvw-tools' });
 			const prev = el('button', { type: 'button', class: 'dv-ib dpv-nav is-prev', 'aria-label': t('drive.photos.prev'), title: t('drive.photos.prev'), on: { click: () => go(-1) } }, [icon('back', 18)]);
 			const next = el('button', { type: 'button', class: 'dv-ib dpv-nav is-next', 'aria-label': t('drive.photos.next'), title: t('drive.photos.next'), on: { click: () => go(1) } }, [icon('chevron', 18)]);
-			dlg.body.append(el('div', { class: 'dpv-stage-wrap' }, [prev, stage, next]), meta);
+			dlg.body.append(el('div', { class: 'dpv-stage-wrap' }, [prev, stage, next]), el('div', { class: 'dvw-bar' }, [meta, tools]));
 			document.addEventListener('keydown', onKey);
 			function go(d) {
 				const j = i + d;
@@ -575,20 +598,45 @@
 				i = j;
 				show();
 			}
+			function full() {
+				if (!viewer) return;
+				const v = cur && cur.kind === 'video' ? cur.element : null;
+				viewer.fullscreen(v || stage);
+			}
 			function show() {
 				const p = list[i];
+				if (cur) { cur.destroy(); cur = null; }
 				dlg.setTitle(p.name);
 				clear(stage);
-				const box = el('span', { class: 'dpv-big' }, [icon(p.kind === 'video' ? 'video' : 'image', 40, '1.4')]);
-				stage.appendChild(box);
-				picture(box, p, true);
-				meta.textContent = [PS.photoWhen(p, locale()), pp ? pp.placeText(p) : '', p.kind === 'video' ? t('drive.photos.video') : ''].filter(Boolean).join(' · ');
+				clear(tools);
+				// Drive 1.19: blocked by the virus scan — the reason instead of "Speichern unter" / "Öffnen"
+				const blocked = SCAN && SCAN.isBlocked(p.scan);
+				if (viewer && p.kind === 'video') {
+					cur = viewer.video(stage, p, {
+						blocked,
+						// asked already when it was opened from "Dateien" (drive-view.js openNode)
+						ask: !blocked && !p.scanAsked && SCAN && SCAN.isWarning(p.scan) ? (play) => askWarned(p, play) : null,
+						openExternal: (x) => openFile(x, true),
+					});
+				} else if (viewer && !blocked) {
+					cur = viewer.picture(stage, p, { previewUrl: (x, large) => previewUrl(x, large), onSwipe: (d) => go(d) });
+					tools.append(
+						el('button', { type: 'button', class: 'dv-ib', 'aria-label': t('drive.viewer.zoomOut'), title: t('drive.viewer.zoomOut'), on: { click: () => cur && cur.by(1 / 1.5) } }, [icon('minus', 16)]),
+						el('button', { type: 'button', class: 'dv-ib', 'aria-label': t('drive.viewer.zoomIn'), title: t('drive.viewer.zoomIn'), on: { click: () => cur && cur.by(1.5) } }, [icon('plus', 16)]),
+					);
+				} else {
+					const box = el('span', { class: 'dpv-big' }, [icon(p.kind === 'video' ? 'video' : 'image', 40, '1.4')]);
+					stage.appendChild(box);
+					if (!blocked) picture(box, p, true);
+				}
+				if (viewer && !blocked) tools.append(el('button', { type: 'button', class: 'dv-ib', 'aria-label': t('drive.viewer.fullscreen'), title: t('drive.viewer.fullscreen'), on: { click: full } }, [icon('expand', 16)]));
+				// the details: where in the list, when, where, size and type
+				meta.textContent = [list.length > 1 ? `${i + 1} / ${list.length}` : '', PS.photoWhen(p, locale()), pp ? pp.placeText(p) : '', p.kind === 'video' ? t('drive.photos.video') : '',
+					p.size && o.formatBytes ? o.formatBytes(p.size, locale()) : '', p.mime || ''].filter(Boolean).join(' · ');
 				prev.disabled = i === 0;
 				next.disabled = i >= list.length - 1;
 				clear(dlg.foot);
 				const me = o.getMe();
-				// Drive 1.19: blocked by the virus scan — the reason instead of "Speichern unter" / "Öffnen"
-				const blocked = SCAN && SCAN.isBlocked(p.scan);
 				const c = SCAN ? SCAN.chip(p.scan, t) : null;
 				if (c) meta.appendChild(el('div', { class: 'scan-reason dpv-scan-reason', 'data-tone': c.tone, role: 'note' }, [icon('shield', 14), el('span', { text: SCAN.reason(p.scan, t) })]));
 				dlg.foot.append(
@@ -596,6 +644,7 @@
 					p.parentId ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { dlg.close(null); o.openFolder(p.parentId); } } }, [icon('folder', 14), el('span', { text: t('drive.search.showFolder') })]) : null,
 					me && me.links && me.links.node ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => portal(p.id) } }, [icon('cloud', 14), el('span', { text: t('drive.portal.open') })]) : null,
 					feats().albums ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => addDialog([p.id]) } }, [icon('plus', 14), el('span', { text: t('drive.photos.addTo') })]) : null,
+					!blocked && o.share && o.canShare && o.canShare(p) ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => o.share(p) } }, [icon('link', 14), el('span', { text: t('drive.viewer.share') })]) : null,
 					blocked ? null : el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => saveAs(p) } }, [icon('down', 14), el('span', { text: t('drive.saveAs') })]),
 					blocked ? null : el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: () => openFile(p) } }, [icon('open', 14), el('span', { text: t('drive.open') })]),
 				);

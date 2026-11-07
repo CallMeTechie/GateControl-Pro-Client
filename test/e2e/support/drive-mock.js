@@ -28,7 +28,8 @@ function coreDir() {
 }
 
 const PREFIX = '/api/v1/client/plugins/gatecontrol-drive/';
-const FORWARD = ['content-type', 'content-range'];
+// range: Drive 1.21's large view streams videos (gcdrive: → the media route with Range)
+const FORWARD = ['content-type', 'content-range', 'range'];
 
 async function createDrive(opts = {}) {
   const { driveServer } = require(path.join(coreDir(), 'test', 'fixtures', 'drive-server.js'));
@@ -43,7 +44,7 @@ async function createDrive(opts = {}) {
       for (const k of FORWARD) if (headers[k]) h[k] = headers[k];
       const fwd = http.request(`${srv.url}${url.pathname}${url.search}`, { method, headers: h }, (r) => {
         const out = {};
-        for (const k of ['content-type', 'content-length', 'retry-after']) if (r.headers[k]) out[k] = r.headers[k];
+        for (const k of ['content-type', 'content-length', 'retry-after', 'content-range', 'accept-ranges']) if (r.headers[k]) out[k] = r.headers[k];
         res.writeHead(r.statusCode, out);
         r.pipe(res);
       });
