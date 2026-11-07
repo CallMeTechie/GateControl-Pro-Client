@@ -40,6 +40,7 @@ let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
 let DriveService, DriveSync;
 let MailService;
+let CamerasService;
 let VaultService, windowsHello, windowsOcr, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
 let createDriveOnDemand, driveOnDemandExePath, parseDriveActionArgv, drivePathsOverlap;
@@ -111,6 +112,9 @@ try {
   // Mail (plugin gatecontrol-mail): the person's mail accounts on the own
   // server (core services/mail.js); absent in an older core.
   ({ MailService } = require('@gatecontrol/client-core'));
+  // Kameras im Heimnetz (plugin gatecontrol-door 1.6 "Tür & Kamera"): live picture, stills and
+  // clips (core services/cameras.js); absent in an older core.
+  ({ CamerasService } = require('@gatecontrol/client-core'));
   // Vault (plugin gatecontrol-vault): end-to-end encrypted password manager
   // (core docs/vault.md); quick search window on Strg+Alt+P.
   ({ VaultService, windowsHello } = require('@gatecontrol/client-core'));
@@ -185,8 +189,15 @@ installWindowGuard(app, {
 // Mail: the reading frame loads its pictures (img/<token>, cid/…) through
 // gcmail: — served by the core MailService with the client's sign-in (the
 // scheme has to be known before the app is ready).
-if (MailService && protocol && typeof protocol.registerSchemesAsPrivileged === 'function') {
-  protocol.registerSchemesAsPrivileged([{ scheme: MailService.SCHEME, privileges: { ...MailService.SCHEME_PRIVILEGES } }]);
+// Kameras: the page's <img> / <video> load the camera media (/camera-media/<token>/…
+// of the own server) through gccam: — served by the core CamerasService with the
+// client's connection, streamed (live.mp4, clips with Range). Electron takes the
+// privileged schemes in one call only.
+if (protocol && typeof protocol.registerSchemesAsPrivileged === 'function') {
+  const schemes = [];
+  if (MailService) schemes.push({ scheme: MailService.SCHEME, privileges: { ...MailService.SCHEME_PRIVILEGES } });
+  if (CamerasService && CamerasService.SCHEME) schemes.push({ scheme: CamerasService.SCHEME, privileges: { ...CamerasService.SCHEME_PRIVILEGES } });
+  if (schemes.length) protocol.registerSchemesAsPrivileged(schemes);
 }
 
 // ── Konfiguration ────────────────────────────────────────────
@@ -293,6 +304,7 @@ let vaultQuick = null; // Vault quick search window (./vault-quick.js)
 let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
 let drive = null; // Drive (core DriveService), one per app lifetime
 let mail = null; // Mail (core MailService), one per app lifetime
+let cameras = null; // Kameras im Heimnetz (core CamerasService), one per app lifetime
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
 let driveSyncTray = '';
 let driveOnDemandLocked = false; // letzter Status von gc-drive-sync: von Drive gestoppt?
@@ -1053,6 +1065,15 @@ function initializeServices() {
     notificationCenter: notifications?.notificationCenter,
   }) : null;
 
+  // Kameras im Heimnetz: shown while the plugin has home cameras the person sees;
+  // a camera toast shows its picture (from %TEMP%\gatecontrol-cameras) and opens the page.
+  cameras = CamerasService ? new CamerasService({
+    apiClient, log,
+    notificationCenter: notifications?.notificationCenter,
+    pushClient: notifications?.pushClient,
+    tempDir: () => path.join(app.getPath('temp'), 'gatecontrol-cameras'),
+  }) : null;
+
   // "Ordner sichern": folders of this PC backed up / synced with Drive. Runs
   // in the main process (tray), the state of each folder lives in
   // %APPDATA%\…\drive-sync (no tokens); deleted files go to the recycle bin.
@@ -1416,6 +1437,8 @@ function registerIpcHandlers() {
     driveSync,
     // mail:* channels + events, reset on server:setup (core, opt-in)
     mail,
+    // cameras:* channels + events, reset on server:setup (core, opt-in)
+    cameras,
     gatedropExplorer: gatedrop?.explorer,
     // drive-ondemand:* (Pro, ./ipc-pro.js)
     driveOnDemand,
@@ -1505,6 +1528,11 @@ app.on('ready', () => {
     try { protocol.handle(MailService.SCHEME, (req) => mail.handleProtocol(req)); } catch (err) { log.warn(`Mail protocol not registered: ${err.message}`); }
   }
   mail?.start();
+  // Kameras: media of the page (gccam:), availability, camera pushes → page / toast picture.
+  if (cameras && protocol && typeof protocol.handle === 'function') {
+    try { protocol.handle(CamerasService.SCHEME, (req) => cameras.handleProtocol(req)); } catch (err) { log.warn(`Camera protocol not registered: ${err.message}`); }
+  }
+  cameras?.start();
   // "Ordner sichern": watches the folders, a full run shortly after start and every 15 min.
   driveSync?.start();
   // Drive „Dateien bei Bedarf“: startet gc-drive-sync.exe nur, wenn eingeschaltet.
@@ -1677,6 +1705,7 @@ app.on('before-quit', (e) => {
   drive?.stop();
   // Mail: a waiting Microsoft sign-in ends, the offline cache is written.
   mail?.stop();
+  cameras?.stop();
   driveSync?.stop();
   // gc-drive-sync.exe beenden (endet sonst mit dem Prozess über --parent-pid).
   driveOnDemand?.stop().catch(() => {});

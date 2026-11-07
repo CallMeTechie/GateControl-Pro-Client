@@ -1,0 +1,114 @@
+/* ══════════════════════════════════════════════════════════
+   GateControl – Kameras (home cameras of gatecontrol-door, "Tür & Kamera")
+   Chips, player with overlay (LIVE / Standbild), Standbild speichern ·
+   Vollbild · Ton, "Clips heute" with type pills, camera cards;
+   uses the app's design tokens (--bg, --panel, --panel2, --line, --acc, …).
+   ══════════════════════════════════════════════════════════ */
+
+.cm { display: flex; flex-direction: column; flex-grow: 1; min-width: 0; min-height: 0; height: 100%; padding: 22px 24px 24px; gap: 14px; color: var(--text); box-sizing: border-box; }
+.cm button { font: inherit; color: inherit; }
+.cm [hidden] { display: none !important; }
+.cm-grow { flex-grow: 1; }
+.cm-sub { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+/* Head */
+.cm-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cm-head-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cm-title { display: flex; align-items: center; gap: 10px; }
+.cm-h { margin: 0; font-family: var(--font-disp); font-size: 26px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; }
+.cm-h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.cm-ib { width: 36px; height: 36px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 10px; border: 1px solid var(--line2); background: var(--panel2); cursor: pointer; }
+.cm-ib:hover { border-color: var(--faint); }
+.cm-ib:disabled { opacity: .5; cursor: default; }
+.cm-portal { display: inline-flex; align-items: center; gap: 6px; }
+.cm-banner { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); font-size: 12.5px; }
+
+/* Pills (type of a clip, state of a camera) */
+.cm-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.cm-pill.is-ok { background: var(--acc-bg); color: var(--acc-t); }
+.cm-pill.is-warn { background: var(--warn-bg); color: var(--warn); }
+.cm-pill.is-info { background: var(--info-bg); color: var(--info); }
+.cm-pill.is-err { background: var(--err-bg); color: var(--err); }
+.cm-pill.is-neu { background: var(--panel2); color: var(--muted); border: 1px solid var(--line); }
+
+/* Chips */
+.cm-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.cm-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line2); background: transparent; font-weight: 700; font-size: 13.5px; cursor: pointer; white-space: nowrap; }
+.cm-chip:hover { border-color: var(--faint); }
+.cm-chip.is-on { background: var(--acc); border-color: var(--acc); color: var(--acc-on); }
+.cm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); flex-shrink: 0; }
+.cm-chip.is-on .cm-dot { background: var(--acc-on); }
+.cm-chip.is-off .cm-dot { background: var(--faint); }
+.cm-chip:focus-visible, .cm-cam:focus-visible, .cm-clip:focus-visible, .cm-ib:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+
+/* Layout: player left, "Clips heute" right; below all cameras */
+.cm-main { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 980px) { .cm-main { grid-template-columns: minmax(0, 1fr); } }
+.cm-stage { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cm-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px 16px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); }
+.cm-card-head { display: flex; align-items: center; gap: 8px; }
+
+/* Player (16:9, dark in both themes) */
+.cm-player { position: relative; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: #11161D; color: #fff; outline: none; }
+.cm-player:fullscreen { border-radius: 0; aspect-ratio: auto; width: 100vw; height: 100vh; }
+.cm-media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #11161D; }
+.cm-ov-top, .cm-ov-bottom { position: absolute; left: 10px; right: 10px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.cm-ov-top { top: 10px; }
+.cm-ov-bottom { bottom: 10px; }
+.cm-player video[controls] ~ .cm-ov-bottom { bottom: 52px; }
+.cm-ov-pill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; background: rgba(0, 0, 0, .5); color: #fff; white-space: nowrap; }
+.cm-ov-pill.is-live { background: rgba(210, 59, 59, .88); }
+.cm-ov-pill.is-clip { background: rgba(56, 88, 196, .85); }
+.cm-ov-stamp { font-size: 12px; font-weight: 700; background: rgba(0, 0, 0, .5); padding: 2px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+.cm-ov-stamp:empty { display: none; }
+.cm-msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; font-size: 13px; color: #D5DBE3; }
+.cm-msg strong { font-size: 14px; color: #fff; }
+.cm-msg .btn { pointer-events: auto; }
+.cm-spin { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .25); border-top-color: #fff; animation: gcspin 1s linear infinite; }
+
+/* Buttons under the player */
+.cm-acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cm-act { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; }
+.cm-act.is-on { border-color: var(--acc); color: var(--acc-t); }
+.cm-act.is-busy svg { animation: gcspin 1s linear infinite; }
+.cm-under { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.cm-back { display: inline-flex; align-items: center; gap: 6px; }
+.cm-hint { margin: 0; flex: 1 1 280px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+/* Clips heute */
+.cm-clips { display: flex; flex-direction: column; }
+.cm-clip { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 8px 6px; border: 0; border-top: 1px solid var(--line); background: transparent; text-align: left; border-radius: 0; }
+.cm-clip:first-child { border-top: 0; }
+button.cm-clip { cursor: pointer; }
+button.cm-clip:hover { background: var(--panel2); }
+.cm-clip.is-on { background: var(--acc-bg); }
+.cm-clip.is-focus { box-shadow: inset 3px 0 0 var(--info); }
+.cm-th { position: relative; width: 76px; height: 48px; flex-shrink: 0; border-radius: 8px; overflow: hidden; background: #3A4450; }
+.cm-th img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cm-th-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(0, 0, 0, .25); }
+.cm-clip-tx { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.cm-clip-tx strong { font-size: 13.5px; }
+.cm-clip-pills { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.cm-note { display: flex; align-items: center; gap: 10px; padding: 12px 2px; font-size: 13px; color: var(--muted); }
+.cm-note.is-error { color: var(--err); }
+.cm-loading { padding: 24px 0; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* All cameras (cards) */
+.cm-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.cm-cam { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); text-align: left; cursor: pointer; }
+.cm-cam:hover { border-color: var(--line2); }
+.cm-cam.is-on { border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); }
+.cm-shot { position: relative; display: block; height: 140px; border-radius: 10px; overflow: hidden; background: #3A4450; }
+.cm-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cm-shot.is-off img { filter: grayscale(1) brightness(.75); }
+.cm-shot-none { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #C9D1DB; }
+.cm-shot-stamp { position: absolute; left: 8px; bottom: 8px; font-size: 11.5px; font-weight: 700; color: #fff; background: rgba(0, 0, 0, .45); padding: 2px 7px; border-radius: 6px; }
+.cm-cam-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cm-cam-row strong { font-size: 14px; }
+
+/* Empty / unavailable */
+.cm-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 56px 24px; text-align: center; color: var(--muted); font-size: 13px; }
+.cm-state strong { color: var(--text); font-size: 15px; }
+.cm-state svg { color: var(--faint); }
+.cm-state.is-error svg { color: var(--err); }
+.cm-state .btn { margin-top: 6px; }
