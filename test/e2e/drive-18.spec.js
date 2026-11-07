@@ -203,8 +203,17 @@ test.describe('drive 1.8 / 1.9', () => {
     for (const m of d.srv.state.media.values()) expect(m.data.includes(Buffer.from('IBAN'))).toBe(false);
     const file = [...d.srv.state.nodes.values()].find((n) => n.parentId === vault.nodeId && !n.isDir);
     expect(file.mime).toBe('application/octet-stream');
-    // opened: decrypted into a temporary folder
+    // opened (Drive plugin 1.22): in the app's viewer, decrypted in memory — no other program
     await fileRow.locator('.dv-open').click();
+    await expect(page.locator('.dv-dlg.dv-vv .dv-vv-text')).toHaveText(SECRET);
+    expect(events().filter((e) => e.type === 'shell.openPath')).toEqual([]);
+    await page.keyboard.press('Escape');
+    // "Mit anderem Programm öffnen" on purpose (asked first): decrypted into a temporary folder
+    await fileRow.locator('.dv-more-btn').click();
+    await page.locator('.dv-menu-item', { hasText: /Mit anderem Programm öffnen|Open with another program/ }).click();
+    const ask = page.locator('.dv-dlg').last();
+    await expect(ask).toContainText(/unverschlüsselt|unencrypted/);
+    await ask.locator('.dv-dlg-foot .btn-danger').click();
     const sha = crypto.createHash('sha256').update(SECRET).digest('hex');
     await expect.poll(() => events().filter((e) => e.type === 'shell.openPath').map((e) => e.sha256)).toContainEqual(sha);
     // links and the time travel are not offered in a vault
