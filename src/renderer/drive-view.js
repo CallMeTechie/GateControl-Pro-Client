@@ -401,7 +401,7 @@
 			access: null,
 			areas: [],
 			areaId: remembered('gc.drive.area'),
-			view: 'overview',   // overview (Drive 1.18) | folder | search | trash | links | sync | photos | storage
+			view: 'overview',   // overview (Drive 1.18) | folder | search | trash | links | sync | photos | storage | memories (Drive plugin 1.26)
 			folderId: null,
 			folder: null,
 			sort: DS.SORTS.includes(remembered('gc.drive.sort')) ? remembered('gc.drive.sort') : 'name',
@@ -520,6 +520,11 @@
 		};
 		const photosView = root.GCDrivePhotosView && typeof api.photos === 'function' ? root.GCDrivePhotosView.mount(extra) : null;
 		const storageView = root.GCDriveStorageView && typeof api.storage === 'function' ? root.GCDriveStorageView.mount(extra) : null;
+		// Drive plugin 1.26: "Erinnerungen" (drive-memories-view.js) — the overview's "Alle" and its memory cards
+		const memoriesView = root.GCDriveMemoriesView && root.GCDriveMemoriesState && typeof api.memoryCollections === 'function' ? root.GCDriveMemoriesView.mount({
+			...extra,
+			showPhotos: (items, start) => { if (photosView) photosView.lightbox(items, start); },
+		}) : null;
 		// Drive 1.18: "Übersicht" (drive-overview-view.js) — its tiles lead into the files, the photos, the deadlines
 		const overviewView = root.GCDriveOverviewView && root.GCDriveOverviewState && typeof api.overview === 'function' ? root.GCDriveOverviewView.mount({
 			...extra,
@@ -529,6 +534,8 @@
 			openFiles: () => openFiles(),
 			openDeadlines: () => openDeadlines(),
 			openPhotos: (target) => openPhotos(target),
+			// Drive plugin 1.26: the page "Erinnerungen" (false: an older Drive — "Fotos" as before)
+			openMemories: (collection) => openMemories(collection || null),
 			showPhotos: (items, start) => { if (photosView) photosView.lightbox(items, start); },
 			nameDialog: photosView && photosView.nameDialog ? (p, onClose) => photosView.nameDialog(p, onClose) : null,
 			openToFile: typeof o.openMailFiling === 'function' ? () => o.openMailFiling() : null,
@@ -560,7 +567,7 @@
 				S.previews.clear();
 			},
 		}) : null;
-		const VIEWS = { sync: syncView, photos: photosView, storage: storageView, settings: settingsView, overview: overviewView };
+		const VIEWS = { sync: syncView, photos: photosView, storage: storageView, settings: settingsView, overview: overviewView, memories: memoriesView };
 		// Drive 1.8 'docAi' (drive-docs-view.js) and 1.9 'vault' (drive-vault-view.js)
 		const docs = root.GCDriveDocsView && typeof api.insight === 'function' ? root.GCDriveDocsView.create({
 			api, t, getLocale: o.getLocale, ui: { el, icon, clear, openDialog }, host, toast, now, errorText: DS.errorText,
@@ -608,7 +615,7 @@
 			openWith: (n) => openNode(n, { asked: true, external: true }),
 			saveAs: (n) => saveAs(n),
 		}) : null;
-		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.selBar, refs.listWrap, refs.keys, ki ? ki.bar : null, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null, overviewView ? overviewView.el : null]);
+		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.selBar, refs.listWrap, refs.keys, ki ? ki.bar : null, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null, overviewView ? overviewView.el : null, memoriesView ? memoriesView.el : null]);
 		refs.empty = el('div', { class: 'dv-gate', hidden: true });
 		refs.main = el('div', { class: 'dv-main' }, [refs.side, refs.pane]);
 		rootEl.append(
@@ -775,7 +782,7 @@
 				const a = DS.currentArea(S.areas, S.areaId);
 				await loadFolder(S.folderId || (a && a.rootId), { quiet: true, fallback: a && a.rootId });
 			} else if (S.view === 'sync') openSync();
-			else if (S.view === 'photos' || S.view === 'storage' || S.view === 'overview') openExtra(S.view);
+			else if (S.view === 'photos' || S.view === 'storage' || S.view === 'overview' || S.view === 'memories') openExtra(S.view);
 			else if (S.view === 'trash') await loadTrash();
 			else if (S.view === 'links') await loadLinks();
 			else if (S.view === 'search') await runSearch();
@@ -878,7 +885,19 @@
 			if (view === 'photos') return !!photosView && DS.hasFeature(S.me, 'photos');
 			if (view === 'storage') return !!storageView && DS.hasFeature(S.me, 'storage');
 			if (view === 'overview') return !!overviewView;
+			if (view === 'memories') return !!memoriesView && DS.hasFeature(S.me, 'memoryCollections');
 			return false;
+		}
+
+		/**
+		 * Drive plugin 1.26 "Erinnerungen": the page, or one collection of it ({ id, kind, … } — a card of the overview).
+		 * false while this Drive does not have it (the overview then opens "Fotos").
+		 */
+		function openMemories(collection = null) {
+			if (!extraAvailable('memories')) return false;
+			memoriesView.prepare(collection);
+			openExtra('memories');
+			return true;
 		}
 
 		/** Drive 1.18 "Dateien": the folder shown last (or the area's top). */

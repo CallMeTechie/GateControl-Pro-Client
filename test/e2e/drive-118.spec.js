@@ -84,7 +84,10 @@ test.describe('drive 1.18', () => {
     const d = await mock.setDrive({ features: ['photos'] });
     const bilder = d.srv.mutate.dir(1, 'Bilder');
     const now = new Date();
-    d.srv.mutate.photo(bilder.id, 'Damals.jpg', { takenAt: new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 12).getTime() });
+    const ago = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 12).getTime();
+    d.srv.mutate.photo(bilder.id, 'Damals.jpg', { takenAt: ago });
+    // Drive plugin 1.26 (and the core for an older Drive): a memory only with more than 10 photos that day
+    for (let i = 1; i <= 10; i++) d.srv.mutate.photo(bilder.id, `Damals ${i}.jpg`, { takenAt: ago + i * 60000 });
     const { page } = await launchApp();
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
@@ -96,12 +99,12 @@ test.describe('drive 1.18', () => {
     await expect(ov.locator('[data-tile="activity"]')).toHaveCount(0);
     // a memory shows its photos large
     await ov.locator('[data-tile="memories"] .dov-mem').click();
-    await expect(page.locator('.dv-dlg.dpv-light .dv-dlg-h')).toHaveText('Damals.jpg');
+    await expect(page.locator('.dv-dlg.dpv-light .dv-dlg-h')).toHaveText(/^Damals( \d+)?\.jpg$/);
     await page.keyboard.press('Escape');
     // "Fotos": only the pictures, no "Vor einem Jahr"
     await root.locator('.dv-pages [data-page="photos"]').click();
-    // Damals.jpg and the Foto.jpg of the fake
-    await expect(root.locator('.dpv .dpv-month .dpv-tile')).toHaveCount(2);
+    // the eleven of that day and the Foto.jpg of the fake
+    await expect(root.locator('.dpv .dpv-month .dpv-tile')).toHaveCount(12);
     await expect(root.locator('.dpv-mem')).toHaveCount(0);
   });
 });

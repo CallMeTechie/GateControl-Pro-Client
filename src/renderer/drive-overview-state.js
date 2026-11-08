@@ -45,7 +45,7 @@
 	/** Which page a view of Drive belongs to: the overview, the photos, the files (folder, search, trash …) or none. */
 	function pageOf(view) {
 		if (view === 'overview') return 'overview';
-		if (view === 'photos') return 'photos';
+		if (view === 'photos' || view === 'memories') return 'photos';
 		if (['folder', 'search', 'trash', 'links', 'deadlines', 'ask'].includes(view)) return 'files';
 		return null;
 	}
