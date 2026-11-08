@@ -40,6 +40,7 @@ let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
 let DriveService, DriveSync;
 let MailService;
+let NotesService;
 let CamerasService;
 let DriveStreamService;
 let VaultService, windowsHello, windowsOcr, setupVaultQuick;
@@ -113,6 +114,9 @@ try {
   // Mail (plugin gatecontrol-mail): the person's mail accounts on the own
   // server (core services/mail.js); absent in an older core.
   ({ MailService } = require('@gatecontrol/client-core'));
+  // Notizen & Aufgaben (plugin gatecontrol-notizen): tasks, notes, Tresor notebooks and the "zu tun" of the other
+  // plugins (core services/notes.js); absent in an older core.
+  ({ NotesService } = require('@gatecontrol/client-core'));
   // Kameras im Heimnetz (plugin gatecontrol-door 1.6 "Tür & Kamera"): live picture, stills and
   // clips (core services/cameras.js); absent in an older core.
   ({ CamerasService } = require('@gatecontrol/client-core'));
@@ -316,6 +320,7 @@ let vaultQuick = null; // Vault quick search window (./vault-quick.js)
 let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
 let drive = null; // Drive (core DriveService), one per app lifetime
 let mail = null; // Mail (core MailService), one per app lifetime
+let notes = null; // Notizen & Aufgaben (core NotesService), one per app lifetime
 let cameras = null; // Kameras im Heimnetz (core CamerasService), one per app lifetime
 let driveStream = null; // Drive 1.21: the large view's gcdrive: (core DriveStreamService)
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
@@ -595,8 +600,8 @@ function createWindow() {
 
   // Vault auto-lock "immediately" (0): the window goes to the tray / taskbar.
   // Drive 1.11: "Beim Verlassen sperren" locks the Drive vaults the same way.
-  mainWindow.on('hide', () => { vault?.windowHidden(); drive?.windowHidden?.(); });
-  mainWindow.on('minimize', () => { vault?.windowHidden(); drive?.windowHidden?.(); });
+  mainWindow.on('hide', () => { vault?.windowHidden(); drive?.windowHidden?.(); notes?.windowHidden?.(); });
+  mainWindow.on('minimize', () => { vault?.windowHidden(); drive?.windowHidden?.(); notes?.windowHidden?.(); });
 }
 
 /** The app's theme resolved to dark / light (Vault quick search window). */
@@ -1078,6 +1083,25 @@ function initializeServices() {
     notificationCenter: notifications?.notificationCenter,
   }) : null;
 
+  // Notizen & Aufgaben: shown while the server lists the plugin (licensed) and lets the person in; attachments open
+  // from %TEMP%\gatecontrol-notizen; the Tresor notebooks' device key only under DPAPI (safeStorage), their lock asks
+  // Windows Hello and locks with the session, after 15 minutes without use and when the window is left.
+  notes = NotesService ? new NotesService({
+    apiClient, log, store, shell, dialog,
+    getMainWindow: () => mainWindow,
+    tempDir: () => path.join(app.getPath('temp'), 'gatecontrol-notizen'),
+    getLang: () => getLocale(),
+    pushClient: notifications?.pushClient,
+    // ein Klick auf eine Erinnerung öffnet die Aufgabe, eine Tresor-Anfrage den Tresor
+    notificationCenter: notifications?.notificationCenter,
+    protect: DriveService && typeof DriveService.safeStorageProtect === 'function' ? DriveService.safeStorageProtect(safeStorage) : null,
+    deviceName: () => _os.hostname().slice(0, 80) || 'PC',
+    consent: windowsHello && typeof windowsHello.createConsentVerifier === 'function' ? windowsHello.createConsentVerifier({ log }) : null,
+    powerMonitor,
+    // erkannter Text auf Bildern für die Suche (Windows.Media.Ocr, wenn eine OCR-Sprache da ist)
+    ocr: windowsOcr && typeof windowsOcr.createWindowsOcr === 'function' ? windowsOcr.createWindowsOcr({ log }) : null,
+  }) : null;
+
   // Kameras im Heimnetz: shown while the plugin has home cameras the person sees;
   // a camera toast shows its picture (from %TEMP%\gatecontrol-cameras) and opens the page.
   cameras = CamerasService ? new CamerasService({
@@ -1455,6 +1479,8 @@ function registerIpcHandlers() {
     driveStream,
     // mail:* channels + events, reset on server:setup (core, opt-in)
     mail,
+    // notes:* channels + events, reset on server:setup (core, opt-in)
+    notes,
     // cameras:* channels + events, reset on server:setup (core, opt-in)
     cameras,
     gatedropExplorer: gatedrop?.explorer,
@@ -1550,6 +1576,7 @@ app.on('ready', () => {
     try { protocol.handle(MailService.SCHEME, (req) => mail.handleProtocol(req)); } catch (err) { log.warn(`Mail protocol not registered: ${err.message}`); }
   }
   mail?.start();
+  notes?.start();
   // Kameras: media of the page (gccam:), availability, camera pushes → page / toast picture.
   if (cameras && protocol && typeof protocol.handle === 'function') {
     try { protocol.handle(CamerasService.SCHEME, (req) => cameras.handleProtocol(req)); } catch (err) { log.warn(`Camera protocol not registered: ${err.message}`); }
@@ -1731,6 +1758,7 @@ app.on('before-quit', (e) => {
   drive?.stop();
   // Mail: a waiting Microsoft sign-in ends, the offline cache is written.
   mail?.stop();
+  notes?.stop();
   cameras?.stop();
   driveSync?.stop();
   // gc-drive-sync.exe beenden (endet sonst mit dem Prozess über --parent-pid).

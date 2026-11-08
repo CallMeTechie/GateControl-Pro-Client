@@ -290,6 +290,11 @@ describe('inbox empty states and hints', () => {
     // the messenger's route opens the chats page when the app has it
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 7 }, [...pages, 'chats']), { page: 'chats', id: null });
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 7 }, pages.filter((p) => p !== 'chats')), { page: 'inbox', id: 7 });
+    // Notizen & Aufgaben: a reminder opens its task on the page (core NotesService.clickContext), without the page the inbox
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-notizen', id: 8, context: { kind: 'task', taskId: 11 } }, [...pages, 'notizen']), { page: 'notizen', id: null, context: { kind: 'task', taskId: 11 } });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-notizen', id: 8 }, pages.filter((p) => p !== 'notizen')), { page: 'inbox', id: 8 });
+    assert.deepEqual(NS.routeTarget('plg-gatecontrol-notizen/note/812', ['notizen']), { page: 'notizen', context: { note: 812 } });
+    assert.deepEqual(NS.routeTarget('plg-gatecontrol-notizen', ['notizen']), { page: 'notizen', context: null });
     // Schule: a toast the core claimed opens the page with its context (child / day / message)
     const ctx = { kind: 'changes', studentId: 3, date: '2026-10-20', messageId: null };
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7, context: ctx }, [...pages, 'schule']), { page: 'schule', id: null, context: ctx });

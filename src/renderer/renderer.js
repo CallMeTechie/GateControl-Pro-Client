@@ -11,7 +11,7 @@ const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
 	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, gatedrop: gatedropApi, vault: vaultApi, drive: driveApi,
-	signin: signinApi, mail: mailApi, cameras: camerasApi,
+	signin: signinApi, mail: mailApi, cameras: camerasApi, notes: notesApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
 
@@ -193,6 +193,7 @@ function refreshTexts() {
 	vaultView?.relabel();
 	driveView?.relabel();
 	mailView?.relabel();
+	notesView?.relabel();
 	camerasView?.relabel();
 	homeView?.relabel();
 	notifyRoutesView?.render();
@@ -214,6 +215,7 @@ let gatedropView = null; // gatedrop-view.js instance (GATEDROP section below)
 let vaultView = null; // vault-view.js instance (VAULT section below)
 let driveView = null; // drive-view.js instance (DRIVE section below)
 let mailView = null; // mail-view.js instance (MAIL section below)
+let notesView = null; // notes-view.js instance (NOTIZEN & AUFGABEN section below)
 let camerasView = null; // camera-view.js instance (KAMERAS section below)
 let homeView = null; // home-view.js instance: pinned favourites and events on the start page (MAIL section below)
 let notifyRoutesView = null; // notify-routes.js in Settings › Benachrichtigungen
@@ -366,7 +368,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'gatedrop', 'mail', 'drive', 'vault', 'kameras', 'inbox', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'gatedrop', 'mail', 'notizen', 'drive', 'vault', 'kameras', 'inbox', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -414,6 +416,9 @@ function navigateTo(page, opts = {}) {
 	// Mail: accounts, folders and the list load when shown
 	if (page === 'mail' && prev !== 'mail') mailView?.show();
 	else if (prev === 'mail' && page !== 'mail') mailView?.hide();
+	// Notizen & Aufgaben: the menu and Mein Tag load when shown
+	if (page === 'notizen' && prev !== 'notizen') notesView?.show();
+	else if (prev === 'notizen' && page !== 'notizen') notesView?.hide();
 	// Kameras: live picture / stills and clips only while the page is shown
 	if (page === 'kameras' && prev !== 'kameras') camerasView?.show();
 	else if (prev === 'kameras' && page !== 'kameras') camerasView?.hide();
@@ -2561,6 +2566,7 @@ function shownPages() {
 			: p === 'gatedrop' ? !!gatedropView && !$('#nav-gatedrop').hidden
 				: p === 'drive' ? !!driveView && !$('#nav-drive').hidden
 					: p === 'mail' ? !!mailView && !$('#nav-mail').hidden
+					: p === 'notizen' ? !!notesView && !$('#nav-notizen').hidden
 					: p === 'kameras' ? !!camerasView && !$('#nav-kameras').hidden
 					: p === 'vault' ? !!vaultView && !$('#nav-vault').hidden : true));
 }
@@ -2584,6 +2590,13 @@ function openMail(context) {
 	if (!mailView) return;
 	navigateTo('mail');
 	mailView.open(context || null);
+}
+
+/** Notizen & Aufgaben on a push target (a task, a list, a notebook, a Tresor) or { quick: true } (Strg+N). */
+function openNotes(context) {
+	if (!notesView) return;
+	navigateTo('notizen');
+	notesView.open(context || null);
 }
 
 /** GateDrop on a push target (Empfangen / Links, a send), e.g. from a toast click. */
@@ -2677,6 +2690,8 @@ if (notifyAvailable()) {
 			openDrive(target.context);
 		} else if (target.page === 'mail') {
 			openMail(target.context);
+		} else if (target.page === 'notizen') {
+			openNotes(target.context);
 		} else if (target.page === 'kameras') {
 			openCameras(target.context);
 		} else {
@@ -2927,6 +2942,7 @@ async function openCardRoute(route, target) {
 		else if (own.page === 'gatedrop') openGateDrop(own.context);
 		else if (own.page === 'vault') openVault(own.context);
 		else if (own.page === 'mail') openMail(own.context);
+		else if (own.page === 'notizen') openNotes(own.context);
 		else navigateTo(own.page);
 		return true;
 	}
@@ -3190,6 +3206,62 @@ function refreshMailBadge(st) {
 }
 mailApi?.onState?.(refreshMailBadge);
 if (mailView) mailApi.status().then(refreshMailBadge).catch(() => {});
+
+// ══════════════════════════════════════════════════════════
+//  NOTIZEN & AUFGABEN (plugin gatecontrol-notizen: tasks, notes and the
+//  "zu tun" of the other plugins)
+//  Data: window.gatecontrol.notes (core NotesService in main); the page is
+//  built by notes-view.js (window.GCNotesView) with notes-state.js and
+//  notes-md.js. The nav entry is shown only while the server lists the
+//  plugin (with its licence) and lets the person in; its badge counts
+//  "Mein Tag". Strg+N anywhere in the app: the quick entry.
+// ══════════════════════════════════════════════════════════
+function renderNotesBadge(count) {
+	const badge = $('#notes-badge');
+	if (!badge) return;
+	const n = Number(count) || 0;
+	badge.hidden = n <= 0;
+	badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+notesView = notesApi && window.GCNotesView && $('#page-notizen')
+	? window.GCNotesView.mount({
+		root: $('#page-notizen'),
+		api: notesApi,
+		t,
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		pages: () => shownPages(),
+		// an item of another plugin: its page here (Mail's mail, Drive's deadline, Schule), else its portal tab
+		openTarget: (target) => {
+			if (!target) return;
+			if (target.page === 'mail') openMail(target.context);
+			else if (target.page === 'drive') openDrive(target.context);
+			else if (target.page === 'schule') openSchool(target.context);
+			else if (target.page) navigateTo(target.page);
+			else if (target.portal) portal.open({ next: target.portal }).catch(() => showToast(t('notes.portalOff'), 'info'));
+		},
+		// links of a note: in the default browser (core shell:open-external checks them)
+		openExternal: (url) => { shell.openExternal(url).catch(() => {}); },
+		onCount: (n) => renderNotesBadge(n),
+		onStatus: (st) => {
+			const show = !!st && st.state === 'available';
+			$('#nav-notizen').hidden = !show;
+			if (!show) renderNotesBadge(0);
+			if (!show && currentPage === 'notizen' && st && st.state === 'unavailable') navigateTo('status');
+		},
+	})
+	: null;
+
+// Strg+N: the quick entry of Notizen & Aufgaben from every page (inside the Mail page Mail keeps its own Strg+N for a
+// new mail — it handles the key first; the setup and an open dialog are left alone)
+document.addEventListener('keydown', (e) => {
+	if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || (e.key !== 'n' && e.key !== 'N')) return;
+	if (!notesView || $('#nav-notizen').hidden || currentPage === 'setup') return;
+	if (document.querySelector('.scrim:not([hidden])')) return;
+	e.preventDefault();
+	openNotes({ quick: true });
+});
 
 // Explorer-Kontextmenü „GateControl Drive ›“ (Dateien bei Bedarf): „Link
 // teilen …“ und „Ältere Versionen“ öffnen den Dialog der Drive-Seite.
