@@ -47,12 +47,19 @@ test.describe('mail: new mails', () => {
     expect(await view(p)).toMatchObject({ scrollTop: 0, first: '902' });
     await expect(root.locator('.ml-newabove')).toHaveCount(0);
 
-    // a mail open in the fifth row; five new ones would push it out of view: the list stays at the top
-    await root.locator('.ml-row').nth(4).click();
+    // a mail open in the third row (fully in view, so opening it does not scroll the list: still at the top);
+    // as many new ones as push it out of view, whatever the window's height: the list stays at the top
+    await root.locator('.ml-row').nth(2).click();
     await expect(root.locator('.ml-row.on')).toHaveCount(1);
-    for (let i = 0; i < 5; i += 1) add(m, 910 + i);
-    await reload(root, 914);
-    expect(await view(p)).toMatchObject({ scrollTop: 0, first: '914' });
+    await expect(root.locator('.ml-read-subj')).toBeVisible();
+    expect((await view(p)).scrollTop).toBe(0);
+    const n = await p.evaluate(() => {
+      const rows = document.querySelector('#page-mail .ml-rows');
+      return Math.ceil(rows.clientHeight / rows.querySelector('.ml-row').getBoundingClientRect().height) + 1;
+    });
+    for (let i = 0; i < n; i += 1) add(m, 910 + i);
+    await reload(root, 910 + n - 1);
+    expect(await view(p)).toMatchObject({ scrollTop: 0, first: String(910 + n - 1) });
     await expect(root.locator('.ml-newabove')).toHaveCount(0);
   });
 
