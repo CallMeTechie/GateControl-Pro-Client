@@ -6,7 +6,7 @@
  * collections by kind in the order of the page ("Heute in früheren Jahren", "Ausflüge und Reisen", "Mit deinen
  * Leuten", "Diesen Monat in früheren Jahren", "Jahresrückblick", "Orte") and puts a card into words ("Heute vor 2
  * Jahren" · "8. November 2024 · 14 Fotos", "Hamburg, Lübeck" · "5 Tage · Juli 2025 · 87 Fotos", "Mit Noah", "2025 im
- * Rückblick", "Langenlonsheim" · "12 Fotos").
+ * Rückblick", "Langenlonsheim" · "12 Fotos"); the overview's picks (Drive plugin 1.28) take the same titles (pickText).
  * Loaded as a plain script before drive-memories-view.js (window.GCDriveMemoriesState) and required by the node tests
  * (test/drive-126-state.test.js). `t` is the i18n function (keys drive.mem.* of the app locales).
  */
@@ -79,10 +79,18 @@
 		return { title: str(c.place && c.place.name), sub: n };
 	}
 
+	/**
+	 * A card of the overview's picks (Drive plugin 1.28, `memoryPicks`: a collection of this page on a day without
+	 * „Heute vor X Jahren“): { title, sub } — the title as this page names it, the photo count below.
+	 */
+	function pickText(c, { t, locale = 'de' } = {}) {
+		return { title: cardText(c, { t, locale }).title || t('drive.ov.mem.title'), sub: plural(t, 'drive.photos.count', c ? c.count : 0, locale) };
+	}
+
 	/** The heading of a section. */
 	function sectionTitle(kind, t) {
 		return t(`drive.mem.sec.${KINDS.includes(kind) ? kind : 'place'}`);
 	}
 
-	return { KINDS, available, sections, cardText, sectionTitle, monthYear, fullDate };
+	return { KINDS, available, sections, cardText, pickText, sectionTitle, monthYear, fullDate };
 });
