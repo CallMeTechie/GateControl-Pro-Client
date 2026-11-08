@@ -218,6 +218,48 @@ describe('mail-state', () => {
   });
 });
 
+describe('new mails while the list is shown', () => {
+  const old = [10, 9, 8, 7, 6];
+
+  it('at the top the list stays at the top, no pill', () => {
+    assert.deepEqual(MS.newMailsAbove({ before: old, after: [12, 11, ...old], anchor: 10, atTop: true, seen: old, pending: [] }), { toTop: true, pending: [] });
+    // nothing in front: nothing to do (a mail opened further down is still brought into view)
+    assert.deepEqual(MS.newMailsAbove({ before: old, after: [...old, 5], anchor: 10, atTop: true, seen: old }), { toTop: false, pending: [] });
+    // a pill left from before goes at the top
+    assert.deepEqual(MS.newMailsAbove({ before: old, after: [11, ...old], anchor: 10, atTop: true, seen: old, pending: [10] }).pending, []);
+    // the first list (nothing shown before): nothing
+    assert.deepEqual(MS.newMailsAbove({ before: [], after: old, anchor: null, atTop: true }), { toTop: false, pending: [] });
+  });
+
+  it('further down the row in view keeps its place and the pill counts the new ones above', () => {
+    const r = MS.newMailsAbove({ before: old, after: [12, 11, ...old], anchor: 8, atTop: false, seen: old, pending: [] });
+    assert.deepEqual(r, { toTop: false, pending: [12, 11] });
+    assert.deepEqual(MS.newMailsAbove({ before: [12, 11, ...old], after: [13, 12, 11, ...old], anchor: 8, atTop: false, seen: [12, 11, ...old], pending: r.pending }).pending, [12, 11, 13]);
+  });
+
+  it('only mails never seen and before the row in view count; gone ones leave', () => {
+    // below the row in view, the next page
+    assert.deepEqual(MS.newMailsAbove({ before: old, after: [10, 9, 8, 99, 7, 6], anchor: 8, atTop: false, seen: old }).pending, []);
+    assert.deepEqual(MS.newMailsAbove({ before: old, after: [...old, 5, 4], anchor: 8, atTop: false, seen: old }).pending, []);
+    // put back (seen before)
+    assert.deepEqual(MS.newMailsAbove({ before: [10, 8, 7, 6], after: old, anchor: 7, atTop: false, seen: old }).pending, []);
+    // the row in view went away: no guess
+    assert.deepEqual(MS.newMailsAbove({ before: old, after: [11, 10, 9, 7, 6], anchor: 8, atTop: false, seen: old }).pending, []);
+    // a pending mail that left the list
+    assert.deepEqual(MS.newMailsAbove({ before: [12, 11, ...old], after: [11, ...old], anchor: 9, atTop: false, seen: [12, 11, ...old], pending: [12, 11] }).pending, [11]);
+  });
+
+  it('the pill: texts in both languages, the list counts as at the top within a few px', () => {
+    const de = JSON.parse(read('src', 'i18n', 'de.json')).mail.newAbove;
+    const en = JSON.parse(read('src', 'i18n', 'en.json')).mail.newAbove;
+    assert.equal(de.one, '{{count}} neue Mail');
+    assert.equal(de.other, '{{count}} neue Mails');
+    assert.equal(en.one, '{{count}} new email');
+    assert.equal(en.other, '{{count}} new emails');
+    assert.ok(MS.TOP_SLOP > 0 && MS.TOP_SLOP <= 16);
+  });
+});
+
 describe('mail page wiring', () => {
   it('index.html: state before view, nav entry hidden, styles, CSP lets gcmail: pictures in', () => {
     const html = read('src', 'renderer', 'index.html');

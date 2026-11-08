@@ -76,7 +76,7 @@
 .ml-quota-tx { font-size: 11.5px; color: var(--faint); }
 
 /* ── List (middle) ───────────────────────────────────── */
-.ml-list { width: 360px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--bg); }
+.ml-list { position: relative; width: 360px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--bg); }
 .ml-list > :not(.ml-rows) { flex-shrink: 0; }
 .ml.is-wide .ml-list { width: auto; flex-grow: 1; border-right: 0; }
 .ml-head { display: flex; align-items: center; gap: 8px; padding: 18px 16px 8px; }
@@ -103,6 +103,9 @@
 .ml-banner.is-warn { background: var(--warn-bg); color: var(--text); }
 .ml-banner.is-warn svg { color: var(--warn); }
 .ml-rows { flex-grow: 1; min-height: 0; overflow-y: auto; outline: none; }
+/* „↑ n neue Mails“: new mails above the view (the list's top + 8px, set by mail-view.js) */
+.ml-newabove { position: absolute; left: 50%; transform: translateX(-50%); z-index: 5; display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 14px 0 11px; border-radius: 999px; border: 0; background: var(--acc); color: var(--acc-on); font-size: 12.5px; font-weight: 600; white-space: nowrap; cursor: pointer; box-shadow: var(--shadow); }
+.ml-newabove:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 .ml-row { position: relative; display: flex; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
 .ml-row:hover { background: var(--panel); }
 .ml-row.on { background: var(--panel2); box-shadow: inset 3px 0 0 var(--acc); }

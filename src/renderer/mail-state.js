@@ -1664,6 +1664,30 @@
 	/** Does the item open (a free/busy or private one of a shared calendar does not: no eventId)? */
 	function itemOpens(x) { return !!(x && (x.overlayId || x.eventId)); }
 
+	// ── New mails while the list is shown ─────────────────────────
+
+	/** The list counts as „at the top“ up to this many px scrolled. */
+	const TOP_SLOP = 8;
+
+	/**
+	 * The list was rebuilt with the mails [after] (ids in order) instead of [before]; [anchor] is the id of the row
+	 * that stood first in view (null without one), [atTop] whether the list stood at its top. A mail opened further
+	 * down was kept in view, so mails put in front pushed the newest ones above the view:
+	 * - at the top the list stays at the top (`toTop`: something came in front of the anchor), no pill;
+	 * - further down the anchor keeps its place, and `pending` gains the mails never [seen] in this list that now
+	 *   stand before it (mails further down, the next page, a mail put back do not count) — the pill „↑ n neue Mails“.
+	 * Mails no longer in the list leave `pending`. → { toTop, pending }
+	 */
+	function newMailsAbove({ before = [], after = [], anchor = null, atTop = true, seen = [], pending = [] } = {}) {
+		const at = anchor == null ? -1 : after.indexOf(anchor);
+		if (atTop) return { toTop: at > 0, pending: [] };
+		const known = new Set(seen);
+		const now = new Set(after);
+		const above = at > 0 ? after.slice(0, at).filter((id) => !known.has(id)) : [];
+		const out = [...new Set([...pending, ...above])].filter((id) => now.has(id));
+		return { toTop: false, pending: before.length ? out : [] };
+	}
+
 	function errorText(r, t, lang) {
 		// Mail 1.8: 423 quarantined | scan_pending | scan_blocked, 410 attachment_removed, 409 attachment_blocked, 422 infected
 		const scanText = SCAN ? SCAN.refusalText(r, t) : null;
@@ -1851,5 +1875,7 @@
 		sharedInfo,
 		shareSub,
 		itemOpens,
+		TOP_SLOP,
+		newMailsAbove,
 	};
 });

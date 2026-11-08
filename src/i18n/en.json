@@ -2899,6 +2899,10 @@
     "accountProblem": "Account needs attention",
     "addAccount": "Add account",
     "newMail": "New mail",
+    "newAbove": {
+      "one": "{{count}} new email",
+      "other": "{{count}} new emails"
+    },
     "refresh": "Refresh",
     "retry": "Try again",
     "loading": "Loading …",
