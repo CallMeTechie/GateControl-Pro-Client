@@ -2899,6 +2899,10 @@
     "accountProblem": "Konto braucht Aufmerksamkeit",
     "addAccount": "Konto hinzufügen",
     "newMail": "Neue Mail",
+    "newAbove": {
+      "one": "{{count}} neue Mail",
+      "other": "{{count}} neue Mails"
+    },
     "refresh": "Aktualisieren",
     "retry": "Erneut versuchen",
     "loading": "Wird geladen …",

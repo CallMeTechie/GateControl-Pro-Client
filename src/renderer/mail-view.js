@@ -105,6 +105,7 @@
 		close: 'M6 6l12 12M18 6L6 18',
 		chevron: 'M9 6l6 6-6 6',
 		chevDown: 'M6 9l6 6 6-6',
+		up: 'M12 19V5|M5 12l7-7 7 7',
 		back: 'M15 6l-6 6 6 6',
 		copy: 'M9 9h11v11H9z|M5 15H4V4h11v1',
 		more: 'M5 12h.01M12 12h.01M19 12h.01',
@@ -389,6 +390,9 @@
 			listError: null,
 			listSeq: 0,
 			selectedId: null,
+			shownIds: [],           // the mails the list showed last (ids in order)
+			seenIds: new Set(),     // every mail shown in this list (box, folder, tab, filter, search)
+			newAbove: [],           // mails that came in above the view while it was scrolled down (the pill)
 			pane: 'empty',          // 'empty' | 'read' | 'compose' | 'sender'
 			read: null,             // { message, doc, docDark, light, ai, thread, aiError, suggest: Map(aid → { suggestion, duplicate }) }
 			readSeq: 0,
@@ -517,7 +521,7 @@
 			if (v.kind === 'filing') { renderFiling(); return; }
 			if (v.kind === 'outbox') { renderOutbox(); return; }
 			S.loading = true;
-			if (!more && !keep) { S.items = []; S.next = null; S.listError = null; S.resetScroll = true; }
+			if (!more && !keep) { S.items = []; S.next = null; S.listError = null; S.resetScroll = true; S.seenIds = new Set(); S.newAbove = []; }
 			renderList();
 			let r;
 			if (v.kind === 'search') {
@@ -756,8 +760,17 @@
 			if (S.view.kind === 'filing') return renderFiling();
 			if (S.view.kind === 'outbox') return renderOutbox();
 			const oldRows = listCol.querySelector('.ml-rows');
-			const keepScroll = oldRows && !S.resetScroll ? oldRows.scrollTop : 0;
+			const reset = !oldRows || S.resetScroll;
+			const keepScroll = reset ? 0 : oldRows.scrollTop;
 			S.resetScroll = false;
+			// new mails in front (MS.newMailsAbove): at the top the list stays there, further down the first row in
+			// view keeps its place and the pill counts the new ones above
+			const ids = S.items.map((m) => m.id);
+			const anchor = reset ? null : firstInView(oldRows);
+			const fresh = MS.newMailsAbove({ before: S.shownIds, after: ids, anchor: anchor && anchor.id, atTop: keepScroll <= MS.TOP_SLOP, seen: [...S.seenIds], pending: S.newAbove });
+			S.newAbove = fresh.pending;
+			S.shownIds = ids;
+			for (const id of ids) S.seenIds.add(id);
 			clear(listCol);
 			const v = S.view;
 			const head = MS.viewTitle(v, S.me, S.folders, t);
@@ -813,9 +826,38 @@
 				rows.addEventListener('scroll', () => { if (!S.loading && S.next && rows.scrollTop + rows.clientHeight > rows.scrollHeight - 200) loadList({ more: true }); });
 			}
 			listCol.append(rows);
-			if (keepScroll) rows.scrollTop = keepScroll;
-			const sel = S.selectedId && rows.querySelector(`[data-id="${S.selectedId}"]`);
+			const kept = !fresh.toTop && anchor && rows.querySelector(`.ml-row[data-id="${anchor.id}"]`);
+			if (kept) rows.scrollTop = kept.getBoundingClientRect().top - rows.getBoundingClientRect().top - anchor.off;
+			else if (keepScroll && !fresh.toTop) rows.scrollTop = keepScroll;
+			// the mail open further down is not pulled into view when new mails came in at the top
+			const sel = !fresh.toTop && S.selectedId && rows.querySelector(`[data-id="${S.selectedId}"]`);
 			if (sel) sel.scrollIntoView({ block: 'nearest' });
+			if (S.newAbove.length) {
+				const pill = el('button', { type: 'button', class: 'ml-newabove', on: { click: () => rows.scrollTo({ top: 0, behavior: 'smooth' }) } }, [
+					icon('up', 14),
+					el('span', { text: t(S.newAbove.length === 1 ? 'mail.newAbove.one' : 'mail.newAbove.other', { count: S.newAbove.length }) }),
+				]);
+				pill.style.top = `${rows.offsetTop + 8}px`;
+				listCol.append(pill);
+				// gone once the list is at the top again
+				rows.addEventListener('scroll', () => {
+					if (rows.scrollTop > MS.TOP_SLOP || !S.newAbove.length) return;
+					S.newAbove = [];
+					pill.remove();
+				});
+			}
+		}
+
+		/** The row first in view of [rows] (its id as in S.items) and how far its top is below the list's top. */
+		function firstInView(rows) {
+			const top = rows.getBoundingClientRect().top;
+			for (const r of rows.querySelectorAll('.ml-row')) {
+				const b = r.getBoundingClientRect();
+				if (b.bottom <= top + 1) continue;
+				const id = S.shownIds.find((x) => String(x) === r.dataset.id);
+				return id === undefined ? null : { id, off: b.top - top };
+			}
+			return null;
 		}
 
 		function rowEl(m) {
