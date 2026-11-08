@@ -31,6 +31,7 @@
 	 * @param {Function} o.openFolder - (folderId)
 	 * @param {Function} o.openDeadlines - "Fristen"
 	 * @param {Function} o.openPhotos - ({ tab?, person?, place?, name? }) the page "Fotos", there
+	 * @param {Function} [o.openMemories] - (collection | null) the page "Erinnerungen" (Drive plugin 1.26) → false without it
 	 * @param {Function} o.showPhotos - (items, start) the photos large (the lightbox of "Fotos")
 	 * @param {Function} [o.nameDialog] - (person) "Wer ist das?"
 	 * @param {Function} [o.openToFile] - Mail › "Zum Ablegen"
@@ -166,10 +167,14 @@
 				preview(m.cover).then((u) => { if (u) { img.src = u; card.classList.add('has-img'); } });
 				box.appendChild(card);
 			});
-			return panel('memories', t('drive.ov.mem.title'), { link: t('drive.ov.all'), onLink: () => o.openPhotos({}), cls: ' is-wide' }, [box]);
+			// "Alle": the page "Erinnerungen" (Drive plugin 1.26), with an older Drive "Fotos"
+			const all = () => { if (!(typeof o.openMemories === 'function' && o.openMemories(null))) o.openPhotos({}); };
+			return panel('memories', t('drive.ov.mem.title'), { link: t('drive.ov.all'), onLink: all, cls: ' is-wide' }, [box]);
 		}
 
 		async function openMemory(m) {
+			// Drive plugin 1.26: the collection "Heute vor X Jahren" on the page "Erinnerungen" (every photo of it)
+			if (m.id && typeof o.openMemories === 'function' && o.openMemories({ id: m.id, kind: 'day', yearsAgo: m.yearsAgo, date: m.date, count: m.count, cover: m.cover })) return;
 			let items = m.items && m.items.length >= m.count ? m.items : null;
 			if (!items) {
 				const r = await Promise.resolve(api.memories()).catch(fail);

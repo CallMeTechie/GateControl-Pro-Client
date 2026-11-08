@@ -837,6 +837,16 @@ button.dov-store { cursor: pointer; }
 .dov-place { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
 .dov-place:hover { color: var(--text); text-decoration: underline; }
 .dov-row:focus-visible, .dov-link:focus-visible, .dov-mem:focus-visible, .dov-face:focus-visible, .dov-map:focus-visible, .dov-place:focus-visible, .dov-store:focus-visible, .dov-sync:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+/* Drive plugin 1.26: the page "Erinnerungen" (drive-memories-view.js) — the overview's memory cards by section */
+.dmm { display: flex; flex-direction: column; gap: 12px; flex-grow: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.dmm-crumbs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dmm-crumbs .dsv-h { margin: 0; }
+.dmm-sep { color: var(--muted); }
+.dmm-sec { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.dmm-h { margin: 0; font-size: 14px; }
+.dmm-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.dmm-card { min-height: 160px; }
+.dmm-more { display: flex; justify-content: center; padding-top: 6px; }
 
 /* ── Drive 1.21: the large view of pictures and videos (drive-viewer.js) ── */
 .dvw-pic { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; user-select: none; }

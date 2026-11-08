@@ -2876,6 +2876,32 @@
       "openWithTitle": "Leave the vault?",
       "openWithText": "The other program gets the file unencrypted: GateControl puts a copy into the temp folder for it and deletes it again after about a minute (later while the program still holds it, at the latest when the vaults lock). What the program itself keeps of it (history, previews, copies) is no longer protected by the vault.",
       "openWithGo": "Open anyway"
+    },
+    "mem": {
+      "title": "Memories",
+      "private": "Only private photos – nothing from your work folder and no photos still to be sorted as work or private.",
+      "none": "No memories yet. They appear once there are enough private photos – for example more than 10 on one day.",
+      "empty": "There are no photos here any more.",
+      "more": "Load more",
+      "trip": "Trip",
+      "with": "With {{name}}",
+      "year": "{{year}} in review",
+      "days": {
+        "one": "1 day",
+        "other": "{{count}} days"
+      },
+      "monthAgo": {
+        "one": "This month a year ago",
+        "other": "This month {{count}} years ago"
+      },
+      "sec": {
+        "day": "On this day in earlier years",
+        "trip": "Trips and travels",
+        "person": "With your people",
+        "month": "This month in earlier years",
+        "year": "Year in review",
+        "place": "Places"
+      }
     }
   },
   "mail": {

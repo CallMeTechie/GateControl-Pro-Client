@@ -2876,6 +2876,32 @@
       "openWithTitle": "Tresor verlassen?",
       "openWithText": "Das andere Programm bekommt die Datei unverschlüsselt: GateControl legt dafür eine Kopie im Temp-Ordner an und löscht sie nach etwa einer Minute wieder (später, solange das Programm sie noch offen hat, spätestens beim Sperren). Was das Programm selbst davon behält (Verlauf, Vorschaubilder, Kopien), schützt der Tresor nicht mehr.",
       "openWithGo": "Trotzdem öffnen"
+    },
+    "mem": {
+      "title": "Erinnerungen",
+      "private": "Nur private Fotos – nichts aus deinem Arbeitsordner und keine Fotos, die noch als Arbeit oder privat eingeordnet werden müssen.",
+      "none": "Noch keine Erinnerungen. Sie erscheinen, sobald genug private Fotos da sind – zum Beispiel mehr als 10 an einem Tag.",
+      "empty": "Hier sind keine Fotos mehr.",
+      "more": "Mehr laden",
+      "trip": "Ausflug",
+      "with": "Mit {{name}}",
+      "year": "{{year}} im Rückblick",
+      "days": {
+        "one": "1 Tag",
+        "other": "{{count}} Tage"
+      },
+      "monthAgo": {
+        "one": "Diesen Monat vor einem Jahr",
+        "other": "Diesen Monat vor {{count}} Jahren"
+      },
+      "sec": {
+        "day": "Heute in früheren Jahren",
+        "trip": "Ausflüge und Reisen",
+        "person": "Mit deinen Leuten",
+        "month": "Diesen Monat in früheren Jahren",
+        "year": "Jahresrückblick",
+        "place": "Orte"
+      }
     }
   },
   "mail": {
