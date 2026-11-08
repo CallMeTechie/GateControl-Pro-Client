@@ -4,7 +4,9 @@
  * Drive 1.18 (mockup WinStart): the page Drive opens on the overview — tiles in two rows: "Zu erledigen" (the next
  * deadlines, photos to review, mail attachments to file), "Zuletzt geöffnet", "Neu in Familie" with the storage
  * (and the state of "Ordner sichern") below; "Erinnerungen" (wide), "Personen" (with "Wer ist das?") and "Orte" (a
- * small map: the tiles of the main process's map service as pictures, no map to move; at 0 × 0 nothing is placed).
+ * small map: the tiles of the main process's map service as pictures, no map to move; at 0 × 0 nothing is placed). On a
+ * day without „Heute vor X Jahren“ "Erinnerungen" shows the picks of the page "Erinnerungen" (Drive plugin 1.28,
+ * memoryPicks) with its titles; a card opens its collection there.
  * A tile shows only when it has something (the core decides: drive.overview() → { overview, view }; a Drive without
  * `overview` gets one the core built from what it has). What changes elsewhere reloads it, at most every 15 s.
  *
@@ -155,18 +157,29 @@
 			return panel('storage', t('drive.ov.storage.title'), {}, [storageFoot(d, v)]);
 		}
 
+		/** A card of "Erinnerungen": the cover, the title, the line; a click `go`. */
+		function memoryCard(cover, tx, go, id = null) {
+			const img = el('img', { class: 'dov-mem-img', alt: '' });
+			const card = el('button', { type: 'button', class: 'dov-mem', 'aria-label': `${tx.title}, ${tx.sub}`, ...(id ? { 'data-memory': id } : {}), on: { click: go } }, [
+				img,
+				el('span', { class: 'dov-mem-tx' }, [el('b', { text: tx.title }), el('span', { text: tx.sub })]),
+			]);
+			preview(cover).then((u) => { if (u) { img.src = u; card.classList.add('has-img'); } });
+			return card;
+		}
+
 		function memoriesPanel(d, v) {
 			const box = el('div', { class: 'dov-mems' });
-			d.memories.forEach((m, i) => {
-				const tx = OS.memoryText(m, v.memories[i], { t, locale: locale() });
-				const img = el('img', { class: 'dov-mem-img', alt: '' });
-				const card = el('button', { type: 'button', class: 'dov-mem', 'aria-label': `${tx.title}, ${tx.sub}`, on: { click: () => openMemory(m) } }, [
-					img,
-					el('span', { class: 'dov-mem-tx' }, [el('b', { text: tx.title }), el('span', { text: tx.sub })]),
-				]);
-				preview(m.cover).then((u) => { if (u) { img.src = u; card.classList.add('has-img'); } });
-				box.appendChild(card);
-			});
+			if (d.memories.length) {
+				d.memories.forEach((m, i) => box.appendChild(memoryCard(m.cover, OS.memoryText(m, v.memories[i], { t, locale: locale() }), () => openMemory(m))));
+			} else {
+				// Drive plugin 1.28: a day without „Heute vor X Jahren“ — the picks of the page "Erinnerungen", titled as there
+				const MS = root.GCDriveMemoriesState;
+				for (const c of v.memoryPicks || []) {
+					const tx = MS ? MS.pickText(c, { t, locale: locale() }) : { title: t('drive.ov.mem.title'), sub: OS.plural(t, 'drive.photos.count', c.count, locale()) };
+					box.appendChild(memoryCard(c.cover, tx, () => openPick(c), c.id));
+				}
+			}
 			// "Alle": the page "Erinnerungen" (Drive plugin 1.26), with an older Drive "Fotos"
 			const all = () => { if (!(typeof o.openMemories === 'function' && o.openMemories(null))) o.openPhotos({}); };
 			return panel('memories', t('drive.ov.mem.title'), { link: t('drive.ov.all'), onLink: all, cls: ' is-wide' }, [box]);
@@ -182,6 +195,11 @@
 				items = g && g.items.length ? g.items : (m.items && m.items.length ? m.items : [m.cover]);
 			}
 			o.showPhotos(items, 0);
+		}
+
+		/** A pick: its collection on the page "Erinnerungen", as a click on its card there (without the page: "Fotos"). */
+		function openPick(c) {
+			if (!(typeof o.openMemories === 'function' && o.openMemories(c))) o.openPhotos({});
 		}
 
 		function peoplePanel(d) {
