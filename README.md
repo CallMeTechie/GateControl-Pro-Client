@@ -9,6 +9,8 @@ Windows VPN client with integrated Remote Desktop (RDP) management.
 - E2EE credential handling
 - Wake-on-LAN integration
 - Session tracking and audit
+- Notizen & Aufgaben (plugin gatecontrol-notizen): Mein Tag with the to-dos of the other plugins, lists, notes in Markdown,
+  Tresor notebooks (end-to-end encrypted, Windows Hello), quick entry with Strg+N, the move from Microsoft To Do and DS Note
 
 ## Development
 ```bash

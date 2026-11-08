@@ -193,6 +193,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       driveSync: { on() {}, status: () => ({ ok: true, folders: [] }) },
       // … and Mail (mail:* channels; a core before Mail ignores it)
       mail: { on() {}, status: () => ({ state: 'unavailable' }) },
+      // … and Notizen & Aufgaben (notes:* channels; a core before it ignores it)
+      notes: { on() {}, status: () => ({ state: 'unavailable' }) },
       // … and Kameras im Heimnetz (cameras:* channels; a core before it ignores it)
       cameras: { on() {}, status: () => ({ state: 'unavailable' }) },
     };
