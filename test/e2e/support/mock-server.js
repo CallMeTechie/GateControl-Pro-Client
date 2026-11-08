@@ -37,6 +37,11 @@
  * `gatecontrol-mail`. With it (support/mail-mock.js) the list names it and
  * its routes go to the core's fake Mail server.
  *
+ * Notizen & Aufgaben: without `await server.setNotes()` the plugin list has no
+ * `gatecontrol-notizen`. With it (support/notes-mock.js) the list names it
+ * (while it is licensed) and its routes and media URLs go to the core's fake
+ * Notizen server.
+ *
  * GateDrop: without `await server.setGateDrop()` the plugin list has no
  * `gatecontrol-gatedrop`. With it (support/gatedrop-mock.js) the list names
  * it and its routes go to the core's fake GateDrop server.
@@ -70,6 +75,7 @@ const { createMail } = require('./mail-mock');
 const { createGateDrop } = require('./gatedrop-mock');
 const { createSignin } = require('./signin-mock');
 const { createDoor } = require('./door-mock');
+const { createNotes } = require('./notes-mock');
 
 const API_TOKEN = 'gc_e2e_test_token';
 // 1 × 1 PNG, served for every map tile
@@ -138,6 +144,7 @@ async function startMockServer() {
   let gatedrop = null; // support/gatedrop-mock.js, null = no GateDrop plugin
   let signin = null; // support/signin-mock.js, null = server before company sign-in (404)
   let door = null; // support/door-mock.js, null = no Tür & Kamera plugin
+  let notes = null; // support/notes-mock.js, null = no Notizen & Aufgaben plugin
   const acks = [];
   const prefs = [];
   let geocode = {
@@ -198,6 +205,12 @@ async function startMockServer() {
       // Camera media and push pictures (no login: the token is the permission)
       if (url.pathname.startsWith('/camera-media/') || url.pathname.startsWith('/notify-media/')) {
         if (door && door.serveMedia(req, url, res)) return undefined;
+        return json(404, { ok: false });
+      }
+
+      // Notizen & Aufgaben: its signed media URLs (no login: the token is the permission)
+      if (url.pathname.startsWith('/plugin-media/')) {
+        if (notes && notes.handle({ method: req.method, url, raw, headers: req.headers }, res)) return undefined;
         return json(404, { ok: false });
       }
 
@@ -274,6 +287,15 @@ async function startMockServer() {
         return json(200, { ok: true, token: API_TOKEN, peerId: PEER_ID, config: null });
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
+
+      if (notes) {
+        // The plugin list names every plugin that is set (Notizen & Aufgaben only while it is licensed).
+        if (route === 'plugins') {
+          const list = messenger ? [{ id: 'gatecontrol-messenger', name: 'Messenger', version: '1.0.0', tab: { label: 'Chats', icon: 'M0 0' } }] : [];
+          return json(200, { ok: true, plugins: [...list, ...[school, vault, drive, mail, gatedrop, door, notes].filter(Boolean).map((x) => x.entry()).filter(Boolean)] });
+        }
+        if (notes.handle({ method: req.method, url, raw, headers: req.headers }, res)) return undefined;
+      }
 
       if (door) {
         // The plugin list names every plugin that is set.
@@ -414,6 +436,11 @@ async function startMockServer() {
       mail = await createMail(opts);
       return mail;
     },
+    /** Enables Notizen & Aufgaben (support/notes-mock.js, the core's fake server on its own port); returns it. */
+    async setNotes(opts = {}) {
+      notes = await createNotes(opts);
+      return notes;
+    },
     /** Enables the GateDrop plugin (support/gatedrop-mock.js, the core's fake server on its own port); returns it. */
     async setGateDrop(opts = {}) {
       gatedrop = await createGateDrop(opts);
@@ -456,6 +483,7 @@ async function startMockServer() {
     close: () => new Promise((resolve) => {
       if (drive) drive.close().catch(() => {});
       if (mail) mail.close().catch(() => {});
+      if (notes) notes.close().catch(() => {});
       if (gatedrop) gatedrop.close().catch(() => {});
       for (const res of streams) res.end();
       streams.clear();
