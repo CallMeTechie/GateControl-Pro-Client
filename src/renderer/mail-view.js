@@ -77,6 +77,8 @@
 	'use strict';
 
 	const MS = root.GCMailState;
+	// Mail 1.13: several mails at once (mail-bulk-state.js)
+	const MB = root.GCMailBulk;
 	const NS = 'http://www.w3.org/2000/svg';
 	const ICONS = {
 		mail: 'M3 5h18v14H3z|M3 7l9 6 9-6',
@@ -115,6 +117,7 @@
 		shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
 		alert: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 8v5M12 16h.01',
 		check: 'M4 12l5 5L20 6',
+		minus: 'M6 12h12',
 		clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 7v5l3 3',
 		open: 'M14 4h6v6|M20 4l-9 9|M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
 		down: 'M12 4v11|M7 10l5 5 5-5|M5 20h14',
@@ -405,6 +408,9 @@
 			undo: null,             // { outboxId, draftId, until, sendAt, timer }
 			compose: null,
 			area: 'mail',           // 'mail' | 'calendar' | 'contacts' (Phase 2)
+			sel: null,              // Mail 1.13: the mails ticked { ids: Set, anchor, all: { total, truncated } | null, focus? } (MB)
+			drag: null,             // mails dragged onto a folder of the menu { ids, items, accountId, mixed, folderIds }
+			note: null,             // the note after an action with "Rückgängig" { timer }
 		};
 		// the areas (calendar-view.js, contacts-view.js), made below with the page's helpers
 		let calendar = null;
@@ -447,8 +453,10 @@
 		const mainCol = el('section', { class: 'ml-main', hidden: true });
 		const gate = el('div', { class: 'ml-gate', hidden: true });
 		const undoBar = el('div', { class: 'ml-undo', role: 'status', hidden: true });
+		// Mail 1.13: "12 Mails nach „2026“ verschoben · Rückgängig"
+		const noteBar = el('div', { class: 'ml-note-bar', role: 'status', hidden: true });
 		page.append(side, listCol, pane, mainCol);
-		o.root.append(gate, page, undoBar);
+		o.root.append(gate, page, undoBar, noteBar);
 
 		// ── Availability ─────────────────────────────────
 
@@ -521,7 +529,7 @@
 			if (v.kind === 'filing') { renderFiling(); return; }
 			if (v.kind === 'outbox') { renderOutbox(); return; }
 			S.loading = true;
-			if (!more && !keep) { S.items = []; S.next = null; S.listError = null; S.resetScroll = true; S.seenIds = new Set(); S.newAbove = []; }
+			if (!more && !keep) { S.items = []; S.next = null; S.listError = null; S.resetScroll = true; S.seenIds = new Set(); S.newAbove = []; S.sel = null; }
 			renderList();
 			let r;
 			if (v.kind === 'search') {
@@ -535,6 +543,7 @@
 			S.loading = false;
 			if (r && r.ok) {
 				S.items = more ? MS.mergeItems(S.items, r.items) : r.items;
+				if (keep && !more) S.sel = MB.prune(S.sel, S.items);
 				S.next = r.next || null;
 				if (r.counts) S.counts = r.counts;
 				S.offline = !!r.offline;
@@ -655,6 +664,7 @@
 							onClick: () => go({ kind: 'box', box: a.id, folderId: inbox ? null : folder.id }),
 						});
 						const frow = el('div', { class: 'ml-frow', 'data-folder': String(folder.id) }, [item]);
+						dropTarget(frow, { id: folder.id, accountId: a.id, name: label });
 						if (r.hasKids) {
 							const key = r.open ? 'mail.folderClose' : 'mail.folderOpen';
 							const arrow = el('button', {
@@ -733,6 +743,7 @@
 				if (MS.revealFolder(MS.folderTree(acc ? acc.folders : []), S.ffolds, view.folderId)) saveFolderFolds();
 			}
 			if (view.kind === 'box') { S.lastBox = view; S.tab = 'relevant'; }
+			S.sel = null;
 			if (view.kind === 'filing' || view.kind === 'outbox') { S.selectedId = null; if (S.pane === 'read') S.pane = 'empty'; }
 			page.classList.toggle('is-wide', view.kind === 'filing' || view.kind === 'outbox');
 			renderMenu();
@@ -760,6 +771,8 @@
 			if (S.view.kind === 'filing') return renderFiling();
 			if (S.view.kind === 'outbox') return renderOutbox();
 			const oldRows = listCol.querySelector('.ml-rows');
+			// the list had the keyboard (arrows, Strg+A, Esc): it keeps it when drawn again
+			const hadFocus = !!(oldRows && oldRows.contains(document.activeElement));
 			const reset = !oldRows || S.resetScroll;
 			const keepScroll = reset ? 0 : oldRows.scrollTop;
 			S.resetScroll = false;
@@ -809,7 +822,9 @@
 			}
 			if (S.offline) listCol.append(el('div', { class: 'ml-banner' }, [icon('offline', 15), el('span', { text: t('mail.offline') })]));
 			if (v.kind === 'search' && S.remote) listCol.append(el('div', { class: 'ml-note', text: t('mail.search.remote') }));
-			const rows = el('div', { class: 'ml-rows', role: 'listbox', 'aria-label': head.title, tabindex: '0' });
+			listCol.classList.toggle('is-selecting', !!S.sel);
+			if (S.sel) listCol.append(selBar(head.title));
+			const rows = el('div', { class: 'ml-rows', role: 'listbox', 'aria-label': head.title, 'aria-multiselectable': 'true', tabindex: '0' });
 			rows.addEventListener('keydown', onListKey);
 			if (!accounts.length && S.me && v.kind === 'box') {
 				// "Konto hinzufügen" lives in the settings now (Phase 2): the empty list leads there
@@ -826,6 +841,7 @@
 				rows.addEventListener('scroll', () => { if (!S.loading && S.next && rows.scrollTop + rows.clientHeight > rows.scrollHeight - 200) loadList({ more: true }); });
 			}
 			listCol.append(rows);
+			if (hadFocus) rows.focus({ preventScroll: true });
 			const kept = !fresh.toTop && anchor && rows.querySelector(`.ml-row[data-id="${anchor.id}"]`);
 			if (kept) rows.scrollTop = kept.getBoundingClientRect().top - rows.getBoundingClientRect().top - anchor.off;
 			else if (keepScroll && !fresh.toTop) rows.scrollTop = keepScroll;
@@ -864,15 +880,29 @@
 			const acc = MS.accountOf(S.me, m.accountId);
 			const color = acc ? acc.color : 'var(--faint)';
 			const now = Date.now();
-			const on = S.selectedId === m.id;
+			const picked = !!(S.sel && S.sel.ids.has(m.id));
+			const on = !S.sel && S.selectedId === m.id;
 			const av = el('span', { class: 'ml-av', text: MS.initials(m.from) });
 			av.style.background = color;
 			const acts = el('span', { class: 'ml-row-acts' });
 			for (const a of MS.rowActions(S.me && S.me.settings, m)) {
-				acts.append(el('button', { type: 'button', class: 'ml-ib ml-ib-sm', title: t(a.key), 'aria-label': t(a.key), tabindex: '-1', on: { click: (e) => { e.stopPropagation(); runAction(a.action, [m]); } } }, [icon(a.icon, 15)]));
+				acts.append(el('button', { type: 'button', class: 'ml-ib ml-ib-sm', title: t(a.key), 'aria-label': t(a.key), tabindex: '-1', on: { click: (e) => { e.stopPropagation(); runAction(a.action, [m], { row: true }); } } }, [icon(a.icon, 15)]));
 			}
-			const row = el('div', { class: `ml-row${on ? ' on' : ''}${m.unread ? ' is-unread' : ''}`, role: 'option', 'aria-selected': on ? 'true' : 'false', 'data-id': String(m.id), tabindex: on ? '0' : '-1', on: { click: () => openMessage(m.id), contextmenu: (e) => { e.preventDefault(); rowMenu(e, m); } } }, [
-				av,
+			// Mail 1.13: the picture turns into a tick box (on hover, and on every row while mails are ticked)
+			const pick = el('span', {
+				class: 'ml-row-pick', role: 'checkbox', 'aria-checked': picked ? 'true' : 'false', 'aria-label': t('mail.bulk.tick', { name: MS.senderName(m.from, t) }), title: t('mail.bulk.tickHint'),
+				on: { click: (e) => { e.stopPropagation(); tick(m.id); }, mousedown: (e) => e.preventDefault() },
+			}, [av, el('span', { class: 'ml-cb' }, [icon('check', 13, '3')])]);
+			const row = el('div', {
+				class: `ml-row${on ? ' on' : ''}${picked ? ' is-picked' : ''}${m.unread ? ' is-unread' : ''}`, role: 'option', 'aria-selected': on || picked ? 'true' : 'false', 'data-id': String(m.id), tabindex: on || (picked && S.sel.focus === m.id) ? '0' : '-1', draggable: 'true',
+				on: {
+					click: (e) => rowClick(e, m),
+					contextmenu: (e) => { e.preventDefault(); rowMenu(e, m); },
+					dragstart: (e) => dragStart(e, m),
+					dragend: () => dragEnd(),
+				},
+			}, [
+				pick,
 				el('span', { class: 'ml-row-main' }, [
 					el('span', { class: 'ml-row-l1' }, [dot(color), el('span', { class: 'ml-row-from', text: MS.senderName(m.from, t) }), m.threadCount > 1 && S.me && S.me.settings.threads ? el('span', { class: 'ml-row-n', text: String(m.threadCount) }) : null, el('span', { class: 'ml-row-time', text: MS.timeLabel(m.date, now, lang(), t) })]),
 					el('span', { class: 'ml-row-subj' }, [m.invite ? el('span', { class: `ml-row-inv is-${m.invite}`, text: t(`mail.cal.label.${m.invite}`) }) : null, el('span', { text: m.subject || t('mail.noSubject') })]),
@@ -892,7 +922,21 @@
 		function onListKey(e) {
 			if (!S.items.length) return;
 			const i = S.items.findIndex((m) => m.id === S.selectedId);
+			// Mail 1.13: Strg+A, Esc, Entf and Umschalt+↑/↓ for the ticked mails
+			const k = MB.keyAction(e);
+			if (k === 'all') { e.preventDefault(); S.sel = MB.selectLoaded(S.items); renderList(); return; }
+			if (k === 'clear' && S.sel) { e.preventDefault(); clearSel(); return; }
+			if (k === 'delete' && S.sel) { e.preventDefault(); runBar('delete'); return; }
+			if (k === 'extendUp' || k === 'extendDown') {
+				e.preventDefault();
+				S.sel = MB.extend(S.sel, S.items.map((m) => m.id), k === 'extendUp' ? 'up' : 'down', { current: S.selectedId, focus: S.sel && S.sel.focus });
+				renderList();
+				const r = S.sel && listCol.querySelector(`.ml-row[data-id="${S.sel.focus}"]`);
+				if (r) r.scrollIntoView({ block: 'nearest' });
+				return;
+			}
 			if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+				if (S.sel) S.sel = null;
 				e.preventDefault();
 				const next = S.items[Math.max(0, Math.min(S.items.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
 				if (next) openMessage(next.id);
@@ -903,6 +947,17 @@
 		}
 
 		function rowMenu(e, m) {
+			// a right click on a ticked mail: the menu is for all ticked mails
+			if (S.sel && S.sel.ids.has(m.id) && S.sel.ids.size > 1) {
+				const f = selFacts();
+				const list = MB.barActions(f, { me: S.me, inbox: MS.isInbox(S.view, S.folders) && S.view.kind === 'box', tab: S.tab }).filter((a) => !a.disabled);
+				popMenu(e.clientX, e.clientY, [
+					...list.map((a) => [null, a.icon, () => runBar(a.id), t(a.label)]),
+					[null, 'close', () => clearSel(), t('mail.bulk.clear')],
+				]);
+				return;
+			}
+			if (S.sel) { S.sel = null; renderList(); }
 			const items = [
 				[m.unread ? 'mail.act.markRead' : 'mail.act.markUnread', m.unread ? 'mailOpen' : 'mail', () => runAction('read', [m])],
 				[m.flagged ? 'mail.act.unflag' : 'mail.act.flag', 'flag', () => runAction('flag', [m])],
@@ -911,7 +966,8 @@
 				['mail.act.junk', 'junk', () => runAction('junk', [m])],
 				[m.tab === 'other' ? 'mail.act.toRelevant' : 'mail.act.toOther', 'tab', () => setTab([m], m.tab === 'other' ? 'relevant' : 'other')],
 				['mail.act.move', 'move', () => moveTo([m])],
-			];
+				has('copy') ? ['mail.bulk.copyDots', 'copy', () => pickFolder({ ids: [m.id], items: [m], mode: 'copy' })] : null,
+			].filter(Boolean);
 			popMenu(e.clientX, e.clientY, items);
 		}
 
@@ -938,69 +994,333 @@
 			const set = new Set(ids);
 			const i = S.items.findIndex((m) => set.has(m.id));
 			S.items = S.items.filter((m) => !set.has(m.id));
+			S.sel = MB.without(S.sel, ids);
 			if (set.has(S.selectedId)) {
 				const next = S.items[Math.min(i, S.items.length - 1)];
 				S.selectedId = null;
-				if (next) openMessage(next.id);
+				if (next && !S.sel) openMessage(next.id);
 				else { S.pane = 'empty'; S.read = null; renderPane(); }
 			}
 		}
 
+		const flagKind = (f) => (typeof f.unread === 'boolean' ? (f.unread ? 'unread' : 'read') : (f.flagged ? 'flag' : 'unflag'));
+
+		/**
+		 * An action on one mail (the quick buttons of a row, its menu, the reading pane, Entf): read / flag toggle,
+		 * archive, delete, junk, move (the folder picker). `row`: from the list (the conversation with it).
+		 */
 		async function runAction(action, list) {
 			const ids = list.map((m) => m.id);
+			if (action === 'move') { pickFolder({ ids, items: list, mode: 'move' }); return; }
 			const c = MS.actionCall(action, list[0]);
 			if (!c) return;
-			if (c.flags) {
-				const r = await call(api.flags(ids, c.flags));
-				if (!r || !r.ok) { toast(errText(r), 'error'); return; }
-				for (const m of S.items) if (ids.includes(m.id)) Object.assign(m, c.flags);
-				if (S.read && ids.includes(S.read.message.id)) Object.assign(S.read.message, c.flags);
-				renderList();
-				if (S.pane === 'read') renderPane();
-				loadMe().then(renderMenu);
-				return;
-			}
-			const r = await call(api.act(c.act, ids));
-			if (!r || !r.ok) { toast(errText(r), 'error'); return; }
-			toast(t(`mail.done.${c.act}`, { count: ids.length }), 'success');
-			dropFromList(ids);
-			renderList();
-			loadMe().then(renderMenu);
+			if (c.flags) { await doAct(flagKind(c.flags), { ids, items: list, flags: c.flags }); return; }
+			await doAct(c.act, { ids, items: list });
 		}
 
 		async function setTab(list, tab) {
-			const ids = list.map((m) => m.id);
-			const r = await call(api.act('tab', ids, { tab }));
-			if (!r || !r.ok) { toast(errText(r), 'error'); return; }
-			toast(t(tab === 'relevant' ? 'mail.done.toRelevant' : 'mail.done.toOther'), 'success');
-			if (MS.isInbox(S.view, S.folders)) { dropFromList(ids); renderList(); }
+			await doAct(tab === 'relevant' ? 'toRelevant' : 'toOther', { ids: list.map((m) => m.id), items: list, tab });
 		}
 
 		function moveTo(list) {
-			const accountId = list[0].accountId;
+			pickFolder({ ids: list.map((m) => m.id), items: list, mode: 'move' });
+		}
+
+		/**
+		 * Does an action on mails (one or many; ids not loaded with "Alle"): read / unread / flag / unflag, archive,
+		 * delete (asked first per "Vor dem Löschen fragen", always in the trash), junk, move / copy (folder), Relevant /
+		 * Sonstige. The list follows, then the note with "Rückgängig" (the server's tokens, Mail 1.13 `undo`; read, flag
+		 * and the tab by the opposite call).
+		 */
+		async function doAct(kind, { ids, items = [], flags = null, tab = null, folder = null }) {
+			if (!ids || !ids.length) return false;
+			const threads = MB.threadsFor(S.view, S.me);
+			const f = MB.facts(ids, items.length ? items : S.items, { view: S.view, folders: S.folders, me: S.me });
+			if (kind === 'delete') {
+				const ask = MB.confirmKind(f, S.me && S.me.settings);
+				if (ask && !(await askDelete(ask, ids.length))) return false;
+			}
+			const before = f.items.map((m) => ({ ...m }));
+			if (flags) {
+				const r = await call(api.flags(ids, { ...flags, threads }));
+				if (!r || !r.ok) { toast(errText(r), 'error'); return false; }
+				const hit = new Set([...(r.ids || []), ...ids]);
+				for (const m of S.items) if (hit.has(m.id)) Object.assign(m, flags);
+				if (S.read && S.read.message && hit.has(S.read.message.id)) Object.assign(S.read.message, flags);
+				renderList();
+				if (S.pane === 'read') renderPane();
+				loadMe().then(renderMenu);
+				if (ids.length > 1) {
+					const back = MB.flagsBack(before, flags, ids);
+					const v = MB.doneView(kind, { count: r.count || ids.length, back, t });
+					showNote(v.text, v.undo ? () => undoBack(back.map((x) => () => api.flags(x.ids, { ...x.flags, threads }))) : null);
+				}
+				return true;
+			}
+			const act = kind === 'toOther' || kind === 'toRelevant' ? 'tab' : kind;
+			const r = await call(api.act(act, ids, { folderId: folder ? folder.id : undefined, tab: tab || undefined, threads }));
+			if (!r || !r.ok) { toast(errText(r), 'error'); return false; }
+			const notDone = new Set(r.partial ? r.partial.ids : []);
+			const touched = [...new Set([...(r.ids || []), ...ids])].filter((id) => !notDone.has(id));
+			if (act === 'tab') {
+				if (MS.isInbox(S.view, S.folders)) dropFromList(touched);
+				else for (const m of S.items) if (touched.includes(m.id)) m.tab = tab;
+			} else if (act !== 'copy') {
+				dropFromList(touched);
+			}
+			renderList();
+			loadMe().then(renderMenu);
+			if (act === 'move' || act === 'copy') { loadFolders().then(renderMenu); rememberFolder(folder, f.accountId); }
+			if (r.partial) toast(MB.plural(t, 'mail.bulk.partial', r.partial.ids.length), 'error');
+			const count = r.count || ids.length;
+			if (act === 'tab') {
+				const back = MB.tabBack(before, tab);
+				if (ids.length === 1) toast(t(tab === 'relevant' ? 'mail.done.toRelevant' : 'mail.done.toOther'), 'success');
+				else {
+					const v = MB.doneView(kind, { count, back, t });
+					showNote(v.text, v.undo ? () => undoBack(back.map((x) => () => api.act('tab', x.ids, { tab: x.tab, threads }))) : null);
+				}
+				return true;
+			}
+			const v = MB.doneView(act, { count, folder: folder ? folder.name : '', purged: (r.purged || []).length, undo: r.undo, t });
+			if (v.undo && r.undo) showNote(v.text, () => undoTokens(r.undo.tokens));
+			else if (r.undo || ids.length > 1 || (r.purged || []).length || act === 'copy') showNote(v.text, null);
+			else toast(act === 'move' ? t('mail.done.move', { folder: folder ? folder.name : '' }) : t(`mail.done.${act}`, { count }), 'success');
+			return true;
+		}
+
+		/** "Vor dem Löschen fragen" (Mail 1.13 confirmDelete, "Nicht mehr fragen" turns it off) and always for mails in the trash. */
+		function askDelete(kind, count) {
+			return new Promise((resolve) => {
+				const purge = kind === 'purge';
+				let yes = false;
+				const dlg = openDialog({ title: MB.plural(t, purge ? 'mail.bulk.purgeTitle' : 'mail.bulk.deleteTitle', count), closeLabel: t('mail.close'), cls: 'ml-dlg-ask', onClose: () => resolve(yes) });
+				dlg.body.append(el('p', { class: 'ml-p', text: t(purge ? 'mail.bulk.purgeText' : 'mail.bulk.deleteText') }));
+				const dont = el('input', { type: 'checkbox', class: 'ml-check' });
+				if (!purge) dlg.body.append(el('label', { class: 'ml-check-row ml-dont-ask' }, [dont, el('span', { text: t('mail.bulk.dontAsk') })]));
+				dlg.foot.append(
+					el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.cancel'), on: { click: () => dlg.close() } }),
+					el('button', { type: 'button', class: 'btn btn-danger ml-ask-go', text: t(purge ? 'mail.bulk.purgeGo' : 'mail.bulk.deleteGo'), on: { click: async () => {
+						yes = true;
+						if (dont.checked) {
+							const r = await call(api.settings({ confirmDelete: false }));
+							if (r && r.ok && S.me) S.me.settings = r.settings;
+						}
+						dlg.close();
+					} } }),
+				);
+			});
+		}
+
+		// ── The note after an action ("· Rückgängig") ────
+
+		function endNote() {
+			if (S.note) clearTimeout(S.note.timer);
+			S.note = null;
+			noteBar.hidden = true;
+			clear(noteBar);
+		}
+
+		function showNote(text, onUndo) {
+			endNote();
+			S.note = { timer: setTimeout(endNote, MB.UNDO_SHOW_MS) };
+			noteBar.append(icon('check', 16), el('span', { class: 'ml-grow ml-note-tx', text }));
+			if (onUndo) {
+				noteBar.append(el('button', { type: 'button', class: 'btn btn-sec btn-sm ml-note-undo', text: t('mail.undo'), on: { click: () => { endNote(); onUndo(); } } }));
+			}
+			noteBar.append(el('button', { type: 'button', class: 'ml-ib ml-ib-sm', title: t('mail.close'), 'aria-label': t('mail.close'), on: { click: endNote } }, [icon('close', 14)]));
+			// above the bar of "Senden … Rückgängig" when that one is there
+			noteBar.classList.toggle('is-raised', !undoBar.hidden);
+			noteBar.hidden = false;
+		}
+
+		async function afterUndo() {
+			await loadMe();
+			await loadFolders();
+			renderMenu();
+			if (S.view.kind === 'box' || S.view.kind === 'search') loadList({ keep: true });
+		}
+
+		/** "Rückgängig" by the server's tokens (Mail 1.13 `undo`): back where they were (copies removed). */
+		async function undoTokens(tokens) {
+			const r = await call(api.undo(tokens));
+			if (!r || !r.ok) {
+				toast(r && (r.code === 'undo_expired' || r.code === 'not_found') ? t('mail.bulk.undoLate') : errText(r), 'error');
+				return;
+			}
+			toast(r.failed ? MB.plural(t, 'mail.bulk.undoPartial', r.failed) : t('mail.bulk.undone'), r.failed ? 'error' : 'success');
+			afterUndo();
+		}
+
+		/** "Rückgängig" of read / flag / the tab: the opposite calls. */
+		async function undoBack(calls) {
+			for (const fn of calls) {
+				const r = await call(fn());
+				if (!r || !r.ok) { toast(errText(r), 'error'); break; }
+			}
+			toast(t('mail.bulk.undone'), 'success');
+			afterUndo();
+		}
+
+		// ── The selection (Mail 1.13) ────────────────────
+
+		function selFacts() {
+			return MB.facts(S.sel ? S.sel.ids : [], S.items, { view: S.view, folders: S.folders, me: S.me });
+		}
+
+		function clearSel() {
+			S.sel = null;
+			renderList();
+		}
+
+		function rowClick(e, m) {
+			// Umschalt+click picks a range of mails, not of the text
+			if (e.shiftKey || e.ctrlKey || e.metaKey) { try { const ts = window.getSelection(); if (ts) ts.removeAllRanges(); } catch { /* no selection */ } }
+			const r = MB.click(S.sel, S.items.map((x) => x.id), m.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey, current: S.selectedId });
+			if (!r) { S.sel = null; openMessage(m.id); return; }
+			S.sel = r.ids.size ? { ...r, focus: m.id } : null;
+			renderList();
+		}
+
+		function tick(id) {
+			const r = MB.toggle(S.sel, id, { current: S.pane === 'read' ? S.selectedId : null, ids: S.items.map((x) => x.id) });
+			S.sel = r && r.ids.size ? { ...r, focus: id } : null;
+			renderList();
+		}
+
+		/** "Alle N auswählen": every mail of the list on the server (Mail 1.13 `bulkAll`), else the loaded ones. */
+		async function selectEvery() {
+			if (!has('bulkAll') || S.view.kind !== 'box') { S.sel = MB.selectLoaded(S.items); renderList(); return; }
+			const q = MS.listQuery(S.view, S.folders, S.tab, S.filter);
+			delete q.limit;
+			S.selLoading = true;
+			renderList();
+			const r = await call(api.ids(q));
+			S.selLoading = false;
+			if (!r || !r.ok) { toast(errText(r), 'error'); renderList(); return; }
+			S.sel = MB.selectAll(r, S.items);
+			renderList();
+		}
+
+		/** The bar of the ticked mails (mockup 1 / portal): the count, "Alle N auswählen", the actions, "Auswahl aufheben". */
+		function selBar(title) {
+			const f = selFacts();
+			const loaded = S.items.length;
+			const allLoaded = S.items.every((m) => S.sel.ids.has(m.id));
+			const head = el('div', { class: 'ml-selbar-head' });
+			const state = allLoaded && !S.next ? 'all' : 'some';
+			head.append(
+				el('button', {
+					type: 'button', class: `ml-selbar-cb is-${state}`, role: 'checkbox', 'aria-checked': state === 'all' ? 'true' : 'mixed', title: t(allLoaded ? 'mail.bulk.none' : 'mail.bulk.allLoaded'), 'aria-label': t(allLoaded ? 'mail.bulk.none' : 'mail.bulk.allLoaded'),
+					on: { click: () => { if (allLoaded) clearSel(); else { S.sel = MB.selectLoaded(S.items); renderList(); } } },
+				}, [el('span', { class: 'ml-cb' }, [icon(state === 'all' ? 'check' : 'minus', 13, '3')])]),
+				el('span', { class: 'ml-selbar-n', text: t('mail.bulk.count', { count: f.count }) }),
+			);
+			if (S.sel.all) {
+				head.append(el('span', { class: 'ml-sub ml-selbar-all', text: S.sel.all.truncated ? t('mail.bulk.newest', { count: f.count, total: S.sel.all.total, folder: title }) : MB.plural(t, 'mail.bulk.allIn', f.count, { folder: title }) }));
+			} else if (S.selLoading) {
+				head.append(el('span', { class: 'ml-sub', text: t('mail.bulk.loadingAll') }));
+			} else if ((has('bulkAll') && S.view.kind === 'box' && S.next) || S.sel.ids.size < loaded) {
+				head.append(el('button', { type: 'button', class: 'ml-link ml-selbar-every', text: has('bulkAll') && S.view.kind === 'box' && S.next ? t('mail.bulk.every') : MB.plural(t, 'mail.bulk.allN', loaded), on: { click: () => selectEvery() } }));
+			}
+			head.append(el('span', { class: 'ml-grow' }), el('button', { type: 'button', class: 'ml-ib ml-ib-sm ml-selbar-clear', title: t('mail.bulk.clear'), 'aria-label': t('mail.bulk.clear'), on: { click: () => clearSel() } }, [icon('close', 15)]));
+			const acts = el('div', { class: 'ml-selbar-acts' });
+			for (const a of MB.barActions(f, { me: S.me, inbox: MS.isInbox(S.view, S.folders) && S.view.kind === 'box', tab: S.tab })) {
+				acts.append(el('button', {
+					type: 'button', class: `ml-selbar-btn is-${a.id}`, 'data-act': a.id, disabled: a.disabled || null, title: a.why ? t(a.why) : t(a.label), 'aria-label': t(a.label),
+					on: { click: () => runBar(a.id) },
+				}, [icon(a.icon, 15), el('span', { text: t(a.label) })]));
+			}
+			acts.append(el('button', { type: 'button', class: 'ml-selbar-btn is-clear', 'data-act': 'clear', on: { click: () => clearSel() } }, [icon('close', 15), el('span', { text: t('mail.bulk.clear') })]));
+			const bar = el('div', { class: 'ml-selbar', role: 'toolbar', 'aria-label': t('mail.bulk.barLabel') }, [head, acts]);
+			if (f.mixed) bar.append(el('div', { class: 'ml-selbar-hint' }, [icon('alert', 13), el('span', { text: t('mail.bulk.oneAccount') })]));
+			return bar;
+		}
+
+		/** A button of the bar (or of the selection's menu) on all ticked mails. */
+		async function runBar(id) {
+			if (!S.sel || !S.sel.ids.size) return;
+			const c = MB.barCall(id);
+			if (!c) return;
+			const ids = [...S.sel.ids];
+			const items = S.items.filter((m) => S.sel.ids.has(m.id));
+			if (c.pick) { pickFolder({ ids, items, mode: c.pick }); return; }
+			if (c.flags) { await doAct(id, { ids, items, flags: c.flags }); return; }
+			if (c.act === 'tab') { await doAct(id, { ids, items, tab: c.tab }); return; }
+			const ok = await doAct(c.act, { ids, items });
+			if (ok) { S.sel = null; renderList(); }
+		}
+
+		// ── Folder picker: Verschieben / Kopieren ────────
+
+		const recentStore = () => { try { return MB.parseRecent(store ? store.getItem(MB.RECENT_KEY) : null); } catch { return []; } };
+
+		function rememberFolder(folder, accountId) {
+			if (!folder || !folder.id || !accountId || !store) return;
+			try { store.setItem(MB.RECENT_KEY, MB.pushRecent(recentStore(), folder.id, accountId)); } catch { /* a full or blocked store: no "Zuletzt" */ }
+		}
+
+		/**
+		 * One folder for the mails (mockup 2): Verschieben / Kopieren (copy only with Mail 1.13 `copy`), "Ordner suchen",
+		 * "Zuletzt" (kept on this PC), the account's folders as a tree; one account only (the plugin refuses others).
+		 */
+		function pickFolder({ ids, items = [], mode = 'move' }) {
+			const f = MB.facts(ids, items, { view: S.view, folders: S.folders, me: S.me });
+			if (f.mixed || !f.accountId) { toast(t('mail.bulk.oneAccount'), 'error'); return; }
+			const accountId = f.accountId;
 			const acc = ((S.folders && S.folders.accounts) || []).find((a) => a.accountId === accountId);
-			const dlg = openDialog({ title: t('mail.act.moveTitle'), closeLabel: t('mail.close') });
-			const rows = el('div', { class: 'ml-pick-list', role: 'list' });
-			// the folders as a tree like the menu (its own folds: closed but for the folders above the mail's own); the
-			// mail's folder stays in the tree, dimmed, so that its children can be reached
-			const tree = MS.folderTree(acc ? acc.folders : []);
-			const here = list[0].folderId;
+			const all = acc ? acc.folders : [];
+			const tree = MS.folderTree(all);
+			const inboxF = all.find((x) => x.role === 'inbox');
+			const froms = [...new Set(f.items.map((m) => m.folderId).filter(Boolean))];
+			const here = froms.length === 1 ? froms[0] : (!f.items.length && S.view.kind === 'box' ? (S.view.folderId || (inboxF && inboxF.id) || null) : null);
+			const P = { mode: mode === 'copy' && has('copy') ? 'copy' : 'move', chosen: null, q: '' };
+			const dlg = openDialog({ title: '', closeLabel: t('mail.close'), cls: 'ml-dlg-pick' });
+			const setTitle = () => dlg.setTitle(MB.plural(t, P.mode === 'copy' ? 'mail.bulk.pick.titleCopy' : 'mail.bulk.pick.titleMove', ids.length));
+			const go = el('button', { type: 'button', class: 'btn btn-pri ml-pick-go', disabled: true, on: { click: () => run() } });
+			const search = el('input', { type: 'search', class: 'ml-search-in ml-pick-search', placeholder: t('mail.bulk.pick.search'), 'aria-label': t('mail.bulk.pick.search'), maxlength: '100', spellcheck: 'false' });
+			const recentBox = el('div', { class: 'ml-pick-recent' });
+			const rows = el('div', { class: 'ml-pick-list', role: 'listbox', 'aria-label': t('mail.bulk.pick.folders') });
 			const folds = new Map();
-			const draw = () => {
+			const blocked = (folder) => P.mode === 'move' && folder.id === here;
+			const refresh = () => {
+				setTitle();
+				go.textContent = MB.pickGo(P.mode, P.chosen ? MS.folderName(P.chosen, t) : '', t);
+				go.disabled = !P.chosen || blocked(P.chosen);
+				draw();
+			};
+			const choose = (folder) => { if (!blocked(folder)) { P.chosen = folder; refresh(); } };
+			const folderBtn = (folder, label, extra = {}) => {
+				const b = el('button', {
+					type: 'button', role: 'option', class: `ml-pick-row${P.chosen && P.chosen.id === folder.id ? ' on' : ''}`, 'aria-selected': P.chosen && P.chosen.id === folder.id ? 'true' : 'false', 'data-folder': String(folder.id),
+					disabled: blocked(folder) || null, on: { click: () => choose(folder), dblclick: () => { choose(folder); if (P.chosen) run(); } },
+				}, [icon('folder', 15), el('span', { class: 'ml-grow', text: label }), folder.id === here ? el('span', { class: 'ml-sub', text: t('mail.bulk.pick.here') }) : null]);
+				if (extra.indent !== undefined) b.style.paddingLeft = `${34 + extra.indent * 16}px`;
+				return b;
+			};
+			function draw() {
 				clear(rows);
+				clear(recentBox);
+				if (P.q) {
+					const found = MB.searchFolders(all, P.q);
+					if (!found.length) rows.append(el('div', { class: 'ml-sub ml-pick-none', text: t('mail.bulk.pick.none') }));
+					for (const folder of found) rows.append(el('div', { class: 'ml-frow', role: 'presentation' }, [folderBtn(folder, folder.path && folder.role === null ? folder.path.replace(/[/.]/g, ' › ') : MS.folderName(folder, t))]));
+					return;
+				}
+				const recent = MB.recentFolders(recentStore(), S.folders, accountId, { here, mode: P.mode });
+				if (recent.length) {
+					recentBox.append(el('div', { class: 'lbl', text: t('mail.bulk.pick.recent') }));
+					const chips = el('div', { class: 'ml-pick-chips' });
+					for (const folder of recent) {
+						chips.append(el('button', { type: 'button', class: `ml-chip${P.chosen && P.chosen.id === folder.id ? ' on' : ''}`, 'aria-pressed': P.chosen && P.chosen.id === folder.id ? 'true' : 'false', on: { click: () => choose(folder) } }, [icon('folder', 13), el('span', { text: MS.folderName(folder, t) })]));
+					}
+					recentBox.append(chips);
+				}
+				// the folders as a tree like the menu (its own folds: closed but for the folders above the mails' own)
 				for (const r of MS.folderRows(tree, folds, here)) {
 					const { folder } = r;
 					const label = MS.folderName(folder, t);
-					const b = el('button', { type: 'button', class: 'ml-pick-row', disabled: folder.id === here ? '' : null, on: { click: async () => {
-						dlg.close();
-						const x = await call(api.act('move', list.map((m) => m.id), { folderId: folder.id }));
-						if (!x || !x.ok) { toast(errText(x), 'error'); return; }
-						toast(t('mail.done.move', { folder: label }), 'success');
-						dropFromList(list.map((m) => m.id));
-						renderList();
-					} } }, [icon('folder', 15), el('span', { text: label })]);
-					b.style.paddingLeft = `${34 + r.indent * 16}px`;
-					const frow = el('div', { class: 'ml-frow', role: 'listitem', 'data-folder': String(folder.id) }, [b]);
+					const frow = el('div', { class: 'ml-frow', role: 'presentation', 'data-folder': String(folder.id) }, [folderBtn(folder, label, { indent: r.indent })]);
 					if (r.hasKids) {
 						const key = r.open ? 'mail.folderClose' : 'mail.folderOpen';
 						const arrow = el('button', {
@@ -1012,10 +1332,72 @@
 					}
 					rows.append(frow);
 				}
-			};
-			draw();
-			dlg.body.append(rows);
-			dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.cancel'), on: { click: () => dlg.close() } }));
+			}
+			async function run() {
+				if (!P.chosen || blocked(P.chosen)) return;
+				const folder = { id: P.chosen.id, name: MS.folderName(P.chosen, t) };
+				dlg.close();
+				const ok = await doAct(P.mode, { ids, items, folder });
+				if (ok && P.mode === 'move') { S.sel = null; renderList(); }
+			}
+			search.addEventListener('input', () => { P.q = search.value.trim(); draw(); });
+			if (has('copy')) {
+				dlg.body.append(seg([['move', t('mail.bulk.pick.move')], ['copy', t('mail.bulk.pick.copy')]], P.mode, (v) => { P.mode = v; if (P.chosen && blocked(P.chosen)) P.chosen = null; refresh(); }, t('mail.bulk.pick.mode')));
+			}
+			dlg.body.append(el('label', { class: 'ml-search ml-pick-find' }, [icon('search', 15), search]), recentBox, rows, el('p', { class: 'ml-sub ml-pick-note', text: t('mail.bulk.pick.note') }));
+			dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec', text: t('mail.cancel'), on: { click: () => dlg.close() } }), go);
+			refresh();
+		}
+
+		// ── Dragging mails onto a folder of the menu ─────
+
+		function dragStart(e, m) {
+			const ids = S.sel && S.sel.ids.has(m.id) ? [...S.sel.ids] : [m.id];
+			const items = S.items.filter((x) => ids.includes(x.id));
+			const f = MB.facts(ids, items, { view: S.view, folders: S.folders, me: S.me });
+			S.drag = { ids, items, accountId: f.accountId, mixed: f.mixed, folderIds: [...new Set(items.map((x) => x.folderId).filter(Boolean))] };
+			try {
+				e.dataTransfer.effectAllowed = has('copy') ? 'copyMove' : 'move';
+				e.dataTransfer.setData(MB.DRAG_TYPE, String(ids.length));
+				// the picture while dragging: "3 Mails"
+				const ghost = el('div', { class: 'ml-drag-ghost' }, [icon('mail', 14), el('span', { text: MB.plural(t, 'mail.bulk.mails', ids.length) })]);
+				document.body.append(ghost);
+				e.dataTransfer.setDragImage(ghost, 12, 12);
+				setTimeout(() => ghost.remove(), 0);
+			} catch { /* no drag image */ }
+			side.classList.add('is-dragging');
+		}
+
+		function dragEnd() {
+			S.drag = null;
+			side.classList.remove('is-dragging');
+			for (const n of side.querySelectorAll('.is-drop')) n.classList.remove('is-drop');
+		}
+
+		/** A folder of the menu takes dragged mails: move, with Strg held copy (Mail 1.13 `copy`). */
+		function dropTarget(node, folder) {
+			const copyOf = (e) => !!(e.ctrlKey && has('copy'));
+			node.addEventListener('dragover', (e) => {
+				if (!S.drag) return;
+				const copy = copyOf(e);
+				if (!MB.canDrop(S.drag, folder, { copy, me: S.me })) return;
+				e.preventDefault();
+				try { e.dataTransfer.dropEffect = copy ? 'copy' : 'move'; } catch { /* read only */ }
+				node.classList.add('is-drop');
+				node.title = `${MB.dropText(S.drag.ids.length, copy, t)} · ${folder.name}`;
+			});
+			node.addEventListener('dragleave', () => { node.classList.remove('is-drop'); node.removeAttribute('title'); });
+			node.addEventListener('drop', async (e) => {
+				node.classList.remove('is-drop');
+				node.removeAttribute('title');
+				const d = S.drag;
+				const copy = copyOf(e);
+				if (!d || !MB.canDrop(d, folder, { copy, me: S.me })) return;
+				e.preventDefault();
+				dragEnd();
+				const ok = await doAct(copy ? 'copy' : 'move', { ids: d.ids, items: d.items, folder: { id: folder.id, name: folder.name } });
+				if (ok && !copy) { S.sel = null; renderList(); }
+			});
 		}
 
 		// ── Reading pane (right) ─────────────────────────
@@ -2448,21 +2830,27 @@
 				me.settings = r.settings;
 				renderList();
 			};
-			const swOpts = ['archive', 'delete', 'read', 'none'];
+			// the quick buttons of a row are the swipe sides of the app: seven actions with Mail 1.13 `swipeV2`, else four
+			const swOpts = MB.swipeChoices(me);
 			const sel = (value, onChange, label) => {
-				const s = el('select', { class: 'ml-input ml-input-sm', 'aria-label': label });
-				for (const x of swOpts) s.append(el('option', { value: x, text: t(`mail.swipe.${x}`), selected: x === value || null }));
+				const s = el('select', { class: 'ml-input ml-input-sm ml-quick-sel', 'aria-label': label });
+				const v = swOpts.includes(value) ? value : 'none';
+				for (const x of swOpts) s.append(el('option', { value: x, text: t(`mail.swipe.${x}`), selected: x === v || null }));
 				s.addEventListener('change', () => onChange(s.value));
 				return s;
 			};
-			dlg.body.append(
+			dlg.body.append(...[
 				el('div', { class: 'lbl', text: t('mail.settings.general') }),
 				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow', text: t('mail.settings.threads') }), sw(me.settings.threads, t('mail.settings.threads'), (v) => put({ threads: v }))]),
-				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow' }, [t('mail.settings.quick1'), el('span', { class: 'ml-sub ml-block', text: t('mail.settings.quickHint') })]), sel(me.settings.swipeRight, (v) => put({ swipeRight: v }), t('mail.settings.quick1'))]),
-				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow', text: t('mail.settings.quick2') }), sel(me.settings.swipeLeft, (v) => put({ swipeLeft: v }), t('mail.settings.quick2'))]),
+				el('div', { class: 'lbl', text: t('mail.settings.quickTitle') }),
+				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow' }, [t('mail.settings.quick1'), el('span', { class: 'ml-sub ml-block', text: t('mail.settings.quick1Hint') })]), sel(me.settings.swipeRight, (v) => put({ swipeRight: v }), t('mail.settings.quick1'))]),
+				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow' }, [t('mail.settings.quick2'), el('span', { class: 'ml-sub ml-block', text: t('mail.settings.quick2Hint') })]), sel(me.settings.swipeLeft, (v) => put({ swipeLeft: v }), t('mail.settings.quick2'))]),
+				el('p', { class: 'ml-sub ml-set-note', text: t(has('swipeV2') ? 'mail.settings.quickHint' : 'mail.settings.quickMoreLater') }),
+				// Mail 1.13: ask before "Löschen" (mails in the trash are always asked for)
+				has('swipeV2') ? el('div', { class: 'ml-set-row ml-set-confirm' }, [el('span', { class: 'ml-grow' }, [t('mail.settings.confirmDelete'), el('span', { class: 'ml-sub ml-block', text: t('mail.settings.confirmDeleteHint') })]), sw(me.settings.confirmDelete === true, t('mail.settings.confirmDelete'), (v) => put({ confirmDelete: v }))]) : null,
 				el('div', { class: 'lbl', text: t('mail.settings.display') }),
 				el('div', { class: 'ml-set-row' }, [el('span', { class: 'ml-grow' }, [t('mail.settings.darkMails'), el('span', { class: 'ml-sub ml-block', text: t('mail.settings.darkMailsHint') })]), sw(darkMails(), t('mail.settings.darkMails'), (v) => setDarkMails(v))]),
-			);
+			].filter(Boolean));
 			// Mail 1.9.0 (freeBusy): „Frei/Gebucht für alle in GateControl“ — the calendar settings, the same switch as in „Kalender teilen“
 			if (has('freeBusy') && calendar && api.calSettings) {
 				const row = el('div', { class: 'ml-set-row ml-set-fb' });

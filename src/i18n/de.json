@@ -3170,8 +3170,11 @@
     "swipe": {
       "archive": "Archivieren",
       "delete": "Löschen",
-      "read": "Gelesen / ungelesen",
-      "none": "Keine"
+      "read": "Gelesen / Ungelesen",
+      "flag": "Markieren",
+      "move": "Verschieben …",
+      "junk": "In Spam",
+      "none": "Nichts"
     },
     "add": {
       "title": "Konto hinzufügen",
@@ -3225,7 +3228,7 @@
       "darkMailsHint": "Ist die App dunkel, erscheinen auch Mails dunkel: Helle Hintergründe werden dunkel, dunkle Schrift wird hell, Bilder bleiben unverändert. Die Sonne über einer Mail zeigt sie hell.",
       "quick1": "Schnellaktion 1",
       "quick2": "Schnellaktion 2",
-      "quickHint": "Knöpfe an einer Mail in der Liste (wie Wischen in der App)",
+      "quickHint": "Die Knöpfe erscheinen, wenn die Maus auf einer Mail in der Liste steht. Die Wahl gilt auf allen deinen Geräten.",
       "storageTitle": "Speicher",
       "storage": "{{used}} von {{total}} belegt",
       "push": "Benachrichtigungen",
@@ -3246,7 +3249,13 @@
       "remove": "Konto entfernen",
       "removeTitle": "„{{name}}“ entfernen?",
       "removeText": "Das Konto wird aus GateControl entfernt, mit allem, was der Server davon zwischengespeichert hat. Die Mails beim Anbieter bleiben.",
-      "removed": "„{{name}}“ entfernt"
+      "removed": "„{{name}}“ entfernt",
+      "quickTitle": "Schnellaktionen",
+      "quick1Hint": "Erster Knopf an einer Mail – wie Wischen nach rechts in der App",
+      "quick2Hint": "Zweiter Knopf an einer Mail – wie Wischen nach links in der App",
+      "quickMoreLater": "Weitere Aktionen gibt es, sobald GateControl Mail auf dem Server neuer ist.",
+      "confirmDelete": "Vor dem Löschen fragen",
+      "confirmDeleteHint": "Gilt für die Schnellaktionen und für mehrere Mails. Aus: Du kannst kurz „Rückgängig“ klicken. Mails im Papierkorb fragen immer."
     },
     "err": {
       "offline": "Der Server ist gerade nicht erreichbar.",
@@ -3939,6 +3948,147 @@
       "noAttendees": "In geteilten Kalendern ohne Teilnehmer",
       "account": "{{name}} · {{account}}",
       "accountSub": "{{owner}} · {{level}}"
+    },
+    "bulk": {
+      "tick": "„{{name}}“ auswählen",
+      "tickHint": "Auswählen – Strg+Klick wählt mehrere, Umschalt+Klick einen Bereich",
+      "count": "{{count}} ausgewählt",
+      "none": "Auswahl aufheben",
+      "allLoaded": "Alle angezeigten auswählen",
+      "allIn": {
+        "one": "Alle {{count}} Mail in „{{folder}}“",
+        "other": "Alle {{count}} Mails in „{{folder}}“"
+      },
+      "newest": "Die neuesten {{count}} von {{total}} Mails in „{{folder}}“",
+      "loadingAll": "Alle Mails werden ausgewählt …",
+      "every": "Alle im Ordner auswählen",
+      "allN": {
+        "one": "Alle {{count}} auswählen",
+        "other": "Alle {{count}} auswählen"
+      },
+      "clear": "Auswahl aufheben",
+      "barLabel": "Aktionen für die ausgewählten Mails",
+      "archive": "Archivieren",
+      "delete": "Löschen",
+      "purge": "Endgültig löschen",
+      "move": "Verschieben",
+      "copy": "Kopieren",
+      "read": "Gelesen",
+      "unread": "Ungelesen",
+      "flag": "Markieren",
+      "unflag": "Markierung entfernen",
+      "junk": "Spam",
+      "copyDots": "Kopieren …",
+      "oneAccount": "Verschieben und Kopieren gehen nur mit Mails aus einem Konto.",
+      "mails": {
+        "one": "{{count}} Mail",
+        "other": "{{count}} Mails"
+      },
+      "deleteTitle": {
+        "one": "{{count}} Mail löschen?",
+        "other": "{{count}} Mails löschen?"
+      },
+      "deleteText": "Sie kommen in den Papierkorb. Dort kannst du sie wiederherstellen.",
+      "dontAsk": "Nicht mehr fragen",
+      "deleteGo": "Löschen",
+      "purgeTitle": {
+        "one": "{{count}} Mail endgültig löschen?",
+        "other": "{{count}} Mails endgültig löschen?"
+      },
+      "purgeText": "Die Mails liegen schon im Papierkorb. Danach sind sie weg und lassen sich nicht zurückholen.",
+      "purgeGo": "Endgültig löschen",
+      "done": {
+        "move": {
+          "one": "{{count}} Mail nach „{{folder}}“ verschoben",
+          "other": "{{count}} Mails nach „{{folder}}“ verschoben"
+        },
+        "copy": {
+          "one": "{{count}} Mail nach „{{folder}}“ kopiert",
+          "other": "{{count}} Mails nach „{{folder}}“ kopiert"
+        },
+        "archive": {
+          "one": "{{count}} Mail archiviert",
+          "other": "{{count}} Mails archiviert"
+        },
+        "delete": {
+          "one": "{{count}} Mail in den Papierkorb gelegt",
+          "other": "{{count}} Mails in den Papierkorb gelegt"
+        },
+        "purged": {
+          "one": "{{count}} Mail endgültig gelöscht",
+          "other": "{{count}} Mails endgültig gelöscht"
+        },
+        "junk": {
+          "one": "{{count}} Mail in Spam verschoben",
+          "other": "{{count}} Mails in Spam verschoben"
+        },
+        "read": {
+          "one": "{{count}} Mail als gelesen markiert",
+          "other": "{{count}} Mails als gelesen markiert"
+        },
+        "unread": {
+          "one": "{{count}} Mail als ungelesen markiert",
+          "other": "{{count}} Mails als ungelesen markiert"
+        },
+        "flag": {
+          "one": "{{count}} Mail markiert",
+          "other": "{{count}} Mails markiert"
+        },
+        "unflag": {
+          "one": "Markierung bei {{count}} Mail entfernt",
+          "other": "Markierung bei {{count}} Mails entfernt"
+        },
+        "toOther": {
+          "one": "{{count}} Mail nach Sonstige verschoben",
+          "other": "{{count}} Mails nach Sonstige verschoben"
+        },
+        "toRelevant": {
+          "one": "{{count}} Mail nach Relevant verschoben",
+          "other": "{{count}} Mails nach Relevant verschoben"
+        }
+      },
+      "partial": {
+        "one": "{{count}} Mail wurde nicht geändert – bitte noch einmal versuchen.",
+        "other": "{{count}} Mails wurden nicht geändert – bitte noch einmal versuchen."
+      },
+      "undone": "Rückgängig gemacht",
+      "undoLate": "Zu spät – das lässt sich nicht mehr zurücknehmen.",
+      "undoPartial": {
+        "one": "{{count}} Mail ließ sich nicht zurückholen.",
+        "other": "{{count}} Mails ließen sich nicht zurückholen."
+      },
+      "drop": {
+        "move": {
+          "one": "{{count}} Mail hierher verschieben",
+          "other": "{{count}} Mails hierher verschieben"
+        },
+        "copy": {
+          "one": "{{count}} Mail hierher kopieren",
+          "other": "{{count}} Mails hierher kopieren"
+        }
+      },
+      "pick": {
+        "titleMove": {
+          "one": "{{count}} Mail verschieben",
+          "other": "{{count}} Mails verschieben"
+        },
+        "titleCopy": {
+          "one": "{{count}} Mail kopieren",
+          "other": "{{count}} Mails kopieren"
+        },
+        "move": "Verschieben",
+        "copy": "Kopieren",
+        "mode": "Verschieben oder kopieren",
+        "search": "Ordner suchen",
+        "recent": "Zuletzt",
+        "folders": "Ordner",
+        "here": "hier",
+        "none": "Kein Ordner gefunden",
+        "note": "Mails lassen sich nur innerhalb ihres Kontos verschieben oder kopieren.",
+        "goMove": "Nach „{{folder}}“ verschieben",
+        "goCopy": "Nach „{{folder}}“ kopieren",
+        "choose": "Ordner wählen"
+      }
     }
   },
   "home": {

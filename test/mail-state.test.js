@@ -371,7 +371,7 @@ describe('mail page wiring', () => {
     // built at runtime
     for (const r of ['inbox', 'sent', 'drafts', 'archive', 'junk', 'trash']) keys.add(`mail.role.${r}`);
     for (const s of ['ok', 'syncing', 'auth_failed', 'unreachable']) keys.add(`mail.state.${s}`);
-    for (const s of ['archive', 'delete', 'read', 'none']) keys.add(`mail.swipe.${s}`);
+    for (const s of ['archive', 'delete', 'read', 'flag', 'move', 'junk', 'none']) keys.add(`mail.swipe.${s}`);
     for (const a of ['password', 'app_password', 'microsoft', 'imap']) keys.add(`mail.add.auth.${a}`);
     for (const a of ['tls', 'starttls']) keys.add(`mail.add.sec.${a}`);
     for (const f of ['unread', 'flagged', 'attachments']) keys.add(`mail.filter.${f}`);
@@ -388,6 +388,8 @@ describe('mail page wiring', () => {
     keys.delete('mail.accounts');
     assert.ok(keys.size > 250, `only ${keys.size} keys found`);
     for (const k of keys) {
+      // Mail 1.13: counted texts (mail-bulk-state.js plural) are `<key>.one` / `<key>.other`
+      if (!(k in de) && `${k}.one` in de && `${k}.other` in de && `${k}.one` in en && `${k}.other` in en) continue;
       assert.ok(k in de, `de: ${k}`);
       assert.ok(k in en, `en: ${k}`);
     }
