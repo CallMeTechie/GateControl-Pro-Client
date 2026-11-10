@@ -143,6 +143,57 @@ describe('vault folders (drive-vault-state.js)', () => {
   });
 });
 
+describe('"In Tresor verschieben" (drive-vault-state.js)', () => {
+  it('asked until "Nicht mehr fragen"', () => {
+    assert.equal(VS.MOVE_OK_KEY, 'gc.drive.vaultMoveOk');
+    assert.equal(VS.moveNeedsConfirm(null), true);
+    assert.equal(VS.moveNeedsConfirm('0'), true);
+    assert.equal(VS.moveNeedsConfirm('1'), false);
+  });
+
+  it('the toasts of a batch: moved and deleted, originals kept by their reason, files not moved', () => {
+    assert.deepEqual(VS.moveToasts({ moved: 3, deleted: 3, kept: 0, keptFiles: [], notMoved: 0 }, { t }), [
+      { text: 'drive.vault.move.done.other(count=3)', type: 'success' },
+    ]);
+    assert.deepEqual(VS.moveToasts({ moved: 1, deleted: 1, kept: 0, keptFiles: [], notMoved: 0 }, { t }), [
+      { text: 'drive.vault.move.done.one(count=1)', type: 'success' },
+    ]);
+    assert.deepEqual(VS.moveToasts({ moved: 4, deleted: 1, kept: 3, notMoved: 2, keptFiles: [
+      { name: 'offen.docx', reason: 'locked' }, { name: 'a.txt', reason: 'changed' }, { name: 'b.txt', reason: 'changed' },
+    ] }, { t }), [
+      { text: 'drive.vault.move.done.one(count=1)', type: 'success' },
+      { text: 'drive.vault.move.locked.named(name=offen.docx)', type: 'warning' },
+      { text: 'drive.vault.move.changed.other(count=2)', type: 'warning' },
+      { text: 'drive.vault.move.notMoved.other(count=2)', type: 'error' },
+    ]);
+    // a reason the page does not know, and more kept than the list names
+    assert.deepEqual(VS.moveToasts({ moved: 60, deleted: 0, kept: 60, notMoved: 0, keptFiles: [{ name: 'x', reason: 'verify' }] }, { t }), [
+      { text: 'drive.vault.move.other.other(count=60)', type: 'warning' },
+    ]);
+    assert.deepEqual(VS.moveToasts({ moved: 1, deleted: 0, kept: 1, keptFiles: [{ name: 'x', reason: 'verify' }], notMoved: 0 }, { t }), [
+      { text: 'drive.vault.move.other.named(name=x)', type: 'warning' },
+    ]);
+    assert.deepEqual(VS.moveToasts(null, { t }), []);
+  });
+
+  it('every text of it in de and en, simple German', () => {
+    const flat = (o, pre = '', out = {}) => { for (const [k, v] of Object.entries(o)) { const key = pre ? `${pre}.${k}` : k; if (v && typeof v === 'object') flat(v, key, out); else out[key] = v; } return out; };
+    const de = flat(JSON.parse(read('src', 'i18n', 'de.json')));
+    const en = flat(JSON.parse(read('src', 'i18n', 'en.json')));
+    const keys = ['button', 'title', 'files', 'folder', 'dropHint', 'confirm.title', 'confirm.text', 'confirm.ok', 'confirm.dontAsk'];
+    for (const g of ['done', 'notMoved']) for (const n of ['one', 'other']) keys.push(`${g}.${n}`);
+    for (const g of ['locked', 'changed', 'other']) for (const n of ['named', 'one', 'other']) keys.push(`${g}.${n}`);
+    for (const k of keys) {
+      assert.ok(typeof de[`drive.vault.move.${k}`] === 'string' && de[`drive.vault.move.${k}`], `de: ${k}`);
+      assert.ok(typeof en[`drive.vault.move.${k}`] === 'string' && en[`drive.vault.move.${k}`], `en: ${k}`);
+    }
+    assert.equal(de['drive.vault.move.button'], 'In Tresor verschieben');
+    assert.equal(de['drive.vault.move.done.other'], '{{count}} Dateien in den Tresor verschoben – Originale gelöscht');
+    assert.match(de['drive.vault.move.confirm.text'], /endgültig von diesem PC gelöscht/);
+    assert.match(de['drive.vault.move.locked.named'], /geöffnet oder schreibgeschützt\) – bitte selbst löschen/);
+  });
+});
+
 describe('push targets and the page', () => {
   it('a Drive push opens the Drive page with its context', () => {
     const ctx = { kind: 'deadline', nodeId: 12, deadlineId: 3 };
@@ -169,6 +220,8 @@ describe('push targets and the page', () => {
     for (const k of ['kind', 'title', 'date', 'sender', 'amount']) keys.add(`drive.doc.field.${k}`);
     for (const k of Object.values(DS.ERROR_CODES)) keys.add(`drive.err.${k}`);
     for (const k of ['one', 'other']) { keys.add(`drive.vault.pending.${k}`); keys.add(`drive.deadline.ago.${k}`); }
+    // plural keys ("In Tresor verschieben"): their one / other
+    for (const base of ['drive.vault.move.done', 'drive.vault.move.notMoved']) { keys.delete(base); keys.add(`${base}.one`); keys.add(`${base}.other`); }
     for (const k of keys) {
       assert.ok(typeof de[k] === 'string' && de[k], `de: ${k}`);
       assert.ok(typeof en[k] === 'string' && en[k], `en: ${k}`);

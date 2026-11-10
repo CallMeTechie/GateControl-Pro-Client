@@ -637,20 +637,38 @@
 		// Files dropped on the page go into the folder shown.
 		let dragDepth = 0;
 		const hasFiles = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+		// into a vault: "In Tresor verschieben" — the hint at the pointer says the originals go
+		const moveHint = (e) => {
+			if (!canUpload() || !inVault()) { if (refs.dropHint.dataset.move) { refs.dropHint.hidden = true; delete refs.dropHint.dataset.move; } return; }
+			refs.dropHint.dataset.move = '1';
+			refs.dropHint.textContent = t('drive.vault.move.dropHint');
+			refs.dropHint.hidden = false;
+			refs.dropHint.style.left = `${e.clientX + 16}px`;
+			refs.dropHint.style.top = `${e.clientY + 12}px`;
+		};
+		const endMoveHint = () => { if (refs.dropHint.dataset.move) { refs.dropHint.hidden = true; delete refs.dropHint.dataset.move; } };
 		rootEl.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; dragDepth++; rootEl.classList.toggle('is-drop', canUpload()); });
-		rootEl.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) rootEl.classList.remove('is-drop'); });
+		rootEl.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) { rootEl.classList.remove('is-drop'); endMoveHint(); } });
 		rootEl.addEventListener('dragover', (e) => {
 			if (!hasFiles(e)) return;
 			e.preventDefault();
+			// always 'copy', also into a vault: with 'move' Explorer would delete the originals itself, before the upload
+			// is verified — the app deletes them only afterwards
 			if (e.dataTransfer) e.dataTransfer.dropEffect = canUpload() ? 'copy' : 'none';
+			moveHint(e);
 		});
 		rootEl.addEventListener('drop', async (e) => {
 			if (!hasFiles(e)) return;
 			e.preventDefault();
 			dragDepth = 0;
 			rootEl.classList.remove('is-drop');
+			endMoveHint();
 			if (!canUpload()) { toast(t('drive.upload.notHere'), 'error'); return; }
-			const r = await Promise.resolve(api.uploadDropped(S.folder.node.id, e.dataTransfer.files)).catch(fail);
+			// the files now: the drop's list is empty once the event is over (the question below waits)
+			const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+			const folderId = S.folder.node.id;
+			if (!(await confirmMove())) return;
+			const r = await Promise.resolve(api.uploadDropped(folderId, files)).catch(fail);
 			afterQueue(r);
 		});
 
@@ -689,6 +707,14 @@
 			api.vault.onEvent(() => { if (S.shown && vaultOn()) loadVaults().then(() => { if (S.view === 'folder') live.request(); }); });
 		}
 		// Drive 1.11: the vaults locked (time without use, window hidden, Windows locked, by hand) / unlocked
+		// "In Tresor verschieben": a batch is through — moved, originals deleted or kept (and why)
+		if (api.vault && typeof api.vault.onMove === 'function') {
+			api.vault.onMove((m) => {
+				const VS = root.GCDriveVaultState;
+				if (!VS || typeof VS.moveToasts !== 'function') return;
+				for (const x of VS.moveToasts(m, { t })) toast(x.text, x.type);
+			});
+		}
 		if (api.vault && typeof api.vault.onLock === 'function') {
 			api.vault.onLock((e) => {
 				if (S.lock) S.lock = { ...S.lock, unlocked: !(e && e.locked) };
@@ -1203,18 +1229,55 @@
 
 		async function pickAndUpload() {
 			if (!canUpload()) return;
+			const folderId = S.folder.node.id;
 			const p = await Promise.resolve(api.pick()).catch(fail);
 			if (!p || !p.ok) { if (p && p.code !== 'cancelled') done(p); return; }
-			const r = await Promise.resolve(api.upload(S.folder.node.id, p.paths)).catch(fail);
+			if (!(await confirmMove())) return;
+			const r = await Promise.resolve(api.upload(folderId, p.paths)).catch(fail);
 			afterQueue(r);
 		}
 
 		async function pickFolderAndUpload() {
 			if (!canUpload() || typeof api.pickFolders !== 'function') return;
+			const folderId = S.folder.node.id;
 			const p = await Promise.resolve(api.pickFolders()).catch(fail);
 			if (!p || !p.ok) { if (p && p.code !== 'cancelled') done(p); return; }
-			const r = await Promise.resolve(api.upload(S.folder.node.id, p.paths)).catch(fail);
+			if (!(await confirmMove())) return;
+			const r = await Promise.resolve(api.upload(folderId, p.paths)).catch(fail);
 			afterQueue(r);
+		}
+
+		/** The folder shown lies in a vault (Drive 1.9): an upload there moves the files ("In Tresor verschieben"). */
+		function inVault() {
+			return !!(S.folder && S.folder.vault);
+		}
+
+		/**
+		 * Before a move into a vault: the originals are deleted from this PC afterwards — asked until the person ticks
+		 * "Nicht mehr fragen" → true (go on) | false. Outside a vault: true.
+		 */
+		function confirmMove() {
+			const VS = root.GCDriveVaultState;
+			if (!inVault() || !VS || !VS.moveNeedsConfirm(remembered(VS.MOVE_OK_KEY))) return Promise.resolve(true);
+			return new Promise((resolve) => {
+				let answer = false;
+				const dlg = openDialog({ title: t('drive.vault.move.confirm.title'), host, closeLabel: t('drive.close'), onClose: () => resolve(answer) });
+				dlg.box.classList.add('dv-move-dlg');
+				const id = nextId('dv-move-ask');
+				const check = el('input', { id, type: 'checkbox' });
+				const ok = el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.vault.move.confirm.ok') });
+				ok.addEventListener('click', () => {
+					answer = true;
+					if (check.checked) keep(VS.MOVE_OK_KEY, '1');
+					dlg.close(true);
+				});
+				dlg.body.append(
+					el('p', { class: 'dv-p', text: t('drive.vault.move.confirm.text') }),
+					el('label', { class: 'dv-check', for: id }, [check, el('span', { text: t('drive.vault.move.confirm.dontAsk') })]),
+				);
+				dlg.foot.append(el('span', { class: 'dv-grow' }), el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }), ok);
+				setTimeout(() => ok.focus(), 0);
+			});
 		}
 
 		function afterQueue(r) {
@@ -1281,8 +1344,8 @@
 			const fv = S.folder && S.folder.vault;
 			const items = [
 				{ icon: 'folderPlus', label: t('drive.newFolder'), run: newFolder, key: 'folder' },
-				{ icon: 'upload', label: t('drive.new.files'), run: pickAndUpload, key: 'files' },
-				typeof api.pickFolders === 'function' ? { icon: 'folder', label: t('drive.upload.folderButton'), run: pickFolderAndUpload, key: 'dir' } : null,
+				{ icon: 'upload', label: t(fv ? 'drive.vault.move.files' : 'drive.new.files'), run: pickAndUpload, key: 'files' },
+				typeof api.pickFolders === 'function' ? { icon: 'folder', label: t(fv ? 'drive.vault.move.folder' : 'drive.upload.folderButton'), run: pickFolderAndUpload, key: 'dir' } : null,
 			];
 			if (!fv && vaultOn() && vaultUi) {
 				items.push('sep', { icon: 'lock', label: t('drive.vault.create.button'), sub: t('drive.vault.create.menuHint'), key: 'vault', run: () => {
@@ -2205,7 +2268,7 @@
 					fv && fv.state === 'open' && vaultUi ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-vault-devices', on: { click: () => vaultUi.devicesDialog(fv.id, { onRotate: () => vaultUi.rotateDialog(fv.id) }) } }, [icon('device', 14), el('span', { text: t('drive.vault.devices.button') }), vInfo && vInfo.pending ? el('span', { class: 'dv-count', text: String(vInfo.pending) }) : null]) : null,
 					fv && fv.state === 'open' && S.lock && S.lock.enforced && api.vault && typeof api.vault.lock === 'function' ? el('button', { type: 'button', class: 'dv-ib dv-vault-lock', title: t('drive.lock.now'), 'aria-label': t('drive.lock.now'), on: { click: () => Promise.resolve(api.vault.lock()).catch(() => {}) } }, [icon('lock', 16)]) : null,
 					plus,
-					w ? el('button', { type: 'button', class: 'btn btn-pri btn-sm dv-upload', on: { click: pickAndUpload } }, [icon('upload', 14), el('span', { text: t('drive.upload.button') })]) : null].filter(Boolean));
+					w ? el('button', { type: 'button', class: `btn btn-pri btn-sm dv-upload${fv ? ' is-move' : ''}`, ...(fv ? { title: t('drive.vault.move.title') } : {}), on: { click: pickAndUpload } }, [icon('upload', 14), el('span', { text: t(fv ? 'drive.vault.move.button' : 'drive.upload.button') })]) : null].filter(Boolean));
 				if (fv && fv.state === 'open') { refs.note.hidden = false; refs.note.textContent = root.GCDriveVaultState.folderNote(vInfo, { t }); refs.note.classList.toggle('is-warn', !!(vInfo && vInfo.needsRotation)); }
 				else if (a && a.kind === 'child' && a.via === 'parent') { refs.note.hidden = false; refs.note.textContent = t('drive.childNote'); }
 				else if (S.folder && !S.folder.writable) { refs.note.hidden = false; refs.note.textContent = t('drive.readOnly'); }
