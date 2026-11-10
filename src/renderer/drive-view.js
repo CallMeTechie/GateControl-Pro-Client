@@ -652,7 +652,9 @@
 		rootEl.addEventListener('dragover', (e) => {
 			if (!hasFiles(e)) return;
 			e.preventDefault();
-			if (e.dataTransfer) e.dataTransfer.dropEffect = canUpload() ? (inVault() ? 'move' : 'copy') : 'none';
+			// always 'copy', also into a vault: with 'move' Explorer would delete the originals itself, before the upload
+			// is verified — the app deletes them only afterwards
+			if (e.dataTransfer) e.dataTransfer.dropEffect = canUpload() ? 'copy' : 'none';
 			moveHint(e);
 		});
 		rootEl.addEventListener('drop', async (e) => {
