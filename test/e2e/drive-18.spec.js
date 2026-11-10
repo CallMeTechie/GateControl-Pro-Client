@@ -163,7 +163,7 @@ test.describe('drive 1.8 / 1.9', () => {
   test('vault: made with its recovery key, a file only as ciphertext, opened decrypted, another device approved', async ({ launchApp, mock }, testInfo) => {
     const V = vaultCrypto();
     const d = await mock.setDrive({ features: ['vault'] });
-    const { page, events } = await launchApp();
+    const { page, events, answerOpenDialogs } = await launchApp();
     await setupWithApiKey(page, mock);
     const root = await openDrive(page);
     await expect(root.locator('.dv-row[data-id="10"]')).toBeVisible();
@@ -203,6 +203,41 @@ test.describe('drive 1.8 / 1.9', () => {
     for (const m of d.srv.state.media.values()) expect(m.data.includes(Buffer.from('IBAN'))).toBe(false);
     const file = [...d.srv.state.nodes.values()].find((n) => n.parentId === vault.nodeId && !n.isDir);
     expect(file.mime).toBe('application/octet-stream');
+    // "In Tresor verschieben": the original is gone from this PC for good, the toast says so
+    await expect.poll(() => fs.existsSync(src)).toBe(false);
+    await expect(page.locator('#toasts .toast-success').filter({ hasText: /1 Datei in den Tresor verschoben – Original gelöscht|1 file moved to the vault – original deleted/ })).toBeVisible();
+    // the button says it; asked before the first move — a read-only file goes into the vault, its original stays
+    const moveBtn = root.locator('.dv-bar .dv-upload');
+    await expect(moveBtn).toHaveText(/In Tresor verschieben|Move to vault/);
+    const ro = testInfo.outputPath('Nur-lesen.txt');
+    fs.writeFileSync(ro, 'schreibgeschützt');
+    fs.chmodSync(ro, 0o444);
+    await answerOpenDialogs([ro]);
+    await moveBtn.click();
+    const moveAsk = page.locator('.dv-dlg.dv-move-dlg');
+    await expect(moveAsk).toContainText(/endgültig von diesem PC gelöscht|deleted from this PC for good/);
+    await page.screenshot({ path: testInfo.outputPath('drive-vault-move-ask.png') });
+    await moveAsk.locator('.dv-dlg-foot .btn-pri').click();
+    await expect(page.locator('#toasts .toast-warning').filter({ hasText: /Nur-lesen\.txt/ }).first()).toContainText(/schreibgeschützt|read-only/);
+    await expect(root.locator('.dv-row', { hasText: 'Nur-lesen.txt' })).toBeVisible();
+    expect(fs.existsSync(ro)).toBe(true);
+    fs.chmodSync(ro, 0o644);
+    // "Nicht mehr fragen": asked this once more, then not again
+    const second = testInfo.outputPath('Zweite.txt');
+    fs.writeFileSync(second, 'zwei');
+    await answerOpenDialogs([second]);
+    await moveBtn.click();
+    await expect(moveAsk).toBeVisible();
+    await moveAsk.locator('.dv-check input').check();
+    await moveAsk.locator('.dv-dlg-foot .btn-pri').click();
+    await expect.poll(() => fs.existsSync(second)).toBe(false);
+    const third = testInfo.outputPath('Dritte.txt');
+    fs.writeFileSync(third, 'drei');
+    await answerOpenDialogs([third]);
+    await moveBtn.click();
+    await expect.poll(() => fs.existsSync(third)).toBe(false);
+    await expect(page.locator('.dv-dlg.dv-move-dlg')).toHaveCount(0);
+    await expect(root.locator('.dv-row', { hasText: 'Dritte.txt' })).toBeVisible();
     // opened (Drive plugin 1.22): in the app's viewer, decrypted in memory — no other program
     await fileRow.locator('.dv-open').click();
     await expect(page.locator('.dv-dlg.dv-vv .dv-vv-text')).toHaveText(SECRET);

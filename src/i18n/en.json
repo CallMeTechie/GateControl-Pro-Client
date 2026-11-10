@@ -1975,6 +1975,42 @@
         "intro": "New files and names are then encrypted with the new key; every approved device gets it. Older files stay readable.",
         "ok": "Create",
         "done": "New key created"
+      },
+      "move": {
+        "button": "Move to vault",
+        "title": "Move files into the vault, encrypted. The originals are then deleted from this PC for good.",
+        "files": "Move files to vault …",
+        "folder": "Move folder to vault …",
+        "dropHint": "Drop to move into the vault – the originals are then deleted from this PC",
+        "confirm": {
+          "title": "Move to vault",
+          "text": "The files are put into the vault, encrypted. The originals are then deleted from this PC for good – not moved to the recycle bin.",
+          "ok": "Move",
+          "dontAsk": "Don't ask again"
+        },
+        "done": {
+          "one": "1 file moved to the vault – original deleted",
+          "other": "{{count}} files moved to the vault – originals deleted"
+        },
+        "locked": {
+          "named": "“{{name}}” is in the vault. The original could not be deleted (open or read-only) – please delete it yourself.",
+          "one": "1 original could not be deleted (open or read-only) – please delete it yourself.",
+          "other": "{{count}} originals could not be deleted (open or read-only) – please delete them yourself."
+        },
+        "changed": {
+          "named": "“{{name}}” changed while uploading. The original stays on this PC – please check it and delete it yourself.",
+          "one": "1 file changed while uploading. The original stays on this PC – please check it and delete it yourself.",
+          "other": "{{count}} files changed while uploading. The originals stay on this PC – please check them and delete them yourself."
+        },
+        "other": {
+          "named": "“{{name}}”: the original could not be deleted – please delete it yourself.",
+          "one": "1 original could not be deleted – please delete it yourself.",
+          "other": "{{count}} originals could not be deleted – please delete them yourself."
+        },
+        "notMoved": {
+          "one": "1 file was not moved – the original stays on this PC.",
+          "other": "{{count}} files were not moved – the originals stay on this PC."
+        }
       }
     },
     "docAi": {

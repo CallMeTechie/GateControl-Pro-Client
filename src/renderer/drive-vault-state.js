@@ -89,5 +89,42 @@
 		return parts.join(' · ');
 	}
 
-	return { vaultAvailable, gateView, deviceRows, recoveryKeyClean, recoveryKeyShape, recoveryKeyLines, safetyMatches, folderNote };
+	// "In Tresor verschieben": asked once before the first move (then remembered on this PC)
+	const MOVE_OK_KEY = 'gc.drive.vaultMoveOk';
+
+	/** Must the person confirm a move into a vault first? (`remembered`: the stored value of MOVE_OK_KEY) */
+	function moveNeedsConfirm(remembered) {
+		return remembered !== '1';
+	}
+
+	const plural = (t, key, n, params) => t(`${key}.${Number(n) === 1 ? 'one' : 'other'}`, { ...(params || {}), count: Number(n) || 0 });
+
+	/**
+	 * The toasts after a batch moved into a vault (the core's event drive:vault-move) → [{ text, type }]:
+	 * "3 Dateien in den Tresor verschoben – Originale gelöscht"; originals that stayed, by their reason
+	 * (open or read-only: "bitte selbst löschen"; changed while uploading; any other); files that did not go up.
+	 */
+	function moveToasts(m, { t } = {}) {
+		const out = [];
+		if (!m || typeof m !== 'object') return out;
+		const deleted = Number(m.deleted) || 0;
+		if (deleted > 0) out.push({ text: plural(t, 'drive.vault.move.done', deleted), type: 'success' });
+		const kept = Array.isArray(m.keptFiles) ? m.keptFiles : [];
+		const keptCount = Math.max(Number(m.kept) || 0, kept.length);
+		const groups = { locked: [], changed: [], other: [] };
+		for (const f of kept) groups[f && (f.reason === 'locked' || f.reason === 'changed') ? f.reason : 'other'].push(f);
+		// files the list does not name (more than it holds) count as "other"
+		const unnamed = Math.max(0, keptCount - kept.length);
+		for (const g of ['locked', 'changed', 'other']) {
+			const n = groups[g].length + (g === 'other' ? unnamed : 0);
+			if (!n) continue;
+			const name = n === 1 && groups[g][0] ? str(groups[g][0].name) : '';
+			out.push({ text: name ? t(`drive.vault.move.${g}.named`, { name }) : plural(t, `drive.vault.move.${g}`, n), type: 'warning' });
+		}
+		const notMoved = Number(m.notMoved) || 0;
+		if (notMoved > 0) out.push({ text: plural(t, 'drive.vault.move.notMoved', notMoved), type: 'error' });
+		return out;
+	}
+
+	return { vaultAvailable, gateView, deviceRows, recoveryKeyClean, recoveryKeyShape, recoveryKeyLines, safetyMatches, folderNote, MOVE_OK_KEY, moveNeedsConfirm, moveToasts };
 });

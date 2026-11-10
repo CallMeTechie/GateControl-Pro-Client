@@ -1975,6 +1975,42 @@
         "intro": "Neue Dateien und Namen werden danach mit dem neuen Schlüssel verschlüsselt; alle freigegebenen Geräte bekommen ihn. Ältere Dateien bleiben lesbar.",
         "ok": "Erzeugen",
         "done": "Neuer Schlüssel erzeugt"
+      },
+      "move": {
+        "button": "In Tresor verschieben",
+        "title": "Dateien verschlüsselt in den Tresor verschieben. Die Originale werden danach endgültig von diesem PC gelöscht.",
+        "files": "Dateien in Tresor verschieben …",
+        "folder": "Ordner in Tresor verschieben …",
+        "dropHint": "Loslassen: in den Tresor verschieben – die Originale werden danach von diesem PC gelöscht",
+        "confirm": {
+          "title": "In Tresor verschieben",
+          "text": "Die Dateien werden verschlüsselt in den Tresor gelegt. Die Originale werden danach endgültig von diesem PC gelöscht – nicht in den Papierkorb.",
+          "ok": "Verschieben",
+          "dontAsk": "Nicht mehr fragen"
+        },
+        "done": {
+          "one": "1 Datei in den Tresor verschoben – Original gelöscht",
+          "other": "{{count}} Dateien in den Tresor verschoben – Originale gelöscht"
+        },
+        "locked": {
+          "named": "„{{name}}“ ist im Tresor. Das Original konnte nicht gelöscht werden (geöffnet oder schreibgeschützt) – bitte selbst löschen.",
+          "one": "1 Original konnte nicht gelöscht werden (geöffnet oder schreibgeschützt) – bitte selbst löschen.",
+          "other": "{{count}} Originale konnten nicht gelöscht werden (geöffnet oder schreibgeschützt) – bitte selbst löschen."
+        },
+        "changed": {
+          "named": "„{{name}}“ wurde beim Hochladen geändert. Das Original bleibt auf diesem PC – bitte prüfen und selbst löschen.",
+          "one": "1 Datei wurde beim Hochladen geändert. Das Original bleibt auf diesem PC – bitte prüfen und selbst löschen.",
+          "other": "{{count}} Dateien wurden beim Hochladen geändert. Die Originale bleiben auf diesem PC – bitte prüfen und selbst löschen."
+        },
+        "other": {
+          "named": "„{{name}}“: Das Original konnte nicht gelöscht werden – bitte selbst löschen.",
+          "one": "1 Original konnte nicht gelöscht werden – bitte selbst löschen.",
+          "other": "{{count}} Originale konnten nicht gelöscht werden – bitte selbst löschen."
+        },
+        "notMoved": {
+          "one": "1 Datei wurde nicht verschoben – das Original bleibt auf diesem PC.",
+          "other": "{{count}} Dateien wurden nicht verschoben – die Originale bleiben auf diesem PC."
+        }
       }
     },
     "docAi": {
