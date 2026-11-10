@@ -173,7 +173,10 @@ test.describe('mail', () => {
     await expect(prow(15)).toHaveCount(0);
     await prow(14).locator('.ml-ffold').click();
     await expect(prow(15)).toBeVisible();
+    // Mail 1.13: a folder is chosen, then „Nach „Rechnungen“ verschieben“
     await prow(15).locator('.ml-pick-row').click();
+    await expect(page.locator('.ml-pick-go')).toHaveText(/Rechnungen/);
+    await page.locator('.ml-pick-go').click();
     await expect(pick).toHaveCount(0);
     await expect.poll(() => m.srv.state.messages.get(990).folderId).toBe(15);
   });

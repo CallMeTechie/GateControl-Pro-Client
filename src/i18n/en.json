@@ -3171,7 +3171,10 @@
       "archive": "Archive",
       "delete": "Delete",
       "read": "Read / unread",
-      "none": "None"
+      "flag": "Flag",
+      "move": "Move …",
+      "junk": "To junk",
+      "none": "Nothing"
     },
     "add": {
       "title": "Add account",
@@ -3225,7 +3228,7 @@
       "darkMailsHint": "While the app is dark, mails are shown dark too: light backgrounds turn dark and dark text light, pictures stay unchanged. The sun above a mail shows it light.",
       "quick1": "Quick action 1",
       "quick2": "Quick action 2",
-      "quickHint": "Buttons on a mail in the list (like swiping in the app)",
+      "quickHint": "The buttons appear when the mouse is on a mail in the list. The choice applies on all your devices.",
       "storageTitle": "Storage",
       "storage": "{{used}} of {{total}} used",
       "push": "Notifications",
@@ -3246,7 +3249,13 @@
       "remove": "Remove account",
       "removeTitle": "Remove “{{name}}”?",
       "removeText": "The account is removed from GateControl, with everything the server cached of it. The mails stay at the provider.",
-      "removed": "“{{name}}” removed"
+      "removed": "“{{name}}” removed",
+      "quickTitle": "Quick actions",
+      "quick1Hint": "First button on a mail – like swiping right in the app",
+      "quick2Hint": "Second button on a mail – like swiping left in the app",
+      "quickMoreLater": "More actions come once GateControl Mail on the server is newer.",
+      "confirmDelete": "Ask before deleting",
+      "confirmDeleteHint": "For the quick actions and for several mails. Off: you can click “Undo” for a moment. Mails in the trash always ask."
     },
     "err": {
       "offline": "The server cannot be reached right now.",
@@ -3939,6 +3948,147 @@
       "noAttendees": "No attendees in shared calendars",
       "account": "{{name}} · {{account}}",
       "accountSub": "{{owner}} · {{level}}"
+    },
+    "bulk": {
+      "tick": "Select “{{name}}”",
+      "tickHint": "Select – Ctrl+click picks several, Shift+click a range",
+      "count": "{{count}} selected",
+      "none": "Clear selection",
+      "allLoaded": "Select all shown",
+      "allIn": {
+        "one": "All {{count}} mail in “{{folder}}”",
+        "other": "All {{count}} mails in “{{folder}}”"
+      },
+      "newest": "The newest {{count}} of {{total}} mails in “{{folder}}”",
+      "loadingAll": "Selecting all mails …",
+      "every": "Select all in this folder",
+      "allN": {
+        "one": "Select all {{count}}",
+        "other": "Select all {{count}}"
+      },
+      "clear": "Clear selection",
+      "barLabel": "Actions for the selected mails",
+      "archive": "Archive",
+      "delete": "Delete",
+      "purge": "Delete for good",
+      "move": "Move",
+      "copy": "Copy",
+      "read": "Read",
+      "unread": "Unread",
+      "flag": "Flag",
+      "unflag": "Remove flag",
+      "junk": "Junk",
+      "copyDots": "Copy …",
+      "oneAccount": "Moving and copying only work with mails of one account.",
+      "mails": {
+        "one": "{{count}} mail",
+        "other": "{{count}} mails"
+      },
+      "deleteTitle": {
+        "one": "Delete {{count}} mail?",
+        "other": "Delete {{count}} mails?"
+      },
+      "deleteText": "They go to the trash. You can restore them from there.",
+      "dontAsk": "Don't ask again",
+      "deleteGo": "Delete",
+      "purgeTitle": {
+        "one": "Delete {{count}} mail for good?",
+        "other": "Delete {{count}} mails for good?"
+      },
+      "purgeText": "These mails are in the trash already. Afterwards they are gone and cannot be brought back.",
+      "purgeGo": "Delete for good",
+      "done": {
+        "move": {
+          "one": "{{count}} mail moved to “{{folder}}”",
+          "other": "{{count}} mails moved to “{{folder}}”"
+        },
+        "copy": {
+          "one": "{{count}} mail copied to “{{folder}}”",
+          "other": "{{count}} mails copied to “{{folder}}”"
+        },
+        "archive": {
+          "one": "{{count}} mail archived",
+          "other": "{{count}} mails archived"
+        },
+        "delete": {
+          "one": "{{count}} mail moved to the trash",
+          "other": "{{count}} mails moved to the trash"
+        },
+        "purged": {
+          "one": "{{count}} mail deleted for good",
+          "other": "{{count}} mails deleted for good"
+        },
+        "junk": {
+          "one": "{{count}} mail moved to junk",
+          "other": "{{count}} mails moved to junk"
+        },
+        "read": {
+          "one": "{{count}} mail marked as read",
+          "other": "{{count}} mails marked as read"
+        },
+        "unread": {
+          "one": "{{count}} mail marked as unread",
+          "other": "{{count}} mails marked as unread"
+        },
+        "flag": {
+          "one": "{{count}} mail flagged",
+          "other": "{{count}} mails flagged"
+        },
+        "unflag": {
+          "one": "Flag removed from {{count}} mail",
+          "other": "Flag removed from {{count}} mails"
+        },
+        "toOther": {
+          "one": "{{count}} mail moved to Other",
+          "other": "{{count}} mails moved to Other"
+        },
+        "toRelevant": {
+          "one": "{{count}} mail moved to Relevant",
+          "other": "{{count}} mails moved to Relevant"
+        }
+      },
+      "partial": {
+        "one": "{{count}} mail was not changed – please try again.",
+        "other": "{{count}} mails were not changed – please try again."
+      },
+      "undone": "Undone",
+      "undoLate": "Too late – this can no longer be undone.",
+      "undoPartial": {
+        "one": "{{count}} mail could not be brought back.",
+        "other": "{{count}} mails could not be brought back."
+      },
+      "drop": {
+        "move": {
+          "one": "Move {{count}} mail here",
+          "other": "Move {{count}} mails here"
+        },
+        "copy": {
+          "one": "Copy {{count}} mail here",
+          "other": "Copy {{count}} mails here"
+        }
+      },
+      "pick": {
+        "titleMove": {
+          "one": "Move {{count}} mail",
+          "other": "Move {{count}} mails"
+        },
+        "titleCopy": {
+          "one": "Copy {{count}} mail",
+          "other": "Copy {{count}} mails"
+        },
+        "move": "Move",
+        "copy": "Copy",
+        "mode": "Move or copy",
+        "search": "Search folders",
+        "recent": "Recent",
+        "folders": "Folders",
+        "here": "here",
+        "none": "No folder found",
+        "note": "Mails can only be moved or copied within their account.",
+        "goMove": "Move to “{{folder}}”",
+        "goCopy": "Copy to “{{folder}}”",
+        "choose": "Choose a folder"
+      }
     }
   },
   "home": {

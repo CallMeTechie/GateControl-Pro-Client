@@ -31,7 +31,9 @@
 
 	const DAY = 24 * 60 * 60 * 1000;
 	const ROLE_ORDER = ['inbox', 'drafts', 'sent', 'archive', 'junk', 'trash'];
-	const SWIPES = ['archive', 'delete', 'read', 'none'];
+	// the swipe actions of the settings (Mail 1.13 `swipeV2`: seven; older servers send the first four only)
+	const SWIPES = ['archive', 'delete', 'read', 'flag', 'move', 'junk', 'none'];
+	const QUICK_ICONS = { archive: 'archive', delete: 'trash', junk: 'junk', move: 'move' };
 	const COLORS = ['#F5B544', '#79B8FF', '#FF8080', '#46E0A0', '#B79CFF', '#F28CC2', '#5FD3E0', '#C7CDD6'];
 	const PROVIDER_LOOK = {
 		m365: ['MS', '#1F4FA0', '#FFFFFF'],
@@ -302,12 +304,13 @@
 		for (const a of [s.swipeRight, s.swipeLeft]) {
 			if (!SWIPES.includes(a) || a === 'none' || out.some((x) => x.action === a)) continue;
 			if (a === 'read') out.push({ action: 'read', icon: item && item.unread ? 'mailOpen' : 'mail', key: item && item.unread ? 'mail.act.markRead' : 'mail.act.markUnread' });
-			else out.push({ action: a, icon: a === 'archive' ? 'archive' : 'trash', key: `mail.act.${a}` });
+			else if (a === 'flag') out.push({ action: 'flag', icon: 'flag', key: item && item.flagged ? 'mail.act.unflag' : 'mail.act.flag' });
+			else out.push({ action: a, icon: QUICK_ICONS[a], key: `mail.act.${a}` });
 		}
 		return out;
 	}
 
-	/** What an action does to a mail: { flags: { unread } } | { act: 'archive' | 'delete' | 'junk' }. */
+	/** What an action does to a mail: { flags: { unread } } | { act: 'archive' | 'delete' | 'junk' } (move: the folder picker). */
 	function actionCall(action, item) {
 		if (action === 'read') return { flags: { unread: !(item && item.unread) } };
 		if (action === 'flag') return { flags: { flagged: !(item && item.flagged) } };
