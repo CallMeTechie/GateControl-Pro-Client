@@ -119,6 +119,16 @@ test.describe('drucken', () => {
     await page.locator('#page-drive .dv-row[data-id="11"]').click({ button: 'right' });
     await expect(page.locator('.dv-menu')).toBeVisible();
     await expect(page.locator('.dv-menu [data-item="print"]')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    // … nor in the menu of a selection, in the key hints, on Strg+P
+    for (const id of [11, 13]) await page.locator(`#page-drive .dv-row[data-id="${id}"] .dv-cb`).check();
+    await expect(page.locator('#page-drive .dv-keys')).not.toContainText(/(Drucken|Print)/);
+    await page.keyboard.press('Control+p');
+    await page.locator('#page-drive .dv-row[data-id="11"]').click({ button: 'right' });
+    await expect(page.locator('.dv-sel-menu')).toBeVisible();
+    await expect(page.locator('.dv-sel-menu [data-item="print"]')).toHaveCount(0);
+    await expect(page.locator('.pv-scrim')).toBeHidden();
+    await expect(page.locator('.toast')).toHaveCount(0);
   });
 
   test('the page: drop area, printers, the jobs with their stations and reasons', async ({ launchApp, mock }) => {

@@ -3217,7 +3217,7 @@ driveView = driveApi && window.GCDriveView && $('#page-drive')
 		// Drive 1.18: the overview's "Mail-Anhänge zum Ablegen" opens Mail › „Zum Ablegen“
 		openMailFiling: () => openMail({ kind: 'filing' }),
 		// Drucken: "Drucken …" in the menus, Strg+P and the viewers' button — only while printing is offered
-		print: printView ? { can: (n) => printView.canPrint(n), go: (ids) => printView.printDrive(ids) } : null,
+		print: printView ? { on: () => printView.usable(), can: (n) => printView.canPrint(n), go: (ids) => printView.printDrive(ids) } : null,
 		onStatus: (st) => {
 			const show = !!st && st.state === 'available';
 			$('#nav-drive').hidden = !show;

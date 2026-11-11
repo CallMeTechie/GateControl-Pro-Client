@@ -504,6 +504,8 @@
 		// Drive 1.7: "Fotos" (drive-photos-view.js) and "Speicher" (drive-storage-view.js)
 		// Drucken (print-view.js through o.print): which of `nodes` can be printed, and the print dialog for them
 		const printHook = o.print && typeof o.print.can === 'function' && typeof o.print.go === 'function' ? {
+			// printing is offered at all (the plugin is there for the apps and the person may print)
+			on: () => (typeof o.print.on === 'function' ? !!o.print.on() : true),
 			can: (n) => !!n && !n.isDir && o.print.can(n),
 			list: (nodes) => (Array.isArray(nodes) ? nodes : []).filter((n) => !n.isDir && o.print.can(n)),
 			go: (nodes) => { const ids = (Array.isArray(nodes) ? nodes : []).filter((n) => !n.isDir && o.print.can(n)).map((n) => n.id); if (ids.length) o.print.go(ids); },
@@ -1832,7 +1834,7 @@
 				item([k(ctrl), `+${click}`], t('drive.bulk.keys.single')),
 				item([k(ctrl), '+', k('X'), ' / ', k('V')], t('drive.bulk.keys.cutPaste')),
 				item([k(ctrl), '+', k('C'), ' / ', k('V')], t('drive.bulk.keys.copyPaste')),
-				printHook ? item([k(ctrl), '+', k('P')], t('print.menu.viewer')) : null,
+				printHook && printHook.on() ? item([k(ctrl), '+', k('P')], t('print.menu.viewer')) : null,
 				item([k(t('drive.bulk.key.del'))], t('drive.bulk.keys.trash')),
 				item([k('Esc')], t('drive.bulk.keys.clear')),
 				el('span', { class: 'dv-keys-i is-drag', text: t('drive.bulk.dropHint') }),
@@ -1908,7 +1910,7 @@
 			if (act === 'paste') { e.preventDefault(); paste(); return; }
 			// Strg+P: the selection goes to the print dialog (only while Drucken is offered)
 			if (act === 'print') {
-				if (!printHook || !items.length) return;
+				if (!printHook || !printHook.on() || !items.length) return;
 				e.preventDefault();
 				if (printHook.list(items).length) printHook.go(items); else toast(t('print.menu.none'), 'info');
 				return;
@@ -1942,7 +1944,7 @@
 				// Drive 1.14 'scanDocs': several pictures become one document (the pages in the order shown)
 				...(ki && items.length > 1 && ki.available(items, selWritable(items)) ? [{ key: 'scan', icon: 'file', label: t('drive.ki.scan.menuMany', { count: items.length }), act: { on: true }, run: () => ki.scanDialog(items) }] : []),
 				// Drucken: each file of the selection the plugin prints becomes a job
-				...(printHook ? [{ key: 'print', icon: 'print', label: printLabel(items), kbd: `${t('drive.bulk.key.ctrl')}+P`, act: printHook.list(items).length ? { on: true } : { on: false, why: 'print.menu.none' }, run: () => printHook.go(items) }] : []),
+				...(printHook && printHook.on() ? [{ key: 'print', icon: 'print', label: printLabel(items), kbd: `${t('drive.bulk.key.ctrl')}+P`, act: printHook.list(items).length ? { on: true } : { on: false, why: 'print.menu.none' }, run: () => printHook.go(items) }] : []),
 				'sep',
 				{ key: 'rename', icon: 'pen', label: t('drive.rename'), kbd: 'F2', act: a.rename, run: () => renameNode(items[0]) },
 				{ key: 'link', icon: 'link', label: t('drive.bulk.link'), act: a.link, run: () => doLink(items) },

@@ -417,7 +417,7 @@ describe('page wiring', () => {
     assert.match(renderer, /\$\('#nav-drucken'\)\.hidden = !show/);
     assert.match(renderer, /const PAGES = \[[^\]]*'drive', 'drucken'/);
     // Drive gets the print hook only while there is a print page
-    assert.match(renderer, /print: printView \? \{ can: \(n\) => printView\.canPrint\(n\), go: \(ids\) => printView\.printDrive\(ids\) \} : null/);
+    assert.match(renderer, /print: printView \? \{ on: \(\) => printView\.usable\(\), can: \(n\) => printView\.canPrint\(n\), go: \(ids\) => printView\.printDrive\(ids\) \} : null/);
   });
 
   it('server text never goes through innerHTML', () => {
@@ -436,7 +436,10 @@ describe('page wiring', () => {
   it('Drive offers printing only through the hook, and never for what the scan blocks', () => {
     const src = code(driveView);
     assert.match(src, /if \(printHook && !acts\.blocked && printHook\.can\(n\)\) item\('print'/);
-    assert.match(src, /if \(act === 'print'\) \{\s*if \(!printHook \|\| !items\.length\) return;/);
+    assert.match(src, /if \(act === 'print'\) \{\s*if \(!printHook \|\| !printHook\.on\(\) \|\| !items\.length\) return;/);
+    // without the plugin (or the right) neither the selection's entry nor the key hint shows
+    assert.match(src, /\.\.\.\(printHook && printHook\.on\(\) \? \[\{ key: 'print'/);
+    assert.match(src, /printHook && printHook\.on\(\) \? item\(\[k\(ctrl\), '\+', k\('P'\)\]/);
     assert.match(src, /can: \(n\) => !!n && !n\.isDir && o\.print\.can\(n\)/);
   });
 
