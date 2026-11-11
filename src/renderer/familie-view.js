@@ -114,6 +114,7 @@
 			avatars: new Map(),  // url → Promise<objectURL|null>
 			tick: null,          // timer: the next moment a card changes by itself
 			poll: null,          // timer: while shown, the cards are asked again
+			day: null,           // the day the page was last drawn for (family's time zone)
 		};
 
 		// ── Skeleton ─────────────────────────────────────────
@@ -170,12 +171,18 @@
 		const tabs = () => FS.tabsFor(S.status, S.internet);
 		const call = (fn, ...args) => Promise.resolve().then(() => fn(...args)).catch((err) => ({ ok: false, code: 'failed', error: err && err.message }));
 
+		/** An answer without what changes with every request (when it was fetched, the server's clock). */
+		const content = (res) => JSON.stringify(res, (k, v) => (k === 'fetchedAt' || k === 'serverTime' ? undefined : v));
+
 		async function load(what, fn, refresh) {
 			if (typeof fn !== 'function') return;
+			const before = S[what];
 			S.loading.add(what);
-			render();
+			// asking again for what is already shown only spins the button
+			if (before) renderHead(); else render();
 			const res = await call(fn, { refresh });
 			S.loading.delete(what);
+			const had = S.errors.has(what);
 			if (res && res.ok) {
 				S[what] = res;
 				S.errors.delete(what);
@@ -183,7 +190,8 @@
 				S.errors.set(what, res || { ok: false, code: 'failed' });
 			}
 			if (what === 'internet') fixTab();
-			render();
+			// the same answer again (the poll): the page is not rebuilt
+			if (before && res && res.ok && !had && content(before) === content(res)) renderHead(); else render();
 			if (what === 'internet') schedule();
 		}
 
@@ -794,10 +802,11 @@
 			refs.body.appendChild(list);
 
 			if (p.me.wifi === null) return;
-			if (!p.me.wifi || !w.available) {
+			if (!p.me.wifi) {
 				refs.body.appendChild(el('div', { class: 'fv-foot', text: t('familie.presence.wifi.off') }));
 				return;
 			}
+			if (!w.available) return;
 			const card = el('div', { class: 'fv-card fv-devs' }, [el('h2', { class: 'fv-card-h', text: t('familie.presence.devices.title') })]);
 			if (!w.devices.length) {
 				card.appendChild(el('div', { class: 'fv-sub', text: t('familie.presence.devices.empty') }));
@@ -833,6 +842,7 @@
 		return {
 			show() {
 				S.shown = true;
+				S.day = FS.dayOf(ctx().now, ctx().tz);
 				render();
 				// back on the page: the cards may have changed meanwhile (the core keeps answers for a few seconds)
 				if (!S.dirty && S.internet && !S.loading.has('internet')) load('internet', api.internet, false);
@@ -840,7 +850,14 @@
 				schedule();
 				clearInterval(S.poll);
 				// Parents get no push about what the other parent or a rule did: ask now and then.
-				S.poll = setInterval(() => { if (S.shown && !dlg.open && !S.loading.has('internet')) load('internet', api.internet, true); }, 60000);
+				S.poll = setInterval(() => {
+					if (!S.shown || dlg.open) return;
+					// a new day: "morgen 07:00" becomes "07:00", the date in the head moves on
+					const c = ctx();
+					const day = FS.dayOf(c.now, c.tz);
+					if (day !== S.day) { S.day = day; render(); }
+					if (!S.loading.has('internet')) load('internet', api.internet, true);
+				}, 60000);
 			},
 			hide() {
 				S.shown = false;
