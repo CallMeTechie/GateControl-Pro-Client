@@ -29,6 +29,11 @@
  * and app/timetable, app/changes (and with plugin 1.4.0 app/messages,
  * app/absences) answer from the test's data.
  *
+ * Familie: without `server.setFamilie()` the plugin list has no
+ * `gatecontrol-familie`. With it (support/familie-mock.js) the list names it
+ * and me, internet, rules and presence answer from the test's data; pauses
+ * and switches change it.
+ *
  * Drive: without `await server.setDrive()` the plugin list has no
  * `gatecontrol-drive`. With it (support/drive-mock.js) the list names it and
  * its routes go to the core's fake Drive server.
@@ -69,6 +74,7 @@ const crypto = require('crypto');
 const selfsigned = require('selfsigned');
 const { createMessenger } = require('./messenger-mock');
 const { createSchool } = require('./school-mock');
+const { createFamilie } = require('./familie-mock');
 const { createVault } = require('./vault-mock');
 const { createDrive } = require('./drive-mock');
 const { createMail } = require('./mail-mock');
@@ -138,6 +144,7 @@ async function startMockServer() {
   const streams = new Set();
   let messenger = null; // support/messenger-mock.js, null = no Messenger plugin
   let school = null; // support/school-mock.js, null = no Schule plugin
+  let familie = null; // support/familie-mock.js, null = no Familie plugin
   let vault = null; // support/vault-mock.js, null = no Vault plugin
   let drive = null; // support/drive-mock.js, null = no Drive plugin
   let mail = null; // support/mail-mock.js, null = no Mail plugin
@@ -288,6 +295,15 @@ async function startMockServer() {
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
 
+      if (familie) {
+        // The plugin list names every plugin that is set, Familie among them.
+        if (route === 'plugins') {
+          const list = messenger ? [{ id: 'gatecontrol-messenger', name: 'Messenger', version: '1.0.0', tab: { label: 'Chats', icon: 'M0 0' } }] : [];
+          return json(200, { ok: true, plugins: [...list, ...[school, vault, drive, mail, gatedrop, door, notes, familie].filter(Boolean).map((x) => x.entry()).filter(Boolean)] });
+        }
+        if (familie.handle({ method: req.method, route, raw }, json)) return undefined;
+      }
+
       if (notes) {
         // The plugin list names every plugin that is set (Notizen & Aufgaben only while it is licensed).
         if (route === 'plugins') {
@@ -425,6 +441,11 @@ async function startMockServer() {
     setSchool(opts = {}) {
       school = createSchool(opts);
       return school;
+    },
+    /** Enables the Familie plugin ("Internet zu Hause", support/familie-mock.js); returns its state. */
+    setFamilie(opts = {}) {
+      familie = createFamilie(opts);
+      return familie;
     },
     /** Enables the Drive plugin (support/drive-mock.js, the core's fake server on its own port); returns it. */
     async setDrive(opts = {}) {
