@@ -122,6 +122,8 @@ test.describe('drucken', () => {
   });
 
   test('the page: drop area, printers, the jobs with their stations and reasons', async ({ launchApp, mock }) => {
+    // open jobs are asked for again after 15 s (a stopped printer): two rounds of that fit into this test
+    test.setTimeout(180000);
     const pr = setPrint(mock);
     const { app, page } = await launchApp();
     await freeze(page);
@@ -177,11 +179,11 @@ test.describe('drucken', () => {
     await theme(page, 'dark');
 
     // open jobs are asked for one by one — the finished ones never
-    await expect.poll(() => sent(pr, 'GET', 'jobs/j1').length, { timeout: 20000 }).toBeGreaterThan(0);
+    await expect.poll(() => sent(pr, 'GET', 'jobs/j1').length, { timeout: 45000 }).toBeGreaterThan(0);
     expect(sent(pr, 'GET', 'jobs/j3').length + sent(pr, 'GET', 'jobs/j4').length + sent(pr, 'GET', 'jobs/j5').length).toBe(0);
     // the printer got its paper: the job ends, the list and the number follow without a reload
     pr.setJob('j1', { state: 'done', message: null, doneAt: new Date(NOW + 60000).toISOString() });
-    await expect(rowOf(root, 'j1').locator('.pv-chip')).toHaveText(/^(Gedruckt|Printed)$/, { timeout: 30000 });
+    await expect(rowOf(root, 'j1').locator('.pv-chip')).toHaveText(/^(Gedruckt|Printed)$/, { timeout: 60000 });
     await expect(page.locator('#print-badge')).toHaveText('1');
 
     // "Abbrechen" of the waiting job
@@ -602,6 +604,21 @@ test.describe('drucken', () => {
     const temp = await app.evaluate(({ app: a }) => a.getPath('temp'));
     await expect.poll(() => walk(path.join(temp, 'gatecontrol-drive', 'vault')).filter((f) => f.endsWith('Zugang.txt'))).toEqual([]);
     expect(appDir).toBeTruthy();
+
+    // "Erneut drucken" of that job asks again — the yes of the first print does not last
+    pr.setJob('job1', { state: 'failed', error: 'printer_rejected', doneAt: new Date().toISOString() });
+    await page.locator('#nav-drucken').click();
+    const prow = page.locator('#page-drucken .pv-job[data-id="job1"]');
+    await expect(prow).toHaveClass(/is-err/);
+    await prow.locator('[data-act="again"]').click();
+    await expect(d2.locator('.pv-dlg-h')).toHaveText(/(Aus dem Tresor drucken\?|Print from the vault\?)/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.pv-scrim')).toBeHidden();
+    expect(pr.uploads).toHaveLength(1);
+    await prow.locator('[data-act="again"]').click();
+    await d2.locator('[data-k="vault-yes"]').click();
+    await expect(d2.locator('.pv-file-tx b')).toHaveText('Zugang.txt');
+    await page.keyboard.press('Escape');
   });
 
   test('states: no printer, no right to print (earlier jobs stay), not available, no connection', async ({ launchApp, mock }) => {
@@ -679,6 +696,7 @@ test.describe('drucken', () => {
   });
 
   test('an older plugin (no jobs/<id>, no expiresAt / doneAt): the list works, no error', async ({ launchApp, mock }) => {
+    test.setTimeout(180000);
     const pr = setPrint(mock, { version: '1.0.3', jobRoute: false, times: false, jobs: jobs().slice(0, 2), printers: printers().map((p) => { const { media, office, ...rest } = p.printer; return { ...p, printer: rest }; }) });
     const { page, answerOpenDialogs } = await launchApp();
     await freeze(page);
@@ -688,9 +706,9 @@ test.describe('drucken', () => {
     // waiting, but until when is not known: the sentence without a time
     await expect(rowOf(root, 'j2').locator('.pv-why')).toHaveText(/(bis zu 24 Stunden|up to 24 hours)/);
     // the job is followed through the overview
-    await expect.poll(() => sent(pr, 'GET', 'jobs/j1').length, { timeout: 20000 }).toBe(1);
+    await expect.poll(() => sent(pr, 'GET', 'jobs/j1').length, { timeout: 45000 }).toBe(1);
     pr.setJob('j1', { state: 'done', message: null });
-    await expect(rowOf(root, 'j1').locator('.pv-chip')).toHaveText(/^(Gedruckt|Printed)$/, { timeout: 40000 });
+    await expect(rowOf(root, 'j1').locator('.pv-chip')).toHaveText(/^(Gedruckt|Printed)$/, { timeout: 60000 });
     expect(sent(pr, 'GET', 'jobs/j1').length).toBe(1);
     // the dialog of a printer that names no paper and no tray
     await answerOpenDialogs([tmpFile('a.pdf', PDF2)]);

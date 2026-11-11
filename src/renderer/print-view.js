@@ -483,7 +483,13 @@
 				return;
 			}
 			if (a === 'again') {
-				const res = await call(() => api.again(r.kind === 'transfer' ? { transferId: r.id } : { jobId: r.id }));
+				const ref = r.kind === 'transfer' ? { transferId: r.id } : { jobId: r.id };
+				let res = await call(() => api.again(ref));
+				// a file of a vault: asked again every time
+				if (res && res.code === 'vault_confirm') {
+					if (!(await askVault())) return;
+					res = await call(() => api.again(ref, { vault: true }));
+				}
 				if (!res || !res.ok) { toast(PS.errorText(res, t), 'error'); return; }
 				const job = r.kind === 'job' ? jobsNow().find((j) => j.id === r.id) : null;
 				const preset = res.options || (job ? { deviceId: job.deviceId, copies: job.copies, color: job.color, duplex: job.duplex, media: job.media, source: job.source } : null);
