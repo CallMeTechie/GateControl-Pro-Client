@@ -466,7 +466,8 @@
 	 * core's SchoolService claimed) also passes its `context` (child, day,
 	 * message) on: { page: 'schule', id: null, context }; GateDrop likewise
 	 * ({ tab, sendId }): { page: 'gatedrop', id: null, context }; Vault
-	 * ({ topic, event, vaultId, emergencyId, page }): { page: 'vault', id: null, context }.
+	 * ({ topic, event, vaultId, emergencyId, page }): { page: 'vault', id: null, context };
+	 * Familie ("Internet zu Hause": { type: 'internet', kind, userId }): { page: 'familie', id: null, context }.
 	 */
 	function navigateTarget(evt, pages) {
 		const route = evt && evt.route;
@@ -485,6 +486,11 @@
 		const ctx = evt && evt.context && typeof evt.context === 'object' ? evt.context : null;
 		if (route === 'plg-gatecontrol-door' && ctx && typeof ctx.cameraId === 'string' && /^c[0-9a-f]{15}$/.test(ctx.cameraId) && (!pages || pages.includes('kameras'))) {
 			return { page: 'kameras', id: null, context: ctx };
+		}
+		// Familie: only an "Internet zu Hause" push the core's FamilieService claimed (context type 'internet') opens
+		// the page; the other topics of Familie (tasks, dates, …; same route plg-gatecontrol-familie) keep the inbox.
+		if (route === 'plg-gatecontrol-familie' && ctx && ctx.type === 'internet' && (!pages || pages.includes('familie'))) {
+			return { page: 'familie', id: null, context: ctx };
 		}
 		return { page: 'inbox', id };
 	}

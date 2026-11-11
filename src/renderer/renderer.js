@@ -10,7 +10,7 @@
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
-	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, gatedrop: gatedropApi, vault: vaultApi, drive: driveApi,
+	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, familie: familieApi, gatedrop: gatedropApi, vault: vaultApi, drive: driveApi,
 	signin: signinApi, mail: mailApi, cameras: camerasApi, notes: notesApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
@@ -189,6 +189,7 @@ function refreshTexts() {
 	renderNotifySettings();
 	chatView?.relabel();
 	schoolView?.relabel();
+	familieView?.relabel();
 	gatedropView?.relabel();
 	vaultView?.relabel();
 	driveView?.relabel();
@@ -211,6 +212,7 @@ let currentPortalUrl = null; // pushed from main on connect/disconnect
 let currentPage = 'status';
 let chatView = null; // chat-view.js instance (CHATS section below)
 let schoolView = null; // school-view.js instance (SCHULE section below)
+let familieView = null; // familie-view.js instance (FAMILIE section below)
 let gatedropView = null; // gatedrop-view.js instance (GATEDROP section below)
 let vaultView = null; // vault-view.js instance (VAULT section below)
 let driveView = null; // drive-view.js instance (DRIVE section below)
@@ -368,7 +370,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'gatedrop', 'mail', 'notizen', 'drive', 'vault', 'kameras', 'inbox', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'familie', 'gatedrop', 'mail', 'notizen', 'drive', 'vault', 'kameras', 'inbox', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -405,6 +407,9 @@ function navigateTo(page, opts = {}) {
 	// Schule: loads when shown (the timetable of this / next week)
 	if (page === 'schule' && prev !== 'schule') schoolView?.show();
 	else if (prev === 'schule' && page !== 'schule') schoolView?.hide();
+	// Familie: the cards load when shown and are asked again while it is open
+	if (page === 'familie' && prev !== 'familie') familieView?.show();
+	else if (prev === 'familie' && page !== 'familie') familieView?.hide();
 	// GateDrop: the lists load when shown
 	if (page === 'gatedrop' && prev !== 'gatedrop') gatedropView?.show();
 	else if (prev === 'gatedrop' && page !== 'gatedrop') gatedropView?.hide();
@@ -2483,6 +2488,16 @@ function renderInboxDetail() {
 		row.appendChild(btn);
 		detail.appendChild(row);
 	}
+	// "Internet zu Hause" message (pause, extra time, "Pause vorbei"): the cards of Familie here in the app.
+	const familieCtx = window.GCFamilieState && shownPages().includes('familie') ? window.GCFamilieState.entryContext(entry) : null;
+	if (familieCtx) {
+		const row = h('div', 'inbox-actions');
+		const btn = h('button', 'btn btn-pri', t('familie.inboxOpen'));
+		btn.type = 'button';
+		btn.addEventListener('click', () => openFamilie(familieCtx));
+		row.appendChild(btn);
+		detail.appendChild(row);
+	}
 	// Camera push ("Personen an der Kamera"): that camera on the page Kameras (Ring stays in the inbox).
 	const camCtx = window.GCCameraState && shownPages().includes('kameras') ? window.GCCameraState.entryContext(entry) : null;
 	if (camCtx) {
@@ -2559,10 +2574,11 @@ function onInboxListKey(e) {
 	if (row) { row.focus(); row.scrollIntoView({ block: 'nearest' }); }
 }
 
-/** Pages that exist right now (Chats / Schule / GateDrop / Drive / Vault only while the server offers them). */
+/** Pages that exist right now (Chats / Schule / Familie / GateDrop / Drive / Vault only while the server offers them). */
 function shownPages() {
 	return PAGES.filter((p) => (p === 'chats' ? !!chatView && !$('#nav-chats').hidden
 		: p === 'schule' ? !!schoolView && !$('#nav-schule').hidden
+			: p === 'familie' ? !!familieView && !$('#nav-familie').hidden
 			: p === 'gatedrop' ? !!gatedropView && !$('#nav-gatedrop').hidden
 				: p === 'drive' ? !!driveView && !$('#nav-drive').hidden
 					: p === 'mail' ? !!mailView && !$('#nav-mail').hidden
@@ -2618,6 +2634,13 @@ function openSchool(context) {
 	if (!schoolView) return;
 	schoolView.open(context || null);
 	navigateTo('schule');
+}
+
+/** Familie on a push target ("Internet zu Hause": the child's card), e.g. from a toast click. */
+function openFamilie(context) {
+	if (!familieView) return;
+	familieView.open(context || null);
+	navigateTo('familie');
 }
 
 function openInbox(id = null) {
@@ -2682,6 +2705,8 @@ if (notifyAvailable()) {
 			loadInbox();
 		} else if (target.page === 'schule') {
 			openSchool(target.context);
+		} else if (target.page === 'familie') {
+			openFamilie(target.context);
 		} else if (target.page === 'gatedrop') {
 			openGateDrop(target.context);
 		} else if (target.page === 'vault') {
@@ -3027,6 +3052,28 @@ schoolView = schoolApi && window.GCSchoolView && $('#page-schule')
 			const show = !!st && st.state === 'available';
 			$('#nav-schule').hidden = !show;
 			if (!show && currentPage === 'schule' && st && st.state === 'unavailable') navigateTo('status');
+		},
+	})
+	: null;
+
+// ══════════════════════════════════════════════════════════
+//  FAMILIE (plugin gatecontrol-familie: "Internet zu Hause", rules, own presence)
+//  Data: window.gatecontrol.familie (core FamilieService in main); the page
+//  is built by familie-view.js (window.GCFamilieView) with familie-state.js.
+//  The nav entry is shown only while the server lists the plugin and the
+//  person is a member of a family.
+// ══════════════════════════════════════════════════════════
+familieView = familieApi && window.GCFamilieView && $('#page-familie')
+	? window.GCFamilieView.mount({
+		root: $('#page-familie'),
+		api: familieApi,
+		t,
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		onStatus: (st) => {
+			const show = !!st && st.state === 'available';
+			$('#nav-familie').hidden = !show;
+			if (!show && currentPage === 'familie' && st && st.state === 'unavailable') navigateTo('status');
 		},
 	})
 	: null;

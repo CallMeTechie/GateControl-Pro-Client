@@ -38,6 +38,7 @@ let createUpdateInstaller, installErrorText;
 let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsSchema, setupNotifications;
 let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
+let FamilieService;
 let DriveService, DriveSync;
 let MailService;
 let NotesService;
@@ -106,6 +107,8 @@ try {
   ({ setupMessenger } = require('./messenger'));
   // Schule (plugin gatecontrol-schule): WebUntis timetable (core services/school.js).
   ({ SchoolService } = require('@gatecontrol/client-core'));
+  // Familie (plugin gatecontrol-familie): "Internet zu Hause", rules, own presence (core services/familie.js).
+  ({ FamilieService } = require('@gatecontrol/client-core'));
   // Drive (plugin gatecontrol-drive): the files of the person, the family and
   // the team on the own storage (core services/drive.js); absent in an older core.
   ({ DriveService, DriveSync } = require('@gatecontrol/client-core'));
@@ -315,6 +318,7 @@ let supportBundle = null; // "Support-Paket senden" (core src/support/sender.js)
 let notifications = null; // notification center (./notifications.js), one per app lifetime
 let chats = null; // messenger (./messenger.js), one per app lifetime
 let school = null; // Schule (core SchoolService), one per app lifetime
+let familie = null; // Familie (core FamilieService), one per app lifetime
 let vault = null; // Vault (core VaultService), one per app lifetime
 let vaultQuick = null; // Vault quick search window (./vault-quick.js)
 let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
@@ -1042,6 +1046,14 @@ function initializeServices() {
     pushClient: notifications?.pushClient,
   }) : null;
 
+  // Familie: shown while the server lists the plugin and the person is a member of a
+  // family; the toasts of "Internet zu Hause" open the page.
+  familie = FamilieService ? new FamilieService({
+    apiClient, log,
+    notificationCenter: notifications?.notificationCenter,
+    pushClient: notifications?.pushClient,
+  }) : null;
+
   // Drive: shown while the server lists the plugin; opened files go to
   // %TEMP%\gatecontrol-drive, the folder last picked for "In Drive speichern"
   // is kept per server in the store.
@@ -1467,6 +1479,8 @@ function registerIpcHandlers() {
     chatNotifier: chats?.chatNotifier,
     // school:* channels + events, reset on server:setup (core, opt-in)
     school,
+    // familie:* channels + events, reset on server:setup (core, opt-in)
+    familie,
     // vault:* channels + events, reset on server:setup (core, opt-in)
     vault,
     // gatedrop:* channels + events, reset on server:setup (core, opt-in)
@@ -1565,6 +1579,8 @@ app.on('ready', () => {
   chats.start();
   // Schule: availability check, push → page.
   school?.start();
+  // Familie: member of a family? push → page.
+  familie?.start();
   // Drive: availability check (the page shows while the server lists the plugin).
   drive?.start();
   // Drive plugin 1.22: the vault viewer's bytes (gcvault:) — only tokens the page opened, revoked on close and lock
@@ -1755,6 +1771,7 @@ app.on('before-quit', (e) => {
   // Chats: save the cache, leave the open chat.
   chats?.stop();
   school?.stop();
+  familie?.stop();
   drive?.stop();
   // Mail: a waiting Microsoft sign-in ends, the offline cache is written.
   mail?.stop();

@@ -295,6 +295,12 @@ describe('inbox empty states and hints', () => {
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-notizen', id: 8 }, pages.filter((p) => p !== 'notizen')), { page: 'inbox', id: 8 });
     assert.deepEqual(NS.routeTarget('plg-gatecontrol-notizen/note/812', ['notizen']), { page: 'notizen', context: { note: 812 } });
     assert.deepEqual(NS.routeTarget('plg-gatecontrol-notizen', ['notizen']), { page: 'notizen', context: null });
+    // Familie: only an "Internet zu Hause" toast the core claimed opens the page; other topics of Familie keep the inbox
+    const net = { type: 'internet', kind: 'pause_over', userId: 5, until: null, ruleId: null };
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-familie', id: 9, context: net }, [...pages, 'familie']), { page: 'familie', id: null, context: net });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-familie', id: 9, context: net }, pages), { page: 'inbox', id: 9 });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-familie', id: 9 }, [...pages, 'familie']), { page: 'inbox', id: 9 });
+    assert.equal(NS.routeTarget('plg-gatecontrol-familie', ['familie']), null);
     // Schule: a toast the core claimed opens the page with its context (child / day / message)
     const ctx = { kind: 'changes', studentId: 3, date: '2026-10-20', messageId: null };
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7, context: ctx }, [...pages, 'schule']), { page: 'schule', id: null, context: ctx });
