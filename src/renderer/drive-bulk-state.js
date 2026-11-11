@@ -194,6 +194,8 @@
 			if (c === 'x') return 'cut';
 			if (c === 'c') return 'copy';
 			if (c === 'v') return 'paste';
+			// Strg+P: print the selection (Drucken, when the server offers it)
+			if (c === 'p' && !k.shiftKey) return 'print';
 			return null;
 		}
 		if (k.altKey || mod) return null;

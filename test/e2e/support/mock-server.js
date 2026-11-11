@@ -34,6 +34,10 @@
  * and me, internet, rules and presence answer from the test's data; pauses
  * and switches change it.
  *
+ * Drucken: without `server.setPrint()` the plugin list has no
+ * `gatecontrol-print`. With it (support/print-mock.js) the list names it and
+ * overview, the media upload, print and jobs answer from the test's data.
+ *
  * Drive: without `await server.setDrive()` the plugin list has no
  * `gatecontrol-drive`. With it (support/drive-mock.js) the list names it and
  * its routes go to the core's fake Drive server.
@@ -75,6 +79,7 @@ const selfsigned = require('selfsigned');
 const { createMessenger } = require('./messenger-mock');
 const { createSchool } = require('./school-mock');
 const { createFamilie } = require('./familie-mock');
+const { createPrint } = require('./print-mock');
 const { createVault } = require('./vault-mock');
 const { createDrive } = require('./drive-mock');
 const { createMail } = require('./mail-mock');
@@ -145,6 +150,7 @@ async function startMockServer() {
   let messenger = null; // support/messenger-mock.js, null = no Messenger plugin
   let school = null; // support/school-mock.js, null = no Schule plugin
   let familie = null; // support/familie-mock.js, null = no Familie plugin
+  let print = null; // support/print-mock.js, null = no plugin Drucken & Scannen
   let vault = null; // support/vault-mock.js, null = no Vault plugin
   let drive = null; // support/drive-mock.js, null = no Drive plugin
   let mail = null; // support/mail-mock.js, null = no Mail plugin
@@ -294,6 +300,15 @@ async function startMockServer() {
         return json(200, { ok: true, token: API_TOKEN, peerId: PEER_ID, config: null });
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
+
+      if (print) {
+        // The plugin list names every plugin that is set, Drucken & Scannen among them (while it is listed).
+        if (route === 'plugins') {
+          const list = messenger ? [{ id: 'gatecontrol-messenger', name: 'Messenger', version: '1.0.0', tab: { label: 'Chats', icon: 'M0 0' } }] : [];
+          return json(200, { ok: true, plugins: [...list, ...[school, vault, drive, mail, gatedrop, door, notes, familie, print].filter(Boolean).map((x) => x.entry()).filter(Boolean)] });
+        }
+        if (print.handle({ method: req.method, route, raw, headers: req.headers }, json)) return undefined;
+      }
 
       if (familie) {
         // The plugin list names every plugin that is set, Familie among them.
@@ -446,6 +461,11 @@ async function startMockServer() {
     setFamilie(opts = {}) {
       familie = createFamilie(opts);
       return familie;
+    },
+    /** Enables the plugin Drucken & Scannen (support/print-mock.js); returns its state. */
+    setPrint(opts = {}) {
+      print = createPrint(opts);
+      return print;
     },
     /** Enables the Drive plugin (support/drive-mock.js, the core's fake server on its own port); returns it. */
     async setDrive(opts = {}) {

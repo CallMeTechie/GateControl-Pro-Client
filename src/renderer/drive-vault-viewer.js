@@ -121,6 +121,7 @@
 	 * @param {Function} o.errorText
 	 * @param {(n) => void} o.openWith - "Mit anderem Programm öffnen" (asked here first)
 	 * @param {(n) => void} [o.saveAs] - "Speichern unter …"
+	 * @param {{ can(n): boolean, go(nodes): void }} [o.print] - "Drucken" (print-view.js), only for files the plugin prints
 	 * @param {(title, text, confirm, run) => void} o.confirm - a question before the way out
 	 */
 	function create(o) {
@@ -172,6 +173,8 @@
 				if (!vault) { close(); o.openWith(s.n); return; }
 				o.confirm(t('drive.vv.openWithTitle'), t('drive.vv.openWithText'), t('drive.vv.openWithGo'), () => { close(); o.openWith(s.n); });
 			} } }));
+			// Drucken (when the app offers it for this file): the whole file, not the part shown; a vault file is asked about in the print dialog
+			if (o.print && o.print.can(s.n)) acts.push(el('button', { type: 'button', class: 'btn btn-ghost btn-sm dv-vv-print', text: t('print.menu.viewer'), on: { click: () => o.print.go([s.n]) } }));
 			if (o.saveAs) acts.push(el('button', { type: 'button', class: 'btn btn-ghost btn-sm', text: t('drive.saveAs'), on: { click: () => { close(); o.saveAs(s.n); } } }));
 			return acts;
 		}

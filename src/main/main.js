@@ -39,6 +39,7 @@ let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsS
 let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
 let FamilieService;
+let PrintService;
 let DriveService, DriveSync;
 let MailService;
 let NotesService;
@@ -109,6 +110,8 @@ try {
   ({ SchoolService } = require('@gatecontrol/client-core'));
   // Familie (plugin gatecontrol-familie): "Internet zu Hause", rules, own presence (core services/familie.js).
   ({ FamilieService } = require('@gatecontrol/client-core'));
+  // Drucken (plugin gatecontrol-print): the printers at home (core services/print.js); absent in an older core.
+  ({ PrintService } = require('@gatecontrol/client-core'));
   // Drive (plugin gatecontrol-drive): the files of the person, the family and
   // the team on the own storage (core services/drive.js); absent in an older core.
   ({ DriveService, DriveSync } = require('@gatecontrol/client-core'));
@@ -319,6 +322,7 @@ let notifications = null; // notification center (./notifications.js), one per a
 let chats = null; // messenger (./messenger.js), one per app lifetime
 let school = null; // Schule (core SchoolService), one per app lifetime
 let familie = null; // Familie (core FamilieService), one per app lifetime
+let print = null; // Drucken (core PrintService), one per app lifetime
 let vault = null; // Vault (core VaultService), one per app lifetime
 let vaultQuick = null; // Vault quick search window (./vault-quick.js)
 let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
@@ -1079,6 +1083,16 @@ function initializeServices() {
     allowedHosts: () => [store.get('server.url', ''), portalUrl].map((u) => { try { return u ? new URL(u).hostname : null; } catch { return null; } }).filter(Boolean),
   }) : null;
 
+  // Drucken: shown while the server offers the plugin to the apps. Files reach it only through the file dialog,
+  // a drop on the window or Drive (checked in the core: type, size, virus scan); where the files of the last jobs
+  // lie ("Erneut drucken") is kept in the store per server.
+  print = PrintService ? new PrintService({
+    apiClient, log, store, dialog, drive,
+    getMainWindow: () => mainWindow,
+    notificationCenter: notifications?.notificationCenter,
+    pushClient: notifications?.pushClient,
+  }) : null;
+
   // Mail: shown while the server lists the plugin and lets the person in;
   // attachments open from %TEMP%\gatecontrol-mail, the offline cache lives in
   // %APPDATA%\…\mail-cache (only under DPAPI), the Microsoft sign-in runs in
@@ -1481,6 +1495,8 @@ function registerIpcHandlers() {
     school,
     // familie:* channels + events, reset on server:setup (core, opt-in)
     familie,
+    // print:* channels + events, reset on server:setup (core, opt-in)
+    print,
     // vault:* channels + events, reset on server:setup (core, opt-in)
     vault,
     // gatedrop:* channels + events, reset on server:setup (core, opt-in)
@@ -1581,6 +1597,8 @@ app.on('ready', () => {
   school?.start();
   // Familie: member of a family? push → page.
   familie?.start();
+  // Drucken: is the plugin there for the apps? print pushes → page.
+  print?.start();
   // Drive: availability check (the page shows while the server lists the plugin).
   drive?.start();
   // Drive plugin 1.22: the vault viewer's bytes (gcvault:) — only tokens the page opened, revoked on close and lock
@@ -1772,6 +1790,7 @@ app.on('before-quit', (e) => {
   chats?.stop();
   school?.stop();
   familie?.stop();
+  print?.stop();
   drive?.stop();
   // Mail: a waiting Microsoft sign-in ends, the offline cache is written.
   mail?.stop();

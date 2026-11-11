@@ -467,7 +467,8 @@
 	 * message) on: { page: 'schule', id: null, context }; GateDrop likewise
 	 * ({ tab, sendId }): { page: 'gatedrop', id: null, context }; Vault
 	 * ({ topic, event, vaultId, emergencyId, page }): { page: 'vault', id: null, context };
-	 * Familie ("Internet zu Hause": { type: 'internet', kind, userId }): { page: 'familie', id: null, context }.
+	 * Familie ("Internet zu Hause": { type: 'internet', kind, userId }): { page: 'familie', id: null, context };
+	 * Drucken ({ type: 'print', kind, jobId }): { page: 'drucken', id: null, context }.
 	 */
 	function navigateTarget(evt, pages) {
 		const route = evt && evt.route;
@@ -492,6 +493,10 @@
 		if (route === 'plg-gatecontrol-familie' && ctx && ctx.type === 'internet' && (!pages || pages.includes('familie'))) {
 			return { page: 'familie', id: null, context: ctx };
 		}
+		// Drucken: a "Druck fertig" / "Druck fehlgeschlagen" toast the core's PrintService claimed opens the page on its job.
+		if (route === 'plg-gatecontrol-print' && ctx && ctx.type === 'print' && (!pages || pages.includes('drucken'))) {
+			return { page: 'drucken', id: null, context: ctx };
+		}
 		return { page: 'inbox', id };
 	}
 
@@ -503,7 +508,7 @@
 	 */
 	function routeTarget(route, pages) {
 		const parts = str(route).split('/');
-		const map = { 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule', 'plg-gatecontrol-gatedrop': 'gatedrop', 'plg-gatecontrol-vault': 'vault', 'plg-gatecontrol-mail': 'mail', 'plg-gatecontrol-notizen': 'notizen' };
+		const map = { 'plg-gatecontrol-messenger': 'chats', 'plg-gatecontrol-schule': 'schule', 'plg-gatecontrol-gatedrop': 'gatedrop', 'plg-gatecontrol-vault': 'vault', 'plg-gatecontrol-mail': 'mail', 'plg-gatecontrol-notizen': 'notizen', 'plg-gatecontrol-print': 'drucken' };
 		const page = map[parts[0]];
 		if (!page || (pages && !pages.includes(page))) return null;
 		// GateDrop: plg-gatecontrol-gatedrop[/received|sent|links]

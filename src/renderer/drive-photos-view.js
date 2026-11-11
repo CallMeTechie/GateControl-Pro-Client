@@ -661,6 +661,8 @@
 					me && me.links && me.links.node ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => portal(p.id) } }, [icon('cloud', 14), el('span', { text: t('drive.portal.open') })]) : null,
 					feats().albums ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => addDialog([p.id]) } }, [icon('plus', 14), el('span', { text: t('drive.photos.addTo') })]) : null,
 					!blocked && o.share && o.canShare && o.canShare(p) ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => o.share(p) } }, [icon('link', 14), el('span', { text: t('drive.viewer.share') })]) : null,
+					// Drucken (when the app offers it for this picture)
+					!blocked && o.print && o.print.can(p) ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dpv-print', on: { click: () => o.print.go([p]) } }, [icon('print', 14), el('span', { text: t('print.menu.viewer') })]) : null,
 					blocked ? null : el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => saveAs(p) } }, [icon('down', 14), el('span', { text: t('drive.saveAs') })]),
 					blocked ? null : el('button', { type: 'button', class: 'btn btn-pri btn-sm', on: { click: () => openFile(p) } }, [icon('open', 14), el('span', { text: t('drive.open') })]),
 				);
