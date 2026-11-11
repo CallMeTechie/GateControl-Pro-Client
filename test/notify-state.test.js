@@ -301,6 +301,13 @@ describe('inbox empty states and hints', () => {
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-familie', id: 9, context: net }, pages), { page: 'inbox', id: 9 });
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-familie', id: 9 }, [...pages, 'familie']), { page: 'inbox', id: 9 });
     assert.equal(NS.routeTarget('plg-gatecontrol-familie', ['familie']), null);
+    // Drucken: a "Druck fertig" / "Druck fehlgeschlagen" toast the core claimed opens the page on its job
+    const pr = { type: 'print', kind: 'failed', jobId: 'j4' };
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-print', id: 11, context: pr }, [...pages, 'drucken']), { page: 'drucken', id: null, context: pr });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-print', id: 11, context: pr }, pages), { page: 'inbox', id: 11 });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-print', id: 11 }, [...pages, 'drucken']), { page: 'inbox', id: 11 });
+    assert.deepEqual(NS.routeTarget('plg-gatecontrol-print', ['drucken']), { page: 'drucken', context: null });
+    assert.equal(NS.routeTarget('plg-gatecontrol-print', ['drive']), null);
     // Schule: a toast the core claimed opens the page with its context (child / day / message)
     const ctx = { kind: 'changes', studentId: 3, date: '2026-10-20', messageId: null };
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-schule', id: 7, context: ctx }, [...pages, 'schule']), { page: 'schule', id: null, context: ctx });

@@ -64,7 +64,8 @@
 .dv-area-sub { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .dv-pane { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
-.dv-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 36px; }
+/* never squeezed below its wrapped rows (a low window): the min-height would else let its second row slide under the note */
+.dv-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 36px; flex-shrink: 0; }
 .dv-bar-h { font-size: 15px; font-weight: 600; }
 .dv-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; min-width: 0; font-size: 13.5px; }
 .dv-crumb { padding: 4px 6px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

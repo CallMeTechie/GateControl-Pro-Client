@@ -185,6 +185,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       school: { on() {}, status: () => ({ state: 'unavailable' }) },
       // … and Familie (familie:* channels; a core before Familie ignores it)
       familie: { on() {}, status: () => ({ state: 'unavailable' }) },
+      // … and Drucken (print:* channels; a core before Drucken ignores it)
+      print: { on() {}, status: () => ({ state: 'unavailable' }) },
       // … and GateDrop (gatedrop:* channels)
       gatedrop: { on() {}, status: () => ({ state: 'unavailable' }) },
       // … and Vault (vault:* channels)
@@ -240,6 +242,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       ...(fs.existsSync(path.join(coreDir, 'src', 'ipc', 'school-handlers.js')) ? ['school:status', 'school:timetable', 'school:changes', 'school:messages', 'school:absences', 'school:avatar'] : []),
       // Familie (core with services/familie.js, opt-in via ctx.familie)
       ...(fs.existsSync(path.join(coreDir, 'src', 'ipc', 'familie-handlers.js')) ? ['familie:status', 'familie:internet', 'familie:internet:pause', 'familie:rules', 'familie:rules:actions', 'familie:presence', 'familie:wifi', 'familie:avatar'] : []),
+      // Drucken (core with services/print.js, opt-in via ctx.print)
+      ...(fs.existsSync(path.join(coreDir, 'src', 'ipc', 'print-handlers.js')) ? ['print:status', 'print:overview', 'print:job', 'print:cancel', 'print:pick', 'print:dropped', 'print:drive', 'print:submit', 'print:transfers', 'print:again'] : []),
       // Kameras im Heimnetz (core with services/cameras.js, opt-in via ctx.cameras)
       ...(fs.existsSync(path.join(coreDir, 'src', 'ipc', 'camera-handlers.js')) ? ['cameras:status', 'cameras:check', 'cameras:list', 'cameras:live', 'cameras:clips', 'cameras:still:save'] : []),
     ]) {

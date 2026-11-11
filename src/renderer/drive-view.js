@@ -71,6 +71,10 @@
  * the chips "Dateien | Fragen" at the search field — a question (the chip, or "?" at the end, Enter) is answered from
  * the person's files with its sources ('docAsk').
  *
+ * Drucken (plugin gatecontrol-print, only while the app offers it — o.print): "Drucken …" in the row menu of a
+ * file the plugin prints and "n Dateien drucken …" in the menu of a selection, Strg+P for the selection, and the
+ * button "Drucken" in the viewers; the print dialog itself is print-view.js (a vault file is asked about there).
+ *
  * Data: window.gatecontrol.drive (core DriveService over IPC); texts: drive.*
  * of the app locales; view logic without DOM: drive-state.js
  * (window.GCDriveState).
@@ -123,6 +127,7 @@
 		pen: 'M4 20h4L19 9l-4-4L4 16z',
 		move: 'M5 12h14|M13 6l6 6-6 6',
 		history: 'M3 12a9 9 0 1 0 3-6.7L3 8|M3 3v5h5|M12 7v5l3 3',
+		print: 'M6 9V3h12v6|M6 17H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2|M6 14h12v7H6z',
 		disk: 'M4 6a8 3 0 1 0 16 0a8 3 0 1 0-16 0|M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6|M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
 		restore: 'M3 12a9 9 0 1 0 3-6.7L3 8|M3 3v5h5',
 		copy: 'M9 9h11v11H9z|M5 15H4V4h11v1',
@@ -497,8 +502,18 @@
 			},
 		}) : null;
 		// Drive 1.7: "Fotos" (drive-photos-view.js) and "Speicher" (drive-storage-view.js)
+		// Drucken (print-view.js through o.print): which of `nodes` can be printed, and the print dialog for them
+		const printHook = o.print && typeof o.print.can === 'function' && typeof o.print.go === 'function' ? {
+			// printing is offered at all (the plugin is there for the apps and the person may print)
+			on: () => (typeof o.print.on === 'function' ? !!o.print.on() : true),
+			can: (n) => !!n && !n.isDir && o.print.can(n),
+			list: (nodes) => (Array.isArray(nodes) ? nodes : []).filter((n) => !n.isDir && o.print.can(n)),
+			go: (nodes) => { const ids = (Array.isArray(nodes) ? nodes : []).filter((n) => !n.isDir && o.print.can(n)).map((n) => n.id); if (ids.length) o.print.go(ids); },
+		} : null;
 		const extra = {
 			api, t, getLocale: o.getLocale, toast, host, ui: { el, icon, clear, openDialog },
+			// Drucken: the button "Drucken" of the large view
+			print: printHook,
 			getMe: () => S.me, getAreas: () => S.areas, areaLabel: DS.areaLabel, errorText: DS.errorText, formatBytes: DS.formatBytes,
 			openFolder: (id) => { refs.search.value = ''; S.query = ''; loadFolder(id); },
 			// Drive 1.16: the gear of "Personen" opens the settings "Orte und Personen"
@@ -607,6 +622,7 @@
 			api, t, ui: { el, icon, openDialog }, host, toast, errorText: DS.errorText,
 			openWith: (n) => openNode(n, { asked: true, external: true }),
 			saveAs: (n) => saveAs(n),
+			print: printHook,
 			confirm: (title, text, confirm, run) => confirmDialog({ title, text, confirm, danger: true, run: async () => { run(); return { ok: true }; } }),
 		}) : null;
 		// PDFs, texts and Markdown of normal files: the same viewer's pages, the file as "Öffnen" loads it (core docView)
@@ -614,6 +630,7 @@
 			api, t, ui: { el, icon, openDialog }, host, toast, errorText: DS.errorText,
 			openWith: (n) => openNode(n, { asked: true, external: true }),
 			saveAs: (n) => saveAs(n),
+			print: printHook,
 		}) : null;
 		refs.pane = el('section', { class: 'dv-pane' }, [refs.bar, refs.note, refs.selBar, refs.listWrap, refs.keys, ki ? ki.bar : null, refs.transfers, syncView ? syncView.el : null, photosView ? photosView.el : null, storageView ? storageView.el : null, settingsView ? settingsView.el : null, overviewView ? overviewView.el : null, memoriesView ? memoriesView.el : null]);
 		refs.empty = el('div', { class: 'dv-gate', hidden: true });
@@ -1657,11 +1674,13 @@
 			const writable = S.view === 'folder' ? !!(S.folder && S.folder.writable) : !!(S.areas.find((a) => a.id === n.areaId) || {}).writable;
 			const acts = DS.actionsFor(n, writable, S.me);
 			const items = [];
-			const item = (ic, label, fn, danger) => items.push(el('button', { type: 'button', role: 'menuitem', class: `dv-menu-item${danger ? ' is-danger' : ''}`, on: { click: () => { closeMenu(); fn(); } } }, [icon(ic, 15), el('span', { text: label })]));
+			const item = (ic, label, fn, danger, kbd) => items.push(el('button', { type: 'button', role: 'menuitem', class: `dv-menu-item${danger ? ' is-danger' : ''}`, 'data-item': ic === 'print' ? 'print' : null, on: { click: () => { closeMenu(); fn(); } } }, [icon(ic, 15), el('span', { text: label }), kbd ? el('span', { class: 'dv-menu-kbd', text: kbd }) : null]));
 			// Drive 1.19: a file the virus scan blocks — the reason instead of "Öffnen" / "Speichern unter" / "Teilen"
 			if (acts.blocked) items.push(el('div', { class: 'dv-menu-item dv-menu-note', role: 'note', 'data-scan': acts.blocked }, [icon('shield', 15), el('span', { text: SCAN.reason(n.scan, t) })]));
 			if (!acts.blocked) item(n.isDir ? 'folder' : 'open', t('drive.open'), () => openNode(n));
 			if (acts.saveAs) item('down', t('drive.saveAs'), () => saveAs(n));
+			// Drucken: only for a file the plugin prints (never a folder, never one the virus scan blocks)
+			if (printHook && !acts.blocked && printHook.can(n)) item('print', t('print.menu.one'), () => printHook.go([n]), false, selectable() ? `${t('drive.bulk.key.ctrl')}+P` : null);
 			// Drive plugin 1.22: the explicit way out of a vault, asked first (the copy is not encrypted)
 			if (!acts.blocked && !n.isDir && n.encrypted && !n.locked && vaultViewer) {
 				item('open', t('drive.vv.openWith'), () => confirmDialog({ title: t('drive.vv.openWithTitle'), text: t('drive.vv.openWithText'), confirm: t('drive.vv.openWithGo'), danger: true, run: async () => { openNode(n, { asked: true, external: true }); return { ok: true }; } }));
@@ -1809,16 +1828,17 @@
 			const click = t('drive.bulk.keys.click');
 			const item = (parts, text) => el('span', { class: 'dv-keys-i' }, [...parts, ` ${text}`]);
 			refs.keys.setAttribute('aria-label', t('drive.bulk.keys.label'));
-			refs.keys.append(
+			refs.keys.append(...[
 				item([k(ctrl), '+', k('A')], t('drive.bulk.keys.all')),
 				item([k(t('drive.bulk.key.shift')), `+${click}`], t('drive.bulk.keys.range')),
 				item([k(ctrl), `+${click}`], t('drive.bulk.keys.single')),
 				item([k(ctrl), '+', k('X'), ' / ', k('V')], t('drive.bulk.keys.cutPaste')),
 				item([k(ctrl), '+', k('C'), ' / ', k('V')], t('drive.bulk.keys.copyPaste')),
+				printHook && printHook.on() ? item([k(ctrl), '+', k('P')], t('print.menu.viewer')) : null,
 				item([k(t('drive.bulk.key.del'))], t('drive.bulk.keys.trash')),
 				item([k('Esc')], t('drive.bulk.keys.clear')),
 				el('span', { class: 'dv-keys-i is-drag', text: t('drive.bulk.dropHint') }),
-			);
+			].filter(Boolean));
 		}
 
 		// ── What the selection does ──────────────────────
@@ -1888,6 +1908,13 @@
 				return;
 			}
 			if (act === 'paste') { e.preventDefault(); paste(); return; }
+			// Strg+P: the selection goes to the print dialog (only while Drucken is offered)
+			if (act === 'print') {
+				if (!printHook || !printHook.on() || !items.length) return;
+				e.preventDefault();
+				if (printHook.list(items).length) printHook.go(items); else toast(t('print.menu.none'), 'info');
+				return;
+			}
 			if (!items.length) return;
 			if (act === 'copy' && root.getSelection && String(root.getSelection() || '')) return;
 			e.preventDefault();
@@ -1897,6 +1924,12 @@
 			else if (act === 'copy') clipSet('copy', items);
 		}
 		document.addEventListener('keydown', onSelKey);
+
+		/** "Drucken …" for one file, "3 Dateien drucken …" for several (what of the selection can be printed). */
+		function printLabel(items) {
+			const n = printHook ? printHook.list(items).length : 0;
+			return n > 1 ? t('print.menu.many', { count: n }) : t('print.menu.one');
+		}
 
 		/** Right click into a selection of several: its menu (the mockup's) at the pointer. */
 		function openSelMenu(at, anchor) {
@@ -1910,6 +1943,8 @@
 				{ key: 'copyTo', icon: 'copy', label: t('drive.bulk.copyTo'), act: a.copy, run: () => doMove(items, 'copy') },
 				// Drive 1.14 'scanDocs': several pictures become one document (the pages in the order shown)
 				...(ki && items.length > 1 && ki.available(items, selWritable(items)) ? [{ key: 'scan', icon: 'file', label: t('drive.ki.scan.menuMany', { count: items.length }), act: { on: true }, run: () => ki.scanDialog(items) }] : []),
+				// Drucken: each file of the selection the plugin prints becomes a job
+				...(printHook && printHook.on() ? [{ key: 'print', icon: 'print', label: printLabel(items), kbd: `${t('drive.bulk.key.ctrl')}+P`, act: printHook.list(items).length ? { on: true } : { on: false, why: 'print.menu.none' }, run: () => printHook.go(items) }] : []),
 				'sep',
 				{ key: 'rename', icon: 'pen', label: t('drive.rename'), kbd: 'F2', act: a.rename, run: () => renameNode(items[0]) },
 				{ key: 'link', icon: 'link', label: t('drive.bulk.link'), act: a.link, run: () => doLink(items) },

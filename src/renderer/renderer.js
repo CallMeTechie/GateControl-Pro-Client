@@ -10,7 +10,7 @@
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
-	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, familie: familieApi, gatedrop: gatedropApi, vault: vaultApi, drive: driveApi,
+	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, familie: familieApi, print: printApi, gatedrop: gatedropApi, vault: vaultApi, drive: driveApi,
 	signin: signinApi, mail: mailApi, cameras: camerasApi, notes: notesApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
@@ -190,6 +190,7 @@ function refreshTexts() {
 	chatView?.relabel();
 	schoolView?.relabel();
 	familieView?.relabel();
+	printView?.relabel();
 	gatedropView?.relabel();
 	vaultView?.relabel();
 	driveView?.relabel();
@@ -213,6 +214,7 @@ let currentPage = 'status';
 let chatView = null; // chat-view.js instance (CHATS section below)
 let schoolView = null; // school-view.js instance (SCHULE section below)
 let familieView = null; // familie-view.js instance (FAMILIE section below)
+let printView = null; // print-view.js instance (DRUCKEN section below)
 let gatedropView = null; // gatedrop-view.js instance (GATEDROP section below)
 let vaultView = null; // vault-view.js instance (VAULT section below)
 let driveView = null; // drive-view.js instance (DRIVE section below)
@@ -370,7 +372,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'familie', 'gatedrop', 'mail', 'notizen', 'drive', 'vault', 'kameras', 'inbox', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'familie', 'gatedrop', 'mail', 'notizen', 'drive', 'drucken', 'vault', 'kameras', 'inbox', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -410,6 +412,9 @@ function navigateTo(page, opts = {}) {
 	// Familie: the cards load when shown and are asked again while it is open
 	if (page === 'familie' && prev !== 'familie') familieView?.show();
 	else if (prev === 'familie' && page !== 'familie') familieView?.hide();
+	// Drucken: printers and jobs load when shown; open jobs are followed while the window is visible
+	if (page === 'drucken' && prev !== 'drucken') printView?.show();
+	else if (prev === 'drucken' && page !== 'drucken') printView?.hide();
 	// GateDrop: the lists load when shown
 	if (page === 'gatedrop' && prev !== 'gatedrop') gatedropView?.show();
 	else if (prev === 'gatedrop' && page !== 'gatedrop') gatedropView?.hide();
@@ -2498,6 +2503,16 @@ function renderInboxDetail() {
 		row.appendChild(btn);
 		detail.appendChild(row);
 	}
+	// "Druck fertig" / "Druck fehlgeschlagen": the job on the page Drucken.
+	const printCtx = window.GCPrintState && shownPages().includes('drucken') ? window.GCPrintState.entryContext(entry) : null;
+	if (printCtx) {
+		const row = h('div', 'inbox-actions');
+		const btn = h('button', 'btn btn-pri', t('print.inboxOpen'));
+		btn.type = 'button';
+		btn.addEventListener('click', () => openPrint(printCtx));
+		row.appendChild(btn);
+		detail.appendChild(row);
+	}
 	// Camera push ("Personen an der Kamera"): that camera on the page Kameras (Ring stays in the inbox).
 	const camCtx = window.GCCameraState && shownPages().includes('kameras') ? window.GCCameraState.entryContext(entry) : null;
 	if (camCtx) {
@@ -2574,13 +2589,14 @@ function onInboxListKey(e) {
 	if (row) { row.focus(); row.scrollIntoView({ block: 'nearest' }); }
 }
 
-/** Pages that exist right now (Chats / Schule / Familie / GateDrop / Drive / Vault only while the server offers them). */
+/** Pages that exist right now (Chats / Schule / Familie / GateDrop / Drive / Drucken / Vault only while the server offers them). */
 function shownPages() {
 	return PAGES.filter((p) => (p === 'chats' ? !!chatView && !$('#nav-chats').hidden
 		: p === 'schule' ? !!schoolView && !$('#nav-schule').hidden
 			: p === 'familie' ? !!familieView && !$('#nav-familie').hidden
 			: p === 'gatedrop' ? !!gatedropView && !$('#nav-gatedrop').hidden
 				: p === 'drive' ? !!driveView && !$('#nav-drive').hidden
+					: p === 'drucken' ? !!printView && !$('#nav-drucken').hidden
 					: p === 'mail' ? !!mailView && !$('#nav-mail').hidden
 					: p === 'notizen' ? !!notesView && !$('#nav-notizen').hidden
 					: p === 'kameras' ? !!camerasView && !$('#nav-kameras').hidden
@@ -2641,6 +2657,13 @@ function openFamilie(context) {
 	if (!familieView) return;
 	familieView.open(context || null);
 	navigateTo('familie');
+}
+
+/** Drucken on a push target ("Druck fertig" / "Druck fehlgeschlagen": the job), e.g. from a toast click. */
+function openPrint(context) {
+	if (!printView) return;
+	printView.open(context || null);
+	navigateTo('drucken');
 }
 
 function openInbox(id = null) {
@@ -2707,6 +2730,8 @@ if (notifyAvailable()) {
 			openSchool(target.context);
 		} else if (target.page === 'familie') {
 			openFamilie(target.context);
+		} else if (target.page === 'drucken') {
+			openPrint(target.context);
 		} else if (target.page === 'gatedrop') {
 			openGateDrop(target.context);
 		} else if (target.page === 'vault') {
@@ -3079,6 +3104,38 @@ familieView = familieApi && window.GCFamilieView && $('#page-familie')
 	: null;
 
 // ══════════════════════════════════════════════════════════
+//  DRUCKEN (plugin gatecontrol-print: the printers at home, with or without the VPN)
+//  Data: window.gatecontrol.print (core PrintService in main — files only by
+//  token); the page and the print dialog are built by print-view.js
+//  (window.GCPrintView) with print-state.js. The nav entry is shown only
+//  while the server offers the plugin to the apps; its number names the
+//  open jobs. Drive offers "Drucken …" through printView (DRIVE section).
+// ══════════════════════════════════════════════════════════
+printView = printApi && window.GCPrintView && $('#page-drucken')
+	? window.GCPrintView.mount({
+		root: $('#page-drucken'),
+		api: printApi,
+		t,
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		navEl: $('#nav-drucken'),
+		// older jobs: the portal's tab "Drucken & Scannen"
+		openPortal: () => portal.open({ next: '/portal#plg-gatecontrol-print' }),
+		onStatus: (st) => {
+			const show = !!st && st.state === 'available';
+			$('#nav-drucken').hidden = !show;
+			if (!show && currentPage === 'drucken' && st && st.state === 'unavailable') navigateTo('status');
+		},
+		onCount: (n) => {
+			const badge = $('#print-badge');
+			badge.hidden = !(n > 0);
+			badge.textContent = n > 99 ? '99+' : String(n);
+			badge.setAttribute('aria-label', n === 1 ? t('print.navCount.one') : t('print.navCount.other', { count: n }));
+		},
+	})
+	: null;
+
+// ══════════════════════════════════════════════════════════
 //  GATEDROP (plugin gatecontrol-gatedrop: send / receive files, text, links)
 //  Data: window.gatecontrol.gatedrop (core GateDropService in main); the page
 //  and the send dialog are built by gatedrop-view.js (window.GCGateDropView)
@@ -3159,6 +3216,8 @@ driveView = driveApi && window.GCDriveView && $('#page-drive')
 		notifyApi: window.gatecontrol.notify || null,
 		// Drive 1.18: the overview's "Mail-Anhänge zum Ablegen" opens Mail › „Zum Ablegen“
 		openMailFiling: () => openMail({ kind: 'filing' }),
+		// Drucken: "Drucken …" in the menus, Strg+P and the viewers' button — only while printing is offered
+		print: printView ? { on: () => printView.usable(), can: (n) => printView.canPrint(n), go: (ids) => printView.printDrive(ids) } : null,
 		onStatus: (st) => {
 			const show = !!st && st.state === 'available';
 			$('#nav-drive').hidden = !show;

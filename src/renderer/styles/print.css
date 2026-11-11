@@ -1,0 +1,162 @@
+/* ══════════════════════════════════════════════════════════
+   GateControl – Drucken (plugin gatecontrol-print)
+   The page (drop area, printers, the job list with its stations) and the
+   print dialog; uses the app's design tokens (--bg, --panel, --panel2,
+   --line, --acc, …) like familie.css.
+   ══════════════════════════════════════════════════════════ */
+
+.pv { position: relative; display: flex; flex-direction: column; flex-grow: 1; min-width: 0; min-height: 0; height: 100%; padding: 22px 24px 0; gap: 12px; color: var(--text); }
+.pv-grow { flex-grow: 1; }
+.pv-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Head */
+.pv-head { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.pv-head-tx { flex: 1 1 200px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pv-h { margin: 0; font-family: var(--font-disp); font-size: 26px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; }
+.pv-sub { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.pv-pick { gap: 8px; }
+.pv-pick[hidden] { display: none; }
+.pv-ib { width: 36px; height: 36px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 10px; border: 1px solid var(--line2); background: var(--panel2); cursor: pointer; }
+.pv-ib:hover { border-color: var(--faint); }
+.pv-ib:disabled { opacity: .5; cursor: default; }
+.pv-ib.is-busy svg { animation: gcspin 1s linear infinite; }
+.pv-ib:focus-visible, .pv-link:focus-visible, .pv-opt:focus-visible, .pv-num:focus-visible, .pv-stepper button:focus-visible, .pv-sel:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+
+/* Body */
+.pv-body { flex-grow: 1; min-height: 0; padding-bottom: 20px; display: flex; flex-direction: column; gap: 12px; }
+.pv-body > * { flex-shrink: 0; max-width: 920px; width: 100%; }
+.pv-loading { padding: 40px 0; text-align: center; color: var(--muted); font-size: 13px; }
+.pv-card { border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
+.pv-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 32px 24px; text-align: center; color: var(--muted); font-size: 13px; }
+.pv-state strong { color: var(--text); font-family: var(--font-disp); font-size: 16px; }
+.pv-state span { max-width: 460px; line-height: 1.45; }
+.pv-state svg { color: var(--faint); }
+.pv-state.is-error svg { color: var(--err); }
+.pv-state .btn { margin-top: 6px; }
+.pv-foot { font-size: 12px; color: var(--faint); line-height: 1.45; }
+.pv-empty { padding: 18px 0; color: var(--muted); font-size: 13px; }
+.pv-link { padding: 0; border: 0; border-radius: 4px; background: none; color: var(--acc-t); font-size: inherit; font-weight: 600; cursor: pointer; }
+.pv-link:hover { text-decoration: underline; }
+
+/* Notes: what is up with the printers, the connection, a file */
+.pv-note { display: flex; align-items: flex-start; gap: 8px; padding: 9px 12px; border-radius: 10px; font-size: 12.5px; line-height: 1.4; }
+.pv-note > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pv-note > svg { flex-shrink: 0; margin-top: 1px; }
+.pv-note .btn { flex-shrink: 0; align-self: center; }
+.pv-note.is-info { background: var(--info-bg); }
+.pv-note.is-info > svg { color: var(--info); }
+.pv-note.is-warn { background: var(--warn-bg); }
+.pv-note.is-warn > svg { color: var(--warn); }
+.pv-note.is-err { background: var(--err-bg); }
+.pv-note.is-err > svg { color: var(--err); }
+
+.pv-chip { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; min-height: 22px; padding: 1px 8px; border-radius: 7px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.pv-chip.is-ok { background: var(--acc-bg); color: var(--acc-t); }
+.pv-chip.is-warn { background: var(--warn-bg); color: var(--warn); }
+.pv-chip.is-info { background: var(--info-bg); color: var(--info); }
+.pv-chip.is-err { background: var(--err-bg); color: var(--err); }
+.pv-chip.is-mute { background: var(--panel2); color: var(--muted); }
+
+/* Drop area */
+.pv-drop { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; padding: 16px; border: 2px dashed var(--line2); border-radius: 14px; background: var(--panel); transition: border-color .12s, background .12s; }
+.pv-drop.is-over { border-color: var(--acc); background: var(--acc-bg); }
+.pv-drop > svg { flex-shrink: 0; color: var(--acc-t); }
+.pv-drop-tx { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pv-drop-tx b { font-size: 14px; font-weight: 600; }
+.pv-drop-tx span { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+/* the entry in the side bar takes files and rows dragged out of Drive */
+.nav.is-drop { outline: 2px dashed var(--acc); outline-offset: -2px; background: var(--acc-bg); color: var(--acc-t); font-weight: 600; }
+
+/* Printers */
+.pv-prns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 10px; }
+.pv-prn { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+.pv-prn > svg { flex-shrink: 0; color: var(--acc-t); }
+.pv-prn-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.pv-prn-tx b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-prn-tx span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Jobs */
+.pv-jobs-h { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.pv-h2 { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 700; }
+.pv-jobs-h span { font-size: 12.5px; color: var(--muted); }
+.pv-jobs { display: flex; flex-direction: column; gap: 8px; }
+.pv-job { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 12px; min-width: 0; padding: 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+.pv-job.is-warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+.pv-job.is-err { border-color: color-mix(in srgb, var(--err) 50%, var(--line)); }
+.pv-job.is-focus { box-shadow: 0 0 0 2px var(--info); }
+.pv-job > svg { flex-shrink: 0; margin-top: 2px; color: var(--muted); }
+.pv-job-tx { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.pv-job-n { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.pv-job-n b { min-width: 0; margin-right: 2px; font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.pv-meta { font-size: 12px; color: var(--faint); overflow-wrap: anywhere; }
+.pv-why { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.pv-job.is-warn .pv-why { color: var(--warn); }
+.pv-job.is-err .pv-why { color: var(--err); }
+.pv-btns { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+.pv-steps { display: flex; align-items: center; max-width: 340px; }
+.pv-steps i { width: 10px; height: 10px; flex-shrink: 0; border-radius: 50%; background: var(--line2); }
+.pv-steps u { flex: 1; min-width: 12px; height: 2px; background: var(--line2); text-decoration: none; }
+.pv-steps i.is-done, .pv-steps u.is-done { background: var(--acc); }
+.pv-steps i.is-current { width: 12px; height: 12px; background: var(--panel); border: 3px solid var(--acc); }
+.pv-steps i.is-hold { width: 12px; height: 12px; background: var(--panel); border: 3px solid var(--warn); }
+.pv-leg { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 14px; max-width: 340px; font-size: 11.5px; color: var(--faint); }
+.pv-bar { max-width: 340px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.pv-bar i { display: block; height: 100%; border-radius: 3px; background: var(--acc); transition: width .2s; }
+
+/* Dialogs: "Zu Hause drucken", "Aus dem Tresor drucken?" (above Drive's own dialogs and viewers) */
+.pv-scrim { position: fixed; inset: var(--titlebar-h, 40px) 0 0 0; z-index: 55; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--scrim); }
+.pv-scrim[hidden] { display: none; }
+.pv-dlg { width: 480px; max-width: 100%; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 18px; background: var(--panel); border: 1px solid var(--line2); border-radius: 14px; box-shadow: var(--shadow); color: var(--text); font-size: 14px; outline: none; }
+.pv-dlg-h { margin: 0; font-family: var(--font-disp); font-size: 17px; font-weight: 700; line-height: 1.25; }
+.pv-file { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--panel2); }
+.pv-file > svg { flex-shrink: 0; color: var(--acc-t); }
+.pv-file-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.pv-file-tx b { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-file-tx span { font-size: 12px; color: var(--muted); }
+.pv-file-names { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.pv-grid { display: grid; grid-template-columns: minmax(0, 112px) minmax(0, 1fr); gap: 10px 14px; align-items: center; }
+.pv-lab { min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.pv-ctl { min-width: 0; }
+.pv-opts { display: flex; flex-direction: column; gap: 6px; }
+.pv-opt { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--line2); border-radius: 11px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.pv-opt:hover { border-color: var(--faint); }
+.pv-opt.is-on { border-color: var(--acc); background: var(--acc-bg); }
+.pv-opt:disabled { opacity: .6; cursor: default; }
+.pv-radio { width: 16px; height: 16px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; border: 2px solid var(--line2); }
+.pv-opt.is-on .pv-radio { border-color: var(--acc); }
+.pv-opt.is-on .pv-radio::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--acc); }
+.pv-opt-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.pv-opt-tx b { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.pv-opt-tx span { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.pv-inline { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12.5px; color: var(--muted); }
+.pv-inline > span { min-width: 0; }
+.pv-stepper { display: inline-flex; align-items: center; border: 1px solid var(--line2); border-radius: 9px; background: var(--bg); overflow: hidden; }
+.pv-stepper button { width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.pv-stepper button:hover { color: var(--text); background: var(--panel2); }
+.pv-stepper button:disabled { opacity: .4; cursor: not-allowed; background: transparent; }
+.pv-stepper button:focus-visible, .pv-num:focus-visible { outline-offset: -2px; }
+.pv-num { width: 42px; height: 32px; padding: 0; border: 0; background: transparent; color: var(--text); text-align: center; font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+.pv-seg button { cursor: pointer; }
+.pv-seg button:disabled { cursor: not-allowed; }
+.pv-seg button:disabled:not(.on) { color: var(--faint); text-decoration: line-through; }
+.pv-sel { height: 34px; font-size: 13px; font-weight: 600; border-radius: 9px; }
+.pv-sel:disabled { color: var(--faint); background: var(--panel2); opacity: 1; }
+.pv-ctl .sw { cursor: pointer; }
+.pv-banners { display: flex; flex-direction: column; gap: 8px; }
+.pv-banners:empty { display: none; }
+.pv-dlg-err { padding: 8px 12px; border-radius: 10px; background: var(--err-bg); color: var(--err); font-size: 12.5px; }
+.pv-dlg-acts { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.pv-dlg-acts .btn { gap: 6px; }
+.pv-left { flex: 1 1 120px; min-width: 0; font-size: 12px; color: var(--faint); }
+
+@media (max-width: 900px) {
+	.pv { padding: 16px 16px 0; }
+}
+@media (max-width: 520px) {
+	.pv-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+	.pv-lab { margin-top: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.pv-ib.is-busy svg { animation: none; }
+	.pv-drop, .pv-bar i { transition: none; }
+}
