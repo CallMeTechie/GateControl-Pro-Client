@@ -90,7 +90,8 @@ test.describe('dns-schutz', () => {
     const top = page.locator(TOP);
     await expect(top).toBeVisible();
     await expect(top.locator('li')).toHaveCount(3);
-    await expect(top.locator('li').first()).toHaveText(/googlesyndication\.com\s*74/);
+    await expect(top.locator('li').first().locator('.dnsp-dom')).toHaveText('googlesyndication.com');
+    await expect(top.locator('li').first().locator('.dnsp-cnt')).toHaveText('74');
 
     // pause for 30 minutes: one call, the card follows the answer
     await card.locator('[data-act="pause-30"]').click();
