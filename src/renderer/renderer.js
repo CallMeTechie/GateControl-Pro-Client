@@ -10,7 +10,7 @@
 const {
 	tunnel, server, config, killSwitch, rdpAllow, autostart, logs, update,
 	services, traffic, dns, shell, peer, permissions, onPortalUrl, portal, getVersion, getDeviceId,
-	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, familie: familieApi, print: printApi, gatedrop: gatedropApi, vault: vaultApi, drive: driveApi,
+	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, familie: familieApi, dnsProtect: dnsProtectApi, print: printApi, gatedrop: gatedropApi, vault: vaultApi, drive: driveApi,
 	signin: signinApi, mail: mailApi, cameras: camerasApi, notes: notesApi,
 } = window.gatecontrol;
 const { t } = window.gatecontrol.i18n;
@@ -198,6 +198,7 @@ function refreshTexts() {
 	notesView?.relabel();
 	camerasView?.relabel();
 	homeView?.relabel();
+	dnsView?.relabel();
 	notifyRoutesView?.render();
 }
 
@@ -221,6 +222,7 @@ let driveView = null; // drive-view.js instance (DRIVE section below)
 let mailView = null; // mail-view.js instance (MAIL section below)
 let notesView = null; // notes-view.js instance (NOTIZEN & AUFGABEN section below)
 let camerasView = null; // camera-view.js instance (KAMERAS section below)
+let dnsView = null; // dns-view.js instance: the card "DNS-Schutz" on the start page (DNS-SCHUTZ section below)
 let homeView = null; // home-view.js instance: pinned favourites and events on the start page (MAIL section below)
 let notifyRoutesView = null; // notify-routes.js in Settings › Benachrichtigungen
 let appVersion = '';
@@ -423,6 +425,9 @@ function navigateTo(page, opts = {}) {
 	else if (prev === 'drive' && page !== 'drive') driveView?.hide();
 	// Start: the pinned favourites and events again (Mail 1.4.0)
 	if (page === 'status' && prev !== 'status') homeView?.show();
+	// Start: the card "DNS-Schutz" is asked more often while it is on screen
+	if (page === 'status' && prev !== 'status') dnsView?.show();
+	else if (prev === 'status' && page !== 'status') dnsView?.hide();
 	// Mail: accounts, folders and the list load when shown
 	if (page === 'mail' && prev !== 'mail') mailView?.show();
 	else if (prev === 'mail' && page !== 'mail') mailView?.hide();
@@ -497,7 +502,8 @@ function updateUI() {
 	const { status, endpoint, handshake, rxBytes, txBytes, rxSpeed, txSpeed } = state;
 	const connected = cs === 'connected';
 	const host = hostOf(endpoint || serverUrl);
-	document.body.dataset.conn = cs;
+	// DNS-Schutz: the card notes that only a connected device is filtered
+	if (document.body.dataset.conn !== cs) { document.body.dataset.conn = cs; dnsView?.connection(); }
 
 	// Labels
 	let label;
@@ -3302,6 +3308,26 @@ homeView = mailView && window.GCHomeView && $('#home-pins')
 		openMail: (context) => openMail(context),
 	})
 	: null;
+
+// ══════════════════════════════════════════════════════════
+//  DNS-SCHUTZ (the DNS filter of the VPN devices, plugin gatecontrol-dns)
+//  Data: window.gatecontrol.dnsProtect (core DnsProtectService in main); the
+//  card on the start page is built by dns-view.js (window.GCDnsView) with
+//  dns-state.js. It is shown only while the server reports a DNS protection
+//  (`vpnDns` of GET permissions); the tray entries come from main.
+// ══════════════════════════════════════════════════════════
+dnsView = dnsProtectApi && window.GCDnsView && $('#dns-protect') && $('#dns-protect-top')
+	? window.GCDnsView.mount({
+		host: $('#dns-protect'),
+		topHost: $('#dns-protect-top'),
+		api: dnsProtectApi,
+		t,
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		isConnected: () => document.body.dataset.conn === 'connected',
+	})
+	: null;
+
 // the unread count also while the page is not shown (a new mail, read elsewhere)
 mailApi?.onChanged?.(() => {
 	if (!mailView || $('#nav-mail').hidden || currentPage === 'mail') return;

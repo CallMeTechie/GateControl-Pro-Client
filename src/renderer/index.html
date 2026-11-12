@@ -9,6 +9,7 @@
 	<link rel="stylesheet" href="styles/chat.css">
 	<link rel="stylesheet" href="styles/school.css">
 	<link rel="stylesheet" href="styles/familie.css">
+	<link rel="stylesheet" href="styles/dns.css">
 	<link rel="stylesheet" href="styles/print.css">
 	<link rel="stylesheet" href="styles/gatedrop.css">
 	<link rel="stylesheet" href="styles/vault.css">
@@ -255,6 +256,10 @@
 								</div>
 							</div>
 						</section>
+
+						<!-- DNS-Schutz: the DNS filter of the VPN devices (plugin gatecontrol-dns, dns-view.js); hidden unless the server reports it -->
+						<section class="card dnsp" id="dns-protect" aria-label="DNS-Schutz" data-i18n-aria-label="dnsProtect.title" hidden></section>
+						<section class="card dnsp-top" id="dns-protect-top" aria-label="Top gesperrte Domains" data-i18n-aria-label="dnsProtect.top.title" hidden></section>
 
 						<!-- Throughput -->
 						<section class="card tp span2" id="bandwidth-section">
@@ -927,6 +932,8 @@
 	<script src="calendar-view.js"></script>
 	<script src="contacts-view.js"></script>
 	<script src="home-view.js"></script>
+	<script src="dns-state.js"></script>
+	<script src="dns-view.js"></script>
 	<script src="camera-state.js"></script>
 	<script src="camera-view.js"></script>
 	<script src="renderer.js"></script>
