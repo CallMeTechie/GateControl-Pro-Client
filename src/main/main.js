@@ -39,6 +39,7 @@ let PushClient, NotificationCenter, PushControl, notifyMenuItems, notificationsS
 let MessengerService, ChatNotifier, setupMessenger;
 let SchoolService;
 let FamilieService;
+let DnsProtectService, dnsProtectUtil;
 let PrintService;
 let DriveService, DriveSync;
 let MailService;
@@ -110,6 +111,9 @@ try {
   ({ SchoolService } = require('@gatecontrol/client-core'));
   // Familie (plugin gatecontrol-familie): "Internet zu Hause", rules, own presence (core services/familie.js).
   ({ FamilieService } = require('@gatecontrol/client-core'));
+  // DNS-Schutz (the DNS filter of the VPN devices, plugin gatecontrol-dns): the card on the start page and the
+  // tray entries (core services/dns-protect.js); absent in an older core.
+  ({ DnsProtectService, dnsProtectUtil } = require('@gatecontrol/client-core'));
   // Drucken (plugin gatecontrol-print): the printers at home (core services/print.js); absent in an older core.
   ({ PrintService } = require('@gatecontrol/client-core'));
   // Drive (plugin gatecontrol-drive): the files of the person, the family and
@@ -322,6 +326,8 @@ let notifications = null; // notification center (./notifications.js), one per a
 let chats = null; // messenger (./messenger.js), one per app lifetime
 let school = null; // Schule (core SchoolService), one per app lifetime
 let familie = null; // Familie (core FamilieService), one per app lifetime
+let dnsProtect = null; // DNS-Schutz (core DnsProtectService), one per app lifetime
+let dnsProtectTray = '[]'; // what the tray entries of DNS-Schutz last showed
 let print = null; // Drucken (core PrintService), one per app lifetime
 let vault = null; // Vault (core VaultService), one per app lifetime
 let vaultQuick = null; // Vault quick search window (./vault-quick.js)
@@ -430,6 +436,17 @@ function notify(body, { title = 'GateControl Pro', priority = 'normal', collapse
   return notifications.notify({ title, body, priority, collapseKey, force, onClick, actions });
 }
 
+// Tray: pause / resume the DNS protection. No window shows the result: the tray entry changes on success
+// ('change' → updateTray), a refusal becomes a notification with the server's sentence.
+function changeDnsProtect(run) {
+  Promise.resolve().then(run).catch((err) => {
+    log.warn(`DNS-Schutz: ${err.code || err.message}`);
+    const refused = err.status >= 400 && err.status < 500 && /\s/.test(String(err.message));
+    const error = refused ? err.message : t(err.code === 'network' || err.code === 'timeout' ? `dnsProtect.error.${err.code}` : 'dnsProtect.error.unavailable');
+    notify(t('dnsProtect.toast.failed', { error }), { collapseKey: 'dns-protect', force: true });
+  });
+}
+
 // ── Tray Icon (Sun/Star design, drawn by core) ──────────────
 function getIcon(state) {
   return createTrayIcon(nativeImage, state);
@@ -481,6 +498,16 @@ function updateTray(connState) {
     }] : []),
   ];
 
+  // "DNS-Schutz: aktiv" with "DNS-Schutz unterbrechen" ▸ durations, or "… wieder einschalten" (core
+  // dnsProtectMenuItems); nothing while the server reports no DNS protection
+  const dnsItems = dnsProtect && dnsProtectUtil ? dnsProtectUtil.dnsProtectMenuItems({
+    snapshot: dnsProtect.snapshot(),
+    t,
+    locale: getLocale(),
+    pause: (how) => changeDnsProtect(() => dnsProtect.pause(how)),
+    resume: () => changeDnsProtect(() => dnsProtect.resume()),
+  }) : [];
+
   // Build context menu with RDP status
   const rdpSessions = rdpManager ? rdpManager.getActiveSessions() : [];
 
@@ -503,6 +530,7 @@ function updateTray(connState) {
       enabled: !(connState === 'connected' && policyLocks().disconnect),
       click: () => connState === 'connected' ? disconnectTunnel() : connectTunnel(),
     },
+    ...(dnsItems.length ? [{ type: 'separator' }, ...dnsItems] : []),
     { type: 'separator' },
     {
       label: policyLocks().killSwitch ? `${t('killswitch.label')} (${t('policy.lockedHint')})` : t('killswitch.label'),
@@ -770,6 +798,8 @@ async function connectTunnel() {
     notify(t('notify.connected'), { collapseKey: 'tunnel' });
     log.info('Tunnel connected successfully');
     log.info(steps.summary());
+    // DNS-Schutz: with the tunnel up the server may be reachable (again) — ask now, not at the next interval
+    dnsProtect?.refresh().catch(() => {});
 
     // ── Portal auto-open ─────────────────────────────────────
     // Not in the connect's path any more: GET permissions (up to 15 s on a
@@ -1057,6 +1087,28 @@ function initializeServices() {
     notificationCenter: notifications?.notificationCenter,
     pushClient: notifications?.pushClient,
   }) : null;
+
+  // DNS-Schutz: the card and the tray entries exist only while the server reports a DNS protection. The tray
+  // follows what its entries show (not every answer: an open menu is left alone); a filter that fails is
+  // announced here (the plugin tells only admins).
+  dnsProtect = DnsProtectService ? new DnsProtectService({
+    apiClient, log,
+    pushClient: notifications?.pushClient,
+    getLocale: () => getLocale(),
+  }) : null;
+  if (dnsProtect) {
+    dnsProtect.on('change', (snapshot) => {
+      const key = JSON.stringify(dnsProtectUtil.dnsProtectMenuItems({ snapshot, t, locale: getLocale(), pause() {}, resume() {} }));
+      if (key === dnsProtectTray) return;
+      dnsProtectTray = key;
+      updateTray(trayState);
+    });
+    dnsProtect.on('outage', () => notify(t('dnsProtect.toast.outageBody'), {
+      title: t('dnsProtect.toast.outageTitle'),
+      collapseKey: 'dns-protect',
+      onClick: () => { showWindow(); mainWindow?.webContents.send('navigate', 'status'); },
+    }));
+  }
 
   // Drive: shown while the server lists the plugin; opened files go to
   // %TEMP%\gatecontrol-drive, the folder last picked for "In Drive speichern"
@@ -1495,6 +1547,8 @@ function registerIpcHandlers() {
     school,
     // familie:* channels + events, reset on server:setup (core, opt-in)
     familie,
+    // dnsprotect:* channels + event, reset on server:setup (core, opt-in)
+    dnsProtect,
     // print:* channels + events, reset on server:setup (core, opt-in)
     print,
     // vault:* channels + events, reset on server:setup (core, opt-in)
@@ -1597,6 +1651,8 @@ app.on('ready', () => {
   school?.start();
   // Familie: member of a family? push → page.
   familie?.start();
+  // DNS-Schutz: does the server report one? Its state for the card and the tray.
+  dnsProtect?.start();
   // Drucken: is the plugin there for the apps? print pushes → page.
   print?.start();
   // Drive: availability check (the page shows while the server lists the plugin).
@@ -1790,6 +1846,7 @@ app.on('before-quit', (e) => {
   chats?.stop();
   school?.stop();
   familie?.stop();
+  dnsProtect?.stop();
   print?.stop();
   drive?.stop();
   // Mail: a waiting Microsoft sign-in ends, the offline cache is written.

@@ -1,0 +1,51 @@
+/* ══════════════════════════════════════════════════════════
+   GateControl – DNS-Schutz (the DNS filter of the VPN devices)
+   The card on the start page and "Top gesperrte Domains" next to it;
+   uses the app's design tokens (--panel, --panel2, --line, --acc, --warn,
+   --err, …) and the cards, chips, buttons and banners of app.css.
+   ══════════════════════════════════════════════════════════ */
+
+.dnsp { grid-column: span 2; padding: 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.dnsp.is-wide { grid-column: 1 / -1; }
+.dnsp[hidden], .dnsp-top[hidden] { display: none; }
+.dnsp[data-tone="warn"] { border-color: var(--warn); }
+.dnsp[data-tone="err"] { border-color: var(--err); }
+
+.dnsp-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.dnsp-ic { width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; background: var(--panel2); color: var(--faint); }
+.dnsp-ic.c-ok { background: var(--acc-bg); color: var(--acc-t); }
+.dnsp-ic.c-warn { background: var(--warn-bg); color: var(--warn); }
+.dnsp-ic.c-err { background: var(--err-bg); color: var(--err); }
+.dnsp-t { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dnsp-t .h-card { margin: 0; }
+.dnsp-t .desc { overflow-wrap: anywhere; }
+.dnsp-head .chip { flex-shrink: 0; align-self: flex-start; }
+
+.dnsp-ban { align-items: flex-start; font-size: 13px; line-height: 1.45; }
+.dnsp-ban-ic { flex-shrink: 0; display: inline-flex; padding-top: 1px; }
+.dnsp-ban-ic.t-err { color: var(--err); }
+.dnsp-ban-ic.t-info { color: var(--info); }
+
+.dnsp-kv { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.dnsp-kv > div { padding: 10px 12px; border-radius: 10px; background: var(--panel2); min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dnsp-kv dt { font-size: 12px; }
+.dnsp-kv dd { margin: 0; font-size: 20px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+
+.dnsp-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dnsp-lead { flex: 1 1 100%; }
+.dnsp-btns .btn { gap: 6px; }
+.dnsp-cd { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 10px; font-size: 13px; font-weight: 500; background: var(--acc-bg); color: var(--acc-t); box-shadow: inset 0 0 0 1px var(--acc-t); font-variant-numeric: tabular-nums; }
+.dnsp .chip .mono { font-variant-numeric: tabular-nums; }
+.dnsp-note { margin: 0; line-height: 1.45; }
+
+.dnsp-top { padding: 20px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.dnsp-top .h-card, .dnsp-top p { margin: 0; }
+.dnsp-top-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.dnsp-top-list li { display: flex; align-items: baseline; gap: 12px; padding: 8px 0; font-size: 13px; border-top: 1px solid var(--line); }
+.dnsp-top-list li:first-child { border-top: 0; padding-top: 2px; }
+.dnsp-dom { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dnsp-cnt { flex-shrink: 0; color: var(--muted); }
+
+@media (max-width: 1200px) {
+	.dnsp, .dnsp-top { grid-column: 1 / -1; }
+}

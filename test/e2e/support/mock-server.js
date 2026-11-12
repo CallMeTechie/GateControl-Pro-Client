@@ -34,6 +34,11 @@
  * and me, internet, rules and presence answer from the test's data; pauses
  * and switches change it.
  *
+ * DNS-Schutz: without `server.setDns()` the permissions answer has no
+ * `vpnDns` (a server before 1.264.0). With it (support/dns-mock.js) the
+ * answer names the plugin and the filter's state (or `null`), and status,
+ * pause and resume of that plugin answer from the test's data.
+ *
  * Drucken: without `server.setPrint()` the plugin list has no
  * `gatecontrol-print`. With it (support/print-mock.js) the list names it and
  * overview, the media upload, print and jobs answer from the test's data.
@@ -79,6 +84,7 @@ const selfsigned = require('selfsigned');
 const { createMessenger } = require('./messenger-mock');
 const { createSchool } = require('./school-mock');
 const { createFamilie } = require('./familie-mock');
+const { createDns } = require('./dns-mock');
 const { createPrint } = require('./print-mock');
 const { createVault } = require('./vault-mock');
 const { createDrive } = require('./drive-mock');
@@ -150,6 +156,7 @@ async function startMockServer() {
   let messenger = null; // support/messenger-mock.js, null = no Messenger plugin
   let school = null; // support/school-mock.js, null = no Schule plugin
   let familie = null; // support/familie-mock.js, null = no Familie plugin
+  let dns = null; // support/dns-mock.js, null = a server before the DNS protection (permissions without `vpnDns`)
   let print = null; // support/print-mock.js, null = no plugin Drucken & Scannen
   let vault = null; // support/vault-mock.js, null = no Vault plugin
   let drive = null; // support/drive-mock.js, null = no Drive plugin
@@ -301,6 +308,9 @@ async function startMockServer() {
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
 
+      // DNS protection of the VPN devices: the plugin's app API (status, pause, resume).
+      if (dns && dns.handle({ method: req.method, route, raw, query: Object.fromEntries(url.searchParams) }, json)) return undefined;
+
       if (print) {
         // The plugin list names every plugin that is set, Drucken & Scannen among them (while it is listed).
         if (route === 'plugins') {
@@ -399,7 +409,7 @@ async function startMockServer() {
         case 'config/check': return json(200, { ok: true, changed: false });
         case 'heartbeat': return json(200, { ok: true });
         case 'status': return json(200, { ok: true });
-        case 'permissions': return json(200, { ok: true, permissions: {}, portalUrl: null, autoOpenPortal: false });
+        case 'permissions': return json(200, { ok: true, permissions: {}, portalUrl: null, autoOpenPortal: false, ...(dns ? { vpnDns: dns.vpnDns() } : {}) });
         case 'services': return json(200, { ok: true, services: [] });
         case 'policy':
           if (!policy) return json(404, { ok: false });
@@ -461,6 +471,11 @@ async function startMockServer() {
     setFamilie(opts = {}) {
       familie = createFamilie(opts);
       return familie;
+    },
+    /** A server with the DNS protection of the VPN devices (support/dns-mock.js); returns its state. */
+    setDns(opts = {}) {
+      dns = createDns(opts);
+      return dns;
     },
     /** Enables the plugin Drucken & Scannen (support/print-mock.js); returns its state. */
     setPrint(opts = {}) {
