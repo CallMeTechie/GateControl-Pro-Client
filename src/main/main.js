@@ -409,24 +409,48 @@ function openPortalSafe(target) {
 // PushControl): while the tunnel is up, ask config/check and reconnect with
 // the new configuration (connectTunnel fetches, validates and writes it).
 // Without tunnel nothing to do — the next connect fetches the config anyway.
+// Also polled (scheduleConfigPoll) for apps without the push stream.
+let configCheckRunning = false; // one check at a time (poll and push)
 async function applyServerConfigChange() {
-  if (!tunnelState.connected || isReconnecting) return;
-  const config = await apiClient.checkConfigUpdate();
-  // The zones for device names come with every answer, also without a new
-  // config (the admin can change them, the config hash stays the same).
-  if (apiClient.internalDns !== undefined) rememberInternalDns();
-  if (!config) {
-    if (dnsPolicy && tunnelState.connected) await syncPeerDnsRules();
-    return;
+  if (!tunnelState.connected || isReconnecting || configCheckRunning) return;
+  configCheckRunning = true;
+  try {
+    const config = await apiClient.checkConfigUpdate();
+    // The zones for device names come with every answer, also without a new
+    // config (the admin can change them, the config hash stays the same).
+    if (apiClient.internalDns !== undefined) rememberInternalDns();
+    if (!config) {
+      if (dnsPolicy && tunnelState.connected) await syncPeerDnsRules();
+      return;
+    }
+    const validation = validateWgConfig(config);
+    if (!validation.ok) {
+      log.warn('Config update rejected: ' + validation.errors.join(', '));
+      return;
+    }
+    log.info('New configuration on the server — reconnecting');
+    await disconnectTunnel();
+    await connectTunnel();
+  } finally {
+    configCheckRunning = false;
   }
-  const validation = validateWgConfig(config);
-  if (!validation.ok) {
-    log.warn('Config update rejected: ' + validation.errors.join(', '));
-    return;
-  }
-  log.info('New configuration on the server — reconnecting');
-  await disconnectTunnel();
-  await connectTunnel();
+}
+
+// config/check poll: every app.configPollInterval, every 30 min while the push
+// stream delivers config_changed (core PushControl.relaxedInterval). Without
+// the stream this is how a changed config or zone reaches the app.
+let configPollTimer = null;
+function scheduleConfigPoll() {
+  if (configPollTimer) clearTimeout(configPollTimer);
+  const normal = store.get('app.configPollInterval', 300) * 1000;
+  const control = notifications?.pushControl;
+  const ms = control ? control.relaxedInterval('config', normal) : normal;
+  configPollTimer = setTimeout(() => {
+    applyServerConfigChange()
+      .catch((err) => log.debug('Config poll failed:', err.message))
+      .finally(() => scheduleConfigPoll());
+  }, ms);
+  configPollTimer.unref?.();
 }
 
 // The app's own notifications go through the notification center: same toast
@@ -1417,6 +1441,7 @@ function initializeServices() {
     clientPolicy,
     connectionMonitor,
     onConfigChanged: () => applyServerConfigChange(),
+    onModeChange: () => { if (configPollTimer) scheduleConfigPoll(); },
   });
 
   // Forward RDP events to renderer
@@ -1653,6 +1678,8 @@ app.on('ready', () => {
 
   // Push stream (no-op while switched off or without a server).
   notifications.start();
+  // Always scheduled: without a tunnel (or a server) the check does nothing.
+  scheduleConfigPoll();
   // Started by a toast button while the app was not running: the URL is in
   // argv; its one-time token is unknown to this process, so the inbox opens.
   if (notifications.handleArgv(process.argv)) log.info('Started from a notification');

@@ -422,13 +422,27 @@ describe('main.js notification wiring', () => {
     assert.ok(index('connectionMonitor = new ConnectionMonitor({') < index('notifications.attachControl({'));
     const block = MAIN_JS.slice(index('notifications.attachControl({'), index('notifications.attachControl({') + 300);
     assert.match(block, /PushControl,\s*clientPolicy,\s*connectionMonitor,\s*onConfigChanged: \(\) => applyServerConfigChange\(\)/);
-    const fn = MAIN_JS.slice(index('async function applyServerConfigChange()'), index('async function applyServerConfigChange()') + 1100);
-    assert.match(fn, /if \(!tunnelState\.connected \|\| isReconnecting\) return;/);
+    const fn = MAIN_JS.slice(index('async function applyServerConfigChange()'), index('async function applyServerConfigChange()') + 1300);
+    assert.match(fn, /if \(!tunnelState\.connected \|\| isReconnecting \|\| configCheckRunning\) return;/);
     assert.match(fn, /apiClient\.checkConfigUpdate\(\)/);
     // „Namen im VPN“: the zones come with every answer — without a new config only the DNS rules are brought in step
     assert.match(fn, /if \(apiClient\.internalDns !== undefined\) rememberInternalDns\(\);\s*if \(!config\) \{\s*if \(dnsPolicy && tunnelState\.connected\) await syncPeerDnsRules\(\);\s*return;/);
     assert.match(fn, /validateWgConfig\(config\)/);
     assert.match(fn, /await disconnectTunnel\(\);\s*await connectTunnel\(\);/);
+  });
+
+  it('polls config/check as the fallback for the push stream, stretched while it delivers', () => {
+    const poll = MAIN_JS.slice(index('function scheduleConfigPoll()'), index('function scheduleConfigPoll()') + 600);
+    assert.match(poll, /if \(configPollTimer\) clearTimeout\(configPollTimer\);/);
+    assert.match(poll, /const normal = store\.get\('app\.configPollInterval', 300\) \* 1000;/);
+    assert.match(poll, /control \? control\.relaxedInterval\('config', normal\) : normal/);
+    assert.match(poll, /applyServerConfigChange\(\)\s*\.catch\([^\n]*\)\s*\.finally\(\(\) => scheduleConfigPoll\(\)\);/);
+    assert.match(MAIN_JS, /onModeChange: \(\) => \{ if \(configPollTimer\) scheduleConfigPoll\(\); \},/);
+    assert.match(MAIN_JS, /notifications\.start\(\);\s*\/\/[^\n]*\n\s*scheduleConfigPoll\(\);/);
+    // one check at a time: poll and push must not reconnect twice
+    const fn = MAIN_JS.slice(index('async function applyServerConfigChange()'), index('async function applyServerConfigChange()') + 1300);
+    assert.match(fn, /configCheckRunning = true;\s*try \{/);
+    assert.match(fn, /\} finally \{\s*configCheckRunning = false;/);
   });
 
   it('DNS rules for device names: one per zone on connect, all removed on disconnect', () => {
