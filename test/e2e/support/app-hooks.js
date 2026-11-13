@@ -124,9 +124,12 @@ function install({ app, env }) {
   }
 
   class FakeDnsPolicy {
+    static rulesFor() { return [{ namespace: '.gc.internal', nameServer: '10.8.0.1' }]; }
     async add() { record('dnspolicy.add'); return true; }
+    async sync(rules) { record('dnspolicy.sync'); return (rules || []).map((r) => r.namespace); }
     async remove() { return true; }
     async removeAll() { return true; }
+    coversName() { return false; }
   }
 
   stubModule(coreFile('src/services/wireguard-native'), FakeWireGuardService);
