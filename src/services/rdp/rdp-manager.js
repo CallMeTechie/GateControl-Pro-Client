@@ -8,6 +8,7 @@ const EventEmitter = require('events');
 const RdpConfigBuilder = require('./rdp-config-builder');
 const RdpCredentialHandler = require('./rdp-credential');
 const RdpMonitor = require('./rdp-monitor');
+const { pickPeerFqdn } = require('./rdp-peer-name');
 
 /**
  * RDP Manager -- Orchestrates the full RDP connection lifecycle.
@@ -36,14 +37,17 @@ class RdpManager extends EventEmitter {
    * @param {object} [opts.store] - electron-store instance for config
    * @param {function} opts.getTunnelState - Returns current tunnel state { connected }
    * @param {function} opts.getPeerInfo - Returns peer info { expiresAt }
+   * @param {function} [opts.hasDnsRuleFor] - (name) => whether a DNS rule of this app covers the zone of the name
    */
-  constructor({ apiClient, log, store, getTunnelState, getPeerInfo }) {
+  constructor({ apiClient, log, store, getTunnelState, getPeerInfo, hasDnsRuleFor }) {
     super();
     this.api = apiClient;
     this.log = log;
     this.store = store;
     this.getTunnelState = getTunnelState;
     this.getPeerInfo = getPeerInfo;
+    // (name) => boolean: an NRPT rule of this app covers the zone of `name`
+    this.hasDnsRuleFor = typeof hasDnsRuleFor === 'function' ? hasDnsRuleFor : () => false;
     this.requireE2ee = store?.get('security.requireE2ee', false) || false;
 
     this.configBuilder = new RdpConfigBuilder(log);
@@ -175,7 +179,10 @@ class RdpManager extends EventEmitter {
         return { success: false, error: 'Keine Verbindungsdaten vom Server erhalten.' };
       }
 
-      const route = connectData;
+      // peer_fqdn from here on is the name this PC can resolve: the one in the
+      // chosen zone (peer_fqdn_primary) when there is a DNS rule for it, else
+      // the one in the old zone. .rdp file and credential target use the same.
+      const route = { ...connectData, peer_fqdn: pickPeerFqdn(connectData, this.hasDnsRuleFor) };
       const isGateway = route.access_mode === 'gateway';
       // host/port = the LAN target. Used only for server-side WoL routing,
       // logging, the cmdkey fallback entry, and session bookkeeping — NOT as the

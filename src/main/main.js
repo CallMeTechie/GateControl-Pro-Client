@@ -269,7 +269,7 @@ const proSchema = {
       splitTunnel:   { type: 'boolean', default: false },
       splitRoutes:   { type: 'string', default: '' },
       configPath:    { type: 'string', default: '' },
-      // { domain, server } from GET /client/config, null = internal DNS off
+      // { domain, server, domains?, primary? } from GET /client/config, null = internal DNS off
       internalDns:   { type: ['object', 'null'] },
     },
     default: {},
@@ -409,18 +409,48 @@ function openPortalSafe(target) {
 // PushControl): while the tunnel is up, ask config/check and reconnect with
 // the new configuration (connectTunnel fetches, validates and writes it).
 // Without tunnel nothing to do — the next connect fetches the config anyway.
+// Also polled (scheduleConfigPoll) for apps without the push stream.
+let configCheckRunning = false; // one check at a time (poll and push)
 async function applyServerConfigChange() {
-  if (!tunnelState.connected || isReconnecting) return;
-  const config = await apiClient.checkConfigUpdate();
-  if (!config) return;
-  const validation = validateWgConfig(config);
-  if (!validation.ok) {
-    log.warn('Config update rejected: ' + validation.errors.join(', '));
-    return;
+  if (!tunnelState.connected || isReconnecting || configCheckRunning) return;
+  configCheckRunning = true;
+  try {
+    const config = await apiClient.checkConfigUpdate();
+    // The zones for device names come with every answer, also without a new
+    // config (the admin can change them, the config hash stays the same).
+    if (apiClient.internalDns !== undefined) rememberInternalDns();
+    if (!config) {
+      if (dnsPolicy && tunnelState.connected) await syncPeerDnsRules();
+      return;
+    }
+    const validation = validateWgConfig(config);
+    if (!validation.ok) {
+      log.warn('Config update rejected: ' + validation.errors.join(', '));
+      return;
+    }
+    log.info('New configuration on the server — reconnecting');
+    await disconnectTunnel();
+    await connectTunnel();
+  } finally {
+    configCheckRunning = false;
   }
-  log.info('New configuration on the server — reconnecting');
-  await disconnectTunnel();
-  await connectTunnel();
+}
+
+// config/check poll: every app.configPollInterval, every 30 min while the push
+// stream delivers config_changed (core PushControl.relaxedInterval). Without
+// the stream this is how a changed config or zone reaches the app.
+let configPollTimer = null;
+function scheduleConfigPoll() {
+  if (configPollTimer) clearTimeout(configPollTimer);
+  const normal = store.get('app.configPollInterval', 300) * 1000;
+  const control = notifications?.pushControl;
+  const ms = control ? control.relaxedInterval('config', normal) : normal;
+  configPollTimer = setTimeout(() => {
+    applyServerConfigChange()
+      .catch((err) => log.debug('Config poll failed:', err.message))
+      .finally(() => scheduleConfigPoll());
+  }, ms);
+  configPollTimer.unref?.();
 }
 
 // The app's own notifications go through the notification center: same toast
@@ -842,8 +872,8 @@ async function connectTunnel() {
       log.debug('Hostname report skipped:', err.message);
     }
 
-    // Install NRPT rule so Windows routes *.<domain> peer-hostname queries
-    // to the VPN-internal dnsmasq. Without this, Windows fans the
+    // Install the NRPT rules so Windows routes *.<zone> peer-hostname queries
+    // to the VPN-internal dnsmasq — one rule per zone the server answers. Without this, Windows fans the
     // query out to all configured resolvers and caches the NXDOMAIN
     // that a public resolver returns first — which was exactly why the
     // RDP cred-SSP target (desktop-xxx.gc.internal) previously failed
@@ -851,9 +881,9 @@ async function connectTunnel() {
     try {
       if (DnsPolicy && !dnsPolicy) dnsPolicy = new DnsPolicy(log);
       if (dnsPolicy) {
-        // dnsPolicy.add() is idempotent across legacy rule comments
-        // (pre-1.17 'GateControl' tag) — see client-core dns-policy.js.
-        installPeerDnsRule().catch((e) =>
+        // force: also replaces rules a killed process left behind and the
+        // legacy comment (pre-1.17 'GateControl' tag) — see client-core dns-policy.js.
+        syncPeerDnsRules({ force: true }).catch((e) =>
           log.debug('NRPT install failed:', e && e.message));
       }
     } catch (err) {
@@ -869,22 +899,25 @@ async function connectTunnel() {
   }
 }
 
-// Internal DNS as the server reported it with the config: { domain, server },
-// null (off), or unset for servers that do not say — kept for connects
-// where the config cannot be fetched.
+// Internal DNS as the server reported it with the config or the config check:
+// { domain, server, domains, primary }, null (off), or unset for servers that
+// do not say — kept for connects where the config cannot be fetched.
 function rememberInternalDns() {
   if (apiClient && apiClient.internalDns !== undefined) store.set('tunnel.internalDns', apiClient.internalDns);
   else store.delete('tunnel.internalDns');
 }
 
-// Peer hostnames (<host>.<domain>) → the server's dnsmasq, with the domain and
-// resolver of this server (client-core DnsPolicy.ruleFor), not fixed values.
-async function installPeerDnsRule() {
-  const rule = DnsPolicy.ruleFor({
+// Peer hostnames (<host>.<zone>) → the server's dnsmasq, with the zones and
+// resolver of this server (client-core DnsPolicy.rulesFor), not fixed values:
+// one rule per zone, own rules for zones no longer listed are removed.
+async function syncPeerDnsRules({ force = false } = {}) {
+  const rules = DnsPolicy.rulesFor({
     internalDns: store.get('tunnel.internalDns'),
     wgConfig: await wgService.readConfig(WG_CONFIG_FILE),
   });
-  if (rule) await dnsPolicy.add(rule.namespace, rule.nameServer);
+  // The tunnel may have gone down while the config was read.
+  if (!tunnelState.connected) return;
+  await dnsPolicy.sync(rules, { force });
 }
 
 async function disconnectTunnel() {
@@ -1321,6 +1354,8 @@ function initializeServices() {
     store,
     getTunnelState: () => tunnelState,
     getPeerInfo: () => apiClient.getPeerInfo(),
+    // „Namen im VPN“: a name of the chosen zone only when Windows is pinned to the VPN resolver for it.
+    hasDnsRuleFor: (name) => !!(dnsPolicy && dnsPolicy.coversName(name)),
   });
 
   rdpWolClient = new RdpWolClient({ apiClient, log });
@@ -1406,6 +1441,7 @@ function initializeServices() {
     clientPolicy,
     connectionMonitor,
     onConfigChanged: () => applyServerConfigChange(),
+    onModeChange: () => { if (configPollTimer) scheduleConfigPoll(); },
   });
 
   // Forward RDP events to renderer
@@ -1642,6 +1678,8 @@ app.on('ready', () => {
 
   // Push stream (no-op while switched off or without a server).
   notifications.start();
+  // Always scheduled: without a tunnel (or a server) the check does nothing.
+  scheduleConfigPoll();
   // Started by a toast button while the app was not running: the URL is in
   // argv; its one-time token is unknown to this process, so the inbox opens.
   if (notifications.handleArgv(process.argv)) log.info('Started from a notification');
