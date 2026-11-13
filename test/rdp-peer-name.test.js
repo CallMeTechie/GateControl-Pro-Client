@@ -80,18 +80,26 @@ describe('.rdp file with the picked name', () => {
   const build = async (data, covers) => {
     const file = await builder.build({ ...data, peer_fqdn: pickPeerFqdn(data, covers) });
     files.push(file);
-    return fs.readFileSync(file, 'utf-8');
+    // the .rdp file as { key: value } — hosts are compared as a whole, not as a part of the text
+    const lines = {};
+    for (const line of fs.readFileSync(file, 'utf-8').split(/\r?\n/)) {
+      const m = /^([^:]+):[a-z]:(.*)$/.exec(line);
+      if (m) lines[m[1]] = m[2];
+    }
+    return lines;
   };
 
   it('full address is the name in the chosen zone, the IP stays the alternate', async () => {
-    const content = await build(route(settings), rulesFor('vpn.example.com', 'gc.internal'));
-    assert.ok(content.includes('full address:s:laptop-buero.vpn.example.com:3389'));
-    assert.ok(content.includes('alternate full address:s:10.8.0.5:3389'));
+    const rdp = await build(route(settings), rulesFor('vpn.example.com', 'gc.internal'));
+    assert.equal(rdp['full address'], 'laptop-buero.vpn.example.com:3389');
+    assert.equal(rdp['alternate full address'], '10.8.0.5:3389');
   });
 
   it('full address stays the old name without a rule for the chosen zone', async () => {
-    const content = await build(route(settings), rulesFor('gc.internal'));
-    assert.ok(content.includes('full address:s:laptop-buero.gc.internal:3389'));
-    assert.ok(!content.includes('vpn.example.com'));
+    const rdp = await build(route(settings), rulesFor('gc.internal'));
+    assert.equal(rdp['full address'], 'laptop-buero.gc.internal:3389');
+    // the IP is the only other address: the name of the chosen zone is nowhere in the file
+    assert.equal(rdp['alternate full address'], '10.8.0.5:3389');
+    assert.deepEqual(Object.keys(rdp).filter((key) => /address|host/.test(key)).sort(), ['alternate full address', 'full address']);
   });
 });
