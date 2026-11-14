@@ -13,6 +13,9 @@ Windows VPN client with integrated Remote Desktop (RDP) management.
   Tresor notebooks (end-to-end encrypted, Windows Hello), quick entry with Strg+N, the move from Microsoft To Do and DS Note
   — with plugin 1.3.0 also the card "Gestern offen geblieben" in Mein Tag, a task's marks (Erinnerung, Später, im Kalender)
   and the buttons of the reminder messages (the app sets no alarm of its own; the server's push is the reminder)
+  — with plugin 1.4.0 the shopping lists of the hub (tick off, add, change and delete items — also without the server,
+  sent later in order), the list at a task ("Einkauf 0/8", chosen in the details or suggested by the quick entry), "Alles
+  abgehakt" with undo, and the reminder's button "Liste öffnen" that opens the list in the app
 
 ## Development
 ```bash

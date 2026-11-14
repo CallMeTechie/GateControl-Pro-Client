@@ -259,3 +259,35 @@
 	.nz-detail { width: 340px; }
 	.nz-side { width: 212px; }
 }
+
+/* plugin 1.4.0: shopping lists, a list at a task */
+.nz-it-mark { display: inline-flex; flex-shrink: 0; color: var(--faint); }
+.nz-it-mark svg, .nz-it.on .nz-it-mark svg { color: inherit; }
+.nz-h:has(> svg) { display: flex; align-items: center; gap: 10px; }
+.nz-h > svg { flex-shrink: 0; color: var(--acc-t); }
+.nz-mark-list { padding: 0 6px; margin-left: -6px; height: 20px; border: 0; border-radius: 10px; background: transparent; font: inherit; font-weight: 600; color: var(--acc-t); cursor: pointer; }
+.nz-mark-list:hover { background: var(--acc-bg); }
+.nz-mark-list:focus-visible, .nz-shop-task:focus-visible, .nz-qx:focus-visible, .nz-qsel:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.nz-shop-task { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 12px; border: 0; border-radius: 15px; background: var(--acc-bg); color: var(--acc-t); font-size: 13px; font-weight: 600; cursor: pointer; text-align: left; }
+.nz-shop-task:hover { filter: brightness(.97); }
+.nz-shop-wait { font-size: 13px; }
+.nz-shop-addbox { cursor: text; }
+.nz-shop-qty { flex: 0 0 110px; width: 110px; border-left: 1px solid var(--line); padding-left: 12px; }
+.nz-shop-row { cursor: default; min-height: 46px; }
+.nz-shop-row .nz-row-tx { cursor: pointer; }
+.nz-shop-row .nz-ib { opacity: 0; }
+.nz-shop-row:hover .nz-ib, .nz-shop-row:focus-within .nz-ib { opacity: 1; }
+.nz-shop-q { flex-shrink: 0; font-size: 13px; color: var(--muted); }
+.nz-shop-row.is-done .nz-shop-q { color: var(--faint); }
+.nz-ck-ro { cursor: default; }
+.nz-ck-ro:hover { border-color: var(--faint); color: transparent; }
+.nz-ck-ro.on:hover { border-color: var(--acc); color: var(--acc-on); }
+.nz-shop-clear { color: var(--acc-t); font-weight: 600; }
+.nz-qchip-shop { display: inline-flex; align-items: center; gap: 6px; background: var(--acc-bg); color: var(--acc-t); }
+.nz-qchip-shop.plain { background: var(--panel2); color: var(--muted); }
+.nz-qx { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; margin-right: -4px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.nz-qx:hover { background: var(--panel); }
+.nz-qsel { max-width: 220px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; cursor: pointer; }
+.nz-qsel option { color: var(--text); background: var(--panel); }
+.nz-attached { min-width: 0; }
+.nz-attached select { min-width: 0; max-width: 190px; }

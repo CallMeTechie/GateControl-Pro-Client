@@ -13,6 +13,9 @@ const { setupWithApiKey } = require('./support/ui');
 // protected notes) and Microsoft To Do (device code). The plugin is the core's fake server (support/notes-mock.js).
 // Plugin 1.3.0 (the words of me.features): the card "Gestern offen geblieben" above the sections of Mein Tag, a task's
 // marks, the calendar chip of the quick entry, and the buttons of the morning hint that open the page.
+// Plugin 1.4.0 (shoppingLists, taskList): the shopping lists in the menu, a list ticked off (items added, changed,
+// deleted; "Alles abgehakt" with the way back), the list at a task (the mark, the details, the chip of the quick entry)
+// and the reminder's button "Liste öffnen" that opens the list in the app. With an older plugin nothing of it shows.
 
 function coreDir() {
   const root = path.join(__dirname, '..', '..');
@@ -38,6 +41,24 @@ function stage1() {
   return [...FEATURES, ...STAGE1];
 }
 const YESTERDAY = '2026-11-07'; // the fake's today is 2026-11-08, a Sunday
+
+// … and the words of plugin 1.4.0
+function stage2() {
+  const { STAGE2 } = require(path.join(coreDir(), 'test', 'fixtures', 'notes-server.js'));
+  return [...stage1(), ...STAGE2];
+}
+const EINKAUF = '6f1c2a90-1111-4c1d-9a00-000000000001';
+const DROGERIE = '6f1c2a90-1111-4c1d-9a00-000000000002';
+const POINTS = [['Milch', '2 l'], ['Brot'], ['Äpfel', '1 kg'], ['Butter'], ['Nudeln', '2 Pck.'], ['Kaffee'], ['Joghurt', '4'], ['Spülmittel']];
+/** The family's list "Einkauf" of the mockup (8 open items) and the task "Bei Lidl einkaufen" that carries it. */
+function seedShopping(n) {
+  const list = n.srv.addShopList({ id: EINKAUF, name: 'Einkauf', family: true, items: POINTS.map(([text, qty]) => ({ text, qty })) });
+  const task = n.srv.addTask({ title: 'Bei Lidl einkaufen', due: { date: '2026-11-08', time: null } });
+  n.srv.state.attached.set(task.id, list.num);
+  return { list, task };
+}
+const shopItem = (n, text) => [...n.srv.state.shopItems.values()].find((i) => i.text === text && !i.deleted) || null;
+const posted = (n, re) => n.srv.state.requests.filter((r) => re.test(r.path));
 
 const row = (root, uid) => root.locator(`.nz-row[data-uid="${uid}"]`);
 const useFakeConsent = (app) => app.evaluate(() => globalThis.__gcE2E.useFakeConsent());
@@ -413,5 +434,247 @@ test.describe('notizen', () => {
     await expect(root.locator('.nz-yd')).toHaveCount(0);
     // neither button went to the portal
     expect(mock.count('/api/v1/client/portal-link')).toBe(links);
+  });
+
+  test('an older plugin (1.3.0): no shopping lists, no list at a task, nothing new asked or sent', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage1() });
+    const { task } = seedShopping(n);
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openNotes(page);
+    await expect(row(root, `t:${task.id}`)).toBeVisible();
+    await expect(root.locator('.nz-it[data-view^="shopping:"]')).toHaveCount(0);
+    await expect(root.locator('.nz-it[data-view="new-shopping"]')).toHaveCount(0);
+    await expect(root.locator('.nz-mark[data-kind="list"]')).toHaveCount(0);
+    await row(root, `t:${task.id}`).click();
+    await expect(root.locator('.nz-detail .nz-d-title')).toHaveValue('Bei Lidl einkaufen');
+    await expect(root.locator('.nz-detail .nz-attached')).toHaveCount(0);
+    const quick = root.locator('#nz-quick');
+    await quick.fill('bei Lidl einkaufen');
+    await expect(root.locator('.nz-qchip[data-kind="area"]')).toBeVisible();
+    await page.waitForTimeout(600);
+    await expect(root.locator('.nz-qchip[data-kind="shopping"]')).toHaveCount(0);
+    await quick.press('Enter');
+    await expect.poll(() => posted(n, /\/api\/tasks$/).length).toBe(1);
+    expect(posted(n, /\/api\/tasks$/)[0].body).toEqual({ text: 'bei Lidl einkaufen', area: 'private', createList: false, myDay: true });
+    expect(posted(n, /\/api\/(shopping|parse)/)).toEqual([]);
+  });
+
+  test('plugin 1.4.0: a shopping list — ticked off, items added, changed and deleted; "Alles abgehakt" completes the task, and back', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage2() });
+    const { list, task } = seedShopping(n);
+    n.srv.addShopList({ id: DROGERIE, name: 'Drogerie', icon: 'heart', items: [{ text: 'Zahnpasta' }] });
+    mock.setPush({ topics: [] });   // the push stream carries the plugin's live events
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openNotes(page);
+    // the menu: the shopping lists of the area with what is open; the family's list is marked
+    const nav = root.locator(`.nz-it[data-view="shopping:${EINKAUF}"]`);
+    await expect(root.locator('.nz-it[data-view^="shopping:"] .nz-it-tx')).toHaveText(['Einkauf', 'Drogerie']);
+    await expect(nav.locator('.nz-n')).toHaveText('8');
+    await expect(nav.locator('.nz-it-mark')).toHaveCount(1);
+    // Mein Tag: the task shows which list hangs at it and how far it is ticked off; the mark opens the list
+    const mark = row(root, `t:${task.id}`).locator('.nz-mark[data-kind="list"]');
+    await expect(mark).toHaveText('Einkauf 0/8');
+    await page.screenshot({ path: test.info().outputPath('notizen-shopping-myday.png') });
+    await mark.click();
+    await expect(nav).toHaveClass(/on/);
+    await expect(root.locator('.nz-main .nz-h')).toHaveText('Einkauf');
+    await expect(root.locator('.nz-main .nz-sub')).toHaveText(/^(Familie|Family)$/);
+    await expect(root.locator('.nz-shop-task')).toHaveText(/^(gehört zu „Bei Lidl einkaufen“ · 0 von 8|belongs to “Bei Lidl einkaufen” · 0 of 8)$/);
+    const rows = root.locator('.nz-shop-row');
+    await expect(rows.locator('.nz-row-title')).toHaveText(POINTS.map((x) => x[0]));
+    await expect(rows.first().locator('.nz-shop-q')).toHaveText('2 l');
+    await page.screenshot({ path: test.info().outputPath('notizen-shopping-list.png') });
+
+    // tick off: at once, open ones stay on top
+    await rows.first().locator('.nz-ck').click();
+    await expect.poll(() => n.srv.state.shopItems.get(list.items[0]).checked).toBe(true);
+    await expect(rows.locator('.nz-row-title')).toHaveText([...POINTS.slice(1).map((x) => x[0]), 'Milch']);
+    await expect(rows.last()).toHaveClass(/is-done/);
+    await expect(nav.locator('.nz-n')).toHaveText('7');
+    await expect(root.locator('.nz-shop-task')).toHaveText(/1 (von|of) 8$/);
+    // a new item with its quantity (Enter); its id is made on this PC
+    await root.locator('#nz-shop-add').fill('Hefe');
+    await root.locator('#nz-shop-qty').fill('1 Würfel');
+    await root.locator('#nz-shop-qty').press('Enter');
+    await expect.poll(() => (shopItem(n, 'Hefe') || {}).qty).toBe('1 Würfel');
+    expect(shopItem(n, 'Hefe').id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-/);
+    await expect(root.locator('#nz-shop-add')).toHaveValue('');
+    await expect(root.locator('#nz-shop-add')).toBeFocused();
+    await expect(rows).toHaveCount(9);
+    // change it, delete it
+    const brot = root.locator(`.nz-shop-row[data-item="${list.items[1]}"]`);
+    await brot.hover();
+    await brot.locator('[data-act="shop-edit"]').click();
+    const dlg = page.locator('.nz-dlg');
+    await dlg.locator('input').first().fill('Vollkornbrot');
+    await dlg.locator('input').nth(1).fill('1');
+    await dlg.locator('[data-act="save"]').click();
+    await expect.poll(() => [n.srv.state.shopItems.get(list.items[1]).text, n.srv.state.shopItems.get(list.items[1]).qty]).toEqual(['Vollkornbrot', '1']);
+    await expect(brot.locator('.nz-row-title')).toHaveText('Vollkornbrot');
+    const hefe = root.locator(`.nz-shop-row[data-item="${shopItem(n, 'Hefe').id}"]`);
+    await hefe.hover();
+    await hefe.locator('[data-act="shop-delete"]').click();
+    await expect.poll(() => shopItem(n, 'Hefe')).toBeNull();
+    await expect(rows).toHaveCount(8);
+    // what someone else writes at home shows here (the live event)
+    n.srv.state.now += 5000;
+    n.srv.state.shopItems.set('other-device-01', { id: 'other-device-01', list: EINKAUF, text: 'Salz', qty: null, checked: true, checkedBy: 12, updatedAt: n.srv.state.now, deleted: false, seq: 999 });
+    mock.pushPlugin('gatecontrol-notizen', 'changed', { what: ['shopping'] });
+    await expect(rows).toHaveCount(9);
+
+    // the last open item: "Alles abgehakt" — the task is done, with the way back; no item is unticked by it
+    for (const id of list.items.slice(1)) await root.locator(`.nz-shop-row[data-item="${id}"] .nz-ck`).click();
+    await expect.poll(() => !!n.srv.state.tasks.get(task.id).doneAt).toBe(true);
+    const toast = page.locator('#toasts .toast', { hasText: /Alles abgehakt|All ticked off/ });
+    await expect(toast.locator('.toast-text')).toHaveText(/^(Alles abgehakt\. „Bei Lidl einkaufen“ ist erledigt\.|All ticked off\. “Bei Lidl einkaufen” is done\.)$/);
+    await expect(nav.locator('.nz-n')).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath('notizen-shopping-done.png') });
+    await toast.locator('.toast-act').click();
+    await expect.poll(() => n.srv.state.tasks.get(task.id).doneAt).toBeNull();
+    expect([...n.srv.state.shopItems.values()].filter((i) => i.list === EINKAUF && !i.deleted).every((i) => i.checked)).toBe(true);
+    await expect(root.locator('.nz-shop-task')).toHaveText(/9 (von|of) 9$/);
+    // "Abgehakte entfernen": the list is empty for the next time
+    await root.locator('[data-act="shop-clear"]').click();
+    await expect.poll(() => [...n.srv.state.shopItems.values()].filter((i) => i.list === EINKAUF && !i.deleted).length).toBe(0);
+    await expect(root.locator('.nz-main .nz-empty')).toBeVisible();
+    // every change went through POST shopping/ops, in the order made
+    expect(posted(n, /\/api\/shopping\/ops$/).flatMap((r) => r.body.ops.map((o) => o.op))).toEqual(['item_check', 'item_add', 'item_edit', 'item_delete', ...list.items.slice(1).map(() => 'item_check'), 'clear_checked']);
+
+    // a new list from the menu; renamed and deleted in its settings
+    await root.locator('.nz-it[data-view="new-shopping"]').click();
+    await dlg.locator('input').first().fill('Baumarkt');
+    await dlg.locator('.btn-pri').click();
+    await expect.poll(() => [...n.srv.state.shopLists.values()].some((l) => l.name === 'Baumarkt' && !l.deletedAt)).toBe(true);
+    await expect(root.locator('.nz-main .nz-h')).toHaveText('Baumarkt');
+    await expect(root.locator('.nz-main .nz-sub')).toHaveText(/^(nur ich|only me)$/);
+    await root.locator('.nz-main .nz-head .nz-ib').click();
+    await dlg.locator('[data-act="shop-remove"]').click();
+    await expect.poll(() => [...n.srv.state.shopLists.values()].some((l) => l.name === 'Baumarkt' && !l.deletedAt)).toBe(false);
+    await expect(root.locator('.nz-it[data-view="myday"]')).toHaveClass(/on/);
+    await expect(root.locator('.nz-it[data-view^="shopping:"] .nz-it-tx')).toHaveText(['Einkauf', 'Drogerie']);
+    // deleted by mistake: the toast brings it back
+    const gone = page.locator('#toasts .toast', { hasText: /Baumarkt/ });
+    await expect(gone.locator('.toast-text')).toHaveText(/^(Einkaufsliste „Baumarkt“ gelöscht\.|Shopping list “Baumarkt” deleted\.)$/);
+    await gone.locator('.toast-act').click();
+    await expect.poll(() => [...n.srv.state.shopLists.values()].some((l) => l.name === 'Baumarkt' && !l.deletedAt)).toBe(true);
+    await expect(root.locator('.nz-it[data-view^="shopping:"] .nz-it-tx')).toHaveText(['Einkauf', 'Drogerie', 'Baumarkt']);
+    await expect(root.locator('.nz-main .nz-h')).toHaveText('Baumarkt');
+    // renamed and shared with one person in its settings
+    await root.locator('.nz-main .nz-head .nz-ib').click();
+    await dlg.locator('input[type="text"]').fill('Bauhaus');
+    await dlg.locator('.nz-share .nz-check', { hasText: 'Jenny Muster' }).locator('input').check();
+    await dlg.locator('.btn-pri').click();
+    await expect.poll(() => { const l = [...n.srv.state.shopLists.values()].find((x) => x.name === 'Bauhaus'); return l ? l.members : null; }).toEqual([{ id: 12, role: 'write' }]);
+    await expect(root.locator('.nz-main .nz-h')).toHaveText('Bauhaus');
+    await expect(root.locator('.nz-main .nz-sub')).toHaveText('Jenny Muster');
+  });
+
+  test('plugin 1.4.0: a list at a task — suggested in the quick entry, chosen in the details, opened from there', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage2() });
+    const { list } = seedShopping(n);
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openNotes(page);
+    // "bei Lidl einkaufen": the server suggests the list "Einkauf"; the chip stays → the task carries it
+    const quick = root.locator('#nz-quick');
+    const chip = root.locator('.nz-qchip[data-kind="shopping"]');
+    await quick.fill('bei Lidl einkaufen');
+    await expect(chip).toHaveText(/^(Liste|List): Einkauf · 8 (offen|open)$/);
+    await page.screenshot({ path: test.info().outputPath('notizen-shopping-quick.png') });
+    await quick.press('Enter');
+    await expect.poll(() => posted(n, /\/api\/tasks$/).length).toBe(1);
+    expect(posted(n, /\/api\/tasks$/)[0].body).toEqual({ text: 'bei Lidl einkaufen', area: 'private', createList: false, attachedListId: list.num, myDay: true });
+    const made = [...n.srv.state.tasks.values()].find((x) => x.title === 'bei Lidl einkaufen');
+    expect(n.srv.state.attached.get(made.id)).toBe(list.num);
+    await expect(row(root, `t:${made.id}`).locator('.nz-mark[data-kind="list"]')).toHaveText('Einkauf 0/8');
+    // the chip taken away: no list — the server attaches nothing by itself
+    await quick.fill('Brot besorgen');
+    await expect(chip).toHaveText(/Einkauf/);
+    await chip.locator('.nz-qx').click();
+    await expect(chip).toHaveClass(/plain/);
+    await quick.press('Enter');
+    await expect.poll(() => posted(n, /\/api\/tasks$/).length).toBe(2);
+    expect(posted(n, /\/api\/tasks$/)[1].body).toEqual({ text: 'Brot besorgen', area: 'private', createList: false, myDay: true });
+    await expect(quick).toHaveValue('');
+    await expect(chip).toHaveCount(0);
+    // a line that names no list: no chip
+    await quick.fill('Rasen mähen');
+    await expect.poll(() => posted(n, /\/api\/parse$/).some((r) => r.body.text === 'Rasen mähen')).toBe(true);
+    await expect(chip).toHaveCount(0);
+    await quick.fill('');
+
+    // the details: "Angehängte Liste" — chosen, opened, taken off again
+    await row(root, 't:12').click();
+    const d = root.locator('.nz-detail');
+    const sel = d.locator('.nz-attached select');
+    await expect(sel.locator('option')).toHaveText([/^(Keine|None)$/, /^Einkauf · (Familie|Family) · 8 (offen|open)$/, /^(Neue Liste|New list) …$/]);
+    await expect(d.locator('[data-act="open-list"]')).toHaveCount(0);
+    await sel.selectOption(String(list.num));
+    await expect.poll(() => n.srv.state.attached.get(12)).toBe(list.num);
+    await expect(row(root, 't:12').locator('.nz-mark[data-kind="list"]')).toHaveText('Einkauf 0/8');
+    await page.screenshot({ path: test.info().outputPath('notizen-shopping-detail.png') });
+    await d.locator('[data-act="open-list"]').click();
+    await expect(root.locator(`.nz-it[data-view="shopping:${EINKAUF}"]`)).toHaveClass(/on/);
+    await expect(root.locator('.nz-shop-task')).toHaveText(/(und 2 weiteren|and 2 more) · 0 (von|of) 8$/);
+    // the line above the items leads back to the task
+    await root.locator('.nz-shop-task').click();
+    await expect(d.locator('.nz-d-title')).toBeVisible();
+    await d.locator('.nz-attached select').selectOption('');
+    await expect.poll(() => n.srv.state.attached.has(12)).toBe(false);
+    // a new list right from the details: made on this PC, then attached by its text id
+    await root.locator('.nz-it[data-view="myday"]').click();
+    await row(root, 't:11').click();
+    await d.locator('.nz-attached select').selectOption('new');
+    const dlg = page.locator('.nz-dlg');
+    await dlg.locator('input').first().fill('Apotheke');
+    await dlg.locator('.btn-pri').click();
+    await expect.poll(() => { const l = [...n.srv.state.shopLists.values()].find((x) => x.name === 'Apotheke'); return !!l && n.srv.state.attached.get(11) === l.num; }).toBe(true);
+    expect(posted(n, /\/api\/tasks\/11$/).pop().body).toEqual({ attachedListUid: [...n.srv.state.shopLists.values()].find((x) => x.name === 'Apotheke').uid });
+    await expect(row(root, 't:11').locator('.nz-mark[data-kind="list"]')).toHaveText('Apotheke 0/0');
+  });
+
+  test('plugin 1.4.0: the reminder\'s button "Liste öffnen" opens the list in the app, not the portal', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage2() });
+    const { list, task } = seedShopping(n);
+    const topic = 'plugin:gatecontrol-notizen:reminders';
+    mock.setPush({ topics: [{ id: topic, label: 'Notizen & Aufgaben · Erinnerungen an Aufgaben' }], items: [{
+      id: 81, topic, title: 'Bei Lidl einkaufen', body: 'Fällig heute 10:00 · Aufgaben\nEinkauf · 8 Punkte: Milch, Brot, Äpfel, Butter …', collapse_key: `task:${task.id}`,
+      data: { notizen: { kind: 'reminder', taskId: task.id, listId: 1, area: 'private', task: task.id, tag: `task:${task.id}:1794729600000`, attachedList: { id: list.num, uid: EINKAUF, name: 'Einkauf', open: 8, total: 8 } }, actions: [
+        { id: 'open_list', label: 'Liste öffnen', type: 'open_app_route', target: 'plg-gatecontrol-notizen' },
+        { id: 'done', label: 'Erledigt', type: 'callback' },
+        { id: 'snooze_1h', label: 'In 1 Std.', type: 'callback' },
+      ] },
+    }] });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await expect(page.locator('#nav-notizen')).toBeVisible();
+    await expect(page.locator('#inbox-badge')).toHaveText('1');
+    await page.locator('#nav-inbox').click();
+    await page.locator('#inbox-list .inbox-row').first().click();
+    await expect(page.locator('#inbox-detail .inbox-actions .btn')).toHaveText(['Liste öffnen', 'Erledigt', 'In 1 Std.']);
+    const links = mock.count('/api/v1/client/portal-link');
+    await page.locator('#inbox-detail [data-action="open_list"]').click();
+    await expect(page.locator('#page-notizen')).toHaveClass(/active/);
+    const root = page.locator('#page-notizen');
+    await expect(root.locator(`.nz-it[data-view="shopping:${EINKAUF}"]`)).toHaveClass(/on/);
+    await expect(root.locator('.nz-main .nz-h')).toHaveText('Einkauf');
+    await expect(root.locator('.nz-shop-row')).toHaveCount(8);
+    // ready to tick off
+    await root.locator('.nz-shop-row').first().locator('.nz-ck').click();
+    await expect.poll(() => n.srv.state.shopItems.get(list.items[0]).checked).toBe(true);
+    expect(mock.count('/api/v1/client/portal-link')).toBe(links);
+    // the list is gone meanwhile: the button of a second reminder opens the task instead
+    Object.assign(n.srv.state.shopLists.get(EINKAUF), { deletedAt: n.srv.state.now, was: [1] });
+    mock.pushNotification({ id: 82, topic, title: 'Bei Lidl einkaufen', body: 'Fällig heute 10:00 · Aufgaben', collapse_key: `task:${task.id}`,
+      data: { notizen: { kind: 'reminder', taskId: task.id, task: task.id, attachedList: { id: list.num, uid: EINKAUF, name: 'Einkauf', open: 7, total: 8 } }, actions: [{ id: 'open_list', label: 'Liste öffnen', type: 'open_app_route', target: 'plg-gatecontrol-notizen' }] } });
+    await page.locator('#nav-inbox').click();
+    await expect(page.locator('#inbox-list .inbox-row')).toHaveCount(2);
+    await page.locator('#inbox-list .inbox-row').first().click();
+    await page.locator('#inbox-detail [data-action="open_list"]').click();
+    await expect(page.locator('#page-notizen')).toHaveClass(/active/);
+    await expect(root.locator('.nz-detail .nz-d-title')).toHaveValue('Bei Lidl einkaufen');
+    await expect(root.locator('.nz-it[data-view^="shopping:"]')).toHaveCount(0);
   });
 });

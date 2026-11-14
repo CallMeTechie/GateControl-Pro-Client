@@ -6,7 +6,9 @@
  * item of another plugin leads (contract docs/notes-sources-contract.md § 5: Mail's mail, Drive's deadline, Schule —
  * the other plugins' portal tab), texts of failures, of the Tresor states and of an import. Plugin 1.3.0, told by the
  * words in `me.features` only (never a version): a task's marks (Erinnerung, Später: …, im Kalender), the calendar chip of
- * the quick entry and the card „Gestern offen geblieben“ of Mein Tag. window.GCNotesState.
+ * the quick entry and the card „Gestern offen geblieben“ of Mein Tag. Plugin 1.4.0 (`shoppingLists`, `taskList`): the
+ * shopping lists of the menu, a list's items (open first), who it is shared with, the mark „Einkauf 0/8“ of a task, the
+ * choices of „Angehängte Liste“, the chip of the quick entry and „Alles abgehakt“. window.GCNotesState.
  */
 (function (root) {
 	'use strict';
@@ -84,6 +86,11 @@
 			const when = x.snoozed ? clockText(x.reminder.at, me.today, t) : '';
 			out.push({ kind: 'reminder', text: when ? t('notes.mark.later', { when }) : t('notes.mark.reminder') });
 		}
+		// plugin 1.4.0: the shopping list the task carries and how far it is ticked off („Einkauf 0/8“)
+		if (offers(me, 'taskList') && x.attachedList) {
+			const l = x.attachedList;
+			out.push({ kind: 'list', text: `${l.name} ${l.done}/${l.total}`, title: t('notes.shop.openList'), uid: l.uid });
+		}
 		const name = calendarName(me);
 		if (name !== null && x.calendar && x.calendar.mine === true) {
 			const pending = x.calendar.state === 'pending';
@@ -125,6 +132,67 @@
 		const ids = [...new Set((named || []).filter((n) => Number.isSafeInteger(n) && n > 0))];
 		if (!Array.isArray(open)) return ids;
 		return ids.length ? ids.filter((n) => open.includes(n)) : open.slice();
+	}
+
+	// ── plugin 1.4.0: shopping lists, a list at a task ──
+
+	/** The shopping lists of the menu for an area: what the page holds (with what waits to be sent), else the menu's. */
+	function shopNav(shop, nav, area) {
+		if (shop && Array.isArray(shop.lists)) return shop.lists.filter((l) => l.area === area);
+		return (nav && Array.isArray(nav.shopping) ? nav.shopping : []).slice();
+	}
+
+	/** A shopping list of what the page holds, by its text id. */
+	function shopList(shop, uid) {
+		return (shop && Array.isArray(shop.lists) ? shop.lists : []).find((l) => l.id === uid) || null;
+	}
+
+	/** The items of a list as the page shows them: open ones first, each group in the order they were written. */
+	function shopItems(shop, uid) {
+		const all = (shop && Array.isArray(shop.items) ? shop.items : []).filter((i) => i.listId === uid);
+		return [...all.filter((i) => !i.checked), ...all.filter((i) => i.checked)];
+	}
+
+	/** Who a shopping list is shared with: „Familie“, „nur ich“, else the names of the others. */
+	function shopWith(l, meId, t) {
+		if (!l) return '';
+		if (l.family) return t('notes.shop.family');
+		if (!l.shared) return t('notes.shop.onlyMe');
+		const names = [l.owner, ...(l.members || [])].filter((p) => p && p.id !== meId && p.name).map((p) => p.name);
+		return names.length ? names.join(', ') : t('notes.shared');
+	}
+
+	/** A list in the choice „Angehängte Liste“: „Einkauf · Familie · 8 offen“. */
+	function shopChoice(l, meId, t) {
+		return `${l.name} · ${shopWith(l, meId, t)} · ${t('notes.shop.openN', { n: l.open })}`;
+	}
+
+	/** The line above a list's items: „gehört zu ‚Bei Lidl einkaufen‘ · 3 von 8“ → { text, taskId } or null. */
+	function shopBelongs(l, t) {
+		const tasks = l && Array.isArray(l.tasks) ? l.tasks : [];
+		if (!tasks.length) return null;
+		const done = l.total - l.open;
+		const key = tasks.length > 1 ? 'notes.shop.belongsMore' : 'notes.shop.belongs';
+		return { text: t(key, { title: tasks[0].title, n: tasks.length - 1, done, total: l.total }), taskId: tasks[0].id };
+	}
+
+	/** „Alles abgehakt. ‚Bei Lidl einkaufen‘ ist erledigt.“ for the tasks a list completed. */
+	function allTickedText(completed, t) {
+		const list = (completed || []).filter((c) => c && c.taskId);
+		if (!list.length) return '';
+		return list.length === 1 ? t('notes.shop.allTicked', { title: list[0].title }) : t('notes.shop.allTickedN', { n: list.length });
+	}
+
+	/**
+	 * The quick entry's list: what the server suggested for the line (`attach` of POST parse) and what the person did
+	 * with the chip → { list (the one to attach or null), lists (to choose from), tag (the line names it with #) } or
+	 * null (nothing suggested, an older plugin). `choice`: undefined (untouched), null (taken away) or a list's number.
+	 */
+	function quickAttach(attach, choice) {
+		if (!attach || !Array.isArray(attach.lists) || !attach.lists.length) return null;
+		const lists = attach.lists;
+		const list = choice === null ? null : (choice !== undefined && lists.find((l) => l.id === choice)) || (choice === undefined ? attach.list || null : null);
+		return { list, lists, tag: attach.via === 'tag' };
 	}
 
 	/** The chip of a row's source ('Mail · Zu tun', 'Drive · Frist') → { text, tone } or null. */
@@ -182,8 +250,11 @@
 		try { return QP().parse(s, ctx); } catch { return null; }
 	}
 
-	/** The chips under the quick entry ("Erkannt – tippen zum Ändern") → [{ kind, text, plain }]. */
-	function quickChips(p, ctx, area, t, lang, me) {
+	/**
+	 * The chips under the quick entry ("Erkannt – tippen zum Ändern") → [{ kind, text, plain }]. `qa` (quickAttach): the
+	 * line names a shopping list with # — that word is no task list to be made.
+	 */
+	function quickChips(p, ctx, area, t, lang, me, qa) {
 		if (!p) return [];
 		const out = [];
 		if (p.date) out.push({ kind: 'date', text: dayText(p.date, ctx.today, t) + (p.time ? `, ${p.time}` : '') });
@@ -194,16 +265,25 @@
 		if (p.repeat) out.push({ kind: 'repeat', text: `↻ ${RP().describe(p.repeat, lang === 'en' ? 'en' : 'de')}` });
 		if (p.important) out.push({ kind: 'important', text: t('notes.important') });
 		if (p.list) out.push({ kind: 'list', text: t('notes.quick.list', { name: p.list.name }) });
-		else if (p.listName) out.push({ kind: 'list', text: t('notes.quick.newList', { name: p.listName }), plain: true });
+		else if (p.listName && !(qa && qa.tag && qa.list)) out.push({ kind: 'list', text: t('notes.quick.newList', { name: p.listName }), plain: true });
 		if (p.assignee) out.push({ kind: 'person', text: `@${p.assignee.name}` });
 		else if (p.assigneeName) out.push({ kind: 'person', text: t('notes.quick.unknownPerson', { name: p.assigneeName }), plain: true });
 		out.push({ kind: 'area', text: t(`notes.area.${area === 'work' ? 'work' : 'private'}`), plain: true });
 		return out;
 	}
 
-	/** The body of POST tasks for the quick entry in the current view. */
-	function quickBody(text, p, view, area) {
+	/**
+	 * The body of POST tasks for the quick entry in the current view. `qa` (quickAttach, plugin 1.4.0): the chip stayed →
+	 * attachedListId; taken away → no field; `'auto'` — the suggestion for this line has not come yet: the server attaches
+	 * the list when exactly one fits.
+	 */
+	function quickBody(text, p, view, area, qa) {
 		const body = { text: str(text).trim(), area, createList: !!(p && p.listName && !p.list) };
+		if (qa === 'auto') body.attach = 'auto';
+		else if (qa && qa.list) {
+			body.attachedListId = qa.list.id;
+			if (qa.tag) body.createList = false;
+		}
 		if (view && view.kind === 'list' && !(p && (p.list || p.listName))) body.listId = view.id;
 		if (view && view.kind === 'smart' && view.id === 'myday') body.myDay = true;
 		if (view && view.kind === 'smart' && view.id === 'important') body.important = true;
@@ -325,7 +405,8 @@
 	}
 
 	root.GCNotesState = {
-		COLORS, SOURCE_TONE, dayText, longDate, whenText, offers, calendarName, clockText, taskMarks, yesterdayCard, sectionsWithout, moveChoices, askedIds, sourceChip, metaLine, sectionTitle, quickCtx, quickParse, quickChips, quickBody,
+		COLORS, SOURCE_TONE, dayText, longDate, whenText, offers, calendarName, clockText, taskMarks, yesterdayCard, sectionsWithout, moveChoices, askedIds,
+		shopNav, shopList, shopItems, shopWith, shopChoice, shopBelongs, allTickedText, quickAttach, sourceChip, metaLine, sectionTitle, quickCtx, quickParse, quickChips, quickBody,
 		repeatOptions, openTarget, errText, vaultLocked, noteTitle, notebookName, isoDay, formatBytes, importText, groupKey, localInput,
 	};
 })(typeof self !== 'undefined' ? self : this);

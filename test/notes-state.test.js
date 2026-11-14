@@ -230,6 +230,68 @@ describe('notes-state.js', () => {
     assert.deepEqual(NS.askedIds([41], []), []);
   });
 
+  it('plugin 1.4.0: the shopping lists, a task\'s list, the chip of the quick entry — only with the words of me.features', () => {
+    const me = { today: '2026-11-08', features: ['tasks', 'shoppingLists', 'taskList'], user: { id: 1 } };
+    const L = (o) => ({ id: 'list-einkauf-0001', listId: 12, name: 'Einkauf', icon: 'cart', area: 'private', family: false, shared: false, owner: { id: 1, name: 'Anna' }, members: [], open: 2, total: 3, tasks: [], ...o });
+    const shop = { lists: [L({ family: true, shared: true }), L({ id: 'list-drogerie-0001', listId: 13, name: 'Drogerie', shared: true, members: [{ id: 2, name: 'Marc' }, { id: 3, name: 'Lena' }] }), L({ id: 'list-buero-000001', listId: 14, name: 'Büro', area: 'work' })],
+      items: [{ id: 'i1', listId: 'list-einkauf-0001', text: 'Milch', checked: true }, { id: 'i2', listId: 'list-einkauf-0001', text: 'Brot', checked: false }, { id: 'i3', listId: 'list-drogerie-0001', text: 'Seife', checked: false }, { id: 'i4', listId: 'list-einkauf-0001', text: 'Äpfel', checked: false }] };
+    // the menu: what the page holds for the area; before it is loaded, the menu's own rows
+    assert.deepEqual(NS.shopNav(shop, null, 'private').map((l) => l.name), ['Einkauf', 'Drogerie']);
+    assert.deepEqual(NS.shopNav(shop, null, 'work').map((l) => l.name), ['Büro']);
+    assert.deepEqual(NS.shopNav(null, { shopping: [{ id: 'x', name: 'Einkauf' }] }, 'private').map((l) => l.name), ['Einkauf']);
+    assert.deepEqual(NS.shopNav(null, { lists: [] }, 'private'), []);
+    // a list's items: open first, each group in the order written
+    assert.deepEqual(NS.shopItems(shop, 'list-einkauf-0001').map((i) => i.text), ['Brot', 'Äpfel', 'Milch']);
+    assert.equal(NS.shopList(shop, 'nope'), null);
+    // who it is shared with, the choice in a task's details, the line above the items
+    assert.deepEqual(shop.lists.map((l) => NS.shopWith(l, 1, t)), ['Familie', 'Marc, Lena', 'nur ich']);
+    assert.equal(NS.shopWith(L({ shared: true, owner: { id: 2, name: 'Marc' }, members: [{ id: 1, name: 'Anna' }] }), 1, t), 'Marc');
+    assert.equal(NS.shopChoice(shop.lists[0], 1, t), 'Einkauf · Familie · 2 offen');
+    assert.equal(NS.shopBelongs(L({}), t), null);
+    assert.deepEqual(NS.shopBelongs(L({ open: 5, total: 8, tasks: [{ id: 41, title: 'Bei Lidl einkaufen' }] }), t), { text: 'gehört zu „Bei Lidl einkaufen“ · 3 von 8', taskId: 41 });
+    assert.equal(NS.shopBelongs(L({ open: 8, total: 8, tasks: [{ id: 41, title: 'Bei Lidl einkaufen' }, { id: 42, title: 'x' }, { id: 43, title: 'y' }] }), t).text, 'gehört zu „Bei Lidl einkaufen“ und 2 weiteren · 0 von 8');
+    assert.equal(NS.allTickedText([{ taskId: 41, title: 'Bei Lidl einkaufen' }], t), 'Alles abgehakt. „Bei Lidl einkaufen“ ist erledigt.');
+    assert.equal(NS.allTickedText([{ taskId: 41, title: 'a' }, { taskId: 42, title: 'b' }], t), 'Alles abgehakt. 2 Aufgaben sind erledigt.');
+    assert.equal(NS.allTickedText([], t), '');
+
+    // the mark of a task: „Einkauf 0/8“ — after the reminder, before the calendar; not for an older plugin
+    const al = { id: 12, uid: 'list-einkauf-0001', name: 'Einkauf', icon: 'cart', open: 8, total: 8, done: 0, family: true };
+    const task = { type: 'task', id: 41, done: false, attachedList: al };
+    assert.deepEqual(NS.taskMarks(task, me, t).map((k) => [k.kind, k.text, k.uid]), [['list', 'Einkauf 0/8', 'list-einkauf-0001']]);
+    assert.deepEqual(NS.taskMarks({ ...task, attachedList: { ...al, open: 5, done: 3 } }, me, t)[0].text, 'Einkauf 3/8');
+    assert.deepEqual(NS.taskMarks(task, { ...me, features: ['tasks', 'shoppingLists'] }, t), []);
+    assert.deepEqual(NS.taskMarks({ ...task, attachedList: null }, me, t), []);
+
+    // the quick entry: the server's suggestion and what the person did with the chip
+    const drog = { ...al, id: 13, uid: 'list-drogerie-0001', name: 'Drogerie', open: 1 };
+    const one = { via: 'word', word: 'einkaufen', list: al, lists: [al] };
+    assert.deepEqual(NS.quickAttach(one, undefined), { list: al, lists: [al], tag: false });
+    assert.equal(NS.quickAttach(one, null).list, null);
+    assert.equal(NS.quickAttach(one, 12).list, al);
+    const many = { via: 'word', word: 'einkaufen', list: null, lists: [al, drog] };
+    assert.deepEqual([NS.quickAttach(many, undefined).list, NS.quickAttach(many, 13).list, NS.quickAttach(many, 99).list], [null, drog, null]);
+    assert.deepEqual([NS.quickAttach(null, undefined), NS.quickAttach({ via: 'word', lists: [] }, undefined)], [null, null]);
+    const ctx = { today: '2026-11-08', now: '08:00', lists: [], people: [] };
+    const view = { kind: 'smart', id: 'myday' };
+    const p = NS.quickParse('bei Lidl einkaufen', ctx);
+    assert.deepEqual(NS.quickBody('bei Lidl einkaufen', p, view, 'private', NS.quickAttach(one, undefined)), { text: 'bei Lidl einkaufen', area: 'private', createList: false, attachedListId: 12, myDay: true });
+    // the chip taken away, an older plugin: no field — the server attaches nothing by itself
+    assert.deepEqual(NS.quickBody('bei Lidl einkaufen', p, view, 'private', NS.quickAttach(one, null)), { text: 'bei Lidl einkaufen', area: 'private', createList: false, myDay: true });
+    assert.deepEqual(NS.quickBody('bei Lidl einkaufen', p, view, 'private'), { text: 'bei Lidl einkaufen', area: 'private', createList: false, myDay: true });
+    // Enter before the suggestion came: the server decides
+    assert.deepEqual(NS.quickBody('bei Lidl einkaufen', p, view, 'private', 'auto'), { text: 'bei Lidl einkaufen', area: 'private', createList: false, attach: 'auto', myDay: true });
+    // „#einkauf“ names the shopping list: no task list „einkauf“ is made, no chip offers one
+    const tagged = NS.quickParse('Milch holen #einkauf', ctx);
+    const viaTag = NS.quickAttach({ via: 'tag', list: al, lists: [al] }, undefined);
+    assert.equal(tagged.listName, 'einkauf');
+    assert.deepEqual(NS.quickChips(tagged, ctx, 'private', t, 'de', me).map((c) => c.kind), ['list', 'area']);
+    assert.deepEqual(NS.quickChips(tagged, ctx, 'private', t, 'de', me, viaTag).map((c) => c.kind), ['area']);
+    assert.deepEqual(NS.quickBody('Milch holen #einkauf', tagged, view, 'private', viaTag), { text: 'Milch holen #einkauf', area: 'private', createList: false, attachedListId: 12, myDay: true });
+    // … taken away again: the word is what the parser made of it
+    assert.equal(NS.quickBody('Milch holen #einkauf', tagged, view, 'private', NS.quickAttach({ via: 'tag', list: al, lists: [al] }, null)).createList, true);
+    assert.deepEqual(NS.quickChips(tagged, ctx, 'private', t, 'de', me, NS.quickAttach({ via: 'tag', list: al, lists: [al] }, null)).map((c) => c.kind), ['list', 'area']);
+  });
+
   it('where an item of another plugin opens (contract § 5)', () => {
     const all = ['mail', 'drive', 'schule', 'notizen'];
     assert.deepEqual(NS.openTarget({ plugin: 'gatecontrol-mail', route: 'message/4711' }, all), { page: 'mail', context: { kind: 'message', messageId: 4711, accountId: null } });

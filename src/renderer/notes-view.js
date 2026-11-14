@@ -13,6 +13,11 @@
  * Plugin 1.3.0 (the words of me.features): the card „Gestern offen geblieben“ above „Heute“ in Mein Tag (a row: Erledigt,
  * Heute, Verschieben; „Alle heute“), a task's marks (Erinnerung, Später: …, im Kalender), the calendar chip of the quick
  * entry, and the buttons of the morning hint that open the page (open({ kind: 'yesterday', action })).
+ * Plugin 1.4.0 (`shoppingLists`, `taskList`): the shopping lists in the menu and a list's page (tick off, add, change,
+ * delete items; shown at once, sent by the main process in order — also later when the server is away), the mark
+ * „Einkauf 0/8“ of a task (opens the list), „Angehängte Liste“ in a task's details, the list chip of the quick entry
+ * (the server's suggestion — the parser on this PC is untouched), „Alles abgehakt“ with „Rückgängig“, and the button
+ * „Liste öffnen“ of a reminder (open({ kind: 'shopping', uid })).
  *
  * Data: window.gatecontrol.notes (core NotesService over IPC); texts: notes.* of the Pro locales; logic without DOM:
  * notes-state.js (window.GCNotesState), notes-md.js (window.GCNotesMd). Server text only ever goes into textContent
@@ -55,6 +60,8 @@
 		devices: 'M3 5h13v10H3z|M8 19h3|M18 9h3v11h-3z',
 		key: 'M15 4a5 5 0 1 0 0 10a5 5 0 1 0 0-10|M11 12l-8 8M5 18l2 2M7 16l2 2',
 		cloud: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z',
+		cart: 'M3 4h2.5l2.3 10.5h9.6L19.5 7H6.6|M9.5 19.5h.01|M16.5 19.5h.01',
+		home: 'M4 11l8-7 8 7|M6 10v10h12V10|M10 20v-5h4v5',
 	};
 
 	function icon(name, size = 18) {
@@ -112,7 +119,7 @@
 		const api = o.api;
 		const t = o.t;
 		const lang = () => (String(o.getLocale() || 'de').startsWith('en') ? 'en' : 'de');
-		const toast = (msg, type) => o.toast(msg, type || 'info');
+		const toast = (msg, type, action) => o.toast(msg, type || 'info', action || null);
 		const fail = (r) => toast(NS.errText(r, t), 'error');
 		const ok = (r) => !!r && r.ok !== false;
 
@@ -120,6 +127,7 @@
 			status: null, shown: false, me: null, area: 'private', nav: null, people: [], view: { kind: 'smart', id: 'myday' }, data: null,
 			detail: null, detailData: null, editing: false, folded: {}, seq: 0, dseq: 0, dirty: true, quickText: '',
 			ds: null, dsEvent: null, images: new Map(),
+			shop: null,   // plugin 1.4.0: { lists, items, pending, stale } — the shopping lists as the main process holds them
 		};
 
 		// ── skeleton ─────────────────────────────────────────
@@ -152,6 +160,66 @@
 			renderSide();
 		}
 
+		// ── shopping lists (plugin 1.4.0) ───────────────────
+		const shopOn = () => NS.offers(S.me, 'shoppingLists');
+
+		/** An answer of shopping() / shoppingOps() → what the page holds; tasks a list completed are told once. */
+		function takeShop(r) {
+			if (!ok(r)) return false;
+			S.shop = { lists: r.lists || [], items: r.items || [], pending: r.pending || 0, stale: r.stale === true || r.offline === true };
+			if (r.completed && r.completed.length) allTicked(r.completed);
+			return true;
+		}
+
+		async function reloadShop() {
+			if (!shopOn()) { S.shop = null; return; }
+			takeShop(await Promise.resolve(api.shopping()).catch(() => null));
+			renderSide();
+			if (S.view.kind !== 'shopping') return;
+			// the list is gone (deleted, left, no longer shared)
+			if (S.shop && !NS.shopList(S.shop, S.view.id)) { go({ kind: 'smart', id: 'myday' }); return; }
+			renderMainKeepingFocus();
+		}
+
+		/** The list's page again without losing what is being typed into „Punkt hinzufügen“. */
+		function renderMainKeepingFocus() {
+			const a = document.activeElement;
+			const id = a && refs.main.contains(a) && a.id ? a.id : null;
+			const pos = id && typeof a.selectionStart === 'number' ? [a.selectionStart, a.selectionEnd] : null;
+			renderMain();
+			const again = id ? refs.main.querySelector(`#${id}`) : null;
+			if (again) { again.focus(); if (pos) { try { again.setSelectionRange(pos[0], pos[1]); } catch { /* not a text field */ } } }
+		}
+
+		/** „Alles abgehakt. ‚Bei Lidl einkaufen‘ ist erledigt.“ — with the way back (the items stay ticked). */
+		function allTicked(completed) {
+			const text = NS.allTickedText(completed, t);
+			if (!text) return;
+			toast(text, 'success', { label: t('notes.shop.undo'), run: async () => {
+				for (const c of completed) { const r = await api.completeTask(c.taskId, false); if (!ok(r)) { fail(r); break; } }
+				soon(0);
+			} });
+			soon(150);
+		}
+
+		/** Operations on the shopping lists: shown at once (the main process queues and sends them). */
+		async function shopOps(ops) {
+			const r = await Promise.resolve(api.shoppingOps(ops)).catch(() => null);
+			if (!takeShop(r)) { if (r) fail(r); return null; }
+			if (r.rejected && r.rejected.length) toast(NS.errText({ code: r.rejected[0].code }, t), 'error');
+			renderSide();
+			if (S.view.kind === 'shopping') { if (NS.shopList(S.shop, S.view.id)) renderMainKeepingFocus(); else go({ kind: 'smart', id: 'myday' }); }
+			return r;
+		}
+
+		function openShopList(uid) {
+			const l = NS.shopList(S.shop, uid);
+			if (!l) return false;
+			if (l.area !== S.area) { S.area = l.area; reloadNav(); }
+			go({ kind: 'shopping', id: uid });
+			return true;
+		}
+
 		function notebookOf(id) {
 			return ((S.nav && S.nav.notes && S.nav.notes.notebooks) || []).find((b) => b.id === id) || null;
 		}
@@ -164,6 +232,7 @@
 			if (v.kind === 'search') return api.search(v.q, S.area);
 			if (v.kind === 'sources') return api.sources();
 			if (v.kind === 'import') return { ok: true };
+			if (v.kind === 'shopping') return { ok: true };   // shown from S.shop (reloadShop)
 			// notes
 			const nb = v.notebook ? notebookOf(v.notebook) : null;
 			if (nb && nb.vault) {
@@ -182,6 +251,7 @@
 		}
 
 		async function reloadView() {
+			if (S.view.kind === 'shopping') { ++S.seq; S.data = { ok: true }; renderMainKeepingFocus(); return; }
 			const seq = ++S.seq;
 			const r = await Promise.resolve(loadView()).catch((err) => ({ ok: false, code: 'failed', error: err && err.message }));
 			if (seq !== S.seq) return;
@@ -209,7 +279,7 @@
 			if (!S.me) { if (!(await loadMe())) { renderGate('error'); return; } }
 			renderGate(null);
 			const pp = Promise.resolve(api.people()).then((r) => { if (ok(r)) S.people = r.people; }).catch(() => {});
-			await Promise.all([reloadNav(), reloadView(), pp]);
+			await Promise.all([reloadNav(), reloadView(), pp, reloadShop()]);
 			if (S.detail && !S.editing) reloadDetail();
 		}
 
@@ -220,6 +290,7 @@
 				if (!S.shown) { S.dirty = true; return; }
 				reloadNav();
 				reloadView();
+				reloadShop();
 				if (S.detail && !S.editing) reloadDetail();
 			}, ms);
 		}
@@ -310,7 +381,8 @@
 				type: 'button', class: `nz-it${current ? ' on' : ''}${opts.sub ? ' sub' : ''}${opts.quiet ? ' quiet' : ''}`, 'aria-current': current ? 'page' : null,
 				'data-view': opts.key || null, on: { click: () => { fn(); } },
 			}, [opts.icon ? icon(opts.icon, 17) : null, opts.dot ? el('span', { class: 'nz-dot', 'data-color': opts.dot }) : null,
-				el('span', { class: 'nz-it-tx', text: label }), count ? el('span', { class: 'nz-n', text: String(count) }) : null]);
+				el('span', { class: 'nz-it-tx', text: label }), opts.mark ? el('span', { class: 'nz-it-mark', title: opts.markTitle || null }, [icon(opts.mark, 14)]) : null,
+				count ? el('span', { class: 'nz-n', text: String(count) }) : null]);
 		}
 		const isView = (kind, id) => {
 			const v = S.view;
@@ -348,6 +420,14 @@
 				for (const l of lists.filter((x) => x.groupId === g.id)) s.appendChild(listRow(l, true));
 			}
 			s.appendChild(navRow(t('notes.newList'), null, false, newList, { icon: 'plus', quiet: true, key: 'new-list' }));
+			// plugin 1.4.0: the shopping lists of the area (they hold items, no tasks)
+			if (shopOn()) {
+				s.appendChild(el('div', { class: 'nz-lab', text: t('notes.shop.lists') }));
+				for (const l of NS.shopNav(S.shop, n, S.area)) {
+					s.appendChild(navRow(l.name, l.open, isView('shopping', l.id), () => go({ kind: 'shopping', id: l.id }), { icon: 'cart', key: `shopping:${l.id}`, mark: l.family ? 'home' : null, markTitle: t('notes.shop.family') }));
+				}
+				if (canWrite()) s.appendChild(navRow(t('notes.shop.newList'), null, false, newShopList, { icon: 'plus', quiet: true, key: 'new-shopping' }));
+			}
 			const notes = (n && n.notes) || { total: 0, notebooks: [], tags: [] };
 			s.appendChild(el('div', { class: 'nz-lab', text: t('notes.notes') }));
 			s.appendChild(navRow(t('notes.allNotes'), notes.total, S.view.kind === 'notes' && !S.view.notebook && !S.view.tag, () => go({ kind: 'notes' }), { icon: 'note', key: 'notes' }));
@@ -375,7 +455,7 @@
 			if (S.area === a) return;
 			S.area = a;
 			api.setPrefs({ area: a }).catch(() => {});
-			if (S.view.kind === 'list' || (S.view.kind === 'notes' && S.view.notebook)) S.view = { kind: 'smart', id: 'myday' };
+			if (S.view.kind === 'list' || S.view.kind === 'shopping' || (S.view.kind === 'notes' && S.view.notebook)) S.view = { kind: 'smart', id: 'myday' };
 			S.detail = null;
 			S.detailData = null;
 			renderDetail();
@@ -395,6 +475,7 @@
 			if (v.kind === 'sources') return renderSources(m);
 			if (v.kind === 'import') return renderImport(m);
 			if (v.kind === 'search') return renderSearch(m);
+			if (v.kind === 'shopping') return renderShopping(m);
 			const d = S.data;
 			let title = v.kind === 'smart' ? t(`notes.v.${v.id}`) : (d && d.view && d.view.title) || '';
 			if (v.kind === 'list') { const l = ((S.nav && S.nav.lists) || []).find((x) => x.id === v.id); if (l) title = l.name; }
@@ -460,8 +541,15 @@
 			return row;
 		}
 
-		/** A small mark of a task (plugin 1.3.0): the bell „Erinnerung“ / „Später: …“, the calendar „im Kalender“. */
+		/**
+		 * A small mark of a task (plugin 1.3.0): the bell „Erinnerung“ / „Später: …“, the calendar „im Kalender“; plugin
+		 * 1.4.0: the shopping list it carries („Einkauf 0/8“) — a button that opens the list.
+		 */
 		function markEl(k) {
+			if (k.kind === 'list') {
+				return el('button', { type: 'button', class: 'nz-mark nz-mark-list', 'data-kind': 'list', title: k.title || null, 'aria-label': `${k.title}: ${k.text}`,
+					on: { click: (e) => { e.stopPropagation(); if (!openShopList(k.uid)) toast(t('notes.shop.gone')); }, keydown: (e) => e.stopPropagation() } }, [icon('cart', 12), el('span', { text: k.text })]);
+			}
 			return el('span', { class: 'nz-mark', 'data-kind': k.kind, title: k.title || null }, [icon(k.kind === 'calendar' ? 'cal' : 'bell', 12), el('span', { text: k.text })]);
 		}
 
@@ -547,6 +635,136 @@
 				[btn(t('notes.cancel'), () => d.close(), 'btn-ghost'), btn(t('notes.y.askDoneConfirm'), () => { d.close(); decideAll({ action: 'done', ids }); }, 'btn-pri', null, { 'data-act': 'confirm' })]);
 		}
 
+		// ── a shopping list (plugin 1.4.0) ───────────────────
+		function renderShopping(m) {
+			const l = NS.shopList(S.shop, S.view.id);
+			if (!l) { m.appendChild(header(t('notes.shop.lists'), null)); m.appendChild(el('p', { class: 'nz-muted', text: t('notes.loading') })); return; }
+			const meId = S.me && S.me.user.id;
+			const edit = l.canEdit && canWrite();
+			m.appendChild(header(l.name, NS.shopWith(l, meId, t), [l.pending ? null : ib('gear', t('notes.shop.settings'), () => shopSettings(l))]));
+			m.firstChild.querySelector('.nz-h').prepend(icon('cart', 22));
+			const b = NS.shopBelongs(l, t);
+			if (b) m.appendChild(el('button', { type: 'button', class: 'nz-shop-task', 'data-task': String(b.taskId), on: { click: () => openDetail({ uid: `t:${b.taskId}`, type: 'task', id: b.taskId }) } }, [icon('check', 14), el('span', { text: b.text })]));
+			if (S.shop.stale || S.shop.pending) m.appendChild(el('div', { class: 'note nz-shop-wait', role: 'status', text: t('notes.shop.waiting', { n: S.shop.pending }) }));
+			if (!edit) m.appendChild(el('p', { class: 'hint', text: t('notes.shop.readOnly') }));
+			if (edit) {
+				const text = el('input', { id: 'nz-shop-add', class: 'nz-quick-inp', type: 'text', autocomplete: 'off', maxlength: '120', placeholder: t('notes.shop.addPh'), 'aria-label': t('notes.shop.addPh') });
+				const qty = el('input', { id: 'nz-shop-qty', class: 'nz-quick-inp nz-shop-qty', type: 'text', autocomplete: 'off', maxlength: '40', placeholder: t('notes.shop.qty'), 'aria-label': t('notes.shop.qty') });
+				const draft = S.shopDraft && S.shopDraft.id === l.id ? S.shopDraft : { id: l.id, text: '', qty: '' };
+				S.shopDraft = draft;
+				text.value = draft.text;
+				qty.value = draft.qty;
+				text.addEventListener('input', () => { draft.text = text.value; });
+				qty.addEventListener('input', () => { draft.qty = qty.value; });
+				const add = async () => {
+					const v = text.value.trim();
+					if (!v) { text.focus(); return; }
+					const op = { op: 'item_add', listId: l.id, text: v };
+					if (qty.value.trim()) op.qty = qty.value.trim();
+					draft.text = '';
+					draft.qty = '';
+					await shopOps([op]);
+					const again = refs.main.querySelector('#nz-shop-add');
+					if (again) again.focus();
+				};
+				for (const n of [text, qty]) n.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+				m.appendChild(el('div', { class: 'nz-quick' }, [el('div', { class: 'nz-quick-box nz-shop-addbox' }, [icon('plus', 18), text, qty, ib('plus', t('notes.shop.add'), add, false, { 'data-act': 'shop-add' })])]));
+			}
+			const items = NS.shopItems(S.shop, l.id);
+			if (!items.length) { m.appendChild(el('div', { class: 'card nz-card nz-empty', text: t(edit ? 'notes.shop.empty' : 'notes.shop.emptyRead') })); return; }
+			const card = el('div', { class: 'card nz-card nz-sec nz-shop', 'data-id': 'shopping' });
+			card.appendChild(el('div', { class: 'nz-sec-h' }, [el('span', { text: t('notes.shop.progress', { done: l.total - l.open, total: l.total }) }), el('span', { class: 'grow' }),
+				edit && l.total > l.open ? btn(t('notes.shop.clear'), () => shopOps([{ op: 'clear_checked', listId: l.id }]), 'btn-ghost nz-shop-clear', null, { 'data-act': 'shop-clear' }) : null]));
+			for (const i of items) {
+				const row = el('div', { class: `nz-row nz-shop-row${i.checked ? ' is-done' : ''}`, 'data-item': i.id });
+				const tick = () => shopOps([{ op: 'item_check', id: i.id, checked: !i.checked }]);
+				if (edit) {
+					row.appendChild(el('button', { type: 'button', class: `nz-ck${i.checked ? ' on' : ''}`, 'aria-label': `${i.checked ? t('notes.shop.untick') : t('notes.shop.tick')}: ${i.text}`, 'aria-pressed': i.checked ? 'true' : 'false', on: { click: tick } }, [icon('check', 13)]));
+				} else row.appendChild(el('span', { class: `nz-ck nz-ck-ro${i.checked ? ' on' : ''}`, 'aria-hidden': 'true' }, [icon('check', 13)]));
+				row.appendChild(el('div', { class: 'nz-row-tx', on: edit ? { click: tick } : {} }, [el('span', { class: 'nz-row-title', text: i.text })]));
+				if (i.qty) row.appendChild(el('span', { class: 'nz-shop-q', text: i.qty }));
+				if (edit) {
+					row.appendChild(ib('edit', `${t('notes.shop.edit')}: ${i.text}`, () => editShopItem(i), false, { 'data-act': 'shop-edit' }));
+					row.appendChild(ib('trash', `${t('notes.delete')}: ${i.text}`, () => shopOps([{ op: 'item_delete', id: i.id }]), false, { 'data-act': 'shop-delete' }));
+				}
+				card.appendChild(row);
+			}
+			m.appendChild(card);
+		}
+
+		function editShopItem(i) {
+			const text = el('input', { class: 'inp', type: 'text', value: i.text, maxlength: '120', 'aria-label': t('notes.shop.item') });
+			const qty = el('input', { class: 'inp', type: 'text', value: i.qty || '', maxlength: '40', 'aria-label': t('notes.shop.qty') });
+			let d = null;
+			const save = async () => {
+				const v = text.value.trim();
+				if (!v) return;
+				const op = { op: 'item_edit', id: i.id };
+				if (v !== i.text) op.text = v;
+				if (qty.value.trim() !== (i.qty || '')) op.qty = qty.value.trim() || null;
+				d.close();
+				if (op.text !== undefined || op.qty !== undefined) await shopOps([op]);
+			};
+			for (const n of [text, qty]) n.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+			d = dialog(t('notes.shop.edit'), [field(t('notes.shop.item'), text), field(t('notes.shop.qty'), qty)], [btn(t('notes.cancel'), () => d.close(), 'btn-ghost'), btn(t('notes.save'), save, 'btn-pri', null, { 'data-act': 'save' })]);
+		}
+
+		/** „Neue Einkaufsliste“ → the list's text id (made by the main process) or null. */
+		function newShopList(then) {
+			const d = prompt(t('notes.shop.newList'), '', async (name) => {
+				const r = await Promise.resolve(api.shoppingOps([{ op: 'list_add', name, icon: 'cart', area: S.area }])).catch(() => null);
+				if (!takeShop(r)) return r || { ok: false, code: 'failed' };
+				if (r.rejected && r.rejected.length) return { ok: false, code: r.rejected[0].code };
+				renderSide();
+				const uid = r.ids && r.ids[0];
+				if (typeof then === 'function') then(uid);
+				else if (uid) go({ kind: 'shopping', id: uid });
+				return r;
+			});
+			const input = d.box.querySelector('input');
+			if (input) input.maxLength = 40;
+		}
+
+		/** A shopping list's name, who it is shared with, deleting (who may manage it) or leaving it. */
+		function shopSettings(l) {
+			const fam = S.me && S.me.shopping && S.me.shopping.family;
+			const famOk = NS.offers(S.me, 'familyShopping') && !!fam && fam.available && fam.bound && fam.parent && l.canManage;
+			const share = l.role === 'owner' && !l.family && l.listId ? sharePicker(l.members) : null;
+			let family = l.family;
+			const extra = [];
+			if (famOk) extra.push(field(t('notes.shop.shareFamily'), sw(l.family, (v) => { family = v; }, t('notes.shop.shareFamily')), t('notes.shop.shareFamilyHint')));
+			if (share) extra.push(field(t('notes.shareWith'), share.box));
+			if (!l.canManage) extra.push(el('p', { class: 'hint', text: t('notes.shop.notYours') }));
+			const d = prompt(t('notes.shop.settings'), l.name, async (name) => {
+				let r = { ok: true };
+				if (l.canManage && name !== l.name) {
+					r = await Promise.resolve(api.shoppingOps([{ op: 'list_rename', id: l.id, name }])).catch(() => null);
+					if (!takeShop(r)) return r || { ok: false, code: 'failed' };
+					if (r.rejected && r.rejected.length) return { ok: false, code: r.rejected[0].code };
+				}
+				if (famOk && family !== l.family) r = await api.shoppingFamily(l.id, family);
+				if (ok(r) && share && !family) r = await api.listMembers(l.listId, share.value());
+				if (ok(r)) { reloadNav(); reloadShop(); }
+				return r;
+			}, [...extra, el('div', { class: 'nz-row-acts' }, [btn(l.canManage ? t('notes.shop.deleteList') : t('notes.leaveList'), async () => {
+				if (l.canManage) { const r = await shopOps([{ op: 'list_delete', id: l.id }]); if (!r) return; }
+				else { const r = await api.deleteList(l.listId); if (!ok(r)) { fail(r); return; } await reloadShop(); }
+				d.close();
+				if (S.view.kind === 'shopping') go({ kind: 'smart', id: 'myday' });
+				reloadNav();
+				if (!l.canManage) return;
+				toast(t('notes.shop.deleted', { name: l.name }), 'success', l.role === 'owner' && l.listId ? { label: t('notes.shop.undo'), run: async () => {
+					const r = await api.shoppingRestore(l.listId);
+					if (!ok(r)) { fail(r); return; }
+					await reloadShop();
+					reloadNav();
+					openShopList(l.id);
+				} } : null);
+			}, 'btn-danger', 'trash', { 'data-act': 'shop-remove' })])]);
+			const input = d.box.querySelector('input');
+			if (input) { input.maxLength = 40; input.disabled = !l.canManage; }
+		}
+
 		async function complete(x, done) {
 			x.done = done;
 			renderMain();
@@ -563,32 +781,72 @@
 			input.value = S.quickText;
 			const chips = el('div', { class: 'nz-chips', 'aria-live': 'polite' });
 			let parsed = null;
+			// plugin 1.4.0: the shopping list the line names — the server's suggestion (POST parse), asked a moment after typing
+			const lists = NS.offers(S.me, 'taskList') && shopOn();
+			const sug = { text: null, attach: null, choice: undefined, timer: null, seq: 0 };
+			const attachNow = () => (sug.text === input.value.trim() ? NS.quickAttach(sug.attach, sug.choice) : null);
 			const show = () => {
 				S.quickText = input.value;
 				clear(chips);
 				const ctx = NS.quickCtx(S.me, S.nav, S.people);
 				parsed = NS.quickParse(input.value, ctx);
 				if (!parsed) return;
+				const qa = attachNow();
 				chips.appendChild(el('span', { class: 'nz-chips-l', text: t('notes.quick.found') }));
-				for (const c of NS.quickChips(parsed, ctx, S.area, t, lang(), S.me)) chips.appendChild(el('span', { class: `chip nz-qchip${c.plain ? ' plain' : ''}`, 'data-kind': c.kind, title: c.title || null, text: c.text }));
+				for (const c of NS.quickChips(parsed, ctx, S.area, t, lang(), S.me, qa)) chips.appendChild(el('span', { class: `chip nz-qchip${c.plain ? ' plain' : ''}`, 'data-kind': c.kind, title: c.title || null, text: c.text }));
+				if (qa) chips.appendChild(attachChip(qa));
 			};
-			input.addEventListener('input', show);
+			/** „Liste: Einkauf · 8 offen“ — taken away with ×, or another list chosen when several fit. */
+			const attachChip = (qa) => {
+				const set = (v) => { sug.choice = v; show(); input.focus(); };
+				const chip = el('span', { class: `chip nz-qchip nz-qchip-shop${qa.list ? '' : ' plain'}`, 'data-kind': 'shopping', title: t('notes.shop.chipHint') }, [icon('cart', 13)]);
+				if (qa.lists.length > 1) {
+					const sel = el('select', { class: 'nz-qsel', 'aria-label': t('notes.shop.attached') }, [el('option', { value: '', text: t('notes.shop.chooseList') }), ...qa.lists.map((l) => el('option', { value: String(l.id), text: t('notes.shop.chip', { name: l.name, n: l.open }) }))]);
+					sel.value = qa.list ? String(qa.list.id) : '';
+					sel.addEventListener('change', () => set(sel.value ? Number(sel.value) : null));
+					chip.appendChild(sel);
+				} else chip.appendChild(el('span', { text: qa.list ? t('notes.shop.chip', { name: qa.list.name, n: qa.list.open }) : t('notes.shop.chipOff', { name: qa.lists[0].name }) }));
+				if (qa.list) chip.appendChild(el('button', { type: 'button', class: 'nz-qx', 'aria-label': t('notes.shop.chipRemove'), title: t('notes.shop.chipRemove'), on: { click: () => set(null) } }, [icon('x', 12)]));
+				else if (qa.lists.length === 1) chip.appendChild(el('button', { type: 'button', class: 'nz-qx', 'aria-label': t('notes.shop.chipAdd'), title: t('notes.shop.chipAdd'), on: { click: () => set(qa.lists[0].id) } }, [icon('plus', 12)]));
+				return chip;
+			};
+			const suggest = () => {
+				if (!lists) return;
+				clearTimeout(sug.timer);
+				const text = input.value.trim();
+				if (text === sug.text) return;
+				sug.text = null;
+				sug.attach = null;
+				sug.choice = undefined;
+				const seq = ++sug.seq;
+				if (!text) return;
+				sug.timer = setTimeout(async () => {
+					const r = await Promise.resolve(api.parse(text, S.area)).catch(() => null);
+					if (seq !== sug.seq || !input.isConnected) return;
+					sug.text = text;
+					sug.attach = ok(r) ? r.attach || null : null;
+					if (input.value.trim() === text) show();
+				}, 250);
+			};
+			input.addEventListener('input', () => { suggest(); show(); });
 			input.addEventListener('keydown', async (e) => {
-				if (e.key === 'Escape') { input.value = ''; show(); return; }
+				if (e.key === 'Escape') { input.value = ''; suggest(); show(); return; }
 				if (e.key !== 'Enter' || !input.value.trim() || input.disabled) return;
-				const body = NS.quickBody(input.value, parsed, S.view, S.area);
+				// the suggestion for this very line has not come yet: the server decides (it attaches when exactly one list fits)
+				const body = NS.quickBody(input.value, parsed, S.view, S.area, !lists ? null : sug.text === input.value.trim() ? attachNow() : 'auto');
 				input.disabled = true;
 				const r = await api.createTask(body);
 				input.disabled = false;
 				if (!ok(r)) { fail(r); input.focus(); return; }
 				input.value = '';
 				S.quickText = '';
+				suggest();
 				show();
 				input.focus();
-				toast(t('notes.quick.added', { title: r.task.title }), 'success');
+				toast(r.task.attachedList ? t('notes.shop.addedWith', { title: r.task.title, name: r.task.attachedList.name }) : t('notes.quick.added', { title: r.task.title }), 'success');
 				soon(0);
 			});
-			setTimeout(show, 0);
+			setTimeout(() => { suggest(); show(); }, 0);
 			return el('div', { class: 'nz-quick' }, [el('label', { class: 'nz-quick-box' }, [icon('plus', 18), input, el('span', { class: 'nz-kbd', text: t('notes.quick.kbd') })]), chips]);
 		}
 
@@ -739,6 +997,8 @@
 			ls.value = String(task.listId);
 			ls.addEventListener('change', () => patchTask(task, { listId: Number(ls.value) }));
 			det.appendChild(field(t('notes.list'), ls));
+			// plugin 1.4.0: the shopping list the task carries (the list stays what it is and can hang at several tasks)
+			if (NS.offers(S.me, 'taskList') && shopOn() && !task.parentId) det.appendChild(attachedField(task));
 			box.appendChild(det);
 			// attachments
 			box.appendChild(el('div', { class: 'nz-lb', text: t('notes.attachments') }));
@@ -755,6 +1015,29 @@
 				btn(t('notes.delete'), async () => { const r = await api.deleteTask(task.id); if (!ok(r)) { fail(r); return; } closeDetail(); soon(0); toast(t('notes.deleted'), 'success'); }, 'btn-danger', 'trash'),
 			]));
 			return box;
+		}
+
+		/** „Angehängte Liste“: none, one of the person's shopping lists, or a new one; the arrow opens the list. */
+		function attachedField(task) {
+			const cur = task.attachedList;
+			const meId = S.me && S.me.user.id;
+			const all = ((S.shop && S.shop.lists) || []).filter((l) => l.listId);
+			const sel = el('select', { class: 'inp nz-inp-sm', 'aria-label': t('notes.shop.attached') }, [el('option', { value: '', text: t('notes.shop.none') }),
+				...all.map((l) => el('option', { value: String(l.listId), text: NS.shopChoice(l, meId, t) }))]);
+			if (cur && !all.some((l) => l.listId === cur.id)) sel.appendChild(el('option', { value: String(cur.id), text: cur.name }));
+			if (canWrite()) sel.appendChild(el('option', { value: 'new', text: t('notes.shop.newListChoice') }));
+			sel.value = cur ? String(cur.id) : '';
+			sel.disabled = !task.canEdit || !canWrite();
+			sel.addEventListener('change', () => {
+				if (sel.value === 'new') {
+					sel.value = cur ? String(cur.id) : '';
+					newShopList((uid) => { if (uid) patchTask(task, { attachedListUid: uid }).then(() => reloadShop()); });
+					return;
+				}
+				patchTask(task, { attachedListId: sel.value ? Number(sel.value) : null }).then(() => reloadShop());
+			});
+			return field(t('notes.shop.attached'), el('span', { class: 'nz-pair nz-attached' }, [sel,
+				cur ? ib('open', t('notes.shop.openList'), () => { if (!openShopList(cur.uid)) toast(t('notes.shop.gone')); }, false, { 'data-act': 'open-list' }) : null]));
 		}
 
 		function fromButton(item) {
@@ -1598,7 +1881,8 @@
 			hide() { S.shown = false; },
 			/**
 			 * A push click / a link: { kind: 'task' | 'list' | 'notebook' | 'vault' | 'home', … } or { note }; the morning hint
-			 * { kind: 'yesterday', taskIds, action: 'done_ask' | 'move' | null } → Mein Tag with the card (and the question).
+			 * { kind: 'yesterday', taskIds, action: 'done_ask' | 'move' | null } → Mein Tag with the card (and the question);
+			 * a reminder's button „Liste öffnen“ { kind: 'shopping', uid, taskId } → the shopping list to tick off.
 			 */
 			async open(ctx) {
 				S.shown = true;
@@ -1607,6 +1891,13 @@
 				if (!c) return;
 				if (c.quick) { focusQuick(); return; }
 				if (c.kind === 'yesterday') { await go({ kind: 'smart', id: 'myday' }); await askYesterday(c); }
+				else if (c.kind === 'shopping' && c.uid) {
+					// „Liste öffnen“ of a reminder: the list to tick off; gone meanwhile (or an older plugin): the task, else Mein Tag
+					if (shopOn()) await reloadShop();
+					if (shopOn() && openShopList(c.uid)) return;
+					if (c.taskId) { if (S.view.kind !== 'smart') await go({ kind: 'smart', id: 'myday' }); openDetail({ uid: `t:${c.taskId}`, type: 'task', id: c.taskId }); }
+					else go({ kind: 'smart', id: 'myday' });
+				}
 				else if (c.kind === 'task' && c.taskId) { if (S.view.kind !== 'smart') await go({ kind: 'smart', id: 'myday' }); openDetail({ uid: `t:${c.taskId}`, type: 'task', id: c.taskId }); }
 				else if (c.kind === 'list' && c.listId) go({ kind: 'list', id: c.listId });
 				else if (c.kind === 'notebook' && c.notebookId) go({ kind: 'notes', notebook: c.notebookId });

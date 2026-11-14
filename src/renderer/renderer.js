@@ -97,12 +97,19 @@ function iconButton(cls, iconKey, label, iconFirst = true) {
 }
 
 // ── Toasts ──────────────────────────────────────────────
-function showToast(message, type = 'error', duration = 5000) {
+// `action` ({ label, run }): one text button before the close button („Rückgängig“); pressing it closes the toast.
+function showToast(message, type = 'error', duration = 5000, action = null) {
 	const host = $('#toasts');
 	const toast = h('div', `toast toast-${type}`);
 	toast.setAttribute('role', 'status');
 	toast.appendChild(h('span', 'dot'));
 	toast.appendChild(h('span', 'toast-text', message));
+	let actBtn = null;
+	if (action && typeof action.run === 'function' && action.label) {
+		actBtn = h('button', 'btn btn-ghost toast-act', String(action.label));
+		actBtn.type = 'button';
+		toast.appendChild(actBtn);
+	}
 	const closeBtn = h('button', 'btn btn-ghost');
 	closeBtn.type = 'button';
 	closeBtn.setAttribute('aria-label', t('ui.close'));
@@ -114,6 +121,7 @@ function showToast(message, type = 'error', duration = 5000) {
 		setTimeout(() => toast.remove(), 300);
 	};
 	closeBtn.addEventListener('click', dismiss);
+	if (actBtn) actBtn.addEventListener('click', () => { dismiss(); action.run(); });
 	host.appendChild(toast);
 	requestAnimationFrame(() => toast.classList.add('show'));
 	setTimeout(dismiss, duration);
@@ -3362,7 +3370,8 @@ notesView = notesApi && window.GCNotesView && $('#page-notizen')
 		api: notesApi,
 		t,
 		getLocale: () => window.gatecontrol.i18n.getLocale(),
-		toast: (msg, type) => showToast(msg, type || 'info'),
+		// „Alles abgehakt“ comes with „Rückgängig“ and stays a little longer
+		toast: (msg, type, action) => showToast(msg, type || 'info', action ? 9000 : 5000, action || null),
 		pages: () => shownPages(),
 		// an item of another plugin: its page here (Mail's mail, Drive's deadline, Schule), else its portal tab
 		openTarget: (target) => {
