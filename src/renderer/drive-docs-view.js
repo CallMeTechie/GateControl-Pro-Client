@@ -8,6 +8,9 @@
  *   vorher" (the reminder is the person's own; reading is enough).
  * - "Fristen": the deadlines of every file the person reads (next 30 days,
  *   later, overdue), each opening the file's details.
+ * Drive 1.30 (`reminder.by`): "über Notizen & Aufgaben" beside the select while
+ * the hub „Notizen & Aufgaben“ rings a reminder — Drive then sends no message
+ * of its own, and this page never sets an alarm for a deadline anyway.
  *
  * Data: window.gatecontrol.drive (insight, recognize, applyInsight, deadlines,
  * remind); logic: drive-docs-state.js (window.GCDriveDocsState); texts:
@@ -39,8 +42,17 @@
 		const now = typeof o.now === 'function' ? o.now : () => Date.now();
 		const fail = (err) => ({ ok: false, code: (err && err.code) || 'failed' });
 
-		/** The select "Erinnern N Tage vorher" of a deadline. */
+		/** "über Notizen & Aufgaben" beside the select while the hub rings this reminder (Drive 1.30.0) → { node, sync } */
+		function byHub(d) {
+			const node = el('span', { class: 'dv-dl-by', 'data-by': 'notizen', title: t('drive.deadline.byHubHint'), text: t('drive.deadline.byHub'), hidden: true });
+			const sync = () => { node.hidden = !DD.remindedByHub(d); };
+			sync();
+			return { node, sync };
+		}
+
+		/** The select "Erinnern N Tage vorher" of a deadline, with who rings it. */
 		function reminderSelect(d, onDone) {
+			const by = byHub(d);
 			const v = DD.deadlineView(d, { t, locale: o.getLocale(), now: now() });
 			const sel = el('select', { class: 'dv-input dv-dl-remind', 'aria-label': t('drive.deadline.remind.label', { what: v.title }) });
 			for (const opt of DD.reminderOptions(t)) sel.appendChild(el('option', { value: opt.value, text: opt.label }));
@@ -52,6 +64,7 @@
 				sel.disabled = false;
 				if (r && r.ok) {
 					Object.assign(d, r.deadline);
+					by.sync();
 					o.toast(DD.reminderDays(sel.value) === null ? t('drive.deadline.remind.off') : t('drive.deadline.remind.set'), 'success');
 					if (onDone) onDone(r.deadline);
 				} else {
@@ -59,7 +72,7 @@
 					o.toast(o.errorText(r, t), 'error');
 				}
 			});
-			return sel;
+			return el('span', { class: 'dv-dl-rem' }, [sel, by.node]);
 		}
 
 		function deadlineRow(d, extra) {

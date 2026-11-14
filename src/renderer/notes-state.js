@@ -16,7 +16,9 @@
  * dran“, „Wer zuerst“), the stars and „Erledigt von …“ at a row, what the typed line says about several people (the
  * plugin's second module after the parser: vendor/notizen/turnwords.js, window.GCTurnWords) with the choice „Wer ist
  * dran?“, what the details send (`turn`, `people`, `stars`), what a parent and a child may in the family's list, and who
- * is asked to accept a place (`place.canConsent`; without `placeMine` as before).
+ * is asked to accept a place (`place.canConsent`; without `placeMine` as before). Plugin 1.7.0 (`driveDeadlines`): a task
+ * that reminds of a deadline of a file in Drive — „Frist 30. Nov. · Versicherungsschein.pdf · 3 Tage vorher“ at the row,
+ * the file and the hints in the details. And who only reads a list (the list's `canEdit`, a task's `canEdit`).
  * window.GCNotesState.
  */
 (function (root) {
@@ -446,6 +448,30 @@
 		return { value: choice === 'one' || choice === 'rotate' || choice === 'first' ? choice : said, said };
 	}
 
+	// ── plugin 1.7.0: a task that reminds of a deadline of a file in Drive ──
+
+	/** „3 Tage vorher“ / „1 Tag vorher“ / „Erinnerung am Tag selbst“ — what the person chose in Drive ('' when unknown). */
+	function deadlineBefore(days, t) {
+		if (!Number.isInteger(days) || days < 0) return '';
+		return days === 0 ? t('notes.dl.before0') : days === 1 ? t('notes.dl.before1') : t('notes.dl.beforeN', { n: days });
+	}
+
+	/**
+	 * The deadline a task reminds of → { line: 'Frist 30. Nov.', file, before: '3 Tage vorher', open } or null (every
+	 * other task, an older plugin). `open`: the file's `open` when it names a place to go to, else null.
+	 */
+	function deadlineInfo(x, me, t) {
+		const d = x && x.type === 'task' ? x.deadline : null;
+		if (!d || !offers(me, 'driveDeadlines')) return null;
+		const open = d.open && typeof d.open.plugin === 'string' && str(d.open.route) ? d.open : null;
+		return { line: d.date ? t('notes.dl.line', { date: dayText(d.date, me && me.today, t) }) : '', file: str(d.file), before: deadlineBefore(d.daysBefore, t), open };
+	}
+
+	/** May the person add to and change the tasks of this list? (A member who only reads may not; no list: yes.) */
+	function listWritable(list, me) {
+		return !(me && me.readOnly) && !(list && list.canEdit === false);
+	}
+
 	/** The chip of a row's source ('Mail · Zu tun', 'Drive · Frist') → { text, tone } or null. */
 	function sourceChip(x, t) {
 		if (!x || !x.source) return null;
@@ -469,6 +495,9 @@
 			if (l && !(ctx && ctx.inList)) out.push(`${t(`notes.area.${l.area}`)} › ${l.name}`);
 			// „reihum“ names who is on in its own mark
 			if (x.assignee && x.assignee.id !== me && x.assignee.name && !x.turn) out.push(x.assignee.name);
+			// plugin 1.7.0: the deadline in Drive this task reminds of — the day, the file, how many days before
+			const dl = deadlineInfo(x, ctx && ctx.me, t);
+			if (dl) out.push(...[dl.line, dl.file, x.done ? '' : dl.before].filter(Boolean));
 			if (x.repeatText) out.push(`↻ ${x.repeatText}`);
 			if (x.hasNote) out.push(t('notes.hasNote'));
 			if (x.attachments) out.push(t('notes.attachmentsN', { n: x.attachments }));
@@ -680,6 +709,7 @@
 		COLORS, SOURCE_TONE, dayText, longDate, whenText, offers, calendarName, clockText, taskMarks, yesterdayCard, sectionsWithout, moveChoices, askedIds,
 		shopNav, shopList, shopItems, shopWith, shopChoice, shopBelongs, allTickedText, quickAttach,
 		familyInfo, isFamilyList, starsShown, mayStar, starsText, turnText, doneByText, starChoices, turnPatch, turnPeople, quickWords, quickTurn,
+		deadlineBefore, deadlineInfo, listWritable,
 		placeSummary, distText, searchState, nearOptions, nearArg, placeChoiceArg, placeChoiceText, placeSub, placeHint, quickPlace, sourceChip, metaLine, sectionTitle, quickCtx, quickParse, quickChips, quickBody,
 		repeatOptions, openTarget, errText, vaultLocked, noteTitle, notebookName, isoDay, formatBytes, importText, groupKey, localInput,
 	};

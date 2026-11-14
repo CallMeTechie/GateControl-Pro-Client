@@ -25,6 +25,9 @@ const { setupWithApiKey } = require('./support/ui');
 // "Erledigt von …"), the family's list (stars by parents only, a parent ticks off for a child and hands a task back, a
 // child changes only what no parent made), the message "… hat '…' erledigt" with "Ansehen" / "Noch nicht fertig", the
 // note "Umzug abgeschlossen" once, and the consent for a place only for who may give it.
+// Plugin 1.7.0 (driveDeadlines) with Drive 1.30.0: "Notizen & Aufgaben" rings the reminders of Drive's deadlines — such a
+// task shows the deadline at its row and in its details, "Datei öffnen" opens the file on the Drive page (from the task
+// and from the reminder's fourth button), deleting it says what that means. And a list the person only reads.
 
 function coreDir() {
   const root = path.join(__dirname, '..', '..');
@@ -76,6 +79,19 @@ const OSM_URL = 'https://www.openstreetmap.org/copyright';
 function stage4() {
   const { STAGE4 } = require(path.join(coreDir(), 'test', 'fixtures', 'notes-server.js'));
   return [...stage3(), ...STAGE4];
+}
+// … and the word of plugin 1.7.0
+function stage5() {
+  const { STAGE5 } = require(path.join(coreDir(), 'test', 'fixtures', 'notes-server.js'));
+  return [...stage4(), ...STAGE5];
+}
+/** A deadline of Brief.pdf (node 12) in Drive with the person's reminder, and the task the hub made for it. */
+function seedDeadline(n, d, by) {
+  d.srv.setInsight(12, { kind: 'insurance', title: 'Kfz-Versicherung', deadlines: [{ kind: 'cancellation', date: '2099-11-30', label: 'Kfz-Versicherung kündigen' }] });
+  const dl = d.srv.state.deadlines[0];
+  dl.reminder = { at: '2099-11-27T07:00:00.000Z', daysBefore: 3, sent: false, ...(by ? { by } : {}) };
+  const task = n.srv.addDeadline({ title: 'Kfz-Versicherung kündigen', date: '2026-11-30', kind: 'cancellation', file: 'Brief.pdf', daysBefore: 3, nodeId: 12, deadlineId: dl.id });
+  return { dl, task };
 }
 const NOAH = 15;
 const MIA = 16;
@@ -679,7 +695,8 @@ test.describe('notizen', () => {
     await dlg.locator('input').first().fill('Apotheke');
     await dlg.locator('.btn-pri').click();
     await expect.poll(() => { const l = [...n.srv.state.shopLists.values()].find((x) => x.name === 'Apotheke'); return !!l && n.srv.state.attached.get(11) === l.num; }).toBe(true);
-    expect(posted(n, /\/api\/tasks\/11$/).pop().body).toEqual({ attachedListUid: [...n.srv.state.shopLists.values()].find((x) => x.name === 'Apotheke').uid });
+    // the write itself, not the last request to this path: the page reads the task again right after saving
+    expect(posted(n, /\/api\/tasks\/11$/).filter((r) => r.method === 'PATCH').pop().body).toEqual({ attachedListUid: [...n.srv.state.shopLists.values()].find((x) => x.name === 'Apotheke').uid });
     await expect(row(root, 't:11').locator('.nz-mark[data-kind="list"]')).toHaveText('Apotheke 0/0');
   });
 
@@ -1427,5 +1444,199 @@ test.describe('notizen', () => {
     await expect.poll(() => n.srv.state.taskPlace.get(mine.id).consent).toBe('accepted');
     await expect(d.locator('.nz-place-hint.is-ask')).toHaveCount(0);
     expect(posted(n, /\/place\/consent$/).map((r) => [r.path.includes(`/tasks/${mine.id}/`), r.body])).toEqual([[true, { accept: false }], [true, { accept: true }]]);
+  });
+  test('plugin 1.6.0 (no word of 1.7.0): a task of a deadline in Drive is a task like any other — no "Frist", no hint when it is deleted', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage4() });
+    const d = await mock.setDrive({ features: ['docAi'] });
+    const { task } = seedDeadline(n, d, null);
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setLang(page);
+    const root = await openNotes(page);
+    await root.locator('.nz-it[data-view="list:1"]').click();
+    const r = row(root, `t:${task.id}`);
+    await expect(r.locator('.nz-row-title')).toHaveText('Kfz-Versicherung kündigen');
+    await expect(r.locator('.nz-row-meta-tx')).toHaveCount(0);
+    await expect(r.locator('.nz-src')).toHaveText('Drive');
+    await r.click();
+    const det = root.locator('.nz-detail');
+    await expect(det.locator('.nz-d-title')).toHaveValue('Kfz-Versicherung kündigen');
+    await expect(det.locator('[data-box="deadline"], [data-hint="deadline-delete"], [data-act="open-file"]')).toHaveCount(0);
+    await det.locator('.nz-d-foot .btn-danger').click();
+    await expect.poll(() => n.srv.state.tasks.get(task.id).deleted).toBe(true);
+    await expect(page.locator('#toasts .toast').last()).toHaveText(/^(Gelöscht\.|Deleted\.)$/);
+    // Drive that names nobody: no "über Notizen & Aufgaben"
+    await page.locator('#nav-drive').click();
+    const drive = page.locator('#page-drive');
+    await drive.locator('.dv-tool[data-view="deadlines"]').click();
+    await expect(drive.locator('.dv-dl-remind')).toHaveValue('3');
+    await expect(drive.locator('.dv-dl-by')).toBeHidden();
+  });
+
+  test('plugin 1.7.0: a task that reminds of a deadline in Drive — the row, the details, "Datei öffnen" on the Drive page, what deleting means', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage5() });
+    const d = await mock.setDrive({ features: ['docAi', 'deadlineHub'] });
+    const { dl, task } = seedDeadline(n, d, 'notizen');
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setLang(page);
+    const root = await openNotes(page);
+    await root.locator('.nz-it[data-view="list:1"]').click();
+    // the row: the source, "Frist …", the file, how many days before
+    const r = row(root, `t:${task.id}`);
+    await expect(r.locator('.nz-src')).toHaveText('Drive');
+    await expect(r.locator('.nz-row-meta-tx')).toHaveText(/^(Frist Mo\. 30\. Nov\. · Brief\.pdf · 3 Tage vorher|Deadline Mon 30\. Nov · Brief\.pdf · 3 days before)$/);
+    // every other task: nothing of it
+    await expect(row(root, 't:12').locator('.nz-row-meta')).not.toHaveText(/Frist|Deadline/);
+    // the details
+    await r.click();
+    const det = root.locator('.nz-detail');
+    const box = det.locator('[data-box="deadline"]');
+    await expect(box.locator('.nz-from b')).toHaveText(/^(Aus Drive|From Drive)$/);
+    await expect(box.locator('.nz-from-tx')).toHaveText(/^Brief\.pdf · (Datei öffnen|Open file)$/);
+    await expect(box.locator('[data-kind="deadline"]')).toHaveText(/^(Frist Mo\. 30\. Nov\. · 3 Tage vorher|Deadline Mon 30\. Nov · 3 days before)$/);
+    await expect(box.locator('[data-hint="deadline"]')).toHaveText(/^(Die Frist steht an der Datei in Drive\. Wie viele Tage vorher erinnert wird, stellst du dort ein; „Erledigt“ hakt sie auch in Drive ab\.|The deadline belongs to the file in Drive\. How many days before you are reminded is set there; “Done” ticks it off in Drive too\.)$/);
+    await expect(det.locator('[data-hint="deadline-delete"]')).toHaveText(/^(Löschen entfernt die Erinnerung an diese Frist\. Die Frist bleibt in Drive\.|Deleting removes the reminder of this deadline\. The deadline stays in Drive\.)$/);
+    await shots(page, 'notizen-deadline');
+    await det.locator('[data-hint="deadline-delete"]').scrollIntoViewIfNeeded();
+    await shots(page, 'notizen-deadline-delete');
+    // it is a task: the reminder time and "Erledigt" are the task's
+    await expect(det.locator('.nz-d-title')).toBeEnabled();
+    await expect(det.locator('.nz-ck-lg')).toBeEnabled();
+    // "Datei öffnen": the file on the Drive page of this app, not the portal
+    const links = mock.count('/api/v1/client/portal-link');
+    await box.locator('[data-act="open-file"]').click();
+    await expect(page.locator('#page-drive')).toHaveClass(/active/);
+    const dlg = page.locator('.dv-dlg.dv-docs');
+    await expect(dlg.locator('.dv-dlg-h')).toHaveText(/Brief\.pdf/);
+    expect(mock.count('/api/v1/client/portal-link')).toBe(links);
+    // Drive's "Details": the reminder is rung by "Notizen & Aufgaben"
+    await expect(dlg.locator('.dv-dl-remind')).toHaveValue('3');
+    await expect(dlg.locator('.dv-dl-by')).toHaveText(/^(über Notizen & Aufgaben|through Notes & Tasks)$/);
+    await shots(page, 'drive-deadline-details');
+    await dlg.locator('.dv-dlg-foot .btn-pri').click();
+    // "Fristen": the same; a reminder set while Drive reminds itself says nothing; removed: nothing either
+    const drive = page.locator('#page-drive');
+    await drive.locator('.dv-tool[data-view="deadlines"]').click();
+    await expect(drive.locator('.dv-dl-by')).toHaveText(/^(über Notizen & Aufgaben|through Notes & Tasks)$/);
+    await shots(page, 'drive-deadlines-by-hub');
+    d.srv.remindBy = 'drive';
+    await drive.locator('.dv-dl-remind').selectOption('7');
+    await expect.poll(() => dl.reminder && dl.reminder.daysBefore).toBe(7);
+    await expect(drive.locator('.dv-dl-by')).toBeHidden();
+    d.srv.remindBy = 'notizen';
+    await drive.locator('.dv-dl-remind').selectOption('14');
+    await expect(drive.locator('.dv-dl-by')).toBeVisible();
+    await drive.locator('.dv-dl-remind').selectOption('');
+    await expect.poll(() => dl.reminder).toBe(null);
+    await expect(drive.locator('.dv-dl-by')).toBeHidden();
+    // back at the task: deleting it says what that means
+    await page.locator('#nav-notizen').click();
+    await row(root, `t:${task.id}`).click();
+    await det.locator('.nz-d-foot .btn-danger').click();
+    await expect.poll(() => n.srv.state.tasks.get(task.id).deleted).toBe(true);
+    await expect(page.locator('#toasts .toast').last()).toHaveText(/^(Gelöscht\. Die Erinnerung an diese Frist ist entfernt, die Frist bleibt in Drive\.|Deleted\. The reminder of this deadline is removed, the deadline stays in Drive\.)$/);
+    await expect(row(root, `t:${task.id}`)).toHaveCount(0);
+    // nothing new was asked of the hub: no route of 1.7.0 exists
+    expect(posted(n, /\/api\/(reminders|deadlines)/).length).toBe(0);
+  });
+
+  test('plugin 1.7.0: the reminder of a deadline — four buttons; "Datei öffnen" opens the file on the Drive page, a click the task', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage5() });
+    const d = await mock.setDrive({ features: ['docAi', 'deadlineHub'] });
+    const { task } = seedDeadline(n, d, 'notizen');
+    const p = n.srv.reminderPush(task.id);
+    const push = (id) => ({ id, topic: p.topic, title: p.title, body: p.body, collapse_key: p.collapseKey, data: p.data });
+    mock.setPush({ topics: [{ id: p.topic, label: 'Notizen & Aufgaben · Erinnerungen' }], items: [push(97)] });
+    const { app, page, clickToast } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setLang(page);
+    await expect(page.locator('#nav-notizen')).toBeVisible();
+    await expect(page.locator('#nav-drive')).toBeVisible();
+    await expect(page.locator('#inbox-badge')).toHaveText('1');
+    await page.locator('#nav-inbox').click();
+    await page.locator('#inbox-list .inbox-row').first().click();
+    await expect(page.locator('#inbox-detail')).toContainText('Frist in 3 Tagen: Kfz-Versicherung kündigen');
+    await expect(page.locator('#inbox-detail')).toContainText('Kündigung bis 30.11.2026 · Brief.pdf');
+    await expect(page.locator('#inbox-detail .inbox-actions .btn')).toHaveText(['Erledigt', 'In 1 Std.', 'Heute Abend', 'Datei öffnen']);
+    await shots(page, 'inbox-deadline-reminder');
+    // the fourth button: the file on the Drive page — no portal link is asked for
+    const links = mock.count('/api/v1/client/portal-link');
+    await page.locator('#inbox-detail [data-action="open_file"]').click();
+    await expect(page.locator('#page-drive')).toHaveClass(/active/);
+    await expect(page.locator('.dv-dlg.dv-docs .dv-dlg-h')).toHaveText(/Brief\.pdf/);
+    expect(mock.count('/api/v1/client/portal-link')).toBe(links);
+    expect(await app.evaluate(() => globalThis.__gcE2E.events.filter((e) => e.type === 'shell.openExternal').length)).toBe(0);
+    await expect.poll(() => mock.acks().some((x) => x.action === 'open_file')).toBe(true);
+    await page.locator('.dv-dlg.dv-docs .dv-dlg-foot .btn-pri').click();
+    // "Erledigt" stays the callback GateControl answers
+    await page.locator('#nav-inbox').click();
+    await page.locator('#inbox-list .inbox-row').first().click();
+    await page.locator('#inbox-detail [data-action="done"]').click();
+    await expect.poll(() => mock.acks().some((x) => x.action === 'done')).toBe(true);
+    // a second reminder: the toast carries the four buttons; a click on it opens the task
+    mock.pushNotification(push(98));
+    await expect.poll(() => app.evaluate(() => globalThis.__gcE2E.toasts.map((x) => x.text).filter((x) => x.includes('Kfz-Versicherung')).length)).toBeGreaterThan(0);
+    const xml = await app.evaluate(() => globalThis.__gcE2E.toasts.map((x) => x.text).filter((x) => x.includes('Kfz-Versicherung')).pop());
+    if (/<toast/.test(xml)) { expect(xml).toContain('Datei öffnen'); expect(xml).toContain('Heute Abend'); }
+    expect(await clickToast('Kfz-Versicherung')).toBe(true);
+    await expect(page.locator('#page-notizen')).toHaveClass(/active/);
+    await expect(page.locator('#page-notizen .nz-detail .nz-d-title')).toHaveValue('Kfz-Versicherung kündigen');
+    await expect(page.locator('#page-notizen .nz-detail [data-box="deadline"]')).toBeVisible();
+  });
+
+  test('plugin 1.7.0 without Drive in the app: "Datei öffnen" of the reminder stays the portal link the server sent — no page of the app opens', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage5() });
+    const task = n.srv.addDeadline({ title: 'Kfz-Versicherung kündigen', date: '2026-11-30', kind: 'cancellation', file: 'Brief.pdf', daysBefore: 3, nodeId: 12 });
+    const p = n.srv.reminderPush(task.id);
+    mock.setPush({ topics: [{ id: p.topic, label: 'Notizen & Aufgaben · Erinnerungen' }], items: [{ id: 97, topic: p.topic, title: p.title, body: p.body, collapse_key: p.collapseKey, data: p.data }] });
+    const { app, page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await expect(page.locator('#nav-notizen')).toBeVisible();
+    await expect(page.locator('#nav-drive')).toBeHidden();
+    await page.locator('#nav-inbox').click();
+    await page.locator('#inbox-list .inbox-row').first().click();
+    await page.locator('#inbox-detail [data-action="open_file"]').click();
+    // the button is answered as the portal link it is (the mock server names no portal address, so no browser opens
+    // here — that the path goes to the portal unchanged is the core's test); no page of the app claims it
+    await expect.poll(() => mock.acks().some((x) => x.action === 'open_file')).toBe(true);
+    await expect(page.locator('#page-inbox')).toHaveClass(/active/);
+    await expect(page.locator('#page-drive')).not.toHaveClass(/active/);
+    await expect(page.locator('#page-notizen')).not.toHaveClass(/active/);
+    expect(await app.evaluate(() => globalThis.__gcE2E.events.filter((e) => e.type === 'shell.openExternal').length)).toBe(0);
+  });
+
+  test('a list the person only reads: no quick entry, its tasks are shown but not changed; what is assigned to them is ticked off', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage5() });
+    Object.assign(n.srv.state.lists.get(2), { ownerId: 12, readers: [1] });
+    const hedge = n.srv.addTask({ listId: 2, title: 'Hecke schneiden' });
+    const leaves = n.srv.addTask({ listId: 2, title: 'Laub rechen', assigneeId: 1 });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setLang(page);
+    const root = await openNotes(page);
+    await root.locator('.nz-it[data-view="list:2"]').click();
+    await expect(row(root, `t:${hedge.id}`)).toBeVisible();
+    await expect(root.locator('[data-hint="read-only"]')).toHaveText(/^(Du kannst diese Liste ansehen, aber nicht ändern\.|You can look at this list but not change it\.)$/);
+    await expect(root.locator('#nz-quick')).toHaveCount(0);
+    await expect(row(root, `t:${hedge.id}`).locator('.nz-ck')).toHaveCount(0);
+    await expect(row(root, `t:${leaves.id}`).locator('.nz-ck')).toHaveCount(1);
+    await row(root, `t:${hedge.id}`).click();
+    const det = root.locator('.nz-detail');
+    await expect(det.locator('.nz-d-title')).toHaveValue('Hecke schneiden');
+    await expect(det.locator('.nz-d-title')).toBeDisabled();
+    await expect(det.locator('[data-hint="read-only"]')).toHaveText(/^(In dieser Liste darfst du nur lesen\.|You may only read in this list\.)$/);
+    await expect(det.locator('.nz-d-foot .btn-danger')).toHaveCount(0);
+    await expect(det.locator('.nz-ck-lg')).toBeDisabled();
+    await shots(page, 'notizen-read-only-list');
+    // nothing was sent that the server would have refused
+    expect(n.srv.state.requests.filter((q) => /^(POST|PATCH|DELETE)$/.test(q.method) && /\/api\/tasks/.test(q.path)).length).toBe(0);
+    // what is assigned to the person is ticked off
+    await row(root, `t:${leaves.id}`).locator('.nz-ck').click();
+    await expect.poll(() => !!n.srv.state.tasks.get(leaves.id).doneAt).toBe(true);
+    // a list the person writes in keeps the quick entry
+    await root.locator('.nz-it[data-view="list:1"]').click();
+    await expect(root.locator('#nz-quick')).toBeVisible();
+    await expect(root.locator('[data-hint="read-only"]')).toHaveCount(0);
   });
 });

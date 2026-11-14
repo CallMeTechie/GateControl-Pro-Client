@@ -419,6 +419,11 @@
 .dv-dl-date { color: var(--muted); font-size: 12.5px; }
 .dv-dl.is-urgent .dv-dl-date { color: var(--warn); }
 .dv-dl-remind { width: auto; max-width: 220px; flex-shrink: 0; padding: 6px 8px; font-size: 12.5px; }
+/* Drive 1.30.0: who rings the reminder — "über Notizen & Aufgaben" under the select */
+.dv-dl-rem { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; min-width: 0; }
+.dv-dl-by { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.dv-dl-by[hidden] { display: none; }
+.dv-ki-acts .dv-dl-rem { flex-direction: row; align-items: center; gap: 8px; }
 .dv-dl-group { padding: 12px 12px 4px; }
 .dv-dl-file { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; max-width: 100%; padding: 2px 0; border: 0; background: transparent; color: var(--info); font-size: 12.5px; cursor: pointer; }
 .dv-dl-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
