@@ -20,6 +20,11 @@ Windows VPN client with integrated Remote Desktop (RDP) management.
   one of the person's places with estimated minutes and kilometres, "Jeder …", "Meine Orte", on arriving / on leaving,
   remembering), the place chip of the quick entry, "Orte" on the page "Quellen" and the consent for a place someone else
   set. The phone watches the places and reminds — the PC shows and changes them, has no position and sends none
+  — with plugin 1.6.0 whose turn ("Wer ist dran?": Eine Person · Reihum · Wer zuerst — in the quick entry from two
+  people on and in a task's details), stars and the family's list: the marks of a row ("Reihum · Lena ist dran", "2
+  Sterne", "Erledigt von …"), stars given by parents only, a parent ticks off for a child and hands a task back ("Noch
+  nicht fertig", also a button of the message to the parents), a child changes only what no parent made, the note "Umzug
+  abgeschlossen" once and "Meldung, wenn ein Kind abhakt" on the page "Quellen". The stars are counted in the Familie plugin
 
 ## Development
 ```bash

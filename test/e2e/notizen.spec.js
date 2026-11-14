@@ -20,6 +20,11 @@ const { setupWithApiKey } = require('./support/ui');
 // places near one of the person's places: this PC has no position and sends none; a search only when the person asks),
 // the place chip of the quick entry (the server's suggestion), "Orte" on the page "Quellen" and the consent for a place
 // someone else set. The phone reminds: the app never asks what to watch (places/watch, places/fired).
+// Plugin 1.6.0 (taskTurns, taskStars, familyTasks, doneFeedback, placeMine): "Wer ist dran?" in the quick entry (read on
+// this PC with the plugin's own turnwords after the parser) and in the details, the marks of a row (whose turn, the stars,
+// "Erledigt von …"), the family's list (stars by parents only, a parent ticks off for a child and hands a task back, a
+// child changes only what no parent made), the message "… hat '…' erledigt" with "Ansehen" / "Noch nicht fertig", the
+// note "Umzug abgeschlossen" once, and the consent for a place only for who may give it.
 
 function coreDir() {
   const root = path.join(__dirname, '..', '..');
@@ -67,6 +72,39 @@ function stage3() {
   return [...stage2(), ...STAGE3];
 }
 const OSM_URL = 'https://www.openstreetmap.org/copyright';
+// … and the words of plugin 1.6.0
+function stage4() {
+  const { STAGE4 } = require(path.join(coreDir(), 'test', 'fixtures', 'notes-server.js'));
+  return [...stage3(), ...STAGE4];
+}
+const NOAH = 15;
+const MIA = 16;
+/** A screenshot of the page in both themes (the toasts of earlier steps out of the way). */
+async function shots(page, name) {
+  await page.evaluate(() => { const box = document.querySelector('#toasts'); if (box) box.replaceChildren(); });
+  await page.screenshot({ path: test.info().outputPath(`${name}-dark.png`) });
+  await light(page);
+  await page.screenshot({ path: test.info().outputPath(`${name}-light.png`) });
+  await dark(page);
+}
+/** The server's suggestion for the typed line has come (else the page lets the server decide: attach / place 'auto'). */
+async function suggested(n, page, text) {
+  await expect.poll(() => posted(n, /\/api\/parse$/).some((r) => r.body.text === text)).toBe(true);
+  await page.waitForTimeout(400);
+}
+/** The language the screenshots of plugin 1.6.0 are taken in (GC_NOTES_LANG=de|en); the assertions hold in both. */
+const LANG = process.env.GC_NOTES_LANG || '';
+const setLang = (page) => (LANG ? page.evaluate((l) => window.gatecontrol.locale.set(l), LANG) : Promise.resolve());
+const light = (page) => page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+const dark = (page) => page.evaluate(() => document.documentElement.removeAttribute('data-theme'));
+/** The family's list after the move (Max and Jenny are the parents, Noah and Mia the children) with three tasks. */
+function seedFamily(n, opts = {}) {
+  const fam = n.srv.addFamily(opts);
+  const room = n.srv.addTask({ listId: fam.id, title: 'Zimmer aufräumen', assigneeId: NOAH, stars: 2, due: { date: '2026-11-08', time: '17:00' } });
+  const rabbits = n.srv.addTask({ listId: fam.id, title: 'Hasen füttern', assigneeId: MIA });
+  const flowers = n.srv.addTask({ listId: fam.id, title: 'Blumen gießen', turn: 'first', people: [12, NOAH, MIA] });
+  return { fam, room, rabbits, flowers };
+}
 const shopItem = (n, text) => [...n.srv.state.shopItems.values()].find((i) => i.text === text && !i.deleted) || null;
 const posted = (n, re) => n.srv.state.requests.filter((r) => re.test(r.path));
 
@@ -1041,5 +1079,353 @@ test.describe('notizen', () => {
     await expect(d.locator('.nz-d-title')).toHaveValue('Paket abgeben');
     await expect(d.locator('.nz-place-hint[data-kind="consentWait"]')).toBeVisible();
     await expect(d.locator('[data-act="place-accept"]')).toHaveCount(0);
+  });
+
+  test('an older plugin (1.5.0): no "Wer ist dran?", no stars, no family list, nothing new asked or sent', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage3() });
+    // what the server would hold stays unseen: an older plugin sends none of the new fields
+    const { fam, room } = seedFamily(n);
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openNotes(page);
+    // the list is an ordinary shared one
+    const nav = root.locator(`.nz-it[data-view="list:${fam.id}"]`);
+    await expect(nav).toContainText(/Familie · (geteilt|shared)/);
+    await expect(nav.locator('.nz-it-mark')).toHaveCount(0);
+    await nav.click();
+    await expect(row(root, `t:${room.id}`)).toBeVisible();
+    await expect(root.locator('.nz-mark[data-kind="turn"], .nz-mark[data-kind="stars"], .nz-mark[data-kind="doneby"]')).toHaveCount(0);
+    await expect(row(root, `t:${room.id}`).locator('.nz-row-meta')).toContainText('Noah Muster');
+    await row(root, `t:${room.id}`).click();
+    const d = root.locator('.nz-detail');
+    await expect(d.locator('.nz-d-title')).toHaveValue('Zimmer aufräumen');
+    await expect(d.locator('[data-act="assignee"]')).toHaveCount(1);
+    await expect(d.locator('[data-field="turn"], [data-field="stars"], [data-act="tick-for"], [data-act="not-done"]')).toHaveCount(0);
+    // the quick entry: the first person as before, no choice, the line goes to the server as it is
+    const quick = root.locator('#nz-quick');
+    await quick.fill('@Noah @Jenny Müll rausbringen reihum 2 Sterne');
+    await expect(root.locator('.nz-qchip[data-kind="person"]')).toHaveText('@Noah Muster');
+    await expect(root.locator('.nz-qchip[data-kind="turn"], .nz-qchip[data-kind="stars"]')).toHaveCount(0);
+    await expect(root.locator('.nz-qturn')).toBeHidden();
+    await suggested(n, page, '@Noah @Jenny Müll rausbringen reihum 2 Sterne');
+    await quick.press('Enter');
+    await expect.poll(() => posted(n, /\/api\/tasks$/).length).toBe(1);
+    expect(posted(n, /\/api\/tasks$/)[0].body).toEqual({ text: '@Noah @Jenny Müll rausbringen reihum 2 Sterne', area: 'private', createList: false, listId: fam.id });
+    // ticking off sends what it always sent
+    await row(root, `t:${room.id}`).locator('.nz-ck').click();
+    await expect.poll(() => posted(n, /\/complete$/).map((r) => r.body)).toEqual([{ done: true }]);
+    // the list can be shared and deleted here; no "Aufgaben der Familie" on "Quellen"
+    await root.locator('.nz-head .nz-ib').click();
+    await expect(root.locator('.nz-dlg .nz-share')).toHaveCount(1);
+    await expect(root.locator('.nz-dlg .btn-danger')).toHaveCount(1);
+    await expect(root.locator('.nz-dlg [data-hint="family-list"]')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await root.locator('.nz-it[data-view="sources"]').click();
+    await expect(root.locator('.nz-srccard').first()).toBeVisible();
+    await expect(root.locator('[data-set="family"]')).toHaveCount(0);
+    await expect(root.locator('[data-dlg="moved"]')).toHaveCount(0);
+    expect(posted(n, /\/family\//)).toEqual([]);
+  });
+
+  test('plugin 1.6.0: "Wer ist dran?" — "reihum" from the typed line, "wer zuerst" chosen; ticked off, the next one is on', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage4() });
+    const { fam, flowers } = seedFamily(n);
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setLang(page);
+    const root = await openNotes(page);
+    const nav = root.locator(`.nz-it[data-view="list:${fam.id}"]`);
+    await expect(nav.locator('.nz-it-mark')).toHaveCount(1);
+    await nav.click();
+    await expect(row(root, `t:${flowers.id}`).locator('.nz-mark[data-kind="turn"]')).toHaveText(/^(Wer zuerst|Whoever is first)$/);
+    // the typed line: several people, "reihum", stars (a parent in the family's list) — read on this PC
+    const quick = root.locator('#nz-quick');
+    const line = '@Noah @Mia Spülmaschine ausräumen täglich 18 Uhr reihum 2 Sterne';
+    await quick.fill(line);
+    await expect(root.locator('.nz-qchip[data-kind="person"]')).toHaveText('Noah, Mia');
+    await expect(root.locator('.nz-qchip[data-kind="turn"]')).toHaveText(/^(Reihum · zuerst Noah|In turns · Noah first)$/);
+    await expect(root.locator('.nz-qchip[data-kind="stars"]')).toHaveText(/^2 (Sterne|stars)$/);
+    const qturn = root.locator('.nz-qturn');
+    await expect(qturn).toBeVisible();
+    await expect(qturn.locator('button.on')).toHaveAttribute('data-turn', 'rotate');
+    await expect(qturn.locator('.hint')).toHaveText(/^(Reihum: Nach dem Abhaken|In turns: after it is ticked off)/);
+    await shots(page, 'notizen-turn-quick');
+    await suggested(n, page, line);
+    await quick.press('Enter');
+    await expect.poll(() => posted(n, /\/api\/tasks$/).length).toBe(1);
+    // untouched: the server reads the line as this PC did
+    expect(posted(n, /\/api\/tasks$/)[0].body).toEqual({ text: line, area: 'private', createList: false, listId: fam.id });
+    const dish = [...n.srv.state.tasks.values()].find((x) => x.title === 'Spülmaschine ausräumen');
+    expect([dish.turn, dish.people, dish.assigneeId, dish.stars]).toEqual(['rotate', [NOAH, MIA], NOAH, 2]);
+    await expect(row(root, `t:${dish.id}`).locator('.nz-mark[data-kind="turn"]')).toHaveText(/^(Reihum · Noah ist dran|In turns · Noah is on)$/);
+    await expect(row(root, `t:${dish.id}`).locator('.nz-mark[data-kind="stars"]')).toHaveText(/^2 (Sterne|stars)$/);
+    await expect(qturn).toBeHidden();
+    // two people without a word: "Eine Person" — "Wer zuerst" chosen goes with the task
+    await quick.fill('@Noah @Mia Tisch decken');
+    await expect(qturn.locator('button.on')).toHaveAttribute('data-turn', 'one');
+    await expect(root.locator('.nz-qchip[data-kind="turn"]')).toHaveCount(0);
+    await qturn.locator('button[data-turn="first"]').click();
+    await expect(root.locator('.nz-qchip[data-kind="turn"]')).toHaveText(/^(Wer zuerst|Whoever is first)$/);
+    await expect(quick).toBeFocused();
+    await suggested(n, page, '@Noah @Mia Tisch decken');
+    await quick.press('Enter');
+    await expect.poll(() => posted(n, /\/api\/tasks$/).length).toBe(2);
+    expect(posted(n, /\/api\/tasks$/)[1].body).toEqual({ text: '@Noah @Mia Tisch decken', area: 'private', createList: false, turn: 'first', people: [NOAH, MIA], listId: fam.id });
+    const table = [...n.srv.state.tasks.values()].find((x) => x.title === 'Tisch decken');
+    expect([table.turn, table.assigneeId]).toEqual(['first', null]);
+    await expect(row(root, `t:${table.id}`).locator('.nz-mark[data-kind="turn"]')).toHaveText(/^(Wer zuerst|Whoever is first)$/);
+
+    // "reihum" ticked off (a parent ticks the child's task: for the child) — next time Mia is on
+    await row(root, `t:${dish.id}`).locator('.nz-ck').click();
+    await expect.poll(() => n.srv.state.tasks.get(dish.id).doneBy).toBe(NOAH);
+    await expect(page.locator('#toasts .toast', { hasText: /Reihum · Mia ist dran|In turns · Mia is on/ })).toBeVisible();
+    const next = [...n.srv.state.tasks.values()].find((x) => x.title === 'Spülmaschine ausräumen' && !x.doneAt);
+    expect([next.assigneeId, next.due.date]).toEqual([MIA, '2026-11-09']);
+    await expect(row(root, `t:${next.id}`).locator('.nz-mark[data-kind="turn"]')).toHaveText(/^(Reihum · Mia ist dran|In turns · Mia is on)$/);
+    await root.locator('.nz-sec[data-id="done"] .nz-fold').click();
+    await expect(row(root, `t:${dish.id}`).locator('.nz-mark[data-kind="doneby"]')).toHaveText(/^(Erledigt von Noah|Done by Noah)$/);
+
+    // the details: "Wer zuerst" has nobody assigned; who takes part; "Reihum" and "Eine Person" chosen
+    await row(root, `t:${flowers.id}`).click();
+    const d = root.locator('.nz-detail');
+    await expect(d.locator('.nz-d-title')).toHaveValue('Blumen gießen');
+    const turn = d.locator('[data-field="turn"]');
+    await expect(turn.locator('.seg button.on')).toHaveAttribute('data-turn', 'first');
+    await expect(d.locator('[data-act="assignee"]')).toHaveCount(0);
+    await expect(turn.locator('.nz-turn-who input:checked')).toHaveCount(3);
+    await expect(turn.locator('.nz-turn-who input')).toHaveCount(4);
+    await turn.scrollIntoViewIfNeeded();
+    await shots(page, 'notizen-turn-detail');
+    await turn.locator('button[data-turn="rotate"]').click();
+    await expect.poll(() => n.srv.state.tasks.get(flowers.id).turn).toBe('rotate');
+    expect(posted(n, new RegExp(`/api/tasks/${flowers.id}$`)).at(-1).body).toEqual({ turn: 'rotate', people: [12, NOAH, MIA] });
+    // "reihum": the choice is who is on now, of those who take part
+    const who = d.locator('[data-act="assignee"]');
+    await expect(who.locator('option')).toHaveText(['Jenny Muster', 'Noah Muster', 'Mia Muster']);
+    await expect(who).toHaveValue('12');
+    // Jenny leaves: the two children take turns; one alone is not enough
+    await turn.locator('.nz-turn-who input[data-person="12"]').uncheck();
+    await expect.poll(() => n.srv.state.tasks.get(flowers.id).people).toEqual([NOAH, MIA]);
+    await expect(turn.locator('.nz-turn-who input:checked')).toHaveCount(2);
+    await turn.locator(`.nz-turn-who input[data-person="${MIA}"]`).click();
+    await expect(page.locator('#toasts .toast', { hasText: /mindestens zwei Personen|at least two people/ })).toBeVisible();
+    await expect(turn.locator('.nz-turn-who input:checked')).toHaveCount(2);
+    expect(n.srv.state.tasks.get(flowers.id).people).toEqual([NOAH, MIA]);
+    await turn.locator('button[data-turn="one"]').click();
+    await expect.poll(() => n.srv.state.tasks.get(flowers.id).turn).toBe(null);
+    expect(posted(n, new RegExp(`/api/tasks/${flowers.id}$`)).at(-1).body).toEqual({ turn: null });
+    await expect(d.locator('[data-field="turn"] .nz-turn-who')).toHaveCount(0);
+    await expect(d.locator('[data-field="turn"] .seg button.on')).toHaveAttribute('data-turn', 'one');
+  });
+
+  test('plugin 1.6.0: the family\'s list for a parent — stars, ticked off for a child, handed back; the list is managed by Familie; the message setting', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage4() });
+    const { fam, room, rabbits } = seedFamily(n);
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setLang(page);
+    const root = await openNotes(page);
+    await root.locator(`.nz-it[data-view="list:${fam.id}"]`).click();
+    await expect(row(root, `t:${room.id}`).locator('.nz-mark[data-kind="stars"]')).toHaveText(/^2 (Sterne|stars)$/);
+    // stars: a parent chooses them
+    await row(root, `t:${room.id}`).click();
+    const d = root.locator('.nz-detail');
+    await expect(d.locator('.nz-d-title')).toHaveValue('Zimmer aufräumen');
+    const stars = d.locator('[data-act="stars"]');
+    await expect(stars).toHaveValue('2');
+    await expect(stars.locator('option')).toHaveCount(11);
+    await expect(d.locator('[data-field="stars"] .hint')).toHaveText(/Familien-Plugin|Family plugin/);
+    await stars.selectOption('3');
+    await expect.poll(() => n.srv.state.tasks.get(room.id).stars).toBe(3);
+    expect(posted(n, new RegExp(`/api/tasks/${room.id}$`)).at(-1).body).toEqual({ stars: 3 });
+    await expect(row(root, `t:${room.id}`).locator('.nz-mark[data-kind="stars"]')).toHaveText(/^3 (Sterne|stars)$/);
+    await d.locator('[data-act="tick-for"]').scrollIntoViewIfNeeded();
+    await shots(page, 'notizen-family-parent');
+    // "Abhaken für": Mia did Noah's task — the stars are hers
+    await d.locator('[data-act="tick-for"]').selectOption(String(MIA));
+    await expect.poll(() => n.srv.state.tasks.get(room.id).doneBy).toBe(MIA);
+    expect(posted(n, new RegExp(`/tasks/${room.id}/complete$`)).at(-1).body).toEqual({ done: true, userId: MIA });
+    await expect(page.locator('#toasts .toast', { hasText: /Erledigt von Mia Muster|Done by Mia Muster/ })).toBeVisible();
+    await expect(d.locator('.nz-doneby .nz-mark')).toHaveText(/^(Erledigt von Mia|Done by Mia)$/);
+    await expect(d.locator('[data-act="tick-for"]')).toHaveCount(0);
+    // … and back: "Noch nicht fertig"
+    await d.locator('[data-act="not-done"]').click();
+    await expect.poll(() => n.srv.state.tasks.get(room.id).doneAt).toBe(null);
+    expect(posted(n, new RegExp(`/tasks/${room.id}/complete$`)).at(-1).body).toEqual({ done: false });
+    await expect(d.locator('.nz-doneby')).toHaveCount(0);
+    await expect(d.locator('[data-act="tick-for"]')).toHaveCount(1);
+    // the tick in the list: a parent ticks the child's task off for the child
+    await row(root, `t:${rabbits.id}`).locator('.nz-ck').click();
+    await expect.poll(() => n.srv.state.tasks.get(rabbits.id).doneBy).toBe(MIA);
+    expect(posted(n, new RegExp(`/tasks/${rabbits.id}/complete$`)).at(-1).body).toEqual({ done: true });
+
+    // the list: colour and group here, the members in the Familie plugin
+    await root.locator('.nz-head .nz-ib').click();
+    const dlg = root.locator('.nz-dlg');
+    await expect(dlg.locator('[data-hint="family-list"]')).toHaveText(/^(Die Liste der Familie verwaltet das Familien-Plugin\.|The family's list is managed by the Family plugin\.)$/);
+    await expect(dlg.locator('.nz-colors')).toHaveCount(1);
+    await expect(dlg.locator('.nz-share')).toHaveCount(0);
+    await expect(dlg.locator('.btn-danger')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    expect(posted(n, /\/members$/)).toEqual([]);
+
+    // "Quellen": the message when a child ticks off (parents only)
+    await root.locator('.nz-it[data-view="sources"]').click();
+    const fb = root.locator('[data-card="feedback"] [data-act="feedback"]');
+    await expect(fb).toHaveValue('all');
+    await expect(fb.locator('option')).toHaveText([/Bei jeder Aufgabe|For every task/, /Nur bei Aufgaben mit Sternen|Only for tasks with stars/, /^(Nie|Never)$/]);
+    await root.locator('[data-set="family"]').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath('notizen-family-feedback.png') });
+    await fb.selectOption('stars');
+    await expect.poll(() => n.srv.state.prefs.feedback).toBe('stars');
+    expect(posted(n, /\/api\/prefs$/).at(-1).body).toEqual({ feedback: 'stars' });
+  });
+
+  test('plugin 1.6.0: a child in the family\'s list — sees the stars, ticks off what is its, changes only what no parent made', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage4() });
+    const { fam, room, rabbits, flowers } = seedFamily(n);
+    n.srv.state.user = { id: NOAH, name: 'Noah Muster' };
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setLang(page);
+    await expect(page.locator('#nav-notizen')).toBeVisible();
+    await page.locator('#nav-notizen').click();
+    const root = page.locator('#page-notizen');
+    await root.locator(`.nz-it[data-view="list:${fam.id}"]`).click();
+    // its own task and the one for everybody can be ticked off, Mia's cannot
+    await expect(row(root, `t:${room.id}`).locator('.nz-ck')).toHaveCount(1);
+    await expect(row(root, `t:${flowers.id}`).locator('.nz-ck')).toHaveCount(1);
+    await expect(row(root, `t:${rabbits.id}`).locator('.nz-ck')).toHaveCount(0);
+    await expect(row(root, `t:${room.id}`).locator('.nz-mark[data-kind="stars"]')).toHaveText(/^2 (Sterne|stars)$/);
+    // a task a parent made: read, "Mein Tag" and the tick only
+    await row(root, `t:${room.id}`).click();
+    const d = root.locator('.nz-detail');
+    await expect(d.locator('.nz-d-title')).toHaveValue('Zimmer aufräumen');
+    await expect(d.locator('[data-hint="parents-only"]')).toHaveText(/^(Das können nur die Eltern ändern\.|Only the parents can change this\.)$/);
+    await expect(d.locator('.nz-d-title')).toBeDisabled();
+    await expect(d.locator('[data-field="stars"] .nz-mark')).toHaveText(/^2 (Sterne|stars)$/);
+    await expect(d.locator('[data-act="stars"], [data-act="tick-for"], [data-act="not-done"], .nz-d-foot .btn-danger')).toHaveCount(0);
+    await expect(d.locator('[data-field="turn"] .seg button').first()).toBeDisabled();
+    await expect(d.locator('.nz-ck-lg')).toBeEnabled();
+    await d.locator('[data-field="stars"]').scrollIntoViewIfNeeded();
+    await shots(page, 'notizen-family-child');
+    const myDay = d.locator('.nz-f[data-free] .sw');
+    await expect(myDay).toBeEnabled();
+    await myDay.click();
+    await expect.poll(() => n.srv.state.myDay.has(room.id)).toBe(true);
+    // the server refuses what the page does not offer: the star of the row
+    await row(root, `t:${rabbits.id}`).locator('.nz-star').click();
+    await expect(page.locator('#toasts .toast', { hasText: /Das können nur die Eltern ändern\.|Only the parents can change this\./ })).toBeVisible();
+    expect(n.srv.state.tasks.get(rabbits.id).important).toBe(false);
+    // a task of its own: no stars from a child — "3 Sterne" stays in the title
+    const quick = root.locator('#nz-quick');
+    await quick.fill('Fahrrad putzen 3 Sterne');
+    await expect(root.locator('.nz-qchip[data-kind="area"]')).toBeVisible();
+    await expect(root.locator('.nz-qchip[data-kind="stars"]')).toHaveCount(0);
+    await quick.press('Enter');
+    await expect.poll(() => [...n.srv.state.tasks.values()].some((x) => x.title === 'Fahrrad putzen 3 Sterne')).toBe(true);
+    const bike = [...n.srv.state.tasks.values()].find((x) => x.title === 'Fahrrad putzen 3 Sterne');
+    await row(root, `t:${bike.id}`).click();
+    await expect(d.locator('.nz-d-title')).toHaveValue('Fahrrad putzen 3 Sterne');
+    await expect(d.locator('.nz-d-title')).toBeEnabled();
+    await expect(d.locator('[data-hint="parents-only"]')).toHaveCount(0);
+    await expect(d.locator('.nz-d-foot .btn-danger')).toHaveCount(1);
+    // ticking off its own task: for itself
+    await row(root, `t:${room.id}`).locator('.nz-ck').click();
+    await expect.poll(() => n.srv.state.tasks.get(room.id).doneBy).toBe(NOAH);
+    expect(n.srv.state.feedback).toEqual([{ taskId: room.id, userId: NOAH, stars: 2 }]);
+    // no setting of the parents on "Quellen"
+    await root.locator('.nz-it[data-view="sources"]').click();
+    await expect(root.locator('.nz-srccard').first()).toBeVisible();
+    await expect(root.locator('[data-set="family"]')).toHaveCount(0);
+  });
+
+  test('plugin 1.6.0: "Umzug abgeschlossen" once; "… hat \'…\' erledigt" — "Ansehen" opens the task, "Noch nicht fertig" on the message and in the app', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage4() });
+    const { fam, room } = seedFamily(n, { moved: { tasks: 12, places: 3 } });
+    Object.assign(n.srv.state.tasks.get(room.id), { doneAt: n.srv.state.now, doneBy: NOAH });
+    const topic = 'plugin:gatecontrol-notizen:shared';
+    const push = (id) => ({ id, topic, title: 'Noah hat „Zimmer aufräumen“ erledigt', body: '2 Sterne gutgeschrieben · Familie', collapse_key: `done:${room.id}`,
+      data: { notizen: { kind: 'done_feedback', taskId: room.id, listId: fam.id, area: 'private', task: room.id, userId: NOAH, stars: 2 },
+        actions: [{ type: 'open_app_route', id: 'open', label: 'Ansehen', target: 'plg-gatecontrol-notizen' }, { type: 'callback', id: 'not_done', label: 'Noch nicht fertig' }] } });
+    mock.setPush({ topics: [{ id: topic, label: 'Notizen & Aufgaben · Geteiltes' }], items: [push(95)] });
+    const { app, page, clickToast } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setLang(page);
+    await expect(page.locator('#nav-notizen')).toBeVisible();
+    await expect(page.locator('#inbox-badge')).toHaveText('1');
+    // the note of the move: once, with the numbers; "Ansehen" opens the family's list
+    await page.locator('#nav-notizen').click();
+    const root = page.locator('#page-notizen');
+    const moved = root.locator('[data-dlg="moved"]');
+    await expect(moved.locator('.nz-dlg-title')).toHaveText(/^(Umzug abgeschlossen|Move finished)$/);
+    await expect(moved.locator('.nz-p')).toHaveText(/^(Aus Familie übernommen: 12 Aufgaben und 3 Orts-Erinnerungen\.|Taken over from Family: 12 tasks and 3 place reminders\.)$/);
+    await expect(moved.locator('.nz-moved li')).toHaveCount(4);
+    await shots(page, 'notizen-moved');
+    await moved.locator('[data-act="moved-look"]').click();
+    await expect.poll(() => posted(n, /\/family\/seen$/).length).toBe(1);
+    await expect(moved).toHaveCount(0);
+    await expect(root.locator(`.nz-it[data-view="list:${fam.id}"]`)).toHaveClass(/on/);
+    // the message to the parents: the buttons in the inbox — "Noch nicht fertig" is a callback GateControl answers
+    await page.locator('#nav-inbox').click();
+    await page.locator('#inbox-list .inbox-row').first().click();
+    await expect(page.locator('#inbox-detail .inbox-actions .btn')).toHaveText(['Ansehen', 'Noch nicht fertig']);
+    await page.locator('#inbox-detail [data-action="not_done"]').click();
+    await expect.poll(() => mock.acks().some((x) => x.action === 'not_done')).toBe(true);
+    // a second message: the toast carries the buttons; a click on it opens the task in the app, not the portal
+    const links = mock.count('/api/v1/client/portal-link');
+    mock.pushNotification(push(96));
+    await expect.poll(() => app.evaluate(() => globalThis.__gcE2E.toasts.map((x) => x.text).filter((x) => x.includes('Zimmer aufräumen')).length)).toBeGreaterThan(0);
+    const xml = await app.evaluate(() => globalThis.__gcE2E.toasts.map((x) => x.text).filter((x) => x.includes('Zimmer aufräumen')).pop());
+    if (/<toast/.test(xml)) { expect(xml).toContain('Ansehen'); expect(xml).toContain('Noch nicht fertig'); }
+    expect(await clickToast('Zimmer aufräumen')).toBe(true);
+    await expect(page.locator('#page-notizen')).toHaveClass(/active/);
+    const d = root.locator('.nz-detail');
+    await expect(d.locator('.nz-d-title')).toHaveValue('Zimmer aufräumen');
+    expect(mock.count('/api/v1/client/portal-link')).toBe(links);
+    await expect(root.locator('[data-dlg="moved"]')).toHaveCount(0);
+    // … and in the app: "Erledigt von Noah" with the way back
+    await expect(d.locator('.nz-doneby .nz-mark')).toHaveText(/^(Erledigt von Noah|Done by Noah)$/);
+    await d.locator('[data-act="not-done"]').click();
+    await expect.poll(() => n.srv.state.tasks.get(room.id).doneAt).toBe(null);
+    await expect(page.locator('#toasts .toast', { hasText: /Zurückgegeben: Zimmer aufräumen|Handed back: Zimmer aufräumen/ })).toBeVisible();
+    // the button "Ansehen" of the message does the same as the click
+    await page.locator('#nav-inbox').click();
+    await page.locator('#inbox-list .inbox-row').first().click();
+    await page.locator('#inbox-detail [data-action="open"]').click();
+    await expect(page.locator('#page-notizen')).toHaveClass(/active/);
+    await expect(d.locator('.nz-d-title')).toHaveValue('Zimmer aufräumen');
+    expect(posted(n, /\/family\/seen$/).length).toBe(1);
+  });
+
+  test('plugin 1.6.0: the consent for a place only for who may give it (place.canConsent)', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage4() });
+    const lidl = n.srv.addPlace({ name: 'Lidl Marktstraße', address: 'Marktstraße 3, Berlin', lat: 52.526, lon: 13.401, named: false, ref: 'osm:N201' });
+    // a shared list (Max and Jenny): Jenny's phone is to watch the place somebody else set — Max only sees the state.
+    // Before 1.6.0 the page would have asked Max (the task is not assigned and he did not set the place)
+    const theirs = n.srv.addTask({ listId: 2, title: 'Paket abgeben', due: { date: '2026-11-08', time: null } });
+    n.srv.setTaskPlace(theirs.id, { placeId: lidl.id, key: 'name:lidl', label: 'Lidl', by: 15, who: 12 });
+    const mine = n.srv.addTask({ listId: 2, title: 'Milch mitbringen', due: { date: '2026-11-08', time: null } });
+    n.srv.setTaskPlace(mine.id, { placeId: lidl.id, key: 'name:lidl', label: 'Lidl', by: 12, who: 1 });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await setLang(page);
+    const root = await openNotes(page);
+    await row(root, `t:${theirs.id}`).click();
+    const d = root.locator('.nz-detail');
+    await expect(d.locator('.nz-d-title')).toHaveValue('Paket abgeben');
+    await expect(d.locator('.nz-place-hint[data-kind="consentWait"]')).toBeVisible();
+    await expect(d.locator('[data-act="place-accept"], [data-act="place-decline"]')).toHaveCount(0);
+    await row(root, `t:${mine.id}`).click();
+    await expect(d.locator('.nz-d-title')).toHaveValue('Milch mitbringen');
+    await expect(d.locator('.nz-place-hint.is-ask')).toBeVisible();
+    await d.locator('[data-act="place-decline"]').click();
+    await expect.poll(() => n.srv.state.taskPlace.get(mine.id).consent).toBe('declined');
+    // declined by this person: the way back stays with them
+    await expect(d.locator('.nz-place-hint[data-kind="declined"] [data-act="place-accept"]')).toBeVisible();
+    await d.locator('[data-act="place-accept"]').click();
+    await expect.poll(() => n.srv.state.taskPlace.get(mine.id).consent).toBe('accepted');
+    await expect(d.locator('.nz-place-hint.is-ask')).toHaveCount(0);
+    expect(posted(n, /\/place\/consent$/).map((r) => [r.path.includes(`/tasks/${mine.id}/`), r.body])).toEqual([[true, { accept: false }], [true, { accept: true }]]);
   });
 });

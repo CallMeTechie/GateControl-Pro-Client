@@ -24,6 +24,14 @@
  * quick entry (the server's suggestion), „Orte“ on the page „Quellen“ (the person's switches, „Meine Orte“) and the
  * consent for a place someone else set. The phone watches the places and reminds; this PC shows and changes them. A
  * search goes out only when the person asks for it (the chip, „Suchen“, Enter) — never while typing.
+ * Plugin 1.6.0 (`taskTurns`, `taskStars`, `familyTasks`, `doneFeedback`, `placeMine`): „Wer ist dran?“ (Eine Person ·
+ * Reihum · Wer zuerst) in the quick entry (from two people on; read on this PC with the plugin's own ui/turnwords.js
+ * after the parser) and in a task's details with „Wer macht mit“, the marks of a row (whose turn, the stars, „Erledigt
+ * von …“), the stars of a task of the family's list (given by parents only), a parent ticks off for a child („Abhaken
+ * für“) and hands a task back („Noch nicht fertig“ — also a button of the message „… hat ‚…‘ erledigt“), the family's
+ * list (managed by the Familie plugin: no sharing, leaving or deleting here; a child changes only what no parent made),
+ * the note „Umzug abgeschlossen“ once, „Meldung, wenn ein Kind abhakt“ on the page „Quellen“, and the consent for a
+ * place only for who may give it. The stars are counted in the Familie plugin; this page only shows the number.
  *
  * Data: window.gatecontrol.notes (core NotesService over IPC); texts: notes.* of the Pro locales; logic without DOM:
  * notes-state.js (window.GCNotesState), notes-md.js (window.GCNotesMd). Server text only ever goes into textContent
@@ -69,6 +77,8 @@
 		cart: 'M3 4h2.5l2.3 10.5h9.6L19.5 7H6.6|M9.5 19.5h.01|M16.5 19.5h.01',
 		home: 'M4 11l8-7 8 7|M6 10v10h12V10|M10 20v-5h4v5',
 		place: 'M12 21s-7-6.3-7-11.2a7 7 0 0 1 14 0C19 14.7 12 21 12 21z|M12 7.3a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2',
+		turn: 'M17 2l4 4-4 4|M3 11V9a3 3 0 0 1 3-3h15|M7 22l-4-4 4-4|M21 13v2a3 3 0 0 1-3 3H3',
+		people: 'M9 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7z|M2.5 20a6.5 6.5 0 0 1 13 0|M16 4.3a3.5 3.5 0 0 1 0 6.4|M18 14.2a6.5 6.5 0 0 1 3.5 5.8',
 	};
 
 	function icon(name, size = 18) {
@@ -137,6 +147,8 @@
 			shop: null,   // plugin 1.4.0: { lists, items, pending, stale } — the shopping lists as the main process holds them
 			places: null, // plugin 1.5.0: { places, family, favs } — „Meine Orte“ as the page „Quellen“ shows them
 			quickPlace: null, // … and what the person chose for the quick entry's line: { text, choice }
+			quickTurn: null,  // plugin 1.6.0: „Wer ist dran?“ chosen for the people of the quick entry's line: { key, value }
+			movedTold: false, // … and the note „Umzug abgeschlossen“ was shown in this run
 		};
 
 		// ── skeleton ─────────────────────────────────────────
@@ -294,6 +306,29 @@
 			const pp = Promise.resolve(api.people()).then((r) => { if (ok(r)) S.people = r.people; }).catch(() => {});
 			await Promise.all([reloadNav(), reloadView(), pp, reloadShop()]);
 			if (S.detail && !S.editing) reloadDetail();
+			movedNote();
+		}
+
+		/**
+		 * „Umzug abgeschlossen“ (plugin 1.6.0) — once per person: the tasks and place reminders of the family live in this
+		 * page now. „OK“ and „Ansehen“ tell the server it was read; „Ansehen“ opens the family's list.
+		 */
+		function movedNote() {
+			const f = NS.familyInfo(S.me);
+			if (!f.moved || f.moved.seen || S.movedTold || !S.shown) return;
+			S.movedTold = true;
+			let d = null;
+			const seen = async (look) => {
+				d.close();
+				const r = await Promise.resolve(api.familySeen()).catch(() => null);
+				if (ok(r) && S.me && S.me.familyTasks && S.me.familyTasks.moved) S.me.familyTasks.moved.seen = true;
+				if (look) go({ kind: 'list', id: f.listId });
+			};
+			d = dialog(t('notes.moved.title'), [
+				el('p', { class: 'nz-p', text: t('notes.moved.what', { tasks: f.moved.tasks, places: f.moved.places }) }),
+				el('ul', { class: 'nz-moved' }, ['keep', 'places', 'stars', 'copy'].map((k) => el('li', { text: t(`notes.moved.${k}`) }))),
+			], [btn(t('notes.moved.look'), () => seen(true), 'btn-sec', null, { 'data-act': 'moved-look' }), btn(t('notes.moved.ok'), () => seen(false), 'btn-pri', null, { 'data-act': 'moved-ok' })], { wide: true });
+			d.box.setAttribute('data-dlg', 'moved');
 		}
 
 		let soonTimer = null;
@@ -461,8 +496,12 @@
 		const has = (f) => !S.me || S.me.features.includes(f);
 
 		function listRow(l, sub) {
-			return navRow(l.name + (l.shared ? ` · ${t('notes.shared')}` : ''), l.open, isView('list', l.id), () => go({ kind: 'list', id: l.id }), { sub: !!sub, icon: 'list', dot: l.color || null, key: `list:${l.id}` });
+			// plugin 1.6.0: the family's list carries the house (as the family's shopping lists do)
+			const fam = isFamily(l);
+			return navRow(l.name + (l.shared && !fam ? ` · ${t('notes.shared')}` : ''), l.open, isView('list', l.id), () => go({ kind: 'list', id: l.id }), { sub: !!sub, icon: 'list', dot: l.color || null, key: `list:${l.id}`, mark: fam ? 'home' : null, markTitle: t('notes.shop.family') });
 		}
+
+		const isFamily = (l) => !!l && l.family === true && NS.isFamilyList(S.me, l.id);
 
 		function setArea(a) {
 			if (S.area === a) return;
@@ -564,7 +603,9 @@
 				return el('button', { type: 'button', class: 'nz-mark nz-mark-list', 'data-kind': 'list', title: k.title || null, 'aria-label': `${k.title}: ${k.text}`,
 					on: { click: (e) => { e.stopPropagation(); if (!openShopList(k.uid)) toast(t('notes.shop.gone')); }, keydown: (e) => e.stopPropagation() } }, [icon('cart', 12), el('span', { text: k.text })]);
 			}
-			return el('span', { class: 'nz-mark', 'data-kind': k.kind, title: k.title || null }, [icon(k.kind === 'calendar' ? 'cal' : k.kind === 'place' ? 'place' : 'bell', 12), el('span', { text: k.text })]);
+			// plugin 1.6.0: whose turn („Reihum · Lena ist dran“, „Wer zuerst“), the stars, „Erledigt von …“
+			const ic = { calendar: 'cal', place: 'place', turn: k.first ? 'people' : 'turn', stars: 'star', doneby: 'check' }[k.kind] || 'bell';
+			return el('span', { class: 'nz-mark', 'data-kind': k.kind, title: k.title || null }, [icon(ic, 12), el('span', { text: k.text })]);
 		}
 
 		// ── „Gestern offen geblieben“ (plugin 1.3.0) ─────────
@@ -784,7 +825,9 @@
 			renderMain();
 			const r = x.type === 'task' ? await api.completeTask(x.id, done) : await api.completeItem(x.id, done);
 			if (!ok(r)) { x.done = !done; renderMain(); fail(r); return; }
-			if (r.next && r.next.due) toast(t('notes.nextRepeat', { when: NS.dayText(r.next.due.date, S.me.today, t) }), 'success');
+			// plugin 1.6.0: „reihum“ — who is on next time
+			const nextUp = r.next && r.next.turn === 'rotate' ? NS.turnText(r.next, S.me, t) : '';
+			if (r.next && r.next.due) toast(t('notes.nextRepeat', { when: NS.dayText(r.next.due.date, S.me.today, t) }) + (nextUp ? ` · ${nextUp}` : ''), 'success');
 			else if (x.type === 'source' && done) toast(t('notes.doneThere', { source: x.source.label }), 'success');
 			soon(150);
 		}
@@ -794,7 +837,12 @@
 			const input = el('input', { id: 'nz-quick', class: 'nz-quick-inp', type: 'text', autocomplete: 'off', maxlength: '500', placeholder: t('notes.quick.ph'), 'aria-label': t('notes.quick.label') });
 			input.value = S.quickText;
 			const chips = el('div', { class: 'nz-chips', 'aria-live': 'polite' });
+			// plugin 1.6.0: „Wer ist dran?“ — shown from two people on, read on this PC (the plugin's ui/turnwords.js)
+			const turnBox = el('div', { class: 'nz-qturn', hidden: true });
 			let parsed = null;
+			let words = null;
+			const turnKey = () => (words ? words.people.map((x) => x.id).join(',') : '');
+			const turnNow = () => NS.quickTurn(words, S.quickTurn && S.quickTurn.key === turnKey() ? S.quickTurn.value : undefined);
 			// plugin 1.4.0: the shopping list the line names — the server's suggestion (POST parse), asked a moment after typing
 			const lists = NS.offers(S.me, 'taskList') && shopOn();
 			// plugin 1.5.0: the place the line names („beim Baumarkt“) — likewise the server's suggestion, never the parser's
@@ -807,10 +855,14 @@
 				clear(chips);
 				const ctx = NS.quickCtx(S.me, S.nav, S.people);
 				parsed = NS.quickParse(input.value, ctx);
+				words = NS.quickWords(parsed, ctx, S.me, S.view);
+				const qt = turnNow();
+				clear(turnBox).hidden = !qt;
+				if (qt) turnBox.append(el('span', { class: 'nz-qturn-l', id: 'nz-qturn-l', text: t('notes.turn.label') }), turnSeg(qt.value, (v) => { S.quickTurn = { key: turnKey(), value: v }; show(); input.focus(); }, false, 'nz-qturn-l'), el('span', { class: 'hint', text: t('notes.turn.hint') }));
 				if (!parsed) return;
 				const qa = attachNow();
 				chips.appendChild(el('span', { class: 'nz-chips-l', text: t('notes.quick.found') }));
-				for (const c of NS.quickChips(parsed, ctx, S.area, t, lang(), S.me, qa)) chips.appendChild(el('span', { class: `chip nz-qchip${c.plain ? ' plain' : ''}`, 'data-kind': c.kind, title: c.title || null, text: c.text }));
+				for (const c of NS.quickChips(parsed, ctx, S.area, t, lang(), S.me, qa, words, qt)) chips.appendChild(el('span', { class: `chip nz-qchip${c.plain ? ' plain' : ''}`, 'data-kind': c.kind, title: c.title || null, text: c.text }));
 				if (qa) chips.appendChild(attachChip(qa));
 				const qp = placeNow();
 				if (qp) chips.appendChild(placeChip(qp));
@@ -879,7 +931,7 @@
 				// the suggestion for this very line has not come yet: the server decides (it attaches when exactly one list fits)
 				// … and likewise the place: it sets the one that is decided and surely meant, never another
 				const here = sug.text === input.value.trim();
-				const body = NS.quickBody(input.value, parsed, S.view, S.area, !lists ? null : here ? attachNow() : 'auto', !placesOn ? null : here ? placeNow() : 'auto');
+				const body = NS.quickBody(input.value, parsed, S.view, S.area, !lists ? null : here ? attachNow() : 'auto', !placesOn ? null : here ? placeNow() : 'auto', words, turnNow());
 				input.disabled = true;
 				const r = await api.createTask(body);
 				input.disabled = false;
@@ -887,6 +939,7 @@
 				input.value = '';
 				S.quickText = '';
 				S.quickPlace = null;
+				S.quickTurn = null;
 				suggest();
 				show();
 				input.focus();
@@ -895,7 +948,17 @@
 				soon(0);
 			});
 			setTimeout(() => { suggest(); show(); }, 0);
-			return el('div', { class: 'nz-quick' }, [el('label', { class: 'nz-quick-box' }, [icon('plus', 18), input, el('span', { class: 'nz-kbd', text: t('notes.quick.kbd') })]), chips]);
+			return el('div', { class: 'nz-quick' }, [el('label', { class: 'nz-quick-box' }, [icon('plus', 18), input, el('span', { class: 'nz-kbd', text: t('notes.quick.kbd') })]), chips, turnBox]);
+		}
+
+		/** „Eine Person · Reihum · Wer zuerst“ — the choice of the quick entry and of a task's details. */
+		function turnSeg(value, pick, disabled, labelledBy) {
+			const seg = el('div', { class: 'seg nz-turn-seg', role: 'group', 'aria-labelledby': labelledBy || null });
+			for (const k of ['one', 'rotate', 'first']) {
+				seg.appendChild(el('button', { type: 'button', class: value === k ? 'on' : '', 'aria-pressed': value === k ? 'true' : 'false', 'data-turn': k, disabled, text: t(`notes.turn.${k}`),
+					on: { click: () => { if (value !== k) pick(k); } } }));
+			}
+			return seg;
 		}
 
 		function focusQuick() {
@@ -974,13 +1037,34 @@
 			const title = el('textarea', { class: 'nz-d-title', rows: '2', maxlength: '300', 'aria-label': t('notes.titleField') });
 			title.value = task.title;
 			title.addEventListener('change', () => { const v = title.value.trim(); if (v && v !== task.title) patchTask(task, { title: v }); });
+			// plugin 1.6.0: a task of the family's list a parent made — a child changes only „Mein Tag“ and ticks off what is theirs
+			const fam = NS.familyInfo(S.me);
+			const inFamily = task.family === true && NS.isFamilyList(S.me, task.listId);
+			const locked = inFamily && !task.canEdit;
 			box.appendChild(el('div', { class: 'nz-d-headrow' }, [
-				el('button', { type: 'button', class: `nz-ck nz-ck-lg${task.done ? ' on' : ''}`, 'aria-label': task.done ? t('notes.undo') : t('notes.complete'), on: { click: async () => { const r = await api.completeTask(task.id, !task.done); if (!ok(r)) fail(r); else { reloadDetail(); soon(0); } } } }, [icon('check', 14)]),
+				el('button', { type: 'button', class: `nz-ck nz-ck-lg${task.done ? ' on' : ''}`, 'data-free': '', disabled: !task.canComplete, 'aria-label': task.done ? t('notes.undo') : t('notes.complete'), on: { click: async () => { const r = await api.completeTask(task.id, !task.done); if (!ok(r)) fail(r); else { reloadDetail(); soon(0); } } } }, [icon('check', 14)]),
 				title,
 				el('button', { type: 'button', class: `nz-star${task.important ? ' on' : ''}`, 'aria-label': t('notes.important'), 'aria-pressed': task.important ? 'true' : 'false', on: { click: () => patchTask(task, { important: !task.important }) } }, [icon('star', 20)]),
 			]));
 			const list = task.list || ((S.nav && S.nav.lists) || []).find((l) => l.id === task.listId);
 			if (list) box.appendChild(el('div', { class: 'nz-crumb', text: `${t(`notes.area.${list.area}`)} › ${list.name}` }));
+			if (locked) box.appendChild(el('p', { class: 'hint nz-locked', 'data-hint': 'parents-only', text: t('notes.err.parents_only') }));
+			// „Erledigt von Lena“ — and for a parent the way back: „Noch nicht fertig“ (the task is open again, the stars are taken back)
+			const by = NS.doneByText(task, S.me, t);
+			const handBack = inFamily && fam.parent && task.done && task.doneBy && task.doneBy.id !== S.me.user.id && canWrite();
+			if (by || handBack) {
+				box.appendChild(el('div', { class: 'nz-doneby', 'data-free': '' }, [
+					by ? el('span', { class: 'nz-mark nz-mark-lg', 'data-kind': 'doneby' }, [icon('check', 14), el('span', { text: by })]) : null,
+					el('span', { class: 'grow' }),
+					handBack ? btn(t('notes.turn.notDone'), async () => {
+						const r = await api.completeTask(task.id, false);
+						if (!ok(r)) { fail(r); return; }
+						toast(t('notes.turn.handedBack', { title: task.title }), 'success');
+						reloadDetail();
+						soon(0);
+					}, 'btn-sec', null, { 'data-act': 'not-done', title: t('notes.turn.notDoneHint') }) : null,
+				]));
+			}
 			if (task.sourceItem) box.appendChild(fromButton(task.sourceItem));
 			// sub tasks
 			box.appendChild(el('div', { class: 'nz-lb', text: t('notes.subtasks') }));
@@ -1005,7 +1089,9 @@
 			// details
 			box.appendChild(el('div', { class: 'nz-lb', text: t('notes.details') }));
 			const det = el('div', { class: 'card nz-group-card' });
-			det.appendChild(field(t('notes.inMyDay'), sw(task.myDay, (v) => patchTask(task, { myDay: v }), t('notes.inMyDay'))));
+			const myDay = field(t('notes.inMyDay'), sw(task.myDay, (v) => patchTask(task, { myDay: v }), t('notes.inMyDay')));
+			myDay.setAttribute('data-free', '');
+			det.appendChild(myDay);
 			const dd = el('input', { class: 'inp nz-inp-sm', type: 'date', value: task.due ? task.due.date : '', 'aria-label': t('notes.due') });
 			const dt = el('input', { class: 'inp nz-inp-sm', type: 'time', value: task.due && task.due.time ? task.due.time : '', 'aria-label': t('notes.dueTime') });
 			const setDue = () => patchTask(task, { due: dd.value ? { date: dd.value, time: dt.value || null } : null });
@@ -1036,10 +1122,33 @@
 			});
 			det.appendChild(field(t('notes.repeat'), rs));
 			const members = list ? [list.owner, ...(list.members || [])].filter(Boolean) : [];
-			const as = el('select', { class: 'inp nz-inp-sm', 'aria-label': t('notes.assigned') }, [el('option', { value: '', text: t('notes.nobody') }), ...members.map((m) => el('option', { value: String(m.id), text: S.me && m.id === S.me.user.id ? t('notes.me') : m.name || '' }))]);
-			as.value = task.assignee ? String(task.assignee.id) : '';
-			as.addEventListener('change', () => patchTask(task, { assigneeId: as.value ? Number(as.value) : null }));
-			det.appendChild(field(t('notes.assigned'), as));
+			// plugin 1.6.0: „wer zuerst“ has nobody assigned; with „reihum“ the choice is who is on now (somebody who takes part)
+			const turnsOn = NS.offers(S.me, 'taskTurns') && !task.parentId;
+			const turn = turnsOn ? task.turn : null;
+			if (turn !== 'first') {
+				const who = turn === 'rotate' ? task.people : members;
+				const as = el('select', { class: 'inp nz-inp-sm', 'aria-label': t('notes.assigned'), 'data-act': 'assignee' }, [turn === 'rotate' ? null : el('option', { value: '', text: t('notes.nobody') }), ...who.map((m) => el('option', { value: String(m.id), text: S.me && m.id === S.me.user.id ? t('notes.me') : m.name || '' }))]);
+				as.value = task.assignee ? String(task.assignee.id) : '';
+				as.addEventListener('change', () => patchTask(task, { assigneeId: as.value ? Number(as.value) : null }));
+				det.appendChild(field(t('notes.assigned'), as));
+			}
+			if (turnsOn && (members.length >= 2 || turn)) det.appendChild(turnField(task, members));
+			if (NS.starsShown(S.me, task.listId) && !task.parentId) det.appendChild(starsField(task));
+			// … and a parent ticks a task of the family's list off for a member of the family (the stars are theirs)
+			if (inFamily && fam.parent && !task.done && !task.parentId && canWrite()) {
+				const tf = el('select', { class: 'inp nz-inp-sm', 'aria-label': t('notes.turn.tickFor'), 'data-act': 'tick-for' }, [el('option', { value: '', text: t('notes.turn.tickForPick') }), ...members.map((m) => el('option', { value: String(m.id), text: m.id === S.me.user.id ? t('notes.me') : m.name || '' }))]);
+				tf.addEventListener('change', async () => {
+					const uid = Number(tf.value);
+					if (!uid) return;
+					const r = await api.completeTask(task.id, true, uid);
+					if (!ok(r)) { tf.value = ''; fail(r); return; }
+					const nm = members.find((m) => m.id === uid);
+					toast(t('notes.turn.doneBy', { name: uid === S.me.user.id ? t('notes.turn.byMe') : (nm && nm.name) || '' }), 'success');
+					reloadDetail();
+					soon(0);
+				});
+				det.appendChild(field(t('notes.turn.tickFor'), tf, t('notes.turn.tickForHint')));
+			}
 			const ls = el('select', { class: 'inp nz-inp-sm', 'aria-label': t('notes.list') }, ((S.nav && S.nav.lists) || []).map((l) => el('option', { value: String(l.id), text: `${t(`notes.area.${l.area}`)} › ${l.name}` })));
 			if (!((S.nav && S.nav.lists) || []).some((l) => l.id === task.listId) && list) ls.appendChild(el('option', { value: String(task.listId), text: list.name }));
 			ls.value = String(task.listId);
@@ -1062,9 +1171,54 @@
 			if (task.sourceItem) box.appendChild(el('p', { class: 'hint', text: t('notes.doneHereThere', { source: task.sourceItem.source.label }) }));
 			box.appendChild(el('div', { class: 'nz-d-foot' }, [
 				el('span', { class: 'hint', text: task.updatedAt ? t('notes.changed', { when: new Date(task.updatedAt).toLocaleString(lang()) }) : '' }),
-				btn(t('notes.delete'), async () => { const r = await api.deleteTask(task.id); if (!ok(r)) { fail(r); return; } closeDetail(); soon(0); toast(t('notes.deleted'), 'success'); }, 'btn-danger', 'trash'),
+				locked ? null : btn(t('notes.delete'), async () => { const r = await api.deleteTask(task.id); if (!ok(r)) { fail(r); return; } closeDetail(); soon(0); toast(t('notes.deleted'), 'success'); }, 'btn-danger', 'trash'),
 			]));
+			// what only the parents change stays readable (the server would refuse it anyway)
+			if (locked) for (const c of box.querySelectorAll('input, select, textarea, button')) if (!c.closest('[data-free], .nz-d-top')) c.disabled = true;
 			return box;
+		}
+
+		/**
+		 * „Wer ist dran?“ in a task's details (plugin 1.6.0): Eine Person · Reihum · Wer zuerst, and under it who takes
+		 * part. Changing needs two people at least; the server decides who is on.
+		 */
+		function turnField(task, members) {
+			const may = task.canEdit && canWrite();
+			const cur = task.turn || 'one';
+			const send = (to, people) => {
+				const body = NS.turnPatch(task, to, people);
+				if (!body) { toast(t('notes.turn.two'), 'error'); renderDetail(); return; }
+				patchTask(task, body);
+			};
+			const f = el('div', { class: 'nz-f nz-turn', 'data-field': 'turn' }, [el('span', { class: 'nz-f-l', id: 'nz-turn-l', text: t('notes.turn.label') }),
+				turnSeg(cur, (to) => send(to, NS.turnPeople(task, members)), !may, 'nz-turn-l'), el('span', { class: 'hint', text: t('notes.turn.hint') })]);
+			if (task.turn) {
+				const chosen = new Set(task.people.map((x) => x.id));
+				const who = el('div', { class: 'nz-share nz-turn-who', role: 'group', 'aria-label': t('notes.turn.people') });
+				// who takes part keeps its order; a new one joins at the end
+				const order = [...task.people, ...members.filter((m) => !chosen.has(m.id))];
+				for (const m of order) {
+					const cb = el('input', { type: 'checkbox', checked: chosen.has(m.id), disabled: !may, 'data-person': String(m.id) });
+					cb.addEventListener('change', () => { if (cb.checked) chosen.add(m.id); else chosen.delete(m.id); send(task.turn, order.filter((x) => chosen.has(x.id)).map((x) => x.id)); });
+					who.appendChild(el('label', { class: 'nz-check' }, [cb, el('span', { text: S.me && m.id === S.me.user.id ? t('notes.me') : m.name || '' })]));
+				}
+				f.append(el('span', { class: 'nz-f-l nz-turn-who-l', text: t('notes.turn.people') }), who);
+			}
+			return f;
+		}
+
+		/** „Sterne“ of a task of the family's list: parents choose (keine, 1 … 10), everybody else reads the number. */
+		function starsField(task) {
+			const may = NS.mayStar(S.me, task.listId) && task.canEdit && canWrite();
+			let control;
+			if (may) {
+				control = el('select', { class: 'inp nz-inp-sm', 'aria-label': t('notes.turn.stars'), 'data-act': 'stars' }, NS.starChoices(S.me, t).map((c) => el('option', { value: String(c.value), text: c.label })));
+				control.value = String(task.stars || 0);
+				control.addEventListener('change', () => patchTask(task, { stars: Number(control.value) }));
+			} else control = el('span', { class: 'nz-mark nz-mark-lg', 'data-kind': 'stars' }, [icon('star', 14), el('span', { text: task.stars ? NS.starsText(task.stars, t) : t('notes.turn.starsNone') })]);
+			const f = field(t('notes.turn.stars'), control, t('notes.turn.starsHint'));
+			f.setAttribute('data-field', 'stars');
+			return f;
 		}
 
 		/** „Angehängte Liste“: none, one of the person's shopping lists, or a new one; the arrow opens the list. */
@@ -1824,15 +1978,19 @@
 			const groups = el('select', { class: 'inp', 'aria-label': t('notes.group') }, [el('option', { value: '', text: t('notes.noGroup') }), ...((S.nav && S.nav.groups) || []).map((g) => el('option', { value: String(g.id), text: g.name }))]);
 			groups.value = l.groupId ? String(l.groupId) : '';
 			const extra = [field(t('notes.group'), groups)];
-			if (owner) extra.push(field(t('notes.color'), color.box), field(t('notes.shareWith'), share.box));
+			// plugin 1.6.0: who belongs to the family's list is decided by the Familie plugin — no sharing, leaving or deleting here
+			const fam = isFamily(l);
+			if (owner) extra.push(field(t('notes.color'), color.box));
+			if (owner && !fam) extra.push(field(t('notes.shareWith'), share.box));
+			if (fam) extra.push(el('p', { class: 'hint', 'data-hint': 'family-list', text: t('notes.err.family_list') }));
 			const d = prompt(t('notes.listSettings'), l.name, async (name) => {
 				const body = { groupId: groups.value ? Number(groups.value) : null };
 				if (owner) { if (!l.isDefault || name !== l.name) body.name = name; body.color = color.value(); }
 				let r = await api.updateList(l.id, body);
-				if (ok(r) && owner) r = await api.listMembers(l.id, share.value());
+				if (ok(r) && owner && !fam) r = await api.listMembers(l.id, share.value());
 				if (ok(r)) { reloadNav(); reloadView(); }
 				return r;
-			}, [...extra, el('div', { class: 'nz-row-acts' }, [btn(owner ? t('notes.deleteList') : t('notes.leaveList'), async () => {
+			}, [...extra, fam ? null : el('div', { class: 'nz-row-acts' }, [btn(owner ? t('notes.deleteList') : t('notes.leaveList'), async () => {
 				if (l.isDefault) { toast(t('notes.err.default'), 'error'); return; }
 				const r = await api.deleteList(l.id);
 				if (!ok(r)) { fail(r); return; }
@@ -2023,6 +2181,15 @@
 			evening.addEventListener('change', () => { if (evening.value) save({ evening: evening.value }); });
 			wrap.appendChild(el('div', { class: 'card nz-card' }, [field(t('notes.remindAt'), evening, t('notes.remindAtHint'))]));
 			wrap.appendChild(el('div', { class: 'card nz-card nz-soon' }, [el('b', { text: t('notes.srcLater') }), el('span', { class: 'hint', text: t('notes.srcLaterHint') })]));
+			// plugin 1.6.0: the message to a parent when a child ticks a task of the family's list off
+			const fam = NS.familyInfo(S.me);
+			if (NS.offers(S.me, 'doneFeedback') && fam.bound && fam.parent) {
+				const fb = el('select', { class: 'inp nz-inp-sm', 'aria-label': t('notes.turn.feedback'), 'data-act': 'feedback' }, ['all', 'stars', 'off'].map((k) => el('option', { value: k, text: t(`notes.turn.feedback_${k}`) })));
+				fb.value = prefs.feedback || 'all';
+				fb.addEventListener('change', () => save({ feedback: fb.value }));
+				wrap.appendChild(el('h2', { class: 'nz-set-title', 'data-set': 'family', text: t('notes.turn.setTitle') }));
+				wrap.appendChild(el('div', { class: 'card nz-card', 'data-card': 'feedback' }, [field(t('notes.turn.feedback'), fb, t('notes.turn.feedbackHint'))]));
+			}
 			// plugin 1.5.0: the person's switches of places and „Meine Orte“
 			if (placesOn() && S.me.places) placesSettings(wrap, save);
 			m.appendChild(wrap);

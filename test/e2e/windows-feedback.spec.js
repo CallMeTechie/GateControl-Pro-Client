@@ -46,13 +46,26 @@ test.describe('Windows-Rückmeldungen', () => {
     offerUpdate('valid');
     const { app, page, runScheduledUpdateCheck } = await launchApp();
     await setupWithApiKey(page, mock);
+    // every message about the update the app shows itself is counted (they leave the screen after some seconds)
+    await page.evaluate(() => {
+      window.__updateToasts = 0;
+      new MutationObserver((list) => {
+        for (const m of list) for (const n of m.addedNodes) if (n.nodeType === 1 && n.classList.contains('toast-info') && n.textContent.includes('99.0.0')) window.__updateToasts++;
+      }).observe(document.querySelector('#toasts'), { childList: true });
+    });
     // the "Update verfügbar" toast — as Electron reports it when the app's notifications are off in Windows
     await runScheduledUpdateCheck();
     await expect.poll(() => app.evaluate(() => globalThis.__gcE2E.toasts.length)).toBeGreaterThan(0);
     expect(await app.evaluate(() => globalThis.__gcE2E.failToast('.'))).toBe(true);
-    // The updater also checks by itself 10 s after the start and announces the ready update again; while Windows
-    // refuses the toasts that second notice goes straight into the app — two messages may stand here at once
-    await expect(page.locator('#toasts .toast-info', { hasText: '99.0.0' }).first()).toBeVisible();
+    await expect(page.locator('#toasts .toast-info', { hasText: '99.0.0' })).toHaveCount(1);
+    // The updater also checks by itself 10 s after the start and announces the ready update again. As a toast that
+    // second notice would replace the first one; while Windows refuses the toasts the app does not show the same
+    // message a second time next to the first (core: NotificationCenter, the same local message within 10 s)
+    const checks = mock.count('/api/v1/client/update/check');
+    await runScheduledUpdateCheck();
+    await expect.poll(() => mock.count('/api/v1/client/update/check')).toBeGreaterThan(checks);
+    await page.waitForTimeout(1500);
+    expect(await page.evaluate(() => window.__updateToasts)).toBe(1);
 
     await openSettingsTab(page, 'notify');
     await expect(page.locator('#notify-toast-blocked')).toBeVisible();
