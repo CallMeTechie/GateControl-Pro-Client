@@ -50,7 +50,9 @@ test.describe('Windows-Rückmeldungen', () => {
     await runScheduledUpdateCheck();
     await expect.poll(() => app.evaluate(() => globalThis.__gcE2E.toasts.length)).toBeGreaterThan(0);
     expect(await app.evaluate(() => globalThis.__gcE2E.failToast('.'))).toBe(true);
-    await expect(page.locator('#toasts .toast-info')).toBeVisible();
+    // The updater also checks by itself 10 s after the start and announces the ready update again; while Windows
+    // refuses the toasts that second notice goes straight into the app — two messages may stand here at once
+    await expect(page.locator('#toasts .toast-info', { hasText: '99.0.0' }).first()).toBeVisible();
 
     await openSettingsTab(page, 'notify');
     await expect(page.locator('#notify-toast-blocked')).toBeVisible();
