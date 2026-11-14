@@ -283,14 +283,14 @@ describe('Chats page', () => {
   const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
   const view = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'chat-view.js'), 'utf8');
   // Messenger 1.4.0 modules of the view
-  const modules = ['chat-rich.js', 'chat-status.js', 'chat-settings.js'].map((f) => fs.readFileSync(path.join(ROOT, 'src', 'renderer', f), 'utf8'));
+  const modules = ['chat-rich.js', 'chat-status.js', 'chat-linked.js', 'chat-settings.js'].map((f) => fs.readFileSync(path.join(ROOT, 'src', 'renderer', f), 'utf8'));
 
   it('loads chat-state.js, the 1.4.0 modules and chat-view.js before renderer.js, and the stylesheet', () => {
     const a = html.indexOf('<script src="chat-state.js">');
     const b = html.indexOf('<script src="chat-view.js">');
     const c = html.indexOf('<script src="renderer.js">');
     assert.ok(a > 0 && a < b && b < c);
-    for (const f of ['chat-rich.js', 'chat-status.js', 'chat-settings.js']) {
+    for (const f of ['chat-rich.js', 'chat-status.js', 'chat-linked.js', 'chat-settings.js']) {
       const i = html.indexOf(`<script src="${f}">`);
       assert.ok(i > a && i < b, f);
     }
@@ -326,6 +326,16 @@ describe('Chats page', () => {
     const keys = new Set();
     for (const src of [view, ...modules, state, renderer, main, html]) for (const m of src.matchAll(/['"`](chat\.[A-Za-z0-9_.]+[A-Za-z0-9_])['"`]/g)) keys.add(m[1]);
     // built at runtime
+    // Messenger 1.13 / 1.14: linked services and chats over a bridge
+    for (const k of ['state_unreachable', 'state_logged_out', 'state_unlinked', 'state_locked', 'state_off', 'closed', 'cannot_send', 'first_1', 'first_2', 'first_3']) keys.add(`chat.bc.${k}`);
+    for (const k of ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported']) keys.add(`chat.bc.ph.${k}`);
+    for (const k of ['bridge_error', 'unreachable', 'not_running', 'timeout', 'network_error', 'no_permission', 'too_old', 'unsupported', 'not_handled', 'bridge_unavailable', 'chat_closed']) keys.add(`chat.bc.reason.${k}`);
+    for (const k of ['bridge_off', 'consent_required', 'bridge_locked', 'bridge_unsupported', 'bridge_failed', 'bridge_unreachable', 'rate_limited', 'bridge_text_only', 'bridge_unlinked']) keys.add(`chat.error.${k}`);
+    for (const [net, notes] of Object.entries(CS.LINK_NOTES)) {
+      for (const k of notes) keys.add(`chat.br.note_${net}_${k}`);
+      for (const k of ['sub_logged_out', 'code_step1', 'code_step2', 'qr_lead', 'qr_step1', 'qr_step2']) keys.add(`chat.br.${k}_${net}`);
+    }
+    for (const k of CS.LINK_FLOWS) keys.add(`chat.br.flow_${k}`);
     for (const k of ['text', 'image', 'voice', 'file', 'location', 'system']) keys.add(`chat.kind.${k}`);
     for (const k of ['pending', 'failed', 'sent', 'delivered', 'read']) keys.add(`chat.status.${k}`);
     for (const k of ['direct', 'group']) keys.add(`chat.new.${k}`);
@@ -415,8 +425,8 @@ describe('chat-state: Messenger 1.4.0', () => {
   const cx14 = { ...ctx, me: me14 };
 
   it('features, Familie integrations and kinds this version draws', () => {
-    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false, notices: false, noticeRoutes: false });
-    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false, notices: false, noticeRoutes: false });
+    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false });
+    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false });
     assert.deepEqual(CS.familie(me14), { lists: true, calendar: false, places: true });
     assert.deepEqual(CS.familie(ME), { lists: false, calendar: false, places: false });
     for (const k of ['poll', 'event', 'arrival', 'action', 'card', 'text']) assert.equal(CS.isShownKind({ kind: k }), true, k);
@@ -647,5 +657,209 @@ describe('Messenger 1.6: notifications in chats', () => {
     for (const bad of ['plg-x/../y', 'plg-x/..', 'plg-x/a/b/c/d', 'vpn', 'https://x']) assert.equal(CS.cardLink({ link: { route: bad } }, t), null, bad);
     // the whole text, line breaks kept (preview of the list: title and text)
     assert.equal(CS.summary(m, group(), ctx), 'Elternbrief: Zeile 1\nZeile 2');
+  });
+});
+
+// ── Messenger 1.13 „Verknüpfte Dienste“ and 1.14 chats over a bridge ──
+
+describe('chat-state: chats over a bridge (Messenger 1.14)', () => {
+  const BRIDGE = { network: 'whatsapp', label: 'WhatsApp', state: 'ok', closed: false, supports: ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing'] };
+  const bridged = (extra = {}) => ({
+    id: 20, kind: 'direct', title: 'Kim Muster', peer: null, members: [member(7, 'Marc')], me: { lastReadId: 0, notify: 'all' }, unread: 0, typing: [], typingContacts: [],
+    can: { send: true, pin: true, editInfo: false, manageMembers: false, leave: false, setDisappearing: false }, readUpTo: null, deliveredUpTo: null, bridge: { ...BRIDGE }, lastMessage: null, createdAt: at(9, 0, -3), ...extra,
+  });
+  const from = (id, name, extra = {}) => msg(id, { senderId: null, via: 'bridge:whatsapp', bridge: { sender: { contactId: id, name }, remote: false, state: null, reason: null, placeholder: null }, ...extra });
+  const own = (id, state, extra = {}) => msg(id, { senderId: 7, mine: true, createdAt: new Date(NOW - 60000).toISOString(), status: state === 'pending' ? 'sending' : state, bridge: { sender: null, remote: false, state, reason: null, placeholder: null, ...extra } });
+
+  it('features: the two words, and nothing without them', () => {
+    assert.deepEqual([CS.features14({ features: { linked_services: true } }).linked, CS.features14({ features: { linked_services: true } }).bridgeChats], [true, false]);
+    assert.equal(CS.features14({ features: { bridge_chats: true } }).bridgeChats, true);
+    assert.deepEqual([CS.features14(ME).linked, CS.features14(ME).bridgeChats], [false, false]);
+    assert.equal(CS.bridgeOf(direct()), null);
+    assert.equal(CS.bridgeOf({ bridge: null }), null);
+    assert.equal(CS.bridgeOf(bridged()).network, 'whatsapp');
+  });
+
+  it('title, picture, the line under the name, the service\'s sign and filters', () => {
+    assert.equal(CS.title(bridged(), t), 'Kim Muster');
+    assert.equal(CS.title(bridged({ title: null }), t), 'chat.bc.unknown_contact');
+    assert.deepEqual([CS.avatarOf(bridged()).kind, CS.avatarOf(bridged()).initials], ['person', 'KM']);
+    assert.deepEqual(CS.avatarOf(bridged({ title: null })), { kind: 'icon', icon: 'gone' });
+    assert.equal(CS.avatarOf(bridged({ kind: 'group' })).icon, 'group');
+    assert.deepEqual(CS.headSub(bridged(), ctx), { text: 'chat.bc.via(WhatsApp)', typing: false });
+    assert.equal(CS.bridgeMark('whatsapp'), 'WA');
+    assert.equal(CS.bridgeName('signal'), 'Signal');
+    const list = [direct(), bridged(), bridged({ id: 21, kind: 'group' }), bridged({ id: 22, archived: true })];
+    assert.deepEqual(CS.bridgeNetworks(list), [{ id: 'whatsapp', label: 'WhatsApp' }]);
+    assert.deepEqual(CS.bridgeNetworks([direct(), group()]), []);
+    assert.deepEqual(CS.listFilter(list, { filter: 'gc' }).map((c) => c.id), [12]);
+    assert.deepEqual(CS.listFilter(list, { filter: 'net:whatsapp' }).map((c) => c.id), [20, 21]);
+    assert.deepEqual(CS.listFilter(list, { filter: 'net:signal' }), []);
+  });
+
+  it('who wrote: the contact, an unknown contact, the own account; contacts are grouped apart', () => {
+    const c = bridged({ kind: 'group', title: 'Elternrunde' });
+    assert.equal(CS.senderName(from(1, 'Robin'), c, ctx), 'Robin');
+    assert.equal(CS.senderName(from(2, null), c, ctx), 'chat.bc.unknown_contact');
+    assert.equal(CS.senderName(own(3, 'sent'), c, ctx), 'chat.you');
+    assert.equal(CS.senderName(msg(4), direct(), ctx), 'Anna');
+    assert.equal(CS.quoteName({ id: 1, senderId: null, contactId: 12, senderName: 'Kim Muster' }, c, ctx), 'Kim Muster');
+    assert.equal(CS.quoteName({ id: 1, senderId: null, contactId: 12, senderName: null }, c, ctx), 'chat.bc.unknown_contact');
+    assert.equal(CS.quoteName({ id: 1, senderId: 8 }, direct(), ctx), 'Anna');
+    const tl = CS.timeline([from(1, 'Robin'), from(1, 'Robin', { id: 5 }), from(2, 'Kai', { id: 6 })], [], c, ctx, { now: NOW }).filter((x) => x.type === 'msg');
+    assert.deepEqual(tl.map((x) => x.cont), [false, true, false]);
+    assert.equal(CS.preview({ ...c, lastMessage: from(1, 'Robin', { text: 'Wer bringt Kuchen?' }) }, ctx).text, 'Robin: Wer bringt Kuchen?');
+    assert.equal(CS.preview({ ...bridged(), lastMessage: from(1, 'Kim', { text: 'Hi' }) }, ctx).text, 'Hi');
+    assert.equal(CS.systemText({ kind: 'system', system: { event: 'bridge_notice', network: 'whatsapp' }, text: 'Getrennt.' }, c, ctx), 'chat.bc.notice(WhatsApp): Getrennt.');
+  });
+
+  it('typing: contacts of the other side', () => {
+    assert.equal(CS.typingText(bridged(), ctx), null);
+    assert.equal(CS.typingText(bridged({ typingContacts: [{ contactId: 1, name: 'Kim' }] }), ctx), 'chat.typing');
+    assert.equal(CS.typingText(bridged({ kind: 'group', typingContacts: [{ contactId: 1, name: 'Kim' }] }), ctx), 'chat.typingOne(Kim)');
+    assert.equal(CS.typingText(bridged({ kind: 'group', typingContacts: [{ contactId: 1, name: null }] }), ctx), 'chat.typingOne(chat.bc.unknown_contact)');
+    assert.equal(CS.typingText(bridged({ kind: 'group', typingContacts: [{ contactId: 1 }, { contactId: 2 }] }), ctx), 'chat.typingMany(2)');
+    assert.deepEqual(CS.headSub(bridged({ typingContacts: [{ contactId: 1, name: 'Kim' }] }), ctx), { text: 'chat.typing', typing: true });
+  });
+
+  it('placeholders are said, never swallowed', () => {
+    const c = bridged();
+    const ph = (kind, name, text = null) => from(1, 'Kim', { text, bridge: { sender: { contactId: 1, name: 'Kim' }, placeholder: { kind, name } } });
+    assert.equal(CS.placeholderText(ph('image', 'grill.jpg'), c, t), 'chat.bc.ph.image · grill.jpg – chat.bc.ph_later(WhatsApp)');
+    assert.equal(CS.placeholderText(ph('voice', null), c, t), 'chat.bc.ph.voice – chat.bc.ph_later(WhatsApp)');
+    assert.equal(CS.placeholderText(ph('unsupported', null), c, t), 'chat.bc.ph.unsupported(WhatsApp)');
+    assert.equal(CS.placeholderOf(ph('hologram', null)), null);
+    assert.equal(CS.placeholderText(from(1, 'Kim'), c, t), null);
+    assert.equal(CS.summary(ph('image', 'grill.jpg', 'So sah es aus'), c, ctx), 'chat.bc.ph.image · grill.jpg – chat.bc.ph_later(WhatsApp): So sah es aus');
+    assert.equal(CS.summary(from(1, 'Kim', { text: 'Hi' }), c, ctx), 'Hi');
+  });
+
+  it('own messages: the bridge\'s word (sent, delivered, read, not sent with its reason)', () => {
+    const c = bridged({ readUpTo: 3, deliveredUpTo: 4 });
+    assert.equal(CS.status(own(3, 'read'), c), 'read');
+    assert.equal(CS.status(own(4, 'delivered'), c), 'delivered');
+    assert.equal(CS.status(own(5, 'sent'), c), 'sent');
+    assert.equal(CS.status(own(2, 'failed'), c), 'failed', 'not sent, although older ones were read');
+    assert.equal(CS.status(own(6, 'pending'), c), 'pending');
+    assert.equal(CS.status(from(7, 'Kim'), c), null);
+    assert.deepEqual(CS.bridgeFailure(own(2, 'failed', { reason: 'not_running' }), t), { text: 'chat.bc.failed chat.bc.reason.not_running', resend: true });
+    assert.equal(CS.bridgeFailure(own(2, 'failed', { reason: 'm_forbidden' }), t).text, 'chat.bc.failed chat.bc.reason.bridge_error');
+    assert.equal(CS.bridgeFailure(own(2, 'failed', { reason: null }), t).text, 'chat.bc.failed chat.bc.reason.bridge_error');
+    assert.equal(CS.bridgeFailure(own(5, 'sent'), t), null);
+    assert.equal(CS.bridgeFailure(msg(5, { mine: true }), t), null);
+  });
+
+  it('message menu: only what crosses; nothing on a message that was not sent; no edit of one written on the phone', () => {
+    const c = bridged();
+    const a = (m, conv = c) => CS.messageActions(m, conv, ctx, NOW);
+    assert.deepEqual([a(from(1, 'Kim', { text: 'Hi' })).reply, a(from(1, 'Kim')).react, a(from(1, 'Kim')).edit, a(from(1, 'Kim')).deleteAll, a(from(1, 'Kim')).deleteMe], [true, true, false, false, true]);
+    const sent = a(own(2, 'sent'));
+    assert.deepEqual([sent.reply, sent.react, sent.edit, sent.deleteAll], [true, true, true, true]);
+    const failed = a(own(3, 'failed'));
+    assert.deepEqual([failed.reply, failed.react, failed.edit, failed.deleteMe, failed.copy], [false, false, false, true, true]);
+    assert.equal(a(own(4, 'sent', { remote: true })).edit, false);
+    assert.equal(a(own(4, 'sent', { remote: true })).reply, true);
+    // a service that takes no reactions / edits
+    const few = bridged({ bridge: { ...BRIDGE, supports: ['text', 'reply'] } });
+    assert.deepEqual([a(own(2, 'sent'), few).react, a(own(2, 'sent'), few).edit, a(own(2, 'sent'), few).reply], [false, false, true]);
+    // the link is gone: readable, nothing goes out
+    const off = bridged({ can: { send: false }, bridge: { ...BRIDGE, state: 'logged_out' } });
+    assert.deepEqual([a(own(2, 'sent'), off).reply, a(own(2, 'sent'), off).edit, a(own(2, 'sent'), off).deleteAll, a(own(2, 'sent'), off).deleteMe], [false, false, false, true]);
+    // a normal chat is untouched
+    assert.equal(CS.messageActions(msg(1, { mine: true, senderId: 7, createdAt: new Date(NOW - 60000).toISOString() }), direct(), ctx, NOW).edit, true);
+  });
+
+  it('why nothing goes out: the state of the link, with "Neu verknüpfen" where it helps', () => {
+    assert.equal(CS.bridgeBlock(bridged()), null);
+    assert.equal(CS.composerBlock(bridged()), null);
+    assert.equal(CS.bridgeBlock(direct()), null);
+    const st = (state, extra = {}) => bridged({ can: { send: false }, bridge: { ...BRIDGE, state, ...extra } });
+    assert.deepEqual(CS.bridgeBlock(st('unreachable')), { key: 'state_unreachable', relink: false, warn: true });
+    assert.deepEqual(CS.bridgeBlock(st('logged_out')), { key: 'state_logged_out', relink: true, warn: true });
+    assert.deepEqual(CS.bridgeBlock(st('unlinked')), { key: 'state_unlinked', relink: true, warn: false });
+    assert.deepEqual(CS.bridgeBlock(st('locked')), { key: 'state_locked', relink: false, warn: true });
+    assert.deepEqual(CS.bridgeBlock(st('off')), { key: 'state_off', relink: false, warn: false });
+    assert.deepEqual(CS.bridgeBlock(st('ok', { closed: true })), { key: 'closed', relink: false, warn: false });
+    assert.deepEqual(CS.bridgeBlock(st('ok')), { key: 'cannot_send', relink: false, warn: false });
+    for (const s of ['unreachable', 'logged_out', 'unlinked', 'locked', 'off']) assert.equal(CS.composerBlock(st(s)), 'bridge', s);
+    // a normal chat keeps its own reasons
+    assert.equal(CS.composerBlock(direct({ can: { send: false } })), 'readonly');
+  });
+});
+
+describe('chat-state: „Verknüpfte Dienste“ (Messenger 1.13)', () => {
+  const net = (extra = {}) => ({ id: 'whatsapp', state: 'running', allowed: true, lock: null, consent: false, outdated: false, logins: [], ...extra });
+  const login = (state, extra = {}) => ({ id: 'l1', name: '+49 1512 0000000', state, since: '2026-11-02T10:00:00.000Z', ...extra });
+  const row = (n) => CS.linkedRow(n, ctx);
+
+  it('the overview: every state of a service', () => {
+    assert.deepEqual([row(net()).state, row(net()).sub, row(net()).link, row(net()).unlink, row(net()).pill], ['none', 'chat.br.sub_none', true, false, null]);
+    const linked = row(net({ logins: [login('connected')] }));
+    assert.deepEqual([linked.state, linked.sub, linked.pill, linked.unlink, linked.link, linked.again], ['linked', 'chat.br.sub_linked_since(02.11.2026) · +49 1512 0000000', { text: 'chat.br.pill_linked', tone: 'ok' }, true, false, null]);
+    assert.equal(row(net({ logins: [login('connecting', { since: null, name: '' })] })).sub, 'chat.br.sub_linked');
+    assert.deepEqual(row(net({ outdated: true, logins: [login('connected')] })).pill, { text: 'chat.br.pill_outdated', tone: 'warn' });
+    const out = row(net({ logins: [login('logged_out')] }));
+    assert.deepEqual([out.state, out.pill.tone, out.unlink, out.link], ['logged_out', 'err', false, false]);
+    assert.match(out.sub, /^chat\.br\.sub_logged_out_at\(02\.11\.2026\)/);
+    assert.deepEqual(out.again, { hint: 'chat.br.relink_hint', link: true, forget: true });
+    const err = row(net({ logins: [login('error')] }));
+    assert.deepEqual([err.state, err.unlink, err.again.forget, err.again.link], ['error', true, false, true]);
+    const locked = row(net({ allowed: false, lock: 'child' }));
+    assert.deepEqual([locked.state, locked.link, locked.pill], ['locked', false, { text: 'chat.br.pill_locked', tone: 'off' }]);
+    // a child whose link was signed out: no new link while it is locked
+    assert.deepEqual(row(net({ allowed: false, logins: [login('logged_out')] })).again, { hint: 'chat.br.sub_locked', link: false, forget: true });
+    assert.deepEqual([row(net({ state: 'starting' })).state, row(net({ state: 'starting' })).pill.text, row(net({ state: 'starting' })).link], ['starting', 'chat.br.pill_starting', false]);
+    for (const s of ['unreachable', 'failed']) assert.deepEqual([row(net({ state: s, logins: [login('connected')] })).state, row(net({ state: s })).unlink, row(net({ state: s, logins: [login('logged_out')] })).again], ['unreachable', false, null]);
+    assert.equal(CS.mainLogin(net({ logins: [login('logged_out'), login('connected', { id: 'l2' })] })).id, 'l2');
+    assert.equal(CS.mainLogin(net()), null);
+    assert.equal(CS.linkDate('nope', 'de'), '');
+    assert.equal(CS.linkDate('2026-11-02T10:00:00.000Z', 'en'), '02/11/2026');
+    assert.equal(CS.linkable('whatsapp'), true);
+    assert.equal(CS.linkable('signal'), false);
+    assert.equal(CS.linkable('constructor'), false);
+  });
+
+  it('why a link ended: a code that ran out, no answer, a refusal', () => {
+    assert.equal(CS.linkErrorText({ ok: false, code: 'bridge_failed', reason: 'timeout' }, t), 'chat.br.err_expired');
+    assert.equal(CS.linkErrorText({ ok: false, code: 'bridge_failed', reason: 'login_expired' }, t), 'chat.br.err_expired');
+    assert.equal(CS.linkErrorText({ ok: false, code: 'network' }, t), 'chat.br.err_no_answer');
+    assert.equal(CS.linkErrorText({ ok: false, code: 'timeout' }, t), 'chat.br.err_no_answer');
+    // other codes: chat.error.<code>
+    const known = (k) => ({ 'chat.error.bridge_failed': 'Abgelehnt.', 'chat.error.bridge_unsupported': 'Anderer Weg.' }[k] || k);
+    assert.equal(CS.linkErrorText({ ok: false, code: 'bridge_failed', reason: 'refused' }, known), 'Abgelehnt.');
+    assert.equal(CS.linkErrorText('bridge_unsupported', known), 'Anderer Weg.');
+    assert.equal(CS.linkErrorText({ ok: false, code: 'whatever' }, known), 'chat.error.failed');
+  });
+
+  it('the pairing code in boxes, the QR code from its modules', () => {
+    assert.deepEqual(CS.codeChars('K7-M4').map((c) => (c.dash ? '–' : c.ch)), ['K', '7', '–', 'M', '4']);
+    const rows = Array.from({ length: 21 }, (_, y) => (y === 0 ? '1'.repeat(21) : `1${'0'.repeat(19)}1`));
+    const q = CS.qrPath({ size: 21, rows });
+    assert.equal(q.size, 29, 'four modules of quiet zone on every side');
+    assert.ok(q.d.startsWith('M4 4h21v1h-21z'), 'one rectangle per run of dark modules');
+    assert.equal(q.d.split('M').length - 1, 1 + 20 * 2);
+    assert.match(q.d, /^[Mhvz0-9 -]+$/);
+    for (const bad of [null, {}, { rows: [] }, { rows: rows.slice(1) }, { rows: rows.map((r) => r.replace(/0/g, 'x')) }, { rows: rows.map((r) => r.slice(1)) }]) assert.equal(CS.qrPath(bad), null);
+  });
+});
+
+describe('Chats page: linked services and chats over a bridge', () => {
+  const read = (f) => fs.readFileSync(path.join(ROOT, 'src', 'renderer', f), 'utf8');
+
+  it('chat-linked.js loads before chat-settings.js; the section needs the feature word', () => {
+    const html = read('index.html');
+    assert.ok(html.indexOf('<script src="chat-linked.js">') > 0 && html.indexOf('<script src="chat-linked.js">') < html.indexOf('<script src="chat-settings.js">'));
+    assert.match(read('chat-settings.js'), /f\.linked && linked \? \{ id: 'linked'/);
+    assert.match(read('chat-state.js'), /linked: f\('linked_services'\), bridgeChats: f\('bridge_chats'\)/);
+  });
+
+  it('neither the number nor the code is stored or logged; the QR code is drawn black on white', () => {
+    const linked = read('chat-linked.js');
+    assert.doesNotMatch(linked, /localStorage|sessionStorage|console\.|indexedDB/);
+    assert.match(linked, /setAttribute\('fill', '#fff'\)/);
+    assert.match(linked, /setAttribute\('fill', '#000'\)/);
+    assert.match(read('styles/chat.css'), /\.cv-br-qrbox \{[^}]*background: #fff/);
+    // no version checks anywhere in the chat modules
+    for (const f of ['chat-linked.js', 'chat-settings.js', 'chat-view.js', 'chat-state.js']) assert.doesNotMatch(read(f), /st(atus)?\.version|\.version\s*[<>]=?/, f);
   });
 });

@@ -10,7 +10,9 @@
  *   · Listen (own chat filters) · Erinnerungen · Speicher · Haus-Aktionen
  *   (which actions the attach menu shows, a setting of this PC) · Wo
  *   Mitteilungen erscheinen (Messenger 1.6, core push routes:
- *   notify-routes.js, the same view as in Einstellungen › Benachrichtigungen).
+ *   notify-routes.js, the same view as in Einstellungen › Benachrichtigungen)
+ *   · Verknüpfte Dienste (Messenger 1.13, feature `linked_services`:
+ *   chat-linked.js).
  * The 1.0 settings (read receipts, typing, preview) work with every server;
  * the rest appears only when `GET me` features has privacy2 / msg_tools /
  * actions.
@@ -49,6 +51,8 @@
 		const me = () => kit.me() || {};
 		const prefs = () => me().prefs || {};
 		const f14 = () => CS.features14(kit.me());
+		// Messenger 1.13: „Verknüpfte Dienste“ (its own module; keeps a link in progress across redraws of the page)
+		const linked = root.GCChatLinked ? root.GCChatLinked.create(kit) : null;
 
 		function sections() {
 			const f = f14();
@@ -62,6 +66,7 @@
 				{ id: 'storage', icon: 'disk', label: t('chat.set.storage'), sub: t('chat.set.storageSub') },
 				f.actions ? { id: 'actions', icon: 'home', label: t('chat.set.actions'), sub: t('chat.set.actionsSub') } : null,
 				routesShown() ? { id: 'routes', icon: 'bell', label: t('chat.set.routes'), sub: t('chat.set.routesSub') } : null,
+				f.linked && linked ? { id: 'linked', icon: 'link', label: t('chat.set.linked'), sub: t('chat.set.linkedSub') } : null,
 			].filter(Boolean);
 		}
 
@@ -84,6 +89,8 @@
 		}
 		function close() {
 			if (!page) return;
+			// a login that was not finished is dropped
+			if (linked) linked.leave();
 			page.remove();
 			page = null;
 			document.removeEventListener('keydown', onKey, true);
@@ -100,6 +107,7 @@
 			if (!page) return;
 			const list = sections();
 			if (!list.some((s) => s.id === section)) section = 'account';
+			if (linked && section !== 'linked') linked.leave();
 			clear(page);
 			const nav = el('nav', { class: 'cv-set-nav scroll', 'aria-label': t('chat.set.title') });
 			for (const s of list) {
@@ -117,7 +125,7 @@
 				el('div', { class: 'cv-set-main' }, [nav, body]),
 			);
 			const draw = {
-				account: drawAccount, privacy: drawPrivacy, notify: drawNotify, chats: drawChats, lists: drawLists, reminders: drawReminders, storage: drawStorage, actions: drawActions, routes: drawRoutes,
+				account: drawAccount, privacy: drawPrivacy, notify: drawNotify, chats: drawChats, lists: drawLists, reminders: drawReminders, storage: drawStorage, actions: drawActions, routes: drawRoutes, linked: (b) => linked.draw(b),
 			}[section];
 			const cur = list.find((s) => s.id === section);
 			body.appendChild(el('h2', { class: 'cv-set-title', text: cur ? cur.label : '' }));
@@ -182,7 +190,8 @@
 				group(null, [
 					f14().status ? row(t('chat.st.yours'), line || t('chat.st.none'), el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('chat.set.changeStatus'), on: { click: () => kit.statusDialog() } })) : null,
 					row(t('chat.set.profile'), t('chat.set.profileHint'), typeof kit.openPortal === 'function' ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => kit.openPortal() } }, [icon('external', 13), t('chat.set.inPortal')]) : el('span')),
-				], t('chat.info.encrypted')),
+				// Messenger 1.14: with chats over a bridge the sentence about the own server does not hold for every chat
+				], f14().bridgeChats ? null : t('chat.info.encrypted')),
 			);
 		}
 

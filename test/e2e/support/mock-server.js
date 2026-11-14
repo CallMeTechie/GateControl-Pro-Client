@@ -398,7 +398,8 @@ async function startMockServer() {
           res.writeHead(status, { 'Content-Type': type, 'Content-Length': data.length });
           res.end(data);
         };
-        const ctx = { method: req.method, route, query: Object.fromEntries(url.searchParams), raw, headers: req.headers };
+        // drop: no answer at all (the connection is cut — a gap in the network)
+        const ctx = { method: req.method, route, query: Object.fromEntries(url.searchParams), raw, headers: req.headers, drop: () => req.socket.destroy() };
         if (messenger.handle(ctx, json, sendRaw)) return undefined;
       }
 

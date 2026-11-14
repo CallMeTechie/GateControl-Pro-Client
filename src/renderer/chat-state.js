@@ -56,12 +56,16 @@
 	function title(c, t) {
 		if (!c) return '';
 		if (c.title) return String(c.title);
+		// Messenger 1.14: a contact of another messenger whose name is not known
+		if (bridgeOf(c)) return t('chat.bc.unknown_contact');
 		return c.kind === 'direct' ? t('chat.gone') : t('chat.group');
 	}
 
 	/** Avatar description for the view: { kind: 'icon'|'person', icon?, name, initials, color, avatarUrl, mediaId }. */
 	function avatarOf(c) {
 		if (!c) return { kind: 'icon', icon: 'group' };
+		// Messenger 1.14: a chat over a bridge has no peer and no picture yet — the contact's initials, a group's sign
+		if (bridgeOf(c) && c.kind !== 'group') return c.title ? personAvatar({ name: c.title }) : { kind: 'icon', icon: 'gone' };
 		if (c.kind === 'group') return { kind: 'icon', icon: c.readonly ? 'system' : 'group', mediaId: c.avatarMediaId || null };
 		const p = c.peer;
 		if (!p || p.gone) return { kind: 'icon', icon: 'gone' };
@@ -121,6 +125,8 @@
 				? t('chat.sys.actionRunAs', { name: nameOf(c, s.userId, ctx), label: str(s.label), as: nameOf(c, s.asUserId, ctx) })
 				: t('chat.sys.actionRun', { name: nameOf(c, s.userId, ctx), label: str(s.label) });
 			case 'action_denied': return t('chat.sys.actionDenied', { name: who, label: str(s.label) });
+			// Messenger 1.14: a note of the bridge itself — under the service's name, not GateControl's
+			case 'bridge_notice': return [t('chat.bc.notice', { network: bridgeLabel(c) || bridgeName(s.network) }), str(m && m.text)].filter(Boolean).join(': ');
 			default: return str(m && m.text) || t('chat.sys.unknown');
 		}
 	}
@@ -197,6 +203,9 @@
 		if (!m) return '';
 		if (m.deleted) return m.mine ? t('chat.msg.deletedMine') : t('chat.msg.deleted');
 		if (m.undecryptable) return t('chat.msg.undecryptable');
+		// Messenger 1.14: a file or kind of message that does not cross the bridge yet
+		const ph = placeholderText(m, c, t);
+		if (ph) return ph + (m.text ? `: ${m.text}` : '');
 		switch (m.kind) {
 			case 'image': return t('chat.kind.image') + (m.text ? `: ${m.text}` : '');
 			case 'voice': return t('chat.kind.voice') + (m.meta && m.meta.durationMs != null ? ` · ${duration(m.meta.durationMs)}` : '');
@@ -219,6 +228,14 @@
 	}
 
 	function typingText(c, ctx) {
+		// Messenger 1.14: contacts of a chat over a bridge (`typingContacts`)
+		if (bridgeOf(c)) {
+			const who = Array.isArray(c.typingContacts) ? c.typingContacts : [];
+			if (!who.length) return null;
+			if (c.kind !== 'group') return ctx.t('chat.typing');
+			if (who.length === 1) return ctx.t('chat.typingOne', { name: who[0].name || ctx.t('chat.bc.unknown_contact') });
+			return ctx.t('chat.typingMany', { n: who.length });
+		}
 		const ids = Array.isArray(c && c.typing) ? c.typing : [];
 		if (!ids.length) return null;
 		if (c.kind === 'direct') return ctx.t('chat.typing');
@@ -237,7 +254,7 @@
 		if (m.mine) return { text: `${ctx.t('chat.you')}: ${s}`, typing: false };
 		// Messenger 1.6 notice channel: everything in it comes from GateControl
 		if (isNotice(c)) return { text: s, typing: false };
-		if (c.kind === 'group') return { text: `${nameOf(c, m.senderId, ctx)}: ${s}`, typing: false };
+		if (c.kind === 'group') return { text: `${senderName(m, c, ctx)}: ${s}`, typing: false };
 		return { text: s, typing: false };
 	}
 
@@ -295,6 +312,10 @@
 		if (!m) return null;
 		if (m.pending) return m.failed ? 'failed' : 'pending';
 		if (!m.mine || m.kind === 'system') return null;
+		// Messenger 1.14, a chat over a bridge: what the other messenger said about this very message
+		const bs = m.bridge && typeof m.bridge === 'object' ? m.bridge.state : null;
+		if (bs === 'failed' || m.status === 'failed') return 'failed';
+		if (bs === 'pending' || m.status === 'sending') return 'pending';
 		const read = c && Number.isSafeInteger(c.readUpTo) ? c.readUpTo : null;
 		const delivered = c && Number.isSafeInteger(c.deliveredUpTo) ? c.deliveredUpTo : null;
 		if (read !== null && m.id <= read) return 'read';
@@ -315,13 +336,20 @@
 		if (!m || m.pending) return { reply: false, react: false, edit: false, deleteMe: false, deleteAll: false, copy: false, pin: false, pinned: false, remind: false, suggest: false };
 		const live = !m.deleted && m.kind !== 'system';
 		const canSend = !!(c && c.can && c.can.send);
+		// Messenger 1.14, a chat over a bridge: only what crosses (`bridge.supports`); nothing on a message that was not
+		// sent (it offers „Erneut senden“), no edit of one written in the messenger's own app
+		const b = bridgeOf(c);
+		const mb = (m.bridge && typeof m.bridge === 'object' && m.bridge) || {};
+		const notSent = !!b && m.mine && (mb.state === 'failed' || mb.state === 'pending');
+		const crosses = (what) => !b || (!notSent && Array.isArray(b.supports) && b.supports.includes(what));
 		return {
-			reply: live && canSend,
-			react: live && features.reactions !== false && canSend,
+			reply: live && canSend && crosses('reply'),
+			react: live && features.reactions !== false && canSend && crosses('reaction'),
 			copy: live && !!m.text,
-			edit: live && m.mine && ['text', 'image', 'file'].includes(m.kind) && features.edit !== false && withinWindow(m, limits, now),
+			edit: live && m.mine && ['text', 'image', 'file'].includes(m.kind) && features.edit !== false && withinWindow(m, limits, now)
+				&& (!b || (m.kind === 'text' && !mb.remote && !mb.placeholder && canSend && crosses('edit'))),
 			deleteMe: true,
-			deleteAll: live && m.mine && withinWindow(m, limits, now),
+			deleteAll: live && m.mine && withinWindow(m, limits, now) && (!b || notSent || (canSend && crosses('delete'))),
 			// Messenger 1.4.0 (msg_tools): pin (can.pin), "Erinnere mich", suggestions to Familie
 			pin: live && hasFeature(ctx.me, 'msg_tools') && !!(c && c.can && c.can.pin),
 			pinned: !!(c && Array.isArray(c.pinned) && c.pinned.includes(m.id)),
@@ -355,7 +383,7 @@
 				unreadShown = true;
 				prev = null;
 			}
-			const cont = !!prev && prev.kind !== 'system' && m.kind !== 'system' && prev.senderId === m.senderId
+			const cont = !!prev && prev.kind !== 'system' && m.kind !== 'system' && senderKey(prev) === senderKey(m)
 				&& !!prev.mine === !!m.mine && (new Date(m.createdAt) - new Date(prev.createdAt)) < 5 * 60000;
 			out.push({ type: 'msg', m, cont, status: status(m, c) });
 			prev = m;
@@ -397,6 +425,8 @@
 		const typing = typingText(c, ctx);
 		if (typing) return { text: typing, typing: true };
 		if (!c) return { text: '', typing: false };
+		// Messenger 1.14: „über WhatsApp“
+		if (bridgeOf(c)) return { text: ctx.t('chat.bc.via', { network: bridgeLabel(c) }), typing: false };
 		// Messenger 1.6 notice channel: "Mitteilungen von Schule – nur für dich"
 		if (isNotice(c) && noticeLabel(c)) return { text: ctx.t('chat.notice.infoSub', { source: noticeLabel(c) }), typing: false };
 		if (c.readonly) return { text: ctx.t('chat.channelSub'), typing: false };
@@ -415,6 +445,8 @@
 	/** Why the composer is closed: null | 'readonly' | 'peerGone'. */
 	function composerBlock(c) {
 		if (!c) return 'readonly';
+		// Messenger 1.14: a chat over a bridge that takes nothing right now (bridgeBlock says why)
+		if (bridgeOf(c)) return c.can && c.can.send === false ? 'bridge' : null;
 		if (c.readonly) return 'readonly';
 		if (c.kind === 'direct' && c.peer && c.peer.gone) return 'peerGone';
 		if (c.kind === 'direct' && c.peer && c.peer.blocked) return 'blocked';
@@ -706,7 +738,207 @@
 			storyDuration: f('stories') && f('story_duration'),
 			// Messenger 1.6: notice channels / cards, the family chat pinned to the list, "Wo Mitteilungen erscheinen"
 			notices: f('notices'), noticeRoutes: f('notice_routes'),
+			// Messenger 1.13: „Verknüpfte Dienste“; 1.14: this person has chats over a bridge
+			linked: f('linked_services'), bridgeChats: f('bridge_chats'),
 		};
+	}
+
+	// ── Messenger 1.14: chats over a bridge (another messenger, today WhatsApp) ──
+
+	const BRIDGE_NAMES = { whatsapp: 'WhatsApp' };
+	const BRIDGE_MARKS = { whatsapp: 'WA' };
+	const BRIDGE_STATES = ['unreachable', 'logged_out', 'unlinked', 'locked', 'off'];
+	const PLACEHOLDER_KINDS = ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported'];
+	const FAIL_REASONS = ['bridge_error', 'unreachable', 'not_running', 'timeout', 'network_error', 'no_permission', 'too_old', 'unsupported', 'not_handled', 'bridge_unavailable', 'chat_closed'];
+
+	/** `bridge` of a conversation ({ network, label, state, closed, supports }) or null inside GateControl. */
+	function bridgeOf(c) {
+		const b = c && c.bridge;
+		return b && typeof b === 'object' && typeof b.network === 'string' && b.network ? b : null;
+	}
+
+	/** The service's own name (never translated); an id this version does not know shows as it is. */
+	function bridgeName(id) {
+		const s = str(id);
+		return BRIDGE_NAMES[s] || (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
+	}
+
+	/** Two letters for the sign at a picture ("WA"). */
+	function bridgeMark(id) {
+		const s = str(id);
+		return BRIDGE_MARKS[s] || s.slice(0, 2).toUpperCase();
+	}
+
+	function bridgeLabel(c) {
+		const b = bridgeOf(c);
+		return b ? (str(b.label).slice(0, 40) || bridgeName(b.network)) : '';
+	}
+
+	/** The services the chat list has chats of: [{ id, label }] (the filter chips appear with the first one). */
+	function bridgeNetworks(list) {
+		const out = [];
+		for (const c of Array.isArray(list) ? list : []) {
+			const b = bridgeOf(c);
+			if (b && !out.some((x) => x.id === b.network)) out.push({ id: b.network, label: bridgeLabel(c) });
+		}
+		return out;
+	}
+
+	/**
+	 * Why a chat over a bridge takes nothing right now → null (it does) or { key, relink, warn }:
+	 * `key` is the text chat.bc.<key> ({{network}}), `relink` offers „Neu verknüpfen“ (Verknüpfte Dienste).
+	 */
+	function bridgeBlock(c) {
+		const b = bridgeOf(c);
+		if (!b) return null;
+		if (BRIDGE_STATES.includes(b.state)) return { key: `state_${b.state}`, relink: b.state === 'logged_out' || b.state === 'unlinked', warn: b.state !== 'unlinked' && b.state !== 'off' };
+		if (b.closed) return { key: 'closed', relink: false, warn: false };
+		if (c.can && c.can.send === false) return { key: 'cannot_send', relink: false, warn: false };
+		return null;
+	}
+
+	/** Who wrote a message: the contact of a chat over a bridge, else the account (nameOf). */
+	function senderName(m, c, ctx, opts) {
+		const mb = m && m.bridge && typeof m.bridge === 'object' ? m.bridge : null;
+		if (mb && mb.sender) return str(mb.sender.name) || ctx.t('chat.bc.unknown_contact');
+		if (m && !m.mine && bridgeOf(c) && (m.senderId === null || m.senderId === undefined)) return bridgeLabel(c);
+		return nameOf(c, m ? m.senderId : null, ctx, opts);
+	}
+
+	/** The name over a quoted message (`replyTo` of a contact carries contactId / senderName). */
+	function quoteName(q, c, ctx) {
+		if (q && q.contactId != null) return str(q.senderName) || ctx.t('chat.bc.unknown_contact');
+		return nameOf(c, q ? q.senderId : null, ctx);
+	}
+
+	/** Messages of the same sender are grouped: contacts of a bridge share `senderId: null`. */
+	function senderKey(m) {
+		const mb = m && m.bridge && typeof m.bridge === 'object' ? m.bridge : null;
+		return mb && mb.sender && mb.sender.contactId != null ? `c${mb.sender.contactId}` : m.senderId;
+	}
+
+	/** `bridge.placeholder` of a message ({ kind, name }) or null. */
+	function placeholderOf(m) {
+		const p = m && !m.deleted && m.bridge && typeof m.bridge === 'object' ? m.bridge.placeholder : null;
+		return p && typeof p === 'object' && PLACEHOLDER_KINDS.includes(p.kind) ? { kind: p.kind, name: str(p.name).slice(0, 200) || null } : null;
+	}
+
+	/** „Bild · grill.jpg – folgt; in WhatsApp ansehen“ / „Nachricht dieser Art wird hier noch nicht angezeigt – …“, or null. */
+	function placeholderText(m, c, t) {
+		const p = placeholderOf(m);
+		if (!p) return null;
+		const network = bridgeLabel(c) || bridgeName(str(m.via).replace(/^bridge:/, ''));
+		if (p.kind === 'unsupported') return t('chat.bc.ph.unsupported', { network });
+		return `${[t(`chat.bc.ph.${p.kind}`), p.name].filter(Boolean).join(' · ')} – ${t('chat.bc.ph_later', { network })}`;
+	}
+
+	/** An own message of a chat over a bridge that was not sent → { text, resend } (the reason in words), or null. */
+	function bridgeFailure(m, t) {
+		const mb = m && !m.pending && m.mine && !m.deleted && m.bridge && typeof m.bridge === 'object' ? m.bridge : null;
+		if (!mb || mb.state !== 'failed') return null;
+		const reason = FAIL_REASONS.includes(mb.reason) ? mb.reason : 'bridge_error';
+		return { text: `${t('chat.bc.failed')} ${t(`chat.bc.reason.${reason}`)}`, resend: true };
+	}
+
+	// ── Messenger 1.13: „Verknüpfte Dienste“ ──
+
+	const LINK_NOTES = { whatsapp: ['unofficial', 'ban', 'phone', 'e2e'] };
+	const LINK_FLOWS = ['phone', 'qr'];
+	const LOGIN_ORDER = ['connected', 'connecting', 'error', 'logged_out', 'unknown'];
+
+	/** The services this version can link (it has their notes and steps); others are not offered. */
+	const linkable = (id) => Object.prototype.hasOwnProperty.call(LINK_NOTES, str(id));
+
+	/** The login of a service that matters most: a linked one, else one that was signed out or failed. */
+	function mainLogin(n) {
+		let best = null;
+		for (const l of (n && Array.isArray(n.logins) ? n.logins : [])) if (!best || LOGIN_ORDER.indexOf(l.state) < LOGIN_ORDER.indexOf(best.state)) best = l;
+		return best;
+	}
+
+	function linkDate(iso, locale) {
+		const d = iso ? new Date(iso) : null;
+		if (!d || Number.isNaN(d.getTime())) return '';
+		return d.toLocaleDateString(localeTag(locale), { day: '2-digit', month: '2-digit', year: 'numeric' });
+	}
+
+	/**
+	 * A service in the overview → { state, sub, pill: { text, tone }, link, unlink, again: null | { hint, link, forget } }.
+	 * state: unreachable | starting | linked | logged_out | error | locked | none (like the portal's page).
+	 */
+	function linkedRow(n, ctx) {
+		const t = ctx.t;
+		const l = mainLogin(n);
+		const name = bridgeName(n.id);
+		const out = { id: n.id, name, mark: bridgeMark(n.id), login: l, state: 'none', sub: '', pill: null, link: false, unlink: false, again: null };
+		if (n.state === 'unreachable' || n.state === 'starting' || n.state === 'failed') {
+			out.state = n.state === 'starting' ? 'starting' : 'unreachable';
+			out.sub = t(n.state === 'starting' ? 'chat.br.sub_starting' : 'chat.br.sub_unreachable');
+			out.pill = { text: t(n.state === 'starting' ? 'chat.br.pill_starting' : 'chat.br.pill_unreachable'), tone: 'warn' };
+		} else if (l && (l.state === 'connected' || l.state === 'connecting')) {
+			out.state = 'linked';
+			const date = linkDate(l.since, ctx.locale);
+			out.sub = [date ? t('chat.br.sub_linked_since', { date }) : t('chat.br.sub_linked'), l.name].filter(Boolean).join(' · ');
+			out.pill = n.outdated ? { text: t('chat.br.pill_outdated'), tone: 'warn' } : { text: t('chat.br.pill_linked'), tone: 'ok' };
+			out.unlink = true;
+		} else if (l && l.state === 'logged_out') {
+			out.state = 'logged_out';
+			const date = linkDate(l.since, ctx.locale);
+			const why = t(`chat.br.sub_logged_out_${n.id}`);
+			out.sub = [date ? t('chat.br.sub_logged_out_at', { date }) : t('chat.br.sub_logged_out'), why !== `chat.br.sub_logged_out_${n.id}` ? why : ''].filter(Boolean).join(' ');
+			out.pill = { text: t('chat.br.pill_logged_out'), tone: 'err' };
+		} else if (l) {
+			out.state = 'error';
+			out.sub = t('chat.br.sub_error');
+			out.pill = { text: t('chat.br.pill_error'), tone: 'err' };
+			out.unlink = true;
+		} else if (!n.allowed) {
+			out.state = 'locked';
+			out.sub = t('chat.br.sub_locked');
+			out.pill = { text: t('chat.br.pill_locked'), tone: 'off' };
+		} else {
+			out.sub = t('chat.br.sub_none');
+			out.link = true;
+		}
+		// signed out or failed: a new code is enough (the notes were confirmed before)
+		if (l && ['logged_out', 'error', 'unknown'].includes(l.state) && n.state === 'running') {
+			out.again = { hint: t(n.allowed ? 'chat.br.relink_hint' : 'chat.br.sub_locked'), link: !!n.allowed, forget: l.state === 'logged_out' };
+		}
+		return out;
+	}
+
+	/** Why an attempt to link ended, in words (a code that ran out reads differently from a refusal). */
+	function linkErrorText(res, t) {
+		const r = res && typeof res === 'object' ? res : { code: res };
+		if (r.code === 'bridge_failed' && /timeout|expired/.test(str(r.reason))) return t('chat.br.err_expired');
+		if (r.code === 'network' || r.code === 'timeout') return t('chat.br.err_no_answer');
+		return errorText(r, t);
+	}
+
+	/** The pairing code in pieces for the big boxes: [{ ch, dash }]. */
+	function codeChars(code) {
+		return str(code).split('').map((ch) => ({ ch, dash: ch === '-' || ch === ' ' }));
+	}
+
+	/** A QR code's modules ({ size, rows }) → { size (with a quiet zone of 4), d (SVG path of the dark modules) }, or null. */
+	function qrPath(matrix, quiet = 4) {
+		const m = matrix && typeof matrix === 'object' ? matrix : null;
+		if (!m || !Array.isArray(m.rows) || m.rows.length < 21 || m.rows.length > 177) return null;
+		const n = m.rows.length;
+		let d = '';
+		for (let y = 0; y < n; y += 1) {
+			const row = str(m.rows[y]);
+			if (row.length !== n || /[^01]/.test(row)) return null;
+			// one rectangle per run of dark modules
+			for (let x = 0; x < n; x += 1) {
+				if (row.charAt(x) !== '1') continue;
+				let w = 1;
+				while (x + w < n && row.charAt(x + w) === '1') w += 1;
+				d += `M${x + quiet} ${y + quiet}h${w}v1h-${w}z`;
+				x += w - 1;
+			}
+		}
+		return { size: n + 2 * quiet, d };
 	}
 
 	/**
@@ -1116,6 +1348,9 @@
 	function listFilter(list, { filter = 'all', archived = false, lists = [] } = {}) {
 		const items = (Array.isArray(list) ? list : []).filter((c) => !!c.archived === !!archived);
 		if (archived || filter === 'all') return items;
+		// Messenger 1.14: „Nur GateControl“ and one chip per linked service
+		if (filter === 'gc') return items.filter((c) => !bridgeOf(c));
+		if (str(filter).startsWith('net:')) return items.filter((c) => bridgeOf(c) && `net:${bridgeOf(c).network}` === filter);
 		if (filter === 'unread') return items.filter((c) => (c.unread || 0) > 0);
 		if (filter === 'groups') return items.filter((c) => c.kind === 'group');
 		if (str(filter).startsWith('list:')) {
@@ -1174,6 +1409,8 @@
 		STORY_DURATION_DEFAULT_H,
 		PRESETS,
 		features14,
+		bridgeOf, bridgeName, bridgeMark, bridgeLabel, bridgeNetworks, bridgeBlock, senderName, quoteName, senderKey, placeholderOf, placeholderText, bridgeFailure,
+		LINK_NOTES, LINK_FLOWS, linkable, mainLogin, linkDate, linkedRow, linkErrorText, codeChars, qrPath,
 		storyDurations,
 		ownStoryStats,
 		ownStoryLine,
