@@ -4419,6 +4419,31 @@
       "linkText": "Text",
       "image": "Bild oder Datei"
     },
+    "calendar": "Kalender",
+    "mark": {
+      "reminder": "Erinnerung",
+      "later": "Später: {{when}}",
+      "calendar": "im Kalender",
+      "calendarIn": "Im Kalender „{{name}}“ in Mail",
+      "calendarHint": "Steht als Termin von 30 Minuten im Kalender „{{name}}“ in Mail – ohne eigene Termin-Erinnerung.",
+      "calendarPending": "Wird gleich in den Kalender eingetragen"
+    },
+    "y": {
+      "title": "Gestern offen geblieben",
+      "allToday": "Alle heute",
+      "done": "Erledigt",
+      "today": "Heute",
+      "move": "Verschieben",
+      "tomorrow": "Morgen",
+      "weekend": "Am Wochenende",
+      "otherDate": "Anderes Datum",
+      "askMove": "Verschieben auf",
+      "askDone": "Alle {{n}} abhaken?",
+      "askDoneText": "Die Aufgaben von gestern gelten dann als erledigt.",
+      "askDoneConfirm": "Abhaken",
+      "none": "Von gestern ist nichts mehr offen.",
+      "someFailed": "{{n}} Aufgaben darfst du nicht ändern."
+    },
     "quick": {
       "ph": "Hinzufügen … „Fr 10 Uhr Angebot nachfassen #büro“",
       "label": "Schnell hinzufügen",
@@ -4428,7 +4453,9 @@
       "list": "Liste: {{name}}",
       "newList": "Neue Liste „{{name}}“",
       "unknownPerson": "@{{name}} (unbekannt)",
-      "added": "Hinzugefügt: {{title}}"
+      "added": "Hinzugefügt: {{title}}",
+      "calendar": "Kalender: {{name}}",
+      "calendarHint": "Aufgaben mit Uhrzeit stehen als Termin im Kalender „{{name}}“ in Mail. Abschalten kannst du das in deinen Einstellungen im Portal."
     },
     "vault": {
       "name": "Tresor",

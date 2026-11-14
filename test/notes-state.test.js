@@ -161,6 +161,75 @@ describe('notes-state.js', () => {
     assert.equal(NS.sectionTitle({ id: 'done', title: 'Erledigt' }, 'myday', t), 'Erledigt heute');
   });
 
+  it('plugin 1.3.0: the marks of a task and the calendar chip — only with the words of me.features', () => {
+    const me = { today: '2026-11-08', features: ['tasks', 'reminderActions', 'taskCalendar'], calendar: { available: true, enabled: true, mine: true, name: 'Aufgaben' } };
+    const task = { type: 'task', id: 41, done: false, snoozed: false, reminder: { tag: 'task:41:1794729600000', at: '2026-11-08T09:00:00+01:00', atMs: 1794729600000, mine: true, snoozed: false }, calendar: { state: 'synced', eventId: 912, calendarId: 7, mine: true } };
+    assert.deepEqual(NS.taskMarks(task, me, t).map((k) => [k.kind, k.text]), [['reminder', 'Erinnerung'], ['calendar', 'im Kalender']]);
+    assert.equal(NS.taskMarks(task, me, t)[1].long, 'Im Kalender „Aufgaben“ in Mail');
+    // put off with „Später“: until when (today: the time, another day: the day too)
+    assert.deepEqual(NS.taskMarks({ ...task, snoozed: true, reminder: { ...task.reminder, at: '2026-11-08T19:00:00+01:00' }, calendar: null }, me, t).map((k) => k.text), ['Später: 19:00']);
+    assert.deepEqual(NS.taskMarks({ ...task, snoozed: true, reminder: { ...task.reminder, at: '2026-11-09T09:00:00+01:00' }, calendar: null }, me, t).map((k) => k.text), ['Später: morgen 9:00']);
+    assert.equal(NS.taskMarks({ ...task, calendar: { ...task.calendar, state: 'pending' } }, me, t)[1].long, 'Wird gleich in den Kalender eingetragen');
+    // done: no reminder to come; someone else's calendar: no mark
+    assert.deepEqual(NS.taskMarks({ ...task, done: true, calendar: { ...task.calendar, mine: false } }, me, t), []);
+    // the calendar needs all three: Mail offers it, the administrator's switch, the own switch
+    for (const off of ['available', 'enabled', 'mine']) {
+      const m = { ...me, calendar: { ...me.calendar, [off]: false } };
+      assert.equal(NS.calendarName(m), null, off);
+      assert.deepEqual(NS.taskMarks(task, m, t).map((k) => k.kind), ['reminder'], off);
+    }
+    // an older plugin: nothing, whatever the task says
+    const old = { today: '2026-11-08', features: ['tasks'], calendar: me.calendar };
+    assert.deepEqual(NS.taskMarks(task, old, t), []);
+    assert.equal(NS.calendarName(old), null);
+    assert.deepEqual(NS.taskMarks(task, null, t), []);
+    assert.deepEqual(NS.taskMarks({ type: 'source', reminder: task.reminder }, me, t), []);
+
+    const ctx = { today: '2026-11-08', now: '08:00', lists: [], people: [] };
+    const kinds = (text, m) => NS.quickChips(NS.quickParse(text, ctx), ctx, 'private', t, 'de', m).map((c) => c.kind);
+    assert.deepEqual(kinds('morgen 9 Uhr Mülltonne rausstellen', me), ['date', 'remind', 'calendar', 'area']);
+    const chip = NS.quickChips(NS.quickParse('morgen 9 Uhr Mülltonne rausstellen', ctx), ctx, 'private', t, 'de', me).find((c) => c.kind === 'calendar');
+    assert.equal(chip.text, 'Kalender: Aufgaben');
+    assert.match(chip.title, /^Aufgaben mit Uhrzeit stehen als Termin im Kalender „Aufgaben“ in Mail\./);
+    // a day without a time gets no event; an older plugin and a switched-off calendar get no chip
+    assert.deepEqual(kinds('morgen Mülltonne rausstellen', me), ['date', 'area']);
+    assert.deepEqual(kinds('morgen 9 Uhr Mülltonne rausstellen', old), ['date', 'remind', 'area']);
+    assert.deepEqual(kinds('morgen 9 Uhr Mülltonne rausstellen', { ...me, calendar: { ...me.calendar, mine: false } }), ['date', 'remind', 'area']);
+    assert.deepEqual(kinds('morgen 9 Uhr Mülltonne rausstellen', undefined), ['date', 'remind', 'area']);
+  });
+
+  it('plugin 1.3.0: „Gestern offen geblieben“ — the card, „Überfällig“ without its rows, the days of „Verschieben“', () => {
+    const me = { today: '2026-11-19', features: ['tasks', 'yesterdayOpen'] };
+    const a = { uid: 't:41', type: 'task', id: 41, title: 'Schrauben kaufen' };
+    const b = { uid: 't:42', type: 'task', id: 42, title: 'Rezept abholen' };
+    const c = { uid: 't:43', type: 'task', id: 43, title: 'Steuer' };
+    const s = { uid: 's:203', type: 'source', id: 203, title: 'Rechnung' };
+    const options = [{ to: 'tomorrow', date: '2026-11-20', label: 'Morgen' }, { to: 'weekend', date: '2026-11-21', label: 'Am Wochenende' }];
+    const view = { view: 'myday', yesterday: { day: '2026-11-18', title: 'Gestern offen geblieben', count: 2, items: [a, b], moveOptions: options },
+      sections: [{ id: 'overdue', title: 'Überfällig', count: 4, items: [a, s, b, c] }, { id: 'today', title: 'Heute', count: 1, items: [{ uid: 't:44' }] }] };
+    const card = NS.yesterdayCard(view, me);
+    assert.deepEqual([card.day, card.items.map((x) => x.uid)], ['2026-11-18', ['t:41', 't:42']]);
+    const rest = NS.sectionsWithout(view.sections, card);
+    assert.deepEqual(rest.map((x) => [x.id, x.count, x.items.map((y) => y.uid)]), [['overdue', 2, ['s:203', 't:43']], ['today', 1, ['t:44']]]);
+    assert.equal(view.sections[0].items.length, 4);
+    // no card: an older plugin (whatever the view says), nothing open, another view — the sections stay as they are
+    assert.equal(NS.yesterdayCard(view, { today: '2026-11-19', features: ['tasks'] }), null);
+    assert.equal(NS.yesterdayCard(view, null), null);
+    assert.equal(NS.yesterdayCard({ ...view, yesterday: { ...view.yesterday, items: [] } }, me), null);
+    assert.equal(NS.yesterdayCard({ ...view, yesterday: null }, me), null);
+    assert.equal(NS.yesterdayCard({ ...view, view: 'planned' }, me), null);
+    assert.equal(NS.sectionsWithout(view.sections, null), view.sections);
+
+    assert.deepEqual(NS.moveChoices(options, t), [{ to: 'tomorrow', label: 'Morgen' }, { to: 'weekend', label: 'Am Wochenende' }]);
+    assert.deepEqual(NS.moveChoices([], t), [{ to: 'tomorrow', label: 'Morgen' }, { to: 'weekend', label: 'Am Wochenende' }]);
+    assert.deepEqual(NS.moveChoices([{ to: '2026-11-23', label: 'Montag' }, { to: 'today', label: 'Heute' }], t), [{ to: '2026-11-23', label: 'Montag' }]);
+    // a button of the morning hint: what it named and is still open; it named nothing: all that is open; offline: what it named
+    assert.deepEqual(NS.askedIds([41, 42, 99], [42, 41, 43]), [41, 42]);
+    assert.deepEqual(NS.askedIds([], [42, 43]), [42, 43]);
+    assert.deepEqual(NS.askedIds([41, 41, 'x'], null), [41]);
+    assert.deepEqual(NS.askedIds([41], []), []);
+  });
+
   it('where an item of another plugin opens (contract § 5)', () => {
     const all = ['mail', 'drive', 'schule', 'notizen'];
     assert.deepEqual(NS.openTarget({ plugin: 'gatecontrol-mail', route: 'message/4711' }, all), { page: 'mail', context: { kind: 'message', messageId: 4711, accountId: null } });
