@@ -16,6 +16,12 @@
  * Messenger 1.4.1 (FEATURES_141): `story_duration` — POST status/stories
  * takes durationH (limits.storyDurationsH). failStory(code) makes the next
  * story post fail, `st14.feedFail` makes GET status/feed fail.
+ * Messenger 1.13 / 1.14 (FEATURES_LINKED / FEATURES_BRIDGED): „Verknüpfte
+ * Dienste“ (bridges/*: consent, login with a pairing code or a QR code,
+ * waiting, cancel, unlink — `bridge` steers it) and chats over a bridge
+ * (addBridgeConv / addBridgeMsg; they exist only for calls with ?bridged=1,
+ * take text only, `bridge.sendFails` stores a message as not sent). Every API
+ * call is noted in log.calls ({ method, route, query }).
  */
 
 const crypto = require('crypto');
@@ -31,6 +37,9 @@ const FEATURES_14 = Object.freeze({
 // Messenger 1.4.1: a story's duration (`durationH`)
 const FEATURES_141 = Object.freeze({ ...FEATURES_14, story_duration: true });
 const STORY_DURATIONS_H = [1, 3, 6, 12, 24];
+// Messenger 1.13: the server offers a bridge; 1.14: this person has chats over one
+const FEATURES_LINKED = Object.freeze({ ...FEATURES_141, linked_services: true });
+const FEATURES_BRIDGED = Object.freeze({ ...FEATURES_LINKED, bridge_chats: true });
 
 function createMessenger({ emit = () => {}, features = null, familie = false } = {}) {
   const users = [
@@ -46,6 +55,20 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     // 1.4.0
     prefs: [], statusPuts: [], stories: [], seen: [], storyReacts: [], blocks: [], archives: [], pins: [], lists: [], exports: [], reminds: [],
     toList: [], toCalendar: [], votes: [], pollOps: [], rsvps: [], checks: [], eventEdits: [], actionOps: [], arrivalStops: [],
+    // 1.13 / 1.14: every API call, what was asked of the bridge (never a number: only whether one came), resends
+    calls: [], bridge: [], resends: [],
+  };
+  // 1.13 / 1.14: the bridges as GET bridges tells them, and the login in progress
+  const bridge = {
+    available: true,
+    location: 'server',
+    networks: [{ id: 'whatsapp', state: 'running', allowed: true, lock: null, consent: null, outdated: false, version: '0.12.1', wantVersion: '0.12.1', logins: [] }],
+    process: null,
+    confirmAfter: 2,          // so many waiting calls before the phone "confirmed" (Infinity: never)
+    qrRenewAt: null,          // a waiting call number at which the QR code is renewed
+    loginFails: null,         // { status, code, reason } for the next waiting call; { drop: n } = no answer n times
+    phoneRefused: false,
+    sendFails: null,          // a reason: the bridge does not take the next message (stored as not sent)
   };
   const st14 = {
     prefs: { readReceipts: true, typing: true, preview: true, privacy: { lastSeen: 'all', avatar: 'all', statusDefault: 'all', placeInStatus: 'family', groupAdd: 'all', defaultDisappearingS: 0 }, notify: { groupsMentionsOnly: false, reactions: true, statusDigest: false, eventReminderMin: 60 }, chats: { keepArchived: true } },
@@ -71,6 +94,97 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     convs.set(id, { id, kind, title, managedBy: null, members: members.map((u) => ({ id: u, role: u === ME ? 'admin' : 'member', lastRead: 0, lastDelivered: 0 })), createdAt: Date.now(), updatedAt: Date.now() });
     msgs.set(id, []);
     return id;
+  }
+
+  /** A chat over a bridge: one member (Marc), no peer. */
+  function addBridgeConv({ kind = 'direct', title = 'Kim Muster', network = 'whatsapp', state = 'ok', closed = false } = {}) {
+    const id = addConv({ kind, members: [ME], title });
+    Object.assign(convs.get(id), { bridge: { network, state, closed, readUpTo: null, deliveredUpTo: null } });
+    return id;
+  }
+
+  /** A message in a chat over a bridge: of a contact, of Marc's phone (`remote`), a placeholder, a notice, an own one with a state. */
+  function addBridgeMsg(convId, { contact = { contactId: 12, name: 'Kim Muster' }, text = 'Hallo', remote = false, placeholder = null, notice = false, state = null, reason = null, replyTo = null } = {}) {
+    const mine = remote || state != null;
+    const m = addMsg(convId, { senderId: mine ? ME : null, text, kind: notice ? 'system' : 'text', replyTo, system: notice ? { event: 'bridge_notice', network: convs.get(convId).bridge.network } : null });
+    m.bridge = { sender: mine || notice ? null : contact, remote, state: mine ? (state || 'sent') : null, reason, placeholder };
+    return m;
+  }
+
+  const qrRows = (seed) => Array.from({ length: 29 }, (_, y) => Array.from({ length: 29 }, (_, x) => {
+    const finder = (cx, cy) => { const dx = Math.abs(x - cx); const dy = Math.abs(y - cy); const d = Math.max(dx, dy); return d <= 3 ? (d === 2 ? '0' : '1') : null; };
+    return finder(3, 3) || finder(25, 3) || finder(3, 25) || (((x * 7 + y * 13 + seed * 5 + ((x * y) % 5)) % 3 === 0) ? '1' : '0');
+  }).join(''));
+  const waitStep = (pr) => (pr.flow === 'qr'
+    ? { id: `qr${pr.n}`, type: 'display_and_wait', display: { type: 'qr', data: `2@mock${pr.n}`, matrix: { size: 29, rows: qrRows(pr.n) } } }
+    : { id: 'code1', type: 'display_and_wait', display: { type: 'code', data: 'K7P2-M4X9' } });
+
+  /** bridges/* (the plugin's bridges.js). → true when answered. */
+  function bridgeRoute(method, seg, body, json, drop) {
+    if (seg[0] !== 'bridges') return false;
+    if (!(features && features.linked_services === true)) return json(404, { ok: false, code: 'not_found' }), true;
+    const B = bridge;
+    if (seg.length === 1 && method === 'GET') return json(200, { ok: true, bridges: B.available ? { available: true, location: B.location, networks: B.networks } : { available: false, networks: [] } }), true;
+    const net = B.networks.find((n) => n.id === seg[1]);
+    if (!net || seg.length < 3) return json(404, { ok: false, code: 'not_found' }), true;
+    if (!B.available) return json(409, { ok: false, code: 'bridge_off', reason: 'no_host' }), true;
+    const gate = (consent = true) => (!net.allowed ? [403, 'bridge_locked'] : (consent && !net.consent ? [409, 'consent_required'] : null));
+    if (seg.length === 3 && seg[2] === 'consent' && method === 'POST') {
+      const g = gate(false);
+      if (g) return json(g[0], { ok: false, code: g[1] }), true;
+      if (body.accept !== true) return json(400, { ok: false, code: 'invalid' }), true;
+      net.consent = net.consent || iso(Date.now());
+      log.bridge.push({ op: 'consent' });
+      return json(200, { ok: true, consent: net.consent }), true;
+    }
+    if (seg.length === 3 && seg[2] === 'login' && method === 'POST') {
+      const g = gate();
+      if (g) return json(g[0], { ok: false, code: g[1] }), true;
+      if (net.state !== 'running') return json(503, { ok: false, code: 'bridge_unreachable', reason: 'not_running' }), true;
+      const pr = { id: `proc${log.bridge.length + 1}`, flow: body.flow, n: 1, polls: 0 };
+      B.process = pr;
+      log.bridge.push({ op: 'start', flow: pr.flow });
+      return json(200, { ok: true, login: { processId: pr.id, step: pr.flow === 'phone' ? { id: 'phone1', type: 'user_input', fields: [{ id: 'phone_number', type: 'phone_number', optional: false }] } : waitStep(pr) } }), true;
+    }
+    if (seg.length === 5 && seg[2] === 'login' && method === 'POST') {
+      const g = gate();
+      if (g) return json(g[0], { ok: false, code: g[1] }), true;
+      const pr = B.process;
+      if (!pr || pr.id !== seg[3]) return json(404, { ok: false, code: 'not_found' }), true;
+      if (body.input) {
+        log.bridge.push({ op: 'input', step: seg[4], valid: /^\+[0-9]{6,15}$/.test(String(body.input.phone_number || '')) });
+        if (B.phoneRefused) return json(502, { ok: false, code: 'bridge_failed', reason: 'bad_number' }), true;
+        return json(200, { ok: true, login: { processId: pr.id, step: waitStep(pr) } }), true;
+      }
+      pr.polls += 1;
+      log.bridge.push({ op: 'wait', step: seg[4] });
+      if (B.loginFails) {
+        const f = B.loginFails;
+        if (f.drop) { f.drop -= 1; if (!f.drop) B.loginFails = null; drop(); return true; }
+        B.loginFails = null;
+        B.process = null;
+        return json(f.status, { ok: false, code: f.code, ...(f.reason ? { reason: f.reason } : {}) }), true;
+      }
+      if (pr.flow === 'qr' && B.qrRenewAt === pr.polls) { pr.n += 1; return json(200, { ok: true, login: { processId: pr.id, step: waitStep(pr) } }), true; }
+      if (pr.polls < B.confirmAfter) return json(200, { ok: true, login: { processId: pr.id, waiting: true } }), true;
+      B.process = null;
+      net.logins = [{ id: 'login1', name: '+49 1512 0000000', state: 'connected', since: iso(Date.now()) }];
+      for (const c of convs.values()) if (c.bridge && c.bridge.network === net.id) { c.bridge.state = 'ok'; c.updatedAt = Date.now(); }
+      return json(200, { ok: true, login: { processId: pr.id, step: { id: 'done', type: 'complete', loginId: 'login1' } } }), true;
+    }
+    if (seg.length === 4 && seg[2] === 'login' && method === 'DELETE') {
+      log.bridge.push({ op: 'cancel', process: seg[3] });
+      if (B.process && B.process.id === seg[3]) B.process = null;
+      return json(200, { ok: true, cancelled: true }), true;
+    }
+    if (seg.length === 4 && seg[2] === 'logins' && method === 'DELETE') {
+      if (!net.logins.some((l) => l.id === seg[3])) return json(404, { ok: false, code: 'not_found' }), true;
+      log.bridge.push({ op: 'unlink', login: seg[3] });
+      net.logins = net.logins.filter((l) => l.id !== seg[3]);
+      for (const c of convs.values()) if (c.bridge && c.bridge.network === net.id) { c.bridge.state = 'unlinked'; c.updatedAt = Date.now(); }
+      return json(200, { ok: true, unlinked: true }), true;
+    }
+    return json(404, { ok: false, code: 'not_found' }), true;
   }
 
   function addMsg(convId, { senderId = 8, text = 'Hallo', kind = 'text', clientId = null, mediaId = null, meta = null, replyTo = null, location = null, thumbMediaId = null, video = null, system = null, poll = null, event = null, action = null, arrival = null, card = null, replyStory = null } = {}) {
@@ -100,13 +214,20 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       id: m.id, conversationId: m.conversationId, senderId: m.senderId, clientId: m.clientId, kind: m.kind, via: null, mine: m.senderId === ME,
       createdAt: iso(m.createdAt), editedAt: m.editedAt ? iso(m.editedAt) : null, deletedAt: null, expiresAt: null, deleted: m.deleted, undecryptable: false,
       text: m.deleted ? null : m.text,
-      replyTo: q ? { id: q.id, senderId: q.senderId, kind: q.kind, text: q.text, deleted: q.deleted, missing: false } : null,
+      replyTo: q ? { id: q.id, senderId: q.senderId, kind: q.kind, text: q.text, deleted: q.deleted, missing: false, ...(q.bridge && q.bridge.sender ? { contactId: q.bridge.sender.contactId, senderName: q.bridge.sender.name } : {}) } : null,
       media: f && !m.deleted ? { id: m.mediaId, mime: f.mime, bytes: f.data.length, url: null, thumbId: m.thumbMediaId || null, thumbUrl: null } : null,
       ...(m.video && !m.deleted ? { video: m.video } : {}),
       meta: m.deleted ? null : m.meta, location: m.deleted ? null : (m.location || null), system: m.system || null, reactions: m.deleted ? [] : m.reactions,
       ...(m.poll ? { poll: m.poll } : {}), ...(m.event ? { event: m.event } : {}), ...(m.action ? { action: actionView(m) } : {}),
       ...(m.arrival ? { arrival: m.arrival } : {}), ...(m.card ? { card: m.card } : {}), ...(m.replyStory ? { replyStory: m.replyStory } : {}),
       status: m.senderId === ME ? (m.id <= r.readUpTo ? 'read' : m.id <= r.deliveredUpTo ? 'delivered' : 'sent') : null,
+      // 1.14: a message of a chat over a bridge
+      ...(c.bridge ? {
+        via: `bridge:${c.bridge.network}`,
+        bridge: m.bridge || { sender: null, remote: false, state: m.senderId === ME ? 'sent' : null, reason: null, placeholder: null },
+        ...(m.senderId === ME && m.bridge && m.bridge.state ? { status: m.bridge.state === 'pending' ? 'sending' : m.bridge.state } : {}),
+        reactions: m.deleted ? [] : m.reactions.concat(m.contactReactions || []),
+      } : {}),
     };
   }
 
@@ -152,6 +273,14 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       ...receipts(c),
       can: { send: !(peer && st14.blocks.has(peer.userId)), editInfo: c.kind === 'group' && !c.managedBy, manageMembers: c.kind === 'group' && !c.managedBy, leave: c.kind === 'group' && !c.managedBy, setDisappearing: true, ...(api.features14 ? { pin: true } : {}) },
       ...(api.features14 ? { archived: !!c.archived, pinned: c.pinned || [], nextEvent: nextEvent(c) } : {}),
+      // 1.14: `bridge` (null inside GateControl); a chat over a bridge has no peer and one member
+      ...(features && (features.linked_services === true || features.bridge_chats === true) ? { bridge: null } : {}),
+      ...(c.bridge ? {
+        title: c.title, peer: null,
+        bridge: { network: c.bridge.network, label: 'WhatsApp', state: c.bridge.state, closed: !!c.bridge.closed, supports: ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing'] },
+        readUpTo: c.bridge.readUpTo, deliveredUpTo: c.bridge.deliveredUpTo, receipts: [],
+        can: { send: c.bridge.state === 'ok' && !c.bridge.closed, pin: true, editInfo: false, manageMembers: false, leave: false, setDisappearing: false },
+      } : {}),
     };
   }
 
@@ -330,7 +459,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   }
 
   /** Answers a request below /api/v1/client/ (route without that prefix) or /avatars/; false when not ours. */
-  function handle({ method, route, query, raw, headers }, json, send) {
+  function handle({ method, route, query, raw, headers, drop }, json, send) {
     if (route === 'plugins') return json(200, { ok: true, plugins: [{ id: PLUGIN, name: 'Messenger', version: '1.0.0', tab: { label: 'Chats', icon: 'M0 0' } }] }), true;
     const mediaBase = `plugins/${PLUGIN}/media`;
     if (route === mediaBase && method === 'PUT') {
@@ -351,6 +480,10 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     let body = {};
     try { body = raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { body = {}; }
     const [a, b, c] = route.slice(apiBase.length).split('/');
+    log.calls.push({ method, route: route.slice(apiBase.length), query: { ...query } });
+    // 1.14: a chat over a bridge exists only for a client that says it knows them
+    const bridged = query.bridged === '1' || body.bridged === true;
+    if (bridgeRoute(method, route.slice(apiBase.length).split('/'), body, json, drop || (() => json(503, { ok: false, code: 'unavailable' })))) return true;
 
     if (a === 'me') {
       return json(200, {
@@ -367,7 +500,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     if (a === 'people') return json(200, { ok: true, people: users.filter((x) => x.id !== ME).map((x) => ({ id: x.id, name: x.name, avatarUrl: null, initials: x.initials, colorHex: x.colorHex, color: 'green', ...(api.features14 ? { ...presence(x.id), blocked: st14.blocks.has(x.id) } : {}) })) }), true;
     if (a === 'conversations' && !b && method === 'GET') {
       const since = query.since ? Date.parse(query.since) : null;
-      return json(200, { ok: true, conversations: [...convs.values()].filter((x) => !since || x.updatedAt >= since).map(convView), removed: [], serverTime: iso(Date.now()) }), true;
+      return json(200, { ok: true, conversations: [...convs.values()].filter((x) => (!since || x.updatedAt >= since) && (!x.bridge || (bridged && msgs.get(x.id).length))).map(convView), removed: [], serverTime: iso(Date.now()) }), true;
     }
     if (a === 'conversations' && !b && method === 'POST') {
       if (body.kind === 'direct') {
@@ -379,7 +512,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     }
     if (a === 'conversations' && b) {
       const conv = convs.get(Number(b));
-      if (!conv) return json(404, { ok: false, code: 'not_found' }), true;
+      if (!conv || (conv.bridge && !bridged)) return json(404, { ok: false, code: 'not_found' }), true;
       const list = msgs.get(conv.id);
       if (!c && method === 'GET') return json(200, { ok: true, conversation: convView(conv) }), true;
       if (!c && method === 'PATCH') {
@@ -410,6 +543,20 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       if (c === 'messages' && method === 'POST') {
         const dup = list.find((x) => x.clientId === body.clientId && x.senderId === ME);
         if (dup) return json(200, { ok: true, message: msgView(dup), duplicate: true }), true;
+        if (conv.bridge) {
+          if ((body.kind != null && body.kind !== 'text') || ['mediaId', 'thumbMediaId', 'video', 'location', 'poll', 'event', 'arrival', 'action', 'replyStory', 'meta'].some((k) => body[k] != null)) return json(409, { ok: false, code: 'bridge_text_only', reason: 'kind' }), true;
+          const st = conv.bridge.state;
+          if (st === 'locked') return json(403, { ok: false, code: 'bridge_locked' }), true;
+          if (st === 'off') return json(409, { ok: false, code: 'bridge_off', reason: 'off' }), true;
+          if (st === 'unreachable') return json(503, { ok: false, code: 'bridge_unreachable', reason: 'not_running' }), true;
+          if (st === 'logged_out' || st === 'unlinked') return json(409, { ok: false, code: 'bridge_unlinked', reason: st }), true;
+          if (conv.bridge.closed) return json(502, { ok: false, code: 'bridge_failed', reason: 'chat_closed' }), true;
+          const bm = addMsg(conv.id, { senderId: ME, text: body.text, clientId: body.clientId, replyTo: body.replyTo || null });
+          bm.bridge = { sender: null, remote: false, state: bridge.sendFails ? 'failed' : 'sent', reason: bridge.sendFails || null, placeholder: null };
+          log.sent.push(body);
+          emit('message.new', { conversationId: conv.id, messageId: bm.id, senderId: ME, clientId: bm.clientId, kind: 'text', createdAt: iso(bm.createdAt), bridge: conv.bridge.network });
+          return json(200, { ok: true, message: msgView(bm), duplicate: false }), true;
+        }
         if ((body.mediaId && !media.has(body.mediaId)) || (body.thumbMediaId && !media.has(body.thumbMediaId))) return json(409, { ok: false, code: 'media_invalid' }), true;
         const rich = {};
         if (body.kind === 'poll') rich.poll = { ...body.poll, options: body.poll.options.map((t, i) => ({ id: `o${i + 1}`, text: t, count: 0, voters: [], addedBy: null })), closed: false, closedAt: null, voterCount: 0, memberCount: conv.members.length, creatorId: ME, myVotes: [] };
@@ -447,7 +594,14 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     if (a === 'messages' && b) {
       let m = null;
       for (const l of msgs.values()) m = l.find((x) => x.id === Number(b)) || m;
-      if (!m) return json(404, { ok: false, code: 'not_found' }), true;
+      if (!m || (convs.get(m.conversationId).bridge && !bridged)) return json(404, { ok: false, code: 'not_found' }), true;
+      if (c === 'resend' && method === 'POST') {
+        if (!m.bridge || m.bridge.state !== 'failed') return json(400, { ok: false, code: 'invalid' }), true;
+        log.resends.push(m.id);
+        m.bridge = { ...m.bridge, state: bridge.sendFails ? 'failed' : 'sent', reason: bridge.sendFails || null };
+        m.changedAt = Date.now();
+        return json(200, { ok: true, message: msgView(m) }), true;
+      }
       if (c === 'reaction') {
         m.reactions = body.emoji ? [{ emoji: body.emoji, count: 1, userIds: [ME] }] : [];
         log.reactions.push({ id: m.id, emoji: body.emoji });
@@ -496,6 +650,36 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     features,
     addConv,
     addMsg,
+    /** Messenger 1.13 / 1.14: the bridges' state (networks, the login in progress, sendFails, …). */
+    bridge,
+    addBridgeConv,
+    addBridgeMsg,
+    /** A contact's message arrives in a chat over a bridge (message.new with `bridge`). */
+    receiveBridge(convId, opts = {}) {
+      const m = addBridgeMsg(convId, opts);
+      emit('message.new', { conversationId: convId, messageId: m.id, senderId: m.senderId, clientId: null, kind: m.kind, createdAt: iso(m.createdAt), bridge: convs.get(convId).bridge.network });
+      return m;
+    },
+    /** The state of a chat's bridge changed (unreachable, logged_out, …; `closed`). */
+    setBridgeState(convId, patch) {
+      const c = convs.get(convId);
+      Object.assign(c.bridge, patch);
+      c.updatedAt = Date.now();
+      emit('conversation.update', { conversationId: convId, reason: 'bridge' });
+    },
+    /** The other side got / read Marc's messages up to `upTo` (the bridge's word). */
+    bridgeRead(convId, upTo, { read = true } = {}) {
+      const c = convs.get(convId);
+      c.bridge.deliveredUpTo = upTo;
+      if (read) c.bridge.readUpTo = upTo;
+      for (const m of msgs.get(convId)) if (m.senderId === ME && m.id <= upTo && m.bridge && m.bridge.state !== 'failed') { m.bridge.state = read ? 'read' : 'delivered'; m.changedAt = Date.now(); }
+      c.updatedAt = Date.now();
+      emit('read', { conversationId: convId, userId: null, lastReadId: read ? upTo : null, lastDeliveredId: upTo, readUpTo: c.bridge.readUpTo, deliveredUpTo: c.bridge.deliveredUpTo });
+    },
+    /** Contacts of a chat over a bridge are typing (userId null). */
+    bridgeTyping(convId, contacts = [{ contactId: 12, name: 'Kim Muster' }]) {
+      emit('typing', { conversationId: convId, userId: null, contacts, until: contacts.length ? iso(Date.now() + 6000) : null });
+    },
     /** Upload a file into the mock's media store (e.g. a received video and its preview) → mediaId. */
     addMedia(mime, data) {
       const mediaId = crypto.randomBytes(16).toString('hex');
@@ -538,4 +722,4 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   return api;
 }
 
-module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141 };
+module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141, FEATURES_LINKED, FEATURES_BRIDGED };

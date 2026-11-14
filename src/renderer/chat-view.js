@@ -77,6 +77,7 @@
 		down: 'M12 5v14M6 13l6 6 6-6',
 		external: 'M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6',
 		copy: 'M9 9h11v11H9z|M5 15H4V4h11v1',
+		link: 'M10 13a5 5 0 0 0 7.1.5l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7|M14 11a5 5 0 0 0-7.1-.5l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7',
 		retry: 'M21 12a9 9 0 1 1-3-6.7L21 8|M21 3v5h-5',
 		minus: 'M5 12h14',
 		target: 'M12 5a7 7 0 1 0 0 14a7 7 0 1 0 0-14|M12 10a2 2 0 1 0 0 4a2 2 0 1 0 0-4|M12 2v3M12 19v3M2 12h3M19 12h3',
@@ -291,6 +292,19 @@
 			}
 			return box;
 		}
+
+		/** A chat's picture; a chat over a bridge (Messenger 1.14) carries the service's sign ("WA") at its corner. */
+		function convAvatar(c, size) {
+			const a = avatar(CS.avatarOf(c), size);
+			const b = CS.bridgeOf(c);
+			if (!b) return a;
+			return el('span', { class: 'cv-av-wrap' }, [a, el('span', { class: `cv-net-mark${size < 40 ? ' is-sm' : ''}`, title: CS.bridgeLabel(c), 'aria-hidden': 'true', text: CS.bridgeMark(b.network) })]);
+		}
+
+		// Messenger 1.14: the explanation of a chat over a bridge was read (per service, this PC)
+		const INTRO_KEY = 'gc.chat.bridgeIntro';
+		const introSeen = (net) => { try { return JSON.parse(root.localStorage.getItem(INTRO_KEY) || '[]').includes(net); } catch (_) { return false; } };
+		const markIntro = (net) => { try { const l = JSON.parse(root.localStorage.getItem(INTRO_KEY) || '[]'); if (!l.includes(net)) root.localStorage.setItem(INTRO_KEY, JSON.stringify(l.concat(net).slice(-20))); } catch (_) { /* storage unavailable */ } };
 
 		// ── Messenger 1.4.0: modules and their kit ───────────
 
@@ -579,7 +593,8 @@
 			const r = await api.conversations(server ? { refresh: true } : undefined).catch(() => null);
 			if (!r || r.ok === false) return;
 			const before = curConv();
-			const ticks = (c) => (c ? `${c.readUpTo}|${c.deliveredUpTo}` : '');
+			// what the bubbles show of the conversation: the ticks, and (a chat over a bridge) whether "Erneut senden" is offered
+			const ticks = (c) => (c ? `${c.readUpTo}|${c.deliveredUpTo}|${c.can && c.can.send === false ? 0 : 1}` : '');
 			S.convs = Array.isArray(r.conversations) ? r.conversations : [];
 			if (typeof S.cur === 'number' && !conv(S.cur)) closeChat();
 			renderList();
@@ -636,11 +651,20 @@
 
 		/** Filter chips of the list (Messenger 1.4.0 msg_tools): Alle, Ungelesen, Gruppen, own lists. */
 		function renderChips() {
-			const on = f14().tools && !S.archived;
+			// Messenger 1.14: „Nur GateControl“ and one chip per service as soon as there is a chat over a bridge
+			const nets = CS.bridgeNetworks(S.convs);
+			const tools = f14().tools;
+			const on = (tools || nets.length > 0) && !S.archived;
 			refs.chips.hidden = !on;
 			if (!on) { S.filter = 'all'; return; }
 			if (S.filter.startsWith('list:') && !S.lists.some((l) => `list:${l.id}` === S.filter)) S.filter = 'all';
-			const chips = [['all', t('chat.filter.all')], ['unread', t('chat.filter.unread')], ['groups', t('chat.filter.groups')], ...S.lists.map((l) => [`list:${l.id}`, l.name])];
+			if ((S.filter === 'gc' && !nets.length) || (S.filter.startsWith('net:') && !nets.some((n) => `net:${n.id}` === S.filter))) S.filter = 'all';
+			const chips = [
+				['all', t('chat.filter.all')],
+				...(tools ? [['unread', t('chat.filter.unread')], ['groups', t('chat.filter.groups')]] : []),
+				...(nets.length ? [['gc', t('chat.bc.filter_gc')], ...nets.map((n) => [`net:${n.id}`, n.label])] : []),
+				...(tools ? S.lists.map((l) => [`list:${l.id}`, l.name]) : []),
+			];
 			clear(refs.chips);
 			const unread = S.convs.filter((x) => !x.archived && (x.unread || 0) > 0).length;
 			for (const [k, label] of chips) {
@@ -649,7 +673,7 @@
 					k === 'unread' && unread ? el('small', { text: String(unread) }) : null,
 				]));
 			}
-			refs.chips.appendChild(iconBtn('plus', t('chat.lists.add'), () => openSettings('lists'), 'cv-ib-flat cv-ib-sm cv-chip-add'));
+			if (tools) refs.chips.appendChild(iconBtn('plus', t('chat.lists.add'), () => openSettings('lists'), 'cv-ib-flat cv-ib-sm cv-chip-add'));
 		}
 
 		function inboxRowEl() {
@@ -694,6 +718,7 @@
 
 		/** List avatar; a direct chat shows "online" as a dot (Messenger 1.4.0 privacy2). */
 		function rowAvatar(c) {
+			if (CS.bridgeOf(c)) return convAvatar(c, 42);
 			const a = avatar(CS.avatarOf(c), 42);
 			if (c.kind === 'direct' && c.peer && c.peer.online === true) {
 				return el('span', { class: 'cv-av-wrap' }, [a, el('span', { class: 'cv-online', title: t('chat.seen.online') })]);
@@ -923,7 +948,7 @@
 			clear(refs.head).append(
 				iconBtn('back', t('chat.common.back'), () => closeChat(), 'cv-ib-flat cv-only-narrow'),
 				el('button', { type: 'button', class: 'cv-head-who', 'aria-label': t('chat.info.open'), on: { click: () => toggleInfo() } }, [
-					avatar(CS.avatarOf(c), 38),
+					convAvatar(c, 38),
 					el('span', { class: 'cv-head-tx' }, [el('b', { text: CS.title(c, t) }), el('span', { class: `cv-head-sub${sub.typing ? ' is-typing' : ''}`, text: sub.text })]),
 				]),
 				el('span', { class: 'cv-grow' }),
@@ -946,6 +971,7 @@
 			if (!c || typeof S.cur !== 'number') { refs.bars.hidden = true; return; }
 			const cx = ctx();
 			const f = f14();
+			bridgeBars(c);
 			const ne = f.events && c.nextEvent && c.nextEvent.messageId ? c.nextEvent : null;
 			if (ne) {
 				const when = CS.shortWhen(ne.startsAt, cx);
@@ -971,6 +997,45 @@
 				]));
 			}
 			refs.bars.hidden = !refs.bars.childNodes.length;
+		}
+
+		/**
+		 * Messenger 1.14, a chat over a bridge: why it takes nothing right now (not reachable, signed out — with
+		 * „Neu verknüpfen“ —, not linked, locked, switched off, no longer in the chat) and the line „Dieser Chat läuft
+		 * über WhatsApp – nicht nur über deinen Server.“ with „Mehr“; on the first visit of a service the explanation
+		 * stands open until „Verstanden“.
+		 */
+		function bridgeBars(c) {
+			const b = CS.bridgeOf(c);
+			if (!b) return;
+			const network = CS.bridgeLabel(c);
+			const block = CS.bridgeBlock(c);
+			if (block) {
+				refs.bars.appendChild(el('div', { class: `cv-bc-state${block.warn ? ' is-warn' : ''}`, role: 'status', 'data-state': block.key }, [
+					icon(block.warn ? 'alert' : 'info', 16),
+					el('span', { class: 'cv-bc-tx', text: t(`chat.bc.${block.key}`, { network }) }),
+					block.relink && f14().linked && settings ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', 'data-act': 'relink', text: t('chat.bc.relink'), on: { click: () => openSettings('linked') } }) : null,
+				]));
+			}
+			if (S.bridgeIntro === c.id || !introSeen(b.network)) {
+				refs.bars.appendChild(el('div', { class: 'cv-bc-first' }, [
+					el('b', { text: t('chat.bc.first_title', { network }) }),
+					el('p', { text: t('chat.bc.first_lead', { network }) }),
+					el('ul', null, ['first_1', 'first_2', 'first_3'].map((k) => el('li', { text: t(`chat.bc.${k}`, { network }) }))),
+					el('button', { type: 'button', class: 'btn btn-pri btn-sm', 'data-act': 'intro-ok', text: t('chat.bc.first_ok'), on: { click: () => { markIntro(b.network); S.bridgeIntro = null; renderBars(); } } }),
+				]));
+			} else {
+				refs.bars.appendChild(el('div', { class: 'cv-bc-strip' }, [
+					icon('info', 14),
+					el('span', { class: 'cv-bc-tx', text: t('chat.bc.strip', { network }) }),
+					el('button', { type: 'button', class: 'cv-bc-more', 'data-act': 'intro', text: t('chat.bc.more'), on: { click: () => { S.bridgeIntro = c.id; renderBars(); } } }),
+				]));
+			}
+		}
+
+		async function resendMsg(m) {
+			const r = await api.resend(m.id).catch((e) => ({ ok: false, error: e && e.message }));
+			if (r && r.ok === false) toast(CS.errorText(r, t), 'error');
 		}
 
 		async function pinMsg(c, messageId, pinned) {
@@ -1055,7 +1120,7 @@
 
 		function quoteEl(q, c, cx) {
 			if (!q) return null;
-			const name = q.missing ? '' : CS.nameOf(c, q.senderId, cx);
+			const name = q.missing ? '' : CS.quoteName(q, c, cx);
 			const text = q.missing ? t('chat.msg.quoteMissing') : (q.deleted ? t('chat.msg.deleted') : (q.text || t(`chat.kind.${q.kind || 'text'}`)));
 			return el('button', { type: 'button', class: 'cv-quote', on: { click: (e) => { e.stopPropagation(); if (q.id && !q.missing) jumpTo(q.id); } } }, [
 				name ? el('b', { text: name }) : null,
@@ -1067,7 +1132,11 @@
 			const m = it.m;
 			const mine = !!m.mine;
 			const wrap = el('div', { class: `cv-msg${mine ? ' is-out' : ' is-in'}${it.cont ? ' is-cont' : ''}`, 'data-id': m.id ? String(m.id) : '', 'data-client': m.clientId || '' });
-			if (!mine && c.kind === 'group' && !it.cont) {
+			// Messenger 1.14: a contact of another messenger (no account: `bridge.sender`)
+			const contact = m.bridge && m.bridge.sender ? m.bridge.sender : null;
+			if (!mine && c.kind === 'group' && !it.cont && contact) {
+				wrap.appendChild(el('span', { class: 'cv-msg-av' }, [avatar(contact.name ? CS.personAvatar({ name: contact.name }) : { kind: 'icon', icon: 'gone' }, 28)]));
+			} else if (!mine && c.kind === 'group' && !it.cont) {
 				const p = CS.member(c, m.senderId);
 				wrap.appendChild(el('span', { class: 'cv-msg-av' }, [avatar(p && !p.gone ? CS.personAvatar(p) : { kind: 'icon', icon: m.senderId === null ? 'system' : 'gone' }, 28)]));
 			} else if (!mine && c.kind === 'group') {
@@ -1077,7 +1146,7 @@
 			const b = el('div', { class: `cv-bub${mine ? ' cv-out' : ' cv-in'}${m.deleted ? ' is-deleted' : ''}${m.pending ? ' is-pending' : ''}${m.failed ? ' is-failed' : ''}${richKind ? ` cv-bub-rich is-${CS.isShownKind(m) ? m.kind : 'unknown'}` : ''}` });
 			if (!mine && c.kind === 'group' && !it.cont) {
 				const p = CS.member(c, m.senderId);
-				const name = el('b', { class: 'cv-sender', text: CS.nameOf(c, m.senderId, cx) });
+				const name = el('b', { class: 'cv-sender', text: CS.senderName(m, c, cx) });
 				if (p && p.colorHex) name.style.color = p.colorHex;
 				b.appendChild(name);
 			}
@@ -1086,6 +1155,9 @@
 			} else {
 				if (m.replyTo) b.appendChild(quoteEl(m.replyTo, c, cx));
 				if (m.replyStory) b.appendChild(storyQuoteEl(m.replyStory, c, cx));
+				// Messenger 1.14: a file or kind of message that does not cross the bridge yet — said, never swallowed
+				const ph = CS.placeholderOf(m);
+				if (ph) b.appendChild(el('div', { class: 'cv-bc-ph', 'data-ph': ph.kind }, [icon(ph.kind === 'unsupported' ? 'info' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : ph.kind === 'video' ? 'video' : ph.kind === 'location' ? 'pin' : ph.kind === 'file' ? 'file' : 'mic'), 14), el('span', { text: CS.placeholderText(m, c, t) })]));
 				// Messenger 1.11: a file the host's virus scan checks or blocked — the state instead of picture / player / file
 				const sc = CS.mediaScan(m, t);
 				if (sc && sc.blocked && (m.kind === 'image' || m.kind === 'voice' || m.kind === 'file')) b.appendChild(blockedEl(m, sc));
@@ -1117,6 +1189,13 @@
 				]));
 			} else if (m.pending && m.error) {
 				b.appendChild(el('div', { class: 'cv-waiting', text: t('chat.outbox.waiting') }));
+			}
+			// Messenger 1.14: stored here, but the bridge did not take it — why, and „Erneut senden“
+			const bf = CS.bridgeFailure(m, t);
+			if (bf) {
+				b.classList.add('is-failed');
+				const again = el('button', { type: 'button', class: 'btn btn-sec btn-xs', 'data-act': 'resend', on: { click: async () => { again.disabled = true; await resendMsg(m); again.disabled = false; } } }, [icon('retry', 13), t('chat.bc.resend')]);
+				b.appendChild(el('div', { class: 'cv-failed cv-bc-failed' }, [el('span', { text: bf.text }), c.can && c.can.send ? again : null]));
 			}
 			if (!m.deleted && Array.isArray(m.reactions) && m.reactions.length) b.appendChild(reactionsEl(m, c, cx));
 			const body = el('div', { class: 'cv-msg-body' }, [b]);
@@ -1873,16 +1952,25 @@
 					refs.composer.appendChild(el('div', { class: 'cv-blocked' }, [icon('block', 15), el('span', { class: 'cv-grow', text: t('chat.block.composer') }), el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('chat.block.unblock'), on: { click: () => setBlocked(c, false) } })]));
 					return;
 				}
+				if (block === 'bridge') {
+					// Messenger 1.14: the bar above says why (not reachable, signed out, …)
+					refs.composer.appendChild(el('div', { class: 'cv-blocked cv-bc-closed' }, [icon('info', 15), el('span', { text: t('chat.bc.cannot_send', { network: CS.bridgeLabel(c) }) })]));
+					return;
+				}
 				refs.composer.appendChild(el('div', { class: 'cv-blocked' }, [icon(block === 'readonly' ? 'shield' : 'lock', 15), el('span', { text: t(block === 'readonly' ? 'chat.readonly' : 'chat.peerGone') })]));
 				return;
 			}
 			const cx = ctx();
+			// Messenger 1.14: only text crosses a bridge — no files, voice messages, locations, polls, events, actions
+			const bridged = !!CS.bridgeOf(c);
+			const placeholder = bridged ? t('chat.bc.placeholder', { network: CS.bridgeLabel(c) }) : t('chat.placeholder');
+			if (bridged && S.rec) stopRec(false);
 			if (S.reply || S.edit) {
 				const m = S.reply || S.edit;
 				refs.composer.appendChild(el('div', { class: 'cv-replybar' }, [
 					icon(S.edit ? 'pen' : 'reply', 15),
 					el('span', { class: 'cv-replybar-tx' }, [
-						el('b', { text: S.edit ? t('chat.msg.editing') : t('chat.msg.replyTo', { name: CS.nameOf(c, m.senderId, cx) }) }),
+						el('b', { text: S.edit ? t('chat.msg.editing') : t('chat.msg.replyTo', { name: CS.senderName(m, c, cx) }) }),
 						el('span', { text: CS.summary(m, c, cx) }),
 					]),
 					iconBtn('close', t('chat.common.cancel'), () => { const wasEdit = !!S.edit; S.reply = null; S.edit = null; renderComposer(false); if (wasEdit && refs.input) { refs.input.value = ''; grow(); } }, 'cv-ib-flat'),
@@ -1898,7 +1986,7 @@
 				refs.input = null;
 				return;
 			}
-			refs.input = el('textarea', { class: 'cv-input', rows: '1', placeholder: t('chat.placeholder'), 'aria-label': t('chat.placeholder'), maxlength: String((cx.me && cx.me.limits && cx.me.limits.textMax) || 4000) });
+			refs.input = el('textarea', { class: 'cv-input', rows: '1', placeholder, 'aria-label': placeholder, maxlength: String((cx.me && cx.me.limits && cx.me.limits.textMax) || 4000) });
 			refs.input.value = text;
 			refs.input.addEventListener('input', () => { grow(); if (refs.input.value.trim() && !S.edit) api.typing(c.id).catch(() => {}); });
 			refs.input.addEventListener('keydown', (e) => {
@@ -1915,15 +2003,15 @@
 				if (files.length) { e.preventDefault(); files.forEach((f) => attach(f)); }
 			});
 			const features = (cx.me && cx.me.features) || {};
-			refs.composer.appendChild(el('div', { class: 'cv-row-compose' }, [
-				attachButton(c, features),
+			refs.composer.appendChild(el('div', { class: `cv-row-compose${bridged ? ' is-bridged' : ''}` }, [
+				bridged ? null : attachButton(c, features),
 				// with the attach menu (Messenger 1.4.0) "Standort senden" is in there
-				features.location !== false && typeof api.mapTile === 'function' && !attachMenuOn() ? iconBtn('pin', t('chat.loc.button'), () => locationDialog(), 'cv-loc-btn') : null,
+				!bridged && features.location !== false && typeof api.mapTile === 'function' && !attachMenuOn() ? iconBtn('pin', t('chat.loc.button'), () => locationDialog(), 'cv-loc-btn') : null,
 				refs.input,
-				features.voice !== false && recordingSupported() ? iconBtn('mic', t('chat.recStart'), () => startRec()) : null,
+				!bridged && features.voice !== false && recordingSupported() ? iconBtn('mic', t('chat.recStart'), () => startRec()) : null,
 				el('button', { type: 'button', class: 'cv-ib cv-ib-pri', 'aria-label': t('chat.send'), title: t('chat.send'), on: { click: () => submit() } }, [icon('send', 16, '2.2')]),
 			]));
-			refs.composer.appendChild(el('div', { class: 'cv-compose-hint', text: `${enterSends() ? t('chat.enterHint') : t('chat.enterHintCtrl')} · ${t('chat.dropHint')}` }));
+			refs.composer.appendChild(el('div', { class: 'cv-compose-hint', text: bridged ? (enterSends() ? t('chat.enterHint') : t('chat.enterHintCtrl')) : `${enterSends() ? t('chat.enterHint') : t('chat.enterHintCtrl')} · ${t('chat.dropHint')}` }));
 			grow();
 			if (keep) {
 				refs.input.focus();
@@ -2088,6 +2176,8 @@
 		async function attach(file) {
 			const c = curConv();
 			if (!c || CS.composerBlock(c)) return;
+			// Messenger 1.14: no files into a chat over a bridge yet
+			if (CS.bridgeOf(c)) { toast(CS.errorText('bridge_text_only', t), 'warning'); return; }
 			const lim = limits();
 			const k = CS.attachKind(file, lim);
 			if (!k.kind) { toast(CS.errorText(k.reason, t), 'error'); return; }
@@ -2145,7 +2235,7 @@
 		let dragDepth = 0;
 		const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
 		refs.chat.addEventListener('dragenter', (e) => {
-			if (!hasFiles(e) || !curConv() || CS.composerBlock(curConv())) return;
+			if (!hasFiles(e) || !curConv() || CS.composerBlock(curConv()) || CS.bridgeOf(curConv())) return;
 			e.preventDefault();
 			dragDepth++;
 			refs.drop.hidden = false;
@@ -2309,13 +2399,17 @@
 			clear(refs.info);
 			refs.info.appendChild(el('div', { class: 'cv-info-head' }, [el('b', { text: t('chat.info.title') }), iconBtn('close', t('chat.common.close'), () => toggleInfo(), 'cv-ib-flat')]));
 			const notice = CS.isNotice(c);
-			const sub = notice
+			const bridge = CS.bridgeOf(c);
+			const sub = bridge
+				// Messenger 1.14: a contact or a group of another messenger
+				? t(c.kind === 'group' ? 'chat.bc.info_kind_group' : 'chat.bc.info_kind_direct', { network: CS.bridgeLabel(c) })
+				: notice
 				// Messenger 1.6 notice channel: no "kept by a plugin" hint
 				? (CS.noticeLabel(c) ? t('chat.notice.infoSub', { source: CS.noticeLabel(c) }) : t('chat.channelSub'))
 				: c.kind === 'group'
 					? (c.managedBy ? t('chat.info.managed', { plugin: pluginName(c.managedBy) }) : t('chat.membersN', { n: (c.members || []).length }))
 					: (c.peer && c.peer.gone ? t('chat.peerGone') : (CS.lastSeenText(c.peer, cx) || t('chat.directSub')));
-			const top = el('div', { class: 'cv-info-top' }, [avatar(CS.avatarOf(c), 76), el('b', { text: CS.title(c, t) }), notice ? el('span', { class: 'cv-chip cv-row-tag', text: t('chat.notice.tag') }) : null, el('span', { class: 'cv-dim', text: sub })]);
+			const top = el('div', { class: 'cv-info-top' }, [convAvatar(c, 76), el('b', { text: CS.title(c, t) }), notice ? el('span', { class: 'cv-chip cv-row-tag', text: t('chat.notice.tag') }) : null, el('span', { class: 'cv-dim', text: sub })]);
 			if (c.can && c.can.editInfo) {
 				top.appendChild(el('div', { class: 'cv-info-btns' }, [
 					el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => renameDialog(c) } }, [icon('pen', 13), t('chat.info.rename')]),
@@ -2337,7 +2431,8 @@
 			mute.value = mv;
 			mute.addEventListener('change', () => { const p = CS.mutePatch(mute.value); if (p) patchConv(c, p); });
 			sec.appendChild(kv(t('chat.info.notifications'), c.muted ? 'bellOff' : 'bell', mute));
-			if (!c.readonly) {
+			// nothing disappears by itself in a chat over a bridge, and no files cross it yet
+			if (!c.readonly && !bridge) {
 				const opts = (cx.me && cx.me.limits && cx.me.limits.disappearingS) || [0, 86400, 604800, 2592000];
 				if (c.can && c.can.setDisappearing && (!cx.me || !cx.me.features || cx.me.features.disappearing !== false)) {
 					const dis = el('select', { class: 'inp cv-select', 'aria-label': t('chat.info.disappearing') }, opts.map((s) => el('option', { value: String(s), text: CS.disLabel(s, t) })));
@@ -2349,12 +2444,14 @@
 				}
 			}
 			const mediaCount = el('span', { class: 'cv-dim', text: '…' });
-			sec.appendChild(kv(t('chat.info.media'), 'image', mediaCount));
+			if (!bridge) sec.appendChild(kv(t('chat.info.media'), 'image', mediaCount));
 			refs.info.appendChild(sec);
 
-			const mediaSec = el('div', { class: 'cv-info-sec cv-media-sec', hidden: true }, [el('div', { class: 'cv-sec', text: t('chat.info.recentMedia') })]);
-			refs.info.appendChild(mediaSec);
-			mediaPane(c, cx, mediaSec, mediaCount);
+			if (!bridge) {
+				const mediaSec = el('div', { class: 'cv-info-sec cv-media-sec', hidden: true }, [el('div', { class: 'cv-sec', text: t('chat.info.recentMedia') })]);
+				refs.info.appendChild(mediaSec);
+				mediaPane(c, cx, mediaSec, mediaCount);
+			}
 
 			// Messenger 1.4.0 (msg_tools): archive, lists, export, block
 			if (f14().tools) {
@@ -2371,7 +2468,7 @@
 				refs.info.appendChild(tools);
 			}
 
-			if (c.kind === 'group' && !c.readonly) {
+			if (c.kind === 'group' && !c.readonly && !bridge) {
 				const ms = el('div', { class: 'cv-info-sec' }, [el('div', { class: 'cv-sec', text: `${t('chat.info.members')} · ${(c.members || []).length}` })]);
 				if (c.can && c.can.manageMembers) ms.appendChild(el('button', { type: 'button', class: 'btn btn-sec btn-sm cv-add', on: { click: () => addMembersDialog(c) } }, [icon('plus', 13), t('chat.info.addMembers')]));
 				const meId = cx.me && cx.me.user ? cx.me.user.id : null;
@@ -2387,7 +2484,13 @@
 				if (c.managedBy && !notice) ms.appendChild(el('p', { class: 'cv-note', text: t('chat.info.managedHint', { plugin: pluginName(c.managedBy) }) }));
 				refs.info.appendChild(ms);
 			}
-			const foot = el('div', { class: 'cv-info-sec' }, [el('p', { class: 'cv-note cv-note-lock' }, [icon('lock', 14), el('span', { text: t('chat.info.encrypted') })])]);
+			// a chat over a bridge does not lie on the own server only: what runs where, and what does not work there
+			const foot = bridge
+				? el('div', { class: 'cv-info-sec cv-bc-info' }, [
+					el('p', { class: 'cv-note cv-note-lock' }, [icon('info', 14), el('span', { text: t('chat.bc.info_note', { network: CS.bridgeLabel(c) }) })]),
+					el('p', { class: 'cv-note', text: t('chat.bc.info_not', { network: CS.bridgeLabel(c) }) }),
+				])
+				: el('div', { class: 'cv-info-sec' }, [el('p', { class: 'cv-note cv-note-lock' }, [icon('lock', 14), el('span', { text: t('chat.info.encrypted') })])]);
 			if (c.can && c.can.leave) foot.appendChild(el('button', { type: 'button', class: 'btn btn-danger cv-danger btn-sm', text: t('chat.info.leave'), on: { click: () => leave(c) } }));
 			refs.info.appendChild(foot);
 		}
@@ -2657,7 +2760,8 @@
 				body.appendChild(el('div', { class: 'cv-pref' }, [el('span', { class: 'cv-pref-tx' }, [el('b', { text: t(label) }), el('small', { text: t(hint) })]), sw]));
 			}
 			body.appendChild(el('p', { class: 'cv-note', text: t('chat.prefs.toastHint') }));
-			body.appendChild(el('p', { class: 'cv-note cv-note-lock' }, [icon('lock', 14), el('span', { text: t('chat.info.encrypted') })]));
+			// Messenger 1.14: with chats over a bridge the sentence about the own server does not hold for every chat
+			if (!f14().bridgeChats) body.appendChild(el('p', { class: 'cv-note cv-note-lock' }, [icon('lock', 14), el('span', { text: t('chat.info.encrypted') })]));
 			dialog(t('chat.prefs.title'), body, [{ label: t('chat.common.close'), value: null }]);
 		}
 
