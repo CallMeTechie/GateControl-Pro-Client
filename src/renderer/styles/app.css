@@ -503,6 +503,7 @@ body:not([data-conn="connected"]) .show-connected { display: none !important; }
 .toast-info .dot { background: var(--info); }
 .toast-text { flex-grow: 1; overflow-wrap: anywhere; }
 .toast .btn { height: 28px; width: 28px; padding: 0; }
+.toast .btn.toast-act { width: auto; padding: 0 10px; flex-shrink: 0; color: var(--acc-t); font-weight: 600; }
 
 /* ── Narrower windows ──────────────────────────────────── */
 @media (max-width: 1200px) {
