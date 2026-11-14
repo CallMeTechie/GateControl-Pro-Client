@@ -142,8 +142,15 @@
 			past: days !== null && days < 0,
 			urgent: days !== null && days >= 0 && days <= 7,
 			reminder: r ? (r.sent ? t('drive.deadline.reminded') : reminderText(r.daysBefore, t)) : '',
+			// Drive 1.30.0: „Notizen & Aufgaben“ rings this reminder (a task there) — Drive sends no message of its own
+			byHub: remindedByHub(x),
 			value: r && Number.isInteger(r.daysBefore) ? String(r.daysBefore) : '',
 		};
+	}
+
+	/** Does „Notizen & Aufgaben“ ring this deadline's reminder (`reminder.by` of Drive 1.30.0; an older Drive: no)? */
+	function remindedByHub(d) {
+		return !!(d && d.reminder && d.reminder.by === 'notizen');
 	}
 
 	/** "Erinnern am Tag selbst" / "Erinnern 3 Tage vorher" */
@@ -196,6 +203,6 @@
 	return {
 		DOC_KINDS, DEADLINE_KINDS, REMIND_DAYS,
 		docKindLabel, docIcon, dayText, amountText, insightView, errorReason, suggestionView,
-		deadlineKind, daysUntil, relativeDay, deadlineView, reminderText, reminderOptions, reminderDays, deadlineGroups, recognizeError,
+		deadlineKind, daysUntil, relativeDay, deadlineView, remindedByHub, reminderText, reminderOptions, reminderDays, deadlineGroups, recognizeError,
 	};
 });

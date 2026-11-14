@@ -2098,7 +2098,9 @@
         "soon": "Nächste 30 Tage",
         "later": "Später",
         "past": "Abgelaufen"
-      }
+      },
+      "byHub": "über Notizen & Aufgaben",
+      "byHubHint": "An diese Frist erinnert „Notizen & Aufgaben“ – mit „Erledigt“ und „Später“."
     },
     "office": {
       "edit": "Im Browser bearbeiten",
@@ -4782,6 +4784,18 @@
       "copy": "Das Familien-Plugin behält eine Kopie. Der Weg zurück bleibt offen.",
       "look": "Ansehen",
       "ok": "OK"
-    }
+    },
+    "dl": {
+      "line": "Frist {{date}}",
+      "before0": "Erinnerung am Tag selbst",
+      "before1": "1 Tag vorher",
+      "beforeN": "{{n}} Tage vorher",
+      "open": "Datei öffnen",
+      "hint": "Die Frist steht an der Datei in Drive. Wie viele Tage vorher erinnert wird, stellst du dort ein; „Erledigt“ hakt sie auch in Drive ab.",
+      "deleteHint": "Löschen entfernt die Erinnerung an diese Frist. Die Frist bleibt in Drive.",
+      "deleted": "Gelöscht. Die Erinnerung an diese Frist ist entfernt, die Frist bleibt in Drive."
+    },
+    "readOnlyList": "Du kannst diese Liste ansehen, aber nicht ändern.",
+    "readOnlyTask": "In dieser Liste darfst du nur lesen."
   }
 }

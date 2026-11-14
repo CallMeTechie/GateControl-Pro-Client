@@ -32,6 +32,10 @@
  * list (managed by the Familie plugin: no sharing, leaving or deleting here; a child changes only what no parent made),
  * the note „Umzug abgeschlossen“ once, „Meldung, wenn ein Kind abhakt“ on the page „Quellen“, and the consent for a
  * place only for who may give it. The stars are counted in the Familie plugin; this page only shows the number.
+ * Plugin 1.7.0 (`driveDeadlines`): „Notizen & Aufgaben“ rings the reminders of Drive's deadlines — such a task shows
+ * the deadline at its row („Frist 30. Nov. · Versicherungsschein.pdf · 3 Tage vorher“) and in its details („Aus Drive“
+ * with „Datei öffnen“: the file on the Drive page; where the deadline and the days are set), and says what deleting it
+ * means. A list the person only reads has no quick entry, its tasks are shown but not changed.
  *
  * Data: window.gatecontrol.notes (core NotesService over IPC); texts: notes.* of the Pro locales; logic without DOM:
  * notes-state.js (window.GCNotesState), notes-md.js (window.GCNotesMd). Server text only ever goes into textContent
@@ -538,7 +542,10 @@
 			if (v.kind === 'list' && list) extra.push(ib('gear', t('notes.listSettings'), () => listSettings(list)));
 			if (v.kind === 'source') extra.push(ib('refresh', t('notes.syncNow'), async () => { const r = await api.syncSource(v.plugin); toast(ok(r) && r.scheduled ? t('notes.syncScheduled') : t('notes.syncRecent')); }));
 			m.appendChild(header(title, sub, extra));
-			if (has('tasks')) m.appendChild(quickBox());
+			// a member who only reads a list adds nothing to it (the server would refuse it)
+			const ro = v.kind === 'list' && !NS.listWritable(list || ((S.nav && S.nav.lists) || []).find((x) => x.id === v.id), null);
+			if (ro) m.appendChild(el('p', { class: 'hint nz-readonly', 'data-hint': 'read-only', text: t('notes.readOnlyList') }));
+			else if (has('tasks')) m.appendChild(quickBox());
 			if (!d) { m.appendChild(el('p', { class: 'nz-muted', text: t('notes.loading') })); return; }
 			if (d.error) { m.appendChild(el('div', { class: 'note note-err', text: NS.errText(d.error, t) })); return; }
 			let any = false;
@@ -577,7 +584,7 @@
 				row.appendChild(el('button', { type: 'button', class: `nz-ck${x.done ? ' on' : ''}`, 'aria-label': x.done ? t('notes.undo') : t('notes.complete'), 'aria-pressed': x.done ? 'true' : 'false',
 					on: { click: (e) => { e.stopPropagation(); complete(x, !x.done); } } }, [icon('check', 13)]));
 			} else row.appendChild(el('span', { class: 'nz-ck-none' }));
-			const meta = NS.metaLine(x, { userId: S.me && S.me.user.id, lists: S.nav ? S.nav.lists : [], inList: S.view.kind === 'list' }, t);
+			const meta = NS.metaLine(x, { userId: S.me && S.me.user.id, me: S.me, lists: S.nav ? S.nav.lists : [], inList: S.view.kind === 'list' }, t);
 			const marks = NS.taskMarks(x, S.me, t);
 			row.appendChild(el('div', { class: 'nz-row-tx' }, [el('span', { class: 'nz-row-title', text: x.title }), meta.length || marks.length ? el('span', { class: 'nz-row-meta' }, [
 				meta.length ? el('span', { class: 'nz-row-meta-tx', text: meta.join(' · ') }) : null, ...marks.map(markEl)]) : null]));
@@ -1040,7 +1047,10 @@
 			// plugin 1.6.0: a task of the family's list a parent made — a child changes only „Mein Tag“ and ticks off what is theirs
 			const fam = NS.familyInfo(S.me);
 			const inFamily = task.family === true && NS.isFamilyList(S.me, task.listId);
-			const locked = inFamily && !task.canEdit;
+			// … and a task of a list the person only reads stays readable too
+			const locked = !task.canEdit;
+			// plugin 1.7.0: this task reminds of a deadline of a file in Drive
+			const dl = NS.deadlineInfo(task, S.me, t);
 			box.appendChild(el('div', { class: 'nz-d-headrow' }, [
 				el('button', { type: 'button', class: `nz-ck nz-ck-lg${task.done ? ' on' : ''}`, 'data-free': '', disabled: !task.canComplete, 'aria-label': task.done ? t('notes.undo') : t('notes.complete'), on: { click: async () => { const r = await api.completeTask(task.id, !task.done); if (!ok(r)) fail(r); else { reloadDetail(); soon(0); } } } }, [icon('check', 14)]),
 				title,
@@ -1048,7 +1058,7 @@
 			]));
 			const list = task.list || ((S.nav && S.nav.lists) || []).find((l) => l.id === task.listId);
 			if (list) box.appendChild(el('div', { class: 'nz-crumb', text: `${t(`notes.area.${list.area}`)} › ${list.name}` }));
-			if (locked) box.appendChild(el('p', { class: 'hint nz-locked', 'data-hint': 'parents-only', text: t('notes.err.parents_only') }));
+			if (locked) box.appendChild(inFamily ? el('p', { class: 'hint nz-locked', 'data-hint': 'parents-only', text: t('notes.err.parents_only') }) : el('p', { class: 'hint nz-locked', 'data-hint': 'read-only', text: t('notes.readOnlyTask') }));
 			// „Erledigt von Lena“ — and for a parent the way back: „Noch nicht fertig“ (the task is open again, the stars are taken back)
 			const by = NS.doneByText(task, S.me, t);
 			const handBack = inFamily && fam.parent && task.done && task.doneBy && task.doneBy.id !== S.me.user.id && canWrite();
@@ -1065,7 +1075,8 @@
 					}, 'btn-sec', null, { 'data-act': 'not-done', title: t('notes.turn.notDoneHint') }) : null,
 				]));
 			}
-			if (task.sourceItem) box.appendChild(fromButton(task.sourceItem));
+			if (dl) box.appendChild(deadlineBox(task, dl));
+			else if (task.sourceItem) box.appendChild(fromButton(task.sourceItem));
 			// sub tasks
 			box.appendChild(el('div', { class: 'nz-lb', text: t('notes.subtasks') }));
 			const subs = el('div', { class: 'card nz-group-card' });
@@ -1168,10 +1179,12 @@
 			note.value = task.note || '';
 			note.addEventListener('change', () => patchTask(task, { note: note.value }));
 			box.appendChild(note);
-			if (task.sourceItem) box.appendChild(el('p', { class: 'hint', text: t('notes.doneHereThere', { source: task.sourceItem.source.label }) }));
+			if (task.sourceItem && !dl) box.appendChild(el('p', { class: 'hint', text: t('notes.doneHereThere', { source: task.sourceItem.source.label }) }));
+			// deleting such a task means „no reminder of this deadline“ — said where it is deleted, and once more after
+			if (dl && !locked) box.appendChild(el('p', { class: 'hint nz-dl-del', 'data-hint': 'deadline-delete', text: t('notes.dl.deleteHint') }));
 			box.appendChild(el('div', { class: 'nz-d-foot' }, [
 				el('span', { class: 'hint', text: task.updatedAt ? t('notes.changed', { when: new Date(task.updatedAt).toLocaleString(lang()) }) : '' }),
-				locked ? null : btn(t('notes.delete'), async () => { const r = await api.deleteTask(task.id); if (!ok(r)) { fail(r); return; } closeDetail(); soon(0); toast(t('notes.deleted'), 'success'); }, 'btn-danger', 'trash'),
+				locked ? null : btn(t('notes.delete'), async () => { const r = await api.deleteTask(task.id); if (!ok(r)) { fail(r); return; } closeDetail(); soon(0); toast(dl ? t('notes.dl.deleted') : t('notes.deleted'), 'success'); }, 'btn-danger', 'trash'),
 			]));
 			// what only the parents change stays readable (the server would refuse it anyway)
 			if (locked) for (const c of box.querySelectorAll('input, select, textarea, button')) if (!c.closest('[data-free], .nz-d-top')) c.disabled = true;
@@ -1564,6 +1577,22 @@
 				if (!all.family.length && !all.places.length) mine.appendChild(el('p', { class: 'hint', text: t('notes.place.mineNone') }));
 			}
 			wrap.appendChild(mine);
+		}
+
+		/**
+		 * A task that reminds of a deadline of a file in Drive (plugin 1.7.0): „Aus Drive · <Datei> · Datei öffnen“ — the
+		 * file on the Drive page of this app —, the day with how many days before, and where both are set.
+		 */
+		function deadlineBox(task, dl) {
+			const open = dl.open || (task.sourceItem && task.sourceItem.source.open) || null;
+			const from = t('notes.from', { source: task.sourceItem ? task.sourceItem.source.label : t(`notes.src.${task.source ? task.source.plugin : 'gatecontrol-drive'}`) });
+			return el('div', { class: 'nz-dl', 'data-box': 'deadline', 'data-free': '' }, [
+				open ? el('button', { type: 'button', class: 'nz-from', 'data-act': 'open-file', on: { click: () => openOriginal(open) } }, [
+					el('b', { text: from }), el('span', { class: 'nz-from-tx', text: [dl.file, t('notes.dl.open')].filter(Boolean).join(' · ') }), icon('open', 15)])
+					: el('div', { class: 'nz-from is-plain' }, [el('b', { text: from }), el('span', { class: 'nz-from-tx', text: dl.file })]),
+				el('span', { class: 'nz-mark nz-mark-lg', 'data-kind': 'deadline' }, [icon('bell', 14), el('span', { text: [dl.line, dl.before].filter(Boolean).join(' · ') })]),
+				el('p', { class: 'hint', 'data-hint': 'deadline', text: t('notes.dl.hint') }),
+			]);
 		}
 
 		function fromButton(item) {

@@ -25,6 +25,11 @@ Windows VPN client with integrated Remote Desktop (RDP) management.
   Sterne", "Erledigt von …"), stars given by parents only, a parent ticks off for a child and hands a task back ("Noch
   nicht fertig", also a button of the message to the parents), a child changes only what no parent made, the note "Umzug
   abgeschlossen" once and "Meldung, wenn ein Kind abhakt" on the page "Quellen". The stars are counted in the Familie plugin
+  — with plugin 1.7.0 and Drive 1.30.0 the reminders of Drive's deadlines ring from "Notizen & Aufgaben" (the
+  administrator's choice in Drive): such a task shows "Frist … · the file · 3 Tage vorher" at its row and in its details,
+  "Datei öffnen" opens the file on the Drive page (from the task and from the reminder's fourth button), deleting the
+  task says what that means; Drive's "Fristen" and "Details" say "über Notizen & Aufgaben" at such a reminder. A list the
+  person only reads has no quick entry, its tasks are shown but not changed
 
 ## Development
 ```bash

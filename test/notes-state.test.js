@@ -504,6 +504,49 @@ describe('notes-state.js', () => {
   });
 });
 
+describe('plugin 1.7.0: a task that reminds of a deadline of a file in Drive', () => {
+  const me = { features: ['tasks', 'reminderActions', 'driveDeadlines'], user: { id: 1, name: 'Max Muster' }, today: '2026-11-08', time: '08:00', prefs: { times: {} } };
+  const old = { ...me, features: ['tasks', 'reminderActions'] };
+  const deadline = { date: '2026-11-30', kind: 'cancellation', file: 'Versicherungsschein.pdf', daysBefore: 3, open: { plugin: 'gatecontrol-drive', route: 'node/41' } };
+  const task = { type: 'task', id: 77, listId: 1, title: 'Kfz-Versicherung kündigen', due: { date: '2026-11-30', time: null }, source: { plugin: 'gatecontrol-drive', id: 'deadline:12' }, deadline, done: false };
+
+  it('the row: „Frist …“, the file, how many days before — only with the word, and not for any other task', () => {
+    const ctx = { userId: 1, me, lists: [], inList: true };
+    assert.deepEqual(NS.metaLine(task, ctx, t), ['Frist Mo. 30. Nov.', 'Versicherungsschein.pdf', '3 Tage vorher']);
+    assert.deepEqual(NS.sourceChip(task, t), { text: 'Drive', tone: 'ok' });
+    // a done task says no more when it would have rung
+    assert.deepEqual(NS.metaLine({ ...task, done: true }, ctx, t), ['Frist Mo. 30. Nov.', 'Versicherungsschein.pdf']);
+    assert.deepEqual([0, 1, 14].map((daysBefore) => NS.metaLine({ ...task, deadline: { ...deadline, daysBefore } }, ctx, t)[2]), ['Erinnerung am Tag selbst', '1 Tag vorher', '14 Tage vorher']);
+    assert.deepEqual(NS.metaLine({ ...task, deadline: { ...deadline, date: '2026-11-09', file: null, daysBefore: null } }, ctx, t), ['Frist morgen']);
+    // an older plugin (no word), an older app context (no me), a task without a deadline
+    assert.deepEqual(NS.metaLine(task, { ...ctx, me: old }, t), []);
+    assert.deepEqual(NS.metaLine(task, { userId: 1, lists: [], inList: true }, t), []);
+    assert.deepEqual(NS.metaLine({ ...task, deadline: null }, ctx, t), []);
+    assert.deepEqual([NS.deadlineBefore(null, t), NS.deadlineBefore(-1, t), NS.deadlineBefore(2.5, t)], ['', '', '']);
+  });
+
+  it('the details: the day, the file and where „Datei öffnen“ leads — the Drive page of this app', () => {
+    const d = NS.deadlineInfo(task, me, t);
+    assert.deepEqual(d, { line: 'Frist Mo. 30. Nov.', file: 'Versicherungsschein.pdf', before: '3 Tage vorher', open: deadline.open });
+    assert.deepEqual(NS.openTarget(d.open, ['drive', 'notizen']), { page: 'drive', context: { kind: 'deadline', nodeId: 41, deadlineId: null } });
+    // no Drive page in this app: the plugin's portal tab
+    assert.deepEqual(NS.openTarget(d.open, ['notizen']), { portal: '/portal#plg-gatecontrol-drive' });
+    // a file that cannot be named: no button
+    assert.equal(NS.deadlineInfo({ ...task, deadline: { ...deadline, open: null } }, me, t).open, null);
+    assert.equal(NS.deadlineInfo({ ...task, deadline: { ...deadline, open: { plugin: 'gatecontrol-drive', route: '' } } }, me, t).open, null);
+    assert.equal(NS.deadlineInfo(task, old, t), null);
+    assert.equal(NS.deadlineInfo({ ...task, deadline: undefined }, me, t), null);
+    assert.equal(NS.deadlineInfo({ type: 'source', deadline }, me, t), null);
+    assert.equal(t('notes.dl.deleteHint'), 'Löschen entfernt die Erinnerung an diese Frist. Die Frist bleibt in Drive.');
+    assert.equal(get(en, 'notes.dl.deleteHint'), 'Deleting removes the reminder of this deadline. The deadline stays in Drive.');
+  });
+
+  it('a list the person only reads: no quick entry', () => {
+    assert.deepEqual([NS.listWritable({ id: 2, role: 'read', canEdit: false }, me), NS.listWritable({ id: 2, role: 'write', canEdit: true }, me), NS.listWritable({ id: 2 }, me), NS.listWritable(null, me), NS.listWritable({ id: 2, canEdit: true }, { ...me, readOnly: true })],
+      [false, true, true, true, false]);
+  });
+});
+
 describe('the page', () => {
   const view = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'notes-view.js'), 'utf8');
   it('builds its DOM without HTML strings', () => {

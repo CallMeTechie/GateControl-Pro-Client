@@ -2098,7 +2098,9 @@
         "soon": "Next 30 days",
         "later": "Later",
         "past": "Expired"
-      }
+      },
+      "byHub": "through Notes & Tasks",
+      "byHubHint": "“Notes & Tasks” reminds of this deadline – with “Done” and “Later”."
     },
     "office": {
       "edit": "Edit in browser",
@@ -4782,6 +4784,18 @@
       "copy": "The Family plugin keeps a copy. The way back stays open.",
       "look": "Have a look",
       "ok": "OK"
-    }
+    },
+    "dl": {
+      "line": "Deadline {{date}}",
+      "before0": "Reminder on the day itself",
+      "before1": "1 day before",
+      "beforeN": "{{n}} days before",
+      "open": "Open file",
+      "hint": "The deadline belongs to the file in Drive. How many days before you are reminded is set there; “Done” ticks it off in Drive too.",
+      "deleteHint": "Deleting removes the reminder of this deadline. The deadline stays in Drive.",
+      "deleted": "Deleted. The reminder of this deadline is removed, the deadline stays in Drive."
+    },
+    "readOnlyList": "You can look at this list but not change it.",
+    "readOnlyTask": "You may only read in this list."
   }
 }

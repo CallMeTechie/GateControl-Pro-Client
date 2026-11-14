@@ -353,4 +353,8 @@
 .nz-turn-who { flex-basis: 100%; flex-direction: row; flex-wrap: wrap; gap: 6px 16px; max-height: none; padding-bottom: 6px; }
 .nz-doneby { display: flex; align-items: center; gap: 10px; min-height: 30px; }
 .nz-locked { margin: 0; line-height: 1.45; }
+/* plugin 1.7.0: a task that reminds of a deadline of a file in Drive; a list the person only reads */
+.nz-dl { display: flex; flex-direction: column; gap: 8px; }
+.nz-dl .hint, .nz-dl-del, .nz-readonly { margin: 0; line-height: 1.45; }
+.nz-from.is-plain { cursor: default; }
 .nz-moved { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }

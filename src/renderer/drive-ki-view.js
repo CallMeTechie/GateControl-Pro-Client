@@ -57,6 +57,8 @@
 		// ── D2: "Fristen" ──────────────────────────────
 
 		function reminderSelect(d, title) {
+			// Drive 1.30.0: "über Notizen & Aufgaben" while the hub rings this reminder (Drive sends no message of its own)
+			const by = el('span', { class: 'dv-dl-by', 'data-by': 'notizen', title: t('drive.deadline.byHubHint'), text: t('drive.deadline.byHub'), hidden: !DD.remindedByHub(d) });
 			const v = DD.deadlineView(d, { t, locale: o.getLocale(), now: now() });
 			const sel = el('select', { class: 'dv-input dv-dl-remind', 'aria-label': t('drive.deadline.remind.label', { what: title }) });
 			for (const opt of DD.reminderOptions(t)) sel.appendChild(el('option', { value: opt.value, text: opt.label }));
@@ -69,6 +71,7 @@
 				sel.disabled = false;
 				if (r && r.ok) {
 					Object.assign(d, r.deadline);
+					by.hidden = !DD.remindedByHub(d);
 					sel.classList.toggle('is-set', !!sel.value);
 					o.toast(DD.reminderDays(sel.value) === null ? t('drive.deadline.remind.off') : t('drive.deadline.remind.set'), 'success');
 				} else {
@@ -76,7 +79,7 @@
 					o.toast(o.errorText(r, t), 'error');
 				}
 			});
-			return sel;
+			return el('span', { class: 'dv-dl-rem' }, [sel, by]);
 		}
 
 		/** Drive 1.17 ('deadlineMailCalendar'): the calendars a deadline can go to and my target per area; null: the family calendar only. */
