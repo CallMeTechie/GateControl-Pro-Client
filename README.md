@@ -16,6 +16,10 @@ Windows VPN client with integrated Remote Desktop (RDP) management.
   — with plugin 1.4.0 the shopping lists of the hub (tick off, add, change and delete items — also without the server,
   sent later in order), the list at a task ("Einkauf 0/8", chosen in the details or suggested by the quick entry), "Alles
   abgehakt" with undo, and the reminder's button "Liste öffnen" that opens the list in the app
+  — with plugin 1.5.0 a task at a place: the mark and the line "Ort" at a task, the dialog "Welcher …?" (the places near
+  one of the person's places with estimated minutes and kilometres, "Jeder …", "Meine Orte", on arriving / on leaving,
+  remembering), the place chip of the quick entry, "Orte" on the page "Quellen" and the consent for a place someone else
+  set. The phone watches the places and reminds — the PC shows and changes them, has no position and sends none
 
 ## Development
 ```bash

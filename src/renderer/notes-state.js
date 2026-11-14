@@ -8,7 +8,11 @@
  * words in `me.features` only (never a version): a task's marks (Erinnerung, Später: …, im Kalender), the calendar chip of
  * the quick entry and the card „Gestern offen geblieben“ of Mein Tag. Plugin 1.4.0 (`shoppingLists`, `taskList`): the
  * shopping lists of the menu, a list's items (open first), who it is shared with, the mark „Einkauf 0/8“ of a task, the
- * choices of „Angehängte Liste“, the chip of the quick entry and „Alles abgehakt“. window.GCNotesState.
+ * choices of „Angehängte Liste“, the chip of the quick entry and „Alles abgehakt“. Plugin 1.5.0 (`places`, `placeSearch`):
+ * the mark and the line „Ort“ of a task, what the dialog „Welcher …?“ sends (`place` of POST / PATCH tasks), where a search
+ * is made near (this PC has no position: near one of the person's places), the chip of the quick entry (the server's
+ * suggestion — the parser on this PC is untouched) and the hints (consent, „in der Nähe“). The phone reminds, not the PC.
+ * window.GCNotesState.
  */
 (function (root) {
 	'use strict';
@@ -91,6 +95,8 @@
 			const l = x.attachedList;
 			out.push({ kind: 'list', text: `${l.name} ${l.done}/${l.total}`, title: t('notes.shop.openList'), uid: l.uid });
 		}
+		// plugin 1.5.0: the place the task hangs on (the phone reminds there; here it is shown)
+		if (offers(me, 'places') && x.place) out.push({ kind: 'place', text: x.place.name, title: placeSummary(x.place, t) });
 		const name = calendarName(me);
 		if (name !== null && x.calendar && x.calendar.mine === true) {
 			const pending = x.calendar.state === 'pending';
@@ -195,6 +201,132 @@
 		return { list, lists, tag: attach.via === 'tag' };
 	}
 
+	// ── plugin 1.5.0: a task at a place ──
+
+	/** „Baumarkt Nord · beim Ankommen“ */
+	function placeSummary(p, t) {
+		return p ? `${p.name} · ${t(p.trigger === 'exit' ? 'notes.place.onExit' : 'notes.place.onEnter')}` : '';
+	}
+
+	/** „2,4 km“ / „300 m“ ('' without a distance). */
+	function distText(m, lang) {
+		if (m === null || m === undefined || !Number.isFinite(m)) return '';
+		if (m < 950) return `${Math.max(50, Math.round(m / 50) * 50)} m`;
+		const km = (m / 1000).toFixed(1);
+		return `${lang === 'en' ? km : km.replace('.', ',')} km`;
+	}
+
+	/** May the page offer the search now (`me.places.search.state` — the one field to ask)? → 'on' | 'off' | 'unavailable' */
+	function searchState(me) {
+		if (!offers(me, 'places') || !offers(me, 'placeSearch') || !me.places) return 'off';
+		const st = me.places.search && me.places.search.state;
+		return st === 'on' || st === 'unavailable' ? st : 'off';
+	}
+
+	/**
+	 * The places a search can be made near — a PC has no position of its own: the places of the family („Zuhause“ first),
+	 * then „Meine Orte“ → [{ value, label }].
+	 */
+	function nearOptions(all) {
+		const a = all || {};
+		return [
+			...(a.family || []).map((f) => ({ value: `f:${f.familyId}`, label: f.name })),
+			...(a.places || []).map((x) => ({ value: `p:${x.id}`, label: x.name })),
+		];
+	}
+
+	/** A choice of nearOptions → the part of the search's body ({ nearFamilyId } | { nearPlaceId } | {}). */
+	function nearArg(value) {
+		const v = str(value);
+		if (v.startsWith('f:') && v.length > 2) return { nearFamilyId: v.slice(2) };
+		const id = v.startsWith('p:') ? Number(v.slice(2)) : NaN;
+		return Number.isSafeInteger(id) && id > 0 ? { nearPlaceId: id } : {};
+	}
+
+	/**
+	 * What the dialog „Welcher …?“ sends as `place` of POST / PATCH tasks. `sel`: { type: 'hit', hit } (a search hit — its
+	 * fields go back unchanged; an own place by its number) | { type: 'own', placeId } | { type: 'family', familyId } |
+	 * { type: 'any' } („Jeder Lidl“) | null (only the trigger changes). `o`: { trigger, key, label, remember }.
+	 */
+	function placeChoiceArg(sel, o) {
+		const base = { trigger: o && o.trigger === 'exit' ? 'exit' : 'enter' };
+		if (!sel) return base;
+		const key = (o && o.key) || null;
+		const label = (o && o.label) || null;
+		if (sel.type === 'family') return { ...base, familyId: sel.familyId, key: null };
+		if (sel.type === 'any') return key ? { ...base, any: true, key, ...(label ? { label } : {}) } : base;
+		if (key) Object.assign(base, { key }, label ? { label } : {}, o.remember === true ? { remember: true } : {});
+		else base.key = null;
+		if (sel.type === 'own') return { ...base, placeId: sel.placeId };
+		const x = sel.hit || {};
+		if (x.placeId) return { ...base, placeId: x.placeId };
+		return { ...base, ...(x.ref ? { ref: x.ref } : {}), name: x.name, ...(x.address ? { address: x.address } : {}), lat: x.lat, lon: x.lon };
+	}
+
+	/** The name of what the dialog chose (for a chip, a toast). */
+	function placeChoiceText(sel, o, all, t) {
+		if (!sel) return '';
+		if (sel.type === 'hit') return str(sel.hit && sel.hit.name);
+		if (sel.type === 'any') return t('notes.place.any', { label: (o && o.label) || '' });
+		if (sel.type === 'family') return str((((all && all.family) || []).find((f) => f.familyId === sel.familyId) || {}).name);
+		return str((((all && all.places) || []).find((x) => x.id === sel.placeId) || {}).name);
+	}
+
+	/** The grey line under a place in „Meine Orte“: „Gartenweg 5 · gemerkt für ‚Baumarkt‘“. */
+	function placeSub(x, t) {
+		const favs = (x.favFor || []).map((f) => t('notes.place.favFor', { label: f.label })).join(', ');
+		return [x.address, favs].filter(Boolean).join(' · ');
+	}
+
+	/**
+	 * What the details say under the line „Ort“ → { kind: 'consentMe' | 'consentWait' | 'declined' | 'needsSearch' | 'nearby',
+	 * text, ask } or null. `ask`: this person is asked to accept or decline (someone else set the place at their task).
+	 */
+	function placeHint(task, me, t) {
+		const p = task && task.place;
+		if (!p || !offers(me, 'places')) return null;
+		const meId = me.user && me.user.id;
+		if (p.consent === 'pending') {
+			// the phone of the person the task belongs to watches the place: assigned, else who did not set the place
+			const mine = (task.assignee ? task.assignee.id === meId : p.by !== meId) && p.by !== meId;
+			return mine ? { kind: 'consentMe', text: t('notes.place.consentMe'), ask: true } : { kind: 'consentWait', text: t('notes.place.consentWait'), ask: false };
+		}
+		if (p.consent === 'declined') return { kind: 'declined', text: t('notes.place.consentNo'), ask: false };
+		const search = searchState(me);
+		if (p.mode === 'any' && search !== 'on') return { kind: 'needsSearch', text: t('notes.place.needsSearch'), ask: false };
+		if (p.nearby && me.places && me.places.nearby && search === 'on') return { kind: 'nearby', text: t('notes.place.nearbyHint', { label: p.label || '' }), ask: false };
+		return null;
+	}
+
+	/**
+	 * The quick entry's place: what the server found in the line (`place` of POST parse) and what the person did with
+	 * the chip → { state, text, title, plain, arg, hint } or null (the line names no place, an older plugin). `choice`:
+	 * undefined (untouched), null (taken away) or { arg, text } (chosen in the dialog).
+	 *   state 'set'     — a place stands: `arg` goes with the task (`place` of POST tasks)
+	 *   state 'ask'     — a kind or a name without a place yet („Ort: Baumarkt …“): the dialog searches when it is opened
+	 *   state 'choose'  — the search is off or the line names an address: „Ort wählen“
+	 *   state 'maybe'   — not surely meant („Apotheke anrufen“): a suggestion, nothing is set
+	 *   state 'off'     — taken away with ×
+	 */
+	function quickPlace(sug, choice, t) {
+		if (!sug) return null;
+		const hint = { key: sug.key || null, label: sug.label || null, query: sug.query || sug.label || '', trigger: sug.trigger === 'exit' ? 'exit' : 'enter' };
+		const label = sug.label || sug.query || '';
+		if (choice === null) return { state: 'off', text: t('notes.place.chipOff'), title: t('notes.place.chipAdd'), plain: true, arg: null, hint };
+		if (choice && choice.arg) {
+			return { state: 'set', text: t('notes.place.chipSet', { name: choice.text || label, when: t(choice.arg.trigger === 'exit' ? 'notes.place.onExit' : 'notes.place.onEnter') }), title: t('notes.place.chipTitle'), plain: false, arg: choice.arg, hint };
+		}
+		const pl = sug.place;
+		if (pl && sug.certain) {
+			const arg = pl.familyId ? { familyId: pl.familyId, trigger: hint.trigger } : { placeId: pl.id, ...(sug.key ? { key: sug.key } : {}), trigger: hint.trigger };
+			const usual = sug.key && sug.uses > 0 ? t('notes.place.usual', { label, n: sug.uses }) : t('notes.place.chipTitle');
+			return { state: 'set', text: t('notes.place.chipSet', { name: pl.name, when: t(hint.trigger === 'exit' ? 'notes.place.onExit' : 'notes.place.onEnter') }), title: usual, plain: false, arg, hint };
+		}
+		if (!sug.certain) return { state: 'maybe', text: t('notes.place.chipMaybe', { label: (pl && pl.name) || label }), title: t('notes.place.chipTitle'), plain: true, arg: null, hint };
+		if (sug.key && sug.search === 'on') return { state: 'ask', text: t('notes.place.chip', { label }), title: t('notes.place.chipTitle'), plain: true, arg: null, hint };
+		return { state: 'choose', text: t('notes.place.choose'), title: t('notes.place.chipTitle'), plain: true, arg: null, hint };
+	}
+
 	/** The chip of a row's source ('Mail · Zu tun', 'Drive · Frist') → { text, tone } or null. */
 	function sourceChip(x, t) {
 		if (!x || !x.source) return null;
@@ -275,10 +407,14 @@
 	/**
 	 * The body of POST tasks for the quick entry in the current view. `qa` (quickAttach, plugin 1.4.0): the chip stayed →
 	 * attachedListId; taken away → no field; `'auto'` — the suggestion for this line has not come yet: the server attaches
-	 * the list when exactly one fits.
+	 * the list when exactly one fits. `qp` (quickPlace, plugin 1.5.0): a place stands → `place`; taken away or not chosen →
+	 * no field (the title then stays whole); `'auto'` — the suggestion has not come yet: the server sets the place when it
+	 * is decided and surely meant.
 	 */
-	function quickBody(text, p, view, area, qa) {
+	function quickBody(text, p, view, area, qa, qp) {
 		const body = { text: str(text).trim(), area, createList: !!(p && p.listName && !p.list) };
+		if (qp === 'auto') body.place = 'auto';
+		else if (qp && qp.arg) body.place = qp.arg;
 		if (qa === 'auto') body.attach = 'auto';
 		else if (qa && qa.list) {
 			body.attachedListId = qa.list.id;
@@ -406,7 +542,8 @@
 
 	root.GCNotesState = {
 		COLORS, SOURCE_TONE, dayText, longDate, whenText, offers, calendarName, clockText, taskMarks, yesterdayCard, sectionsWithout, moveChoices, askedIds,
-		shopNav, shopList, shopItems, shopWith, shopChoice, shopBelongs, allTickedText, quickAttach, sourceChip, metaLine, sectionTitle, quickCtx, quickParse, quickChips, quickBody,
+		shopNav, shopList, shopItems, shopWith, shopChoice, shopBelongs, allTickedText, quickAttach,
+		placeSummary, distText, searchState, nearOptions, nearArg, placeChoiceArg, placeChoiceText, placeSub, placeHint, quickPlace, sourceChip, metaLine, sectionTitle, quickCtx, quickParse, quickChips, quickBody,
 		repeatOptions, openTarget, errText, vaultLocked, noteTitle, notebookName, isoDay, formatBytes, importText, groupKey, localInput,
 	};
 })(typeof self !== 'undefined' ? self : this);

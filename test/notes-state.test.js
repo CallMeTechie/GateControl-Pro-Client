@@ -292,6 +292,91 @@ describe('notes-state.js', () => {
     assert.deepEqual(NS.quickChips(tagged, ctx, 'private', t, 'de', me, NS.quickAttach({ via: 'tag', list: al, lists: [al] }, null)).map((c) => c.kind), ['list', 'area']);
   });
 
+  it('plugin 1.5.0: a task at a place — the mark, what the dialog sends, the chip of the quick entry, the hints; only with the words of me.features', () => {
+    const places = { search: { state: 'on', enabled: true, mine: true }, nearby: true, quiet: null, perTask: 5, radius: { min: 50, max: 2000, default: 150 }, family: true };
+    const me = { today: '2026-11-08', features: ['tasks', 'places', 'placeSearch'], user: { id: 1 }, places };
+    const old = { today: '2026-11-08', features: ['tasks', 'shoppingLists', 'taskList'], user: { id: 1 } };
+    const place = { mode: 'place', id: 1, name: 'Baumarkt Nord', address: 'Industriestraße 4, Berlin', lat: 52.539, lon: 13.424, radius: 150, ref: 'osm:W101', own: false, trigger: 'enter', key: 'kind:diy', label: 'Baumarkt', by: 1, consent: 'accepted', watch: true, nearby: true };
+    const task = { type: 'task', id: 41, title: 'Schrauben kaufen', place };
+    assert.deepEqual(NS.taskMarks(task, me, t), [{ kind: 'place', text: 'Baumarkt Nord', title: 'Baumarkt Nord · beim Ankommen' }]);
+    assert.deepEqual(NS.taskMarks(task, old, t), []);
+    assert.deepEqual(NS.taskMarks({ ...task, place: null }, me, t), []);
+    assert.equal(NS.placeSummary({ ...place, trigger: 'exit' }, t), 'Baumarkt Nord · beim Verlassen');
+    assert.deepEqual([NS.distText(2315, 'de'), NS.distText(2315, 'en'), NS.distText(320, 'de'), NS.distText(20, 'de'), NS.distText(null, 'de')], ['2,3 km', '2.3 km', '300 m', '50 m', '']);
+    // the search: only with both words and `me.places.search.state`
+    assert.deepEqual([NS.searchState(me), NS.searchState(old), NS.searchState({ ...me, features: ['places'] }), NS.searchState({ ...me, places: { ...places, search: { state: 'unavailable' } } }), NS.searchState({ ...me, places: { ...places, search: { state: 'off' } } })],
+      ['on', 'off', 'off', 'unavailable', 'off']);
+    // this PC has no position: a search is made near one of the person's places — the family's first
+    const all = { family: [{ familyId: 'home', name: 'Zuhause' }, { familyId: 'place:3', name: 'Schule' }], places: [{ id: 2, name: 'Oma', address: 'Gartenweg 5', favFor: [] }, { id: 1, name: 'Baumarkt Nord', address: 'Industriestraße 4, Berlin', favFor: [{ key: 'kind:diy', label: 'Baumarkt' }] }] };
+    assert.deepEqual(NS.nearOptions(all), [{ value: 'f:home', label: 'Zuhause' }, { value: 'f:place:3', label: 'Schule' }, { value: 'p:2', label: 'Oma' }, { value: 'p:1', label: 'Baumarkt Nord' }]);
+    assert.deepEqual([NS.nearOptions(null), NS.nearArg('f:home'), NS.nearArg('f:place:3'), NS.nearArg('p:2'), NS.nearArg(''), NS.nearArg('p:x'), NS.nearArg(undefined)], [[], { nearFamilyId: 'home' }, { nearFamilyId: 'place:3' }, { nearPlaceId: 2 }, {}, {}, {}]);
+    assert.deepEqual([NS.placeSub(all.places[0], t), NS.placeSub(all.places[1], t)], ['Gartenweg 5', 'Industriestraße 4, Berlin · gemerkt für „Baumarkt“']);
+
+    // what the dialog sends as `place` of POST / PATCH tasks
+    const hit = { ref: 'osm:W101', name: 'Baumarkt Nord', address: 'Industriestraße 4, Berlin', lat: 52.539, lon: 13.424, distanceM: 2315, minutes: 6, placeId: null, fav: false, uses: 0 };
+    const o = { trigger: 'enter', key: 'kind:diy', label: 'Baumarkt', remember: true };
+    assert.deepEqual(NS.placeChoiceArg({ type: 'hit', hit }, o), { trigger: 'enter', key: 'kind:diy', label: 'Baumarkt', remember: true, ref: 'osm:W101', name: 'Baumarkt Nord', address: 'Industriestraße 4, Berlin', lat: 52.539, lon: 13.424 });
+    // a hit that is one of the own places already goes by its number
+    assert.deepEqual(NS.placeChoiceArg({ type: 'hit', hit: { ...hit, placeId: 1, fav: true } }, { ...o, remember: false }), { trigger: 'enter', key: 'kind:diy', label: 'Baumarkt', placeId: 1 });
+    assert.deepEqual(NS.placeChoiceArg({ type: 'own', placeId: 2 }, { trigger: 'exit', key: null }), { trigger: 'exit', key: null, placeId: 2 });
+    assert.deepEqual(NS.placeChoiceArg({ type: 'family', familyId: 'home' }, o), { trigger: 'enter', familyId: 'home', key: null });
+    assert.deepEqual(NS.placeChoiceArg({ type: 'any' }, { trigger: 'enter', key: 'name:lidl', label: 'Lidl', remember: true }), { trigger: 'enter', any: true, key: 'name:lidl', label: 'Lidl' });
+    // an address hit has no kind: a point at the task; nothing chosen: only the trigger
+    assert.deepEqual(NS.placeChoiceArg({ type: 'hit', hit: { ref: 'osm:W900', name: 'Ringstraße 21', address: '', lat: 52.5, lon: 13.3 } }, { trigger: 'enter', key: null }), { trigger: 'enter', key: null, ref: 'osm:W900', name: 'Ringstraße 21', lat: 52.5, lon: 13.3 });
+    assert.deepEqual(NS.placeChoiceArg(null, { trigger: 'exit', key: 'kind:diy' }), { trigger: 'exit' });
+    assert.deepEqual([NS.placeChoiceText({ type: 'hit', hit }, o, all, t), NS.placeChoiceText({ type: 'any' }, { label: 'Lidl' }, all, t), NS.placeChoiceText({ type: 'family', familyId: 'home' }, o, all, t), NS.placeChoiceText({ type: 'own', placeId: 2 }, o, all, t), NS.placeChoiceText(null, o, all, t)],
+      ['Baumarkt Nord', 'Jeder Lidl', 'Zuhause', 'Oma', '']);
+
+    // the hints under „Ort“
+    assert.deepEqual(NS.placeHint(task, me, t), { kind: 'nearby', text: 'Kommt dein Handy an einem anderen Ort der Art „Baumarkt“ vorbei, meldet sich die Aufgabe auch dort.', ask: false });
+    assert.equal(NS.placeHint({ ...task, place: { ...place, nearby: false } }, me, t), null);
+    assert.equal(NS.placeHint(task, { ...me, places: { ...places, nearby: false } }, t), null);
+    assert.equal(NS.placeHint(task, old, t), null);
+    // someone else set the place at my task: I am asked; I set it for someone else: it waits
+    const mine = NS.placeHint({ ...task, place: { ...place, by: 12, consent: 'pending', watch: false } }, me, t);
+    assert.deepEqual([mine.kind, mine.ask], ['consentMe', true]);
+    assert.deepEqual([NS.placeHint({ ...task, assignee: { id: 1 }, place: { ...place, by: 12, consent: 'pending' } }, me, t).kind, NS.placeHint({ ...task, assignee: { id: 12 }, place: { ...place, by: 1, consent: 'pending' } }, me, t).kind,
+      NS.placeHint({ ...task, assignee: { id: 15 }, place: { ...place, by: 12, consent: 'pending' } }, me, t).ask, NS.placeHint({ ...task, place: { ...place, consent: 'declined' } }, me, t).kind], ['consentMe', 'consentWait', false, 'declined']);
+    // „Jeder Lidl“ needs the search
+    const anyPlace = { mode: 'any', name: 'Jeder Lidl', trigger: 'enter', key: 'name:lidl', label: 'Lidl', consent: 'accepted', nearby: false };
+    assert.equal(NS.placeHint({ ...task, place: anyPlace }, { ...me, places: { ...places, search: { state: 'off' } } }, t).kind, 'needsSearch');
+    assert.equal(NS.placeHint({ ...task, place: anyPlace }, me, t), null);
+
+    // the quick entry: the server's suggestion and what the person did with the chip
+    const sug = { via: 'kind', word: 'beim Baumarkt', query: 'Baumarkt', key: 'kind:diy', label: 'Baumarkt', title: 'Schrauben kaufen', certain: true, trigger: 'enter', place: null, uses: 0, options: [], search: 'on' };
+    const ask = NS.quickPlace(sug, undefined, t);
+    assert.deepEqual([ask.state, ask.text, ask.plain, ask.arg, ask.hint], ['ask', 'Ort: Baumarkt …', true, null, { key: 'kind:diy', label: 'Baumarkt', query: 'Baumarkt', trigger: 'enter' }]);
+    assert.equal(NS.quickPlace(null, undefined, t), null);
+    // the search is off: „Ort wählen“ (the remembered places stay)
+    assert.deepEqual([NS.quickPlace({ ...sug, search: 'off' }, undefined, t).state, NS.quickPlace({ ...sug, search: 'unavailable' }, undefined, t).text], ['choose', 'Ort wählen']);
+    // the remembered place stands; an own place and a place of the family likewise
+    const own = { id: 1, name: 'Baumarkt Nord', address: 'Industriestraße 4, Berlin', lat: 52.539, lon: 13.424, radius: 150, named: false, ref: 'osm:W101' };
+    const set = NS.quickPlace({ ...sug, place: own, uses: 6, options: [own] }, undefined, t);
+    assert.deepEqual([set.state, set.text, set.plain, set.arg, /zuletzt 6-mal gewählt/.test(set.title)], ['set', 'Ort: Baumarkt Nord · beim Ankommen', false, { placeId: 1, key: 'kind:diy', trigger: 'enter' }, true]);
+    assert.deepEqual(NS.quickPlace({ via: 'own', key: null, label: 'Oma', certain: true, trigger: 'enter', place: { id: 2, name: 'Oma' }, search: 'on' }, undefined, t).arg, { placeId: 2, trigger: 'enter' });
+    assert.deepEqual(NS.quickPlace({ via: 'family', key: null, label: 'Zuhause', certain: true, trigger: 'enter', place: { familyId: 'home', name: 'Zuhause', family: true }, search: 'off' }, undefined, t).arg, { familyId: 'home', trigger: 'enter' });
+    // not surely meant („Apotheke anrufen“): a suggestion, nothing is set
+    const maybe = NS.quickPlace({ ...sug, key: 'kind:pharmacy', label: 'Apotheke', query: 'Apotheke', certain: false }, undefined, t);
+    assert.deepEqual([maybe.state, maybe.text, maybe.arg, maybe.plain], ['maybe', 'Ort: Apotheke ?', null, true]);
+    assert.deepEqual(NS.quickPlace({ ...sug, certain: false, place: own }, undefined, t).arg, null);
+    // chosen in the dialog; taken away with ×
+    const chosen = NS.quickPlace(sug, { arg: { trigger: 'exit', key: 'kind:diy', ref: 'osm:W102', name: 'Baumarkt am Ring', lat: 52.501, lon: 13.362 }, text: 'Baumarkt am Ring' }, t);
+    assert.deepEqual([chosen.state, chosen.text, chosen.arg.ref], ['set', 'Ort: Baumarkt am Ring · beim Verlassen', 'osm:W102']);
+    assert.deepEqual([NS.quickPlace({ ...sug, place: own }, null, t).state, NS.quickPlace({ ...sug, place: own }, null, t).arg], ['off', null]);
+
+    // the body of POST tasks: the place that stands; taken away, not chosen or an older plugin: no field; before the suggestion came: 'auto'
+    const view = { kind: 'smart', id: 'myday' };
+    const ctx = { today: '2026-11-08', now: '08:00', lists: [], people: [] };
+    const text = 'beim Baumarkt Schrauben kaufen';
+    const p = NS.quickParse(text, ctx);
+    // the parser on this PC knows nothing of the place: the title stays whole there
+    assert.equal(p.title, text);
+    assert.deepEqual(NS.quickBody(text, p, view, 'private', null, set), { text, area: 'private', createList: false, place: { placeId: 1, key: 'kind:diy', trigger: 'enter' }, myDay: true });
+    assert.deepEqual(NS.quickBody(text, p, view, 'private', null, 'auto'), { text, area: 'private', createList: false, place: 'auto', myDay: true });
+    for (const qp of [ask, maybe, NS.quickPlace(sug, null, t), null, undefined]) assert.deepEqual(NS.quickBody(text, p, view, 'private', null, qp), { text, area: 'private', createList: false, myDay: true });
+    assert.deepEqual(NS.quickBody(text, p, view, 'private', 'auto', 'auto'), { text, area: 'private', createList: false, place: 'auto', attach: 'auto', myDay: true });
+  });
+
   it('where an item of another plugin opens (contract § 5)', () => {
     const all = ['mail', 'drive', 'schule', 'notizen'];
     assert.deepEqual(NS.openTarget({ plugin: 'gatecontrol-mail', route: 'message/4711' }, all), { page: 'mail', context: { kind: 'message', messageId: 4711, accountId: null } });

@@ -18,6 +18,12 @@
  * „Einkauf 0/8“ of a task (opens the list), „Angehängte Liste“ in a task's details, the list chip of the quick entry
  * (the server's suggestion — the parser on this PC is untouched), „Alles abgehakt“ with „Rückgängig“, and the button
  * „Liste öffnen“ of a reminder (open({ kind: 'shopping', uid })).
+ * Plugin 1.5.0 (`places`, `placeSearch`): a task hangs on a place — the mark and the line „Ort“ of a task, the dialog
+ * „Welcher …?“ (the places near one of the person's places with estimated minutes and kilometres, „Jeder …“, „Meine
+ * Orte“, on arriving / on leaving, remembering — a list, no map: this app loads no map tiles), the place chip of the
+ * quick entry (the server's suggestion), „Orte“ on the page „Quellen“ (the person's switches, „Meine Orte“) and the
+ * consent for a place someone else set. The phone watches the places and reminds; this PC shows and changes them. A
+ * search goes out only when the person asks for it (the chip, „Suchen“, Enter) — never while typing.
  *
  * Data: window.gatecontrol.notes (core NotesService over IPC); texts: notes.* of the Pro locales; logic without DOM:
  * notes-state.js (window.GCNotesState), notes-md.js (window.GCNotesMd). Server text only ever goes into textContent
@@ -62,6 +68,7 @@
 		cloud: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z',
 		cart: 'M3 4h2.5l2.3 10.5h9.6L19.5 7H6.6|M9.5 19.5h.01|M16.5 19.5h.01',
 		home: 'M4 11l8-7 8 7|M6 10v10h12V10|M10 20v-5h4v5',
+		place: 'M12 21s-7-6.3-7-11.2a7 7 0 0 1 14 0C19 14.7 12 21 12 21z|M12 7.3a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2',
 	};
 
 	function icon(name, size = 18) {
@@ -128,6 +135,8 @@
 			detail: null, detailData: null, editing: false, folded: {}, seq: 0, dseq: 0, dirty: true, quickText: '',
 			ds: null, dsEvent: null, images: new Map(),
 			shop: null,   // plugin 1.4.0: { lists, items, pending, stale } — the shopping lists as the main process holds them
+			places: null, // plugin 1.5.0: { places, family, favs } — „Meine Orte“ as the page „Quellen“ shows them
+			quickPlace: null, // … and what the person chose for the quick entry's line: { text, choice }
 		};
 
 		// ── skeleton ─────────────────────────────────────────
@@ -230,7 +239,11 @@
 			if (v.kind === 'list') return api.view(`list:${v.id}`, S.area);
 			if (v.kind === 'source') return api.view(`source:${v.plugin}`, S.area);
 			if (v.kind === 'search') return api.search(v.q, S.area);
-			if (v.kind === 'sources') return api.sources();
+			if (v.kind === 'sources') {
+				// plugin 1.5.0: „Orte“ shows what holds now (the administrator may have switched the search on or off meanwhile)
+				if (placesOn()) { await loadMe(); reloadPlaces(); }
+				return api.sources();
+			}
 			if (v.kind === 'import') return { ok: true };
 			if (v.kind === 'shopping') return { ok: true };   // shown from S.shop (reloadShop)
 			// notes
@@ -543,14 +556,15 @@
 
 		/**
 		 * A small mark of a task (plugin 1.3.0): the bell „Erinnerung“ / „Später: …“, the calendar „im Kalender“; plugin
-		 * 1.4.0: the shopping list it carries („Einkauf 0/8“) — a button that opens the list.
+		 * 1.4.0: the shopping list it carries („Einkauf 0/8“) — a button that opens the list; plugin 1.5.0: the place it
+		 * hangs on („Baumarkt Nord“ — the phone reminds there).
 		 */
 		function markEl(k) {
 			if (k.kind === 'list') {
 				return el('button', { type: 'button', class: 'nz-mark nz-mark-list', 'data-kind': 'list', title: k.title || null, 'aria-label': `${k.title}: ${k.text}`,
 					on: { click: (e) => { e.stopPropagation(); if (!openShopList(k.uid)) toast(t('notes.shop.gone')); }, keydown: (e) => e.stopPropagation() } }, [icon('cart', 12), el('span', { text: k.text })]);
 			}
-			return el('span', { class: 'nz-mark', 'data-kind': k.kind, title: k.title || null }, [icon(k.kind === 'calendar' ? 'cal' : 'bell', 12), el('span', { text: k.text })]);
+			return el('span', { class: 'nz-mark', 'data-kind': k.kind, title: k.title || null }, [icon(k.kind === 'calendar' ? 'cal' : k.kind === 'place' ? 'place' : 'bell', 12), el('span', { text: k.text })]);
 		}
 
 		// ── „Gestern offen geblieben“ (plugin 1.3.0) ─────────
@@ -783,8 +797,11 @@
 			let parsed = null;
 			// plugin 1.4.0: the shopping list the line names — the server's suggestion (POST parse), asked a moment after typing
 			const lists = NS.offers(S.me, 'taskList') && shopOn();
-			const sug = { text: null, attach: null, choice: undefined, timer: null, seq: 0 };
+			// plugin 1.5.0: the place the line names („beim Baumarkt“) — likewise the server's suggestion, never the parser's
+			const placesOn = NS.offers(S.me, 'places');
+			const sug = { text: null, attach: null, choice: undefined, place: null, pchoice: undefined, timer: null, seq: 0 };
 			const attachNow = () => (sug.text === input.value.trim() ? NS.quickAttach(sug.attach, sug.choice) : null);
+			const placeNow = () => (placesOn && sug.text === input.value.trim() ? NS.quickPlace(sug.place, sug.pchoice, t) : null);
 			const show = () => {
 				S.quickText = input.value;
 				clear(chips);
@@ -795,6 +812,30 @@
 				chips.appendChild(el('span', { class: 'nz-chips-l', text: t('notes.quick.found') }));
 				for (const c of NS.quickChips(parsed, ctx, S.area, t, lang(), S.me, qa)) chips.appendChild(el('span', { class: `chip nz-qchip${c.plain ? ' plain' : ''}`, 'data-kind': c.kind, title: c.title || null, text: c.text }));
 				if (qa) chips.appendChild(attachChip(qa));
+				const qp = placeNow();
+				if (qp) chips.appendChild(placeChip(qp));
+			};
+			/**
+			 * „Ort: Baumarkt …“ / „Ort: Baumarkt Nord · beim Ankommen“ — a click opens the choice (the search goes out then,
+			 * not while typing); × saves without a place.
+			 */
+			const placeChip = (qp) => {
+				// kept with the line: the list may be drawn anew (a live event) while the choice is open
+				const set = (v) => {
+					S.quickPlace = v === undefined ? null : { text: sug.text, choice: v };
+					if (!input.isConnected) { renderMain(); const again = refs.main.querySelector('#nz-quick'); if (again) again.focus(); return; }
+					sug.pchoice = v;
+					show();
+					input.focus();
+				};
+				const chip = el('span', { class: `chip nz-qchip nz-qchip-place${qp.plain ? ' plain' : ''}`, 'data-kind': 'place', 'data-state': qp.state });
+				chip.appendChild(el('button', { type: 'button', class: 'nz-qbtn', title: qp.title, on: { click: () => {
+					if (qp.state === 'off') { set(undefined); return; }
+					const p0 = sug.place;
+					placeDialog({ hint: qp.hint, decided: p0 && p0.place, options: p0 ? p0.options : [], searchNow: qp.state === 'ask', none: false, onSave: (arg, text) => set(arg ? { arg, text } : null) });
+				} } }, [icon('place', 13), el('span', { text: qp.text })]));
+				if (qp.state !== 'off') chip.appendChild(el('button', { type: 'button', class: 'nz-qx', 'aria-label': t('notes.place.chipRemove'), title: t('notes.place.chipRemove'), on: { click: () => set(null) } }, [icon('x', 12)]));
+				return chip;
 			};
 			/** „Liste: Einkauf · 8 offen“ — taken away with ×, or another list chosen when several fit. */
 			const attachChip = (qa) => {
@@ -811,20 +852,23 @@
 				return chip;
 			};
 			const suggest = () => {
-				if (!lists) return;
+				if (!lists && !placesOn) return;
 				clearTimeout(sug.timer);
 				const text = input.value.trim();
 				if (text === sug.text) return;
 				sug.text = null;
 				sug.attach = null;
 				sug.choice = undefined;
+				sug.place = null;
+				sug.pchoice = S.quickPlace && S.quickPlace.text === text ? S.quickPlace.choice : undefined;
 				const seq = ++sug.seq;
 				if (!text) return;
 				sug.timer = setTimeout(async () => {
 					const r = await Promise.resolve(api.parse(text, S.area)).catch(() => null);
 					if (seq !== sug.seq || !input.isConnected) return;
 					sug.text = text;
-					sug.attach = ok(r) ? r.attach || null : null;
+					sug.attach = ok(r) && lists ? r.attach || null : null;
+					sug.place = ok(r) && placesOn ? r.place || null : null;
 					if (input.value.trim() === text) show();
 				}, 250);
 			};
@@ -833,17 +877,21 @@
 				if (e.key === 'Escape') { input.value = ''; suggest(); show(); return; }
 				if (e.key !== 'Enter' || !input.value.trim() || input.disabled) return;
 				// the suggestion for this very line has not come yet: the server decides (it attaches when exactly one list fits)
-				const body = NS.quickBody(input.value, parsed, S.view, S.area, !lists ? null : sug.text === input.value.trim() ? attachNow() : 'auto');
+				// … and likewise the place: it sets the one that is decided and surely meant, never another
+				const here = sug.text === input.value.trim();
+				const body = NS.quickBody(input.value, parsed, S.view, S.area, !lists ? null : here ? attachNow() : 'auto', !placesOn ? null : here ? placeNow() : 'auto');
 				input.disabled = true;
 				const r = await api.createTask(body);
 				input.disabled = false;
 				if (!ok(r)) { fail(r); input.focus(); return; }
 				input.value = '';
 				S.quickText = '';
+				S.quickPlace = null;
 				suggest();
 				show();
 				input.focus();
-				toast(r.task.attachedList ? t('notes.shop.addedWith', { title: r.task.title, name: r.task.attachedList.name }) : t('notes.quick.added', { title: r.task.title }), 'success');
+				toast(r.task.attachedList ? t('notes.shop.addedWith', { title: r.task.title, name: r.task.attachedList.name })
+					: r.task.place ? t('notes.place.added', { title: r.task.title, name: r.task.place.name }) : t('notes.quick.added', { title: r.task.title }), 'success');
 				soon(0);
 			});
 			setTimeout(() => { suggest(); show(); }, 0);
@@ -999,6 +1047,8 @@
 			det.appendChild(field(t('notes.list'), ls));
 			// plugin 1.4.0: the shopping list the task carries (the list stays what it is and can hang at several tasks)
 			if (NS.offers(S.me, 'taskList') && shopOn() && !task.parentId) det.appendChild(attachedField(task));
+			// plugin 1.5.0: the place the task hangs on — shown and changed here, watched by the phone
+			if (placesOn() && !task.parentId) det.appendChild(placeField(task));
 			box.appendChild(det);
 			// attachments
 			box.appendChild(el('div', { class: 'nz-lb', text: t('notes.attachments') }));
@@ -1038,6 +1088,328 @@
 			});
 			return field(t('notes.shop.attached'), el('span', { class: 'nz-pair nz-attached' }, [sel,
 				cur ? ib('open', t('notes.shop.openList'), () => { if (!openShopList(cur.uid)) toast(t('notes.shop.gone')); }, false, { 'data-act': 'open-list' }) : null]));
+		}
+
+		// ── a task at a place (plugin 1.5.0) ─────────────────
+		const placesOn = () => NS.offers(S.me, 'places');
+
+		/**
+		 * „Ort“ in a task's details: „Baumarkt Nord · beim Ankommen“ — a click opens the choice. Under it what the person
+		 * should know: someone else set the place (accept / decline), it waits for consent, it was declined, „Jeder …“
+		 * needs the search, or the hint „in der Nähe“.
+		 */
+		function placeField(task) {
+			const p = task.place;
+			const may = task.canEdit && canWrite();
+			const open = el('button', { type: 'button', class: 'btn btn-sec btn-sm nz-place-btn', 'data-act': 'place', disabled: !may, title: p ? NS.placeSummary(p, t) : null, 'aria-label': p ? t('notes.place.change', { name: p.name }) : t('notes.place.choose'),
+				on: { click: () => placeDialog({ place: p, onSave: (arg) => patchTask(task, { place: arg }) }) } }, [icon('place', 15), el('span', { text: p ? NS.placeSummary(p, t) : t('notes.place.choose') })]);
+			// no <label>: the hint under it carries buttons of its own
+			const f = el('div', { class: 'nz-f nz-place' }, [el('span', { class: 'nz-f-l', text: t('notes.place.field') }), open]);
+			const h = NS.placeHint(task, S.me, t);
+			if (h) {
+				const answer = async (accept) => {
+					const r = await Promise.resolve(api.placeConsent(task.id, accept)).catch(() => null);
+					if (!ok(r)) { fail(r); return; }
+					toast(t(r.consent === 'accepted' ? 'notes.place.accepted' : 'notes.place.declined'), 'success');
+					reloadDetail();
+					soon();
+				};
+				f.appendChild(el('span', { class: `hint nz-place-hint${h.ask ? ' is-ask' : ''}`, 'data-kind': h.kind, role: h.ask ? 'group' : null, 'aria-label': h.ask ? h.text : null }, [
+					el('span', { text: h.text }),
+					h.ask ? el('span', { class: 'nz-row-acts' }, [btn(t('notes.place.accept'), () => answer(true), 'btn-pri', null, { 'data-act': 'place-accept' }), btn(t('notes.place.decline'), () => answer(false), 'btn-sec', null, { 'data-act': 'place-decline' })]) : null,
+				]));
+			}
+			return f;
+		}
+
+		/** A row to choose in the dialog „Welcher …?“: the name, the grey line, on the right the minutes and the distance. */
+		function placeRow(o) {
+			return el('button', { type: 'button', class: `nz-pl-row${o.on ? ' on' : ''}${o.dashed ? ' is-any' : ''}`, role: 'radio', 'aria-checked': o.on ? 'true' : 'false', 'data-ref': o.ref || null, on: { click: o.pick } }, [
+				el('span', { class: 'nz-pl-dot', 'aria-hidden': 'true' }),
+				el('span', { class: 'nz-pl-tx' }, [el('b', { text: o.name }), o.sub ? el('span', { text: o.sub }) : null]),
+				o.right ? el('span', { class: 'nz-pl-r' }, [el('b', { text: o.right[0] }), el('span', { text: o.right[1] })]) : null,
+			]);
+		}
+
+		/** What a failed search says. */
+		function searchError(r) {
+			const code = r && r.code;
+			if (code === 'module_off') return t('notes.place.searchOff');
+			if (code === 'busy') return r.retryAfter ? t('notes.place.searchBusyIn', { n: r.retryAfter }) : t('notes.place.searchBusy');
+			if ((code === 'invalid' || code === 'not_found') && r.field === 'near') return t('notes.place.searchNear');
+			return t('notes.place.searchDown');
+		}
+
+		/** „Fahrzeit geschätzt aus der Entfernung. Kartendaten: © OpenStreetMap“ — the link opens in the browser. */
+		function attributionLine(a, withApprox) {
+			const url = a && a.url;
+			return el('p', { class: 'hint nz-pl-attr' }, [withApprox ? el('span', { text: `${t('notes.place.approx')} ` }) : null,
+				url ? el('button', { type: 'button', class: 'nz-linkbtn', 'data-act': 'osm', text: a.text, on: { click: () => o.openExternal(url) } }) : el('span', { text: a.text })]);
+		}
+
+		/**
+		 * The dialog „Welcher Baumarkt?“ / „Ort“ (the plugin's portal dialog as a list, without a map): the search near one
+		 * of the person's places (only on „Suchen“, Enter, or when the chip „Ort: Baumarkt …“ opened it — never while
+		 * typing), the hits with estimated minutes and kilometres, „Jeder …“, „Meine Orte“, on arriving / on leaving, „als
+		 * meinen Ort merken“. `c`: { place (a task's place), hint ({ key, label, query, trigger } of the quick entry),
+		 * decided (its place that stands), options, searchNow, none (false: no „Ohne Ort“), onSave(arg | null, text) }.
+		 */
+		function placeDialog(c) {
+			const cur = c.place || null;
+			const hint = c.hint || null;
+			const st = {
+				sel: null, trigger: (cur ? cur.trigger : hint && hint.trigger) === 'exit' ? 'exit' : 'enter', key: (hint && hint.key) || (cur && cur.key) || null,
+				label: (hint && hint.label && hint.key ? hint.label : null) || (cur && cur.key ? cur.label : null), remember: false, results: null, any: false, radius: 15,
+				all: null, busy: false, error: null, attribution: null, seq: 0,
+			};
+			const dec = c.decided || null;
+			if (dec) st.sel = dec.familyId ? { type: 'family', familyId: dec.familyId } : { type: 'own', placeId: dec.id };
+			const head = () => (st.label ? t('notes.place.which', { label: st.label }) : t('notes.place.title'));
+			const q = el('input', { class: 'inp', type: 'search', value: (hint && hint.query) || '', placeholder: t('notes.place.searchPh'), 'aria-label': t('notes.place.searchPh'), maxlength: '80', 'data-act': 'place-q' });
+			const near = el('select', { class: 'inp', 'aria-label': t('notes.place.near'), 'data-act': 'place-near' });
+			const go2 = btn(t('notes.place.search'), () => search(), 'btn-sec', 'search', { 'data-act': 'place-search' });
+			const searchRow = el('div', { class: 'nz-pl-search' }, [q, near, go2]);
+			const dyn = el('div', { class: 'nz-pl-body' });
+			const d = dialog(head(), [el('div', { class: 'nz-pl' }, [searchRow, dyn])], [], { wide: true });
+			d.box.classList.add('nz-pl-dlg');
+			d.box.setAttribute('data-dialog', 'place');
+			const titleEl = d.box.querySelector('.nz-dlg-title');
+			const isSel = (type, test) => !!st.sel && st.sel.type === type && (!test || test(st.sel));
+			const pick = (sel) => { st.sel = sel; draw(); };
+
+			async function search() {
+				const text = q.value.trim();
+				if (st.busy || (text.length < 2 && !st.key)) return;
+				// the line's own kind or name is asked by its key; anything typed is for the server to read (a kind, an address, a name)
+				const b = text.length >= 2 && !(hint && text === hint.query && st.key && st.key === hint.key) ? { q: text } : { key: st.key, ...(st.label ? { label: st.label } : {}) };
+				Object.assign(b, NS.nearArg(near.value));
+				if (!b.nearPlaceId && !b.nearFamilyId) b.address = true;
+				const seq = ++st.seq;
+				st.busy = true;
+				st.error = null;
+				draw();
+				const r = await Promise.resolve(api.searchPlaces(b)).catch(() => null);
+				if (seq !== st.seq || !d.box.isConnected) return;
+				st.busy = false;
+				if (!ok(r)) {
+					st.results = null;
+					st.error = searchError(r);
+					// switched off meanwhile: the page learns it
+					if (r && (r.code === 'module_off' || r.code === 'unavailable')) await loadMe();
+					draw();
+					return;
+				}
+				Object.assign(st, { results: r.results, any: r.any, attribution: r.attribution, radius: r.radiusKm, key: r.key || null, label: r.key ? r.label : null, none: r.label || text });
+				// a hit of an earlier search is no choice any more
+				if (isSel('hit') || isSel('any')) st.sel = null;
+				if (!st.sel && r.results.length) st.sel = { type: 'hit', hit: r.results.find((x) => x.fav) || r.results[0] };
+				draw();
+			}
+			q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } });
+
+			function draw() {
+				titleEl.textContent = head();
+				d.box.setAttribute('aria-label', head());
+				clear(dyn);
+				const state = NS.searchState(S.me);
+				const opts = NS.nearOptions(st.all);
+				searchRow.hidden = state !== 'on';
+				go2.disabled = st.busy;
+				if (state === 'on' && st.all && !opts.length) dyn.appendChild(el('p', { class: 'hint', text: t('notes.place.nearHint') }));
+				if (st.busy) dyn.appendChild(el('p', { class: 'hint', role: 'status', 'data-state': 'searching', text: t('notes.place.searching') }));
+				if (st.error) dyn.appendChild(el('div', { class: 'note note-err', role: 'alert', text: st.error }));
+				if (st.results) {
+					if (!st.results.length) dyn.appendChild(el('p', { class: 'nz-pl-none', text: t('notes.place.none', { label: st.none || '', km: st.radius || 15 }) }));
+					const list = el('div', { class: 'nz-pl-list', role: 'radiogroup', 'aria-label': head(), 'data-list': 'hits' });
+					for (const x of st.results) {
+						const sub = [x.address, x.fav && st.label ? t('notes.place.favFor', { label: st.label }) : x.uses > 1 ? t('notes.place.used', { n: x.uses }) : null].filter(Boolean).join(' · ');
+						list.appendChild(placeRow({ name: x.name, sub, ref: x.ref, right: x.distanceM === null ? null : [t('notes.place.min', { n: x.minutes }), NS.distText(x.distanceM, lang())], on: isSel('hit', (z) => z.hit === x), pick: () => pick({ type: 'hit', hit: x }) }));
+					}
+					if (st.any && st.key && st.label) list.appendChild(placeRow({ name: t('notes.place.any', { label: st.label }), sub: t('notes.place.anyHint'), ref: 'any', dashed: true, on: isSel('any'), pick: () => pick({ type: 'any' }) }));
+					if (list.childNodes.length) dyn.appendChild(list);
+					// „© OpenStreetMap“ stands wherever hits stand
+					if (st.attribution) dyn.appendChild(attributionLine(st.attribution, st.results.some((x) => x.distanceM !== null)));
+					dyn.appendChild(el('p', { class: 'hint', text: t('notes.place.privacy') }));
+				}
+				// „Meine Orte“: the family's, the own ones, and what was chosen for this kind before
+				dyn.appendChild(el('div', { class: 'nz-lb', text: t('notes.place.mine') }));
+				if (!st.all) dyn.appendChild(el('p', { class: 'hint', text: t('notes.place.loading') }));
+				else {
+					const ml = el('div', { class: 'nz-pl-list', role: 'radiogroup', 'aria-label': t('notes.place.mine'), 'data-list': 'mine' });
+					for (const f of st.all.family) ml.appendChild(placeRow({ name: f.name, sub: t('notes.place.family'), ref: `f:${f.familyId}`, on: isSel('family', (z) => z.familyId === f.familyId), pick: () => pick({ type: 'family', familyId: f.familyId }) }));
+					const own = [...st.all.places, ...(c.options || []).filter((x) => !st.all.places.some((y) => y.id === x.id))];
+					for (const x of own) {
+						const sub = NS.placeSub(x, t) || (x.named ? t('notes.place.saved') : x.uses > 1 ? t('notes.place.used', { n: x.uses }) : '');
+						ml.appendChild(placeRow({ name: x.name, sub, ref: `p:${x.id}`, on: isSel('own', (z) => z.placeId === x.id), pick: () => pick({ type: 'own', placeId: x.id }) }));
+					}
+					dyn.appendChild(ml.childNodes.length ? ml : el('p', { class: 'hint', text: t('notes.place.mineNone') }));
+				}
+				if (state !== 'on') dyn.appendChild(el('p', { class: 'hint', 'data-state': 'search-off', text: t(state === 'unavailable' ? 'notes.place.searchDown' : 'notes.place.searchOff') }));
+				// on arriving / on leaving, remember
+				const seg = el('div', { class: 'seg nz-pl-when', role: 'group', 'aria-label': t('notes.place.when') });
+				for (const tr of ['enter', 'exit']) {
+					seg.appendChild(el('button', { type: 'button', class: st.trigger === tr ? 'on' : '', 'aria-pressed': st.trigger === tr ? 'true' : 'false', 'data-trigger': tr, text: t(`notes.place.${tr}`), on: { click: () => { st.trigger = tr; draw(); } } }));
+				}
+				dyn.appendChild(seg);
+				if (st.key && st.label && (isSel('hit') || isSel('own'))) {
+					const ck = el('input', { type: 'checkbox', checked: st.remember, 'data-act': 'place-remember' });
+					ck.addEventListener('change', () => { st.remember = ck.checked; });
+					dyn.appendChild(el('label', { class: 'nz-check' }, [ck, el('span', { text: t('notes.place.remember', { label: st.label }) })]));
+				}
+				dyn.appendChild(el('p', { class: 'hint nz-pl-phone', text: t('notes.place.phoneHint') }));
+				dyn.appendChild(el('div', { class: 'dlg-actions' }, [
+					c.none !== false && cur ? btn(t('notes.place.remove'), () => { d.close(); c.onSave(null, ''); }, 'btn-danger', null, { 'data-act': 'place-none' }) : null,
+					btn(t('notes.cancel'), () => d.close(), 'btn-ghost'),
+					btn(t('notes.save'), () => {
+						const arg = NS.placeChoiceArg(st.sel, st);
+						const text = NS.placeChoiceText(st.sel, st, { places: [...(st.all ? st.all.places : []), ...(c.options || [])], family: st.all ? st.all.family : [] }, t) || (cur ? cur.name : '');
+						d.close();
+						c.onSave(arg, text);
+					}, 'btn-pri', null, { 'data-act': 'place-save', disabled: !st.sel && !cur }),
+				]));
+			}
+
+			draw();
+			// „Meine Orte“ and whether the search is on right now (`me.places` — it may have been switched meanwhile)
+			Promise.all([Promise.resolve(api.places()).catch(() => null), loadMe()]).then(([r]) => {
+				if (!d.box.isConnected) return;
+				if (!ok(r)) { if (r) fail(r); st.all = { places: [], family: [], favs: [] }; draw(); return; }
+				st.all = { places: r.places || [], family: r.family || [], favs: r.favs || [] };
+				clear(near);
+				const opts = NS.nearOptions(st.all);
+				for (const x of opts) near.appendChild(el('option', { value: x.value, text: t('notes.place.nearOf', { name: x.label }) }));
+				if (!opts.length) near.appendChild(el('option', { value: '', text: t('notes.place.nearNone') }));
+				if (cur && cur.id && !st.sel && st.all.places.some((x) => x.id === cur.id)) st.sel = { type: 'own', placeId: cur.id };
+				draw();
+				// the chip „Ort: Baumarkt …“ asked for the places near: one search, because the dialog was opened for it
+				if (c.searchNow && st.key && NS.searchState(S.me) === 'on' && opts.length) search();
+			});
+			return d;
+		}
+
+		/**
+		 * One of „Meine Orte“, new or changed: name, address (looked up through the server when the search is on), latitude
+		 * and longitude, the radius. No map — this app loads no map tiles.
+		 */
+		function placeEditor(pl, all, done) {
+			const info = (S.me && S.me.places) || null;
+			const searchOn = NS.searchState(S.me) === 'on';
+			const name = el('input', { class: 'inp', type: 'text', value: pl ? pl.name : '', maxlength: '80', 'aria-label': t('notes.place.name'), 'data-f': 'name' });
+			const addr = el('input', { class: 'inp', type: 'text', value: pl ? pl.address : '', maxlength: '160', placeholder: t('notes.place.addressPh'), 'aria-label': t('notes.place.address'), 'data-f': 'address' });
+			const lat = el('input', { class: 'inp', type: 'number', step: 'any', min: '-90', max: '90', value: pl ? String(pl.lat) : '', placeholder: t('notes.place.lat'), 'aria-label': t('notes.place.lat'), 'data-f': 'lat' });
+			const lon = el('input', { class: 'inp', type: 'number', step: 'any', min: '-180', max: '180', value: pl ? String(pl.lon) : '', placeholder: t('notes.place.lon'), 'aria-label': t('notes.place.lon'), 'data-f': 'lon' });
+			const radius = el('input', { class: 'inp', type: 'number', min: '50', max: '2000', step: '10', value: String(pl ? pl.radius : info ? info.radius.default : 150), 'aria-label': t('notes.place.radius'), 'data-f': 'radius' });
+			const hits = el('div', { class: 'nz-pl-list', 'data-list': 'addresses' });
+			const err = el('p', { class: 'nz-err', role: 'alert' });
+			let ref = null;
+			let busy = false;
+			const find = async () => {
+				const text = addr.value.trim();
+				if (busy || text.length < 3) return;
+				busy = true;
+				clear(hits).appendChild(el('p', { class: 'hint', role: 'status', text: t('notes.place.searching') }));
+				const r = await Promise.resolve(api.searchPlaces({ q: text, address: true, ...NS.nearArg((NS.nearOptions(all)[0] || {}).value) })).catch(() => null);
+				busy = false;
+				clear(hits);
+				if (!ok(r)) { hits.appendChild(el('p', { class: 'hint', role: 'alert', text: searchError(r) })); return; }
+				if (!r.results.length) hits.appendChild(el('p', { class: 'nz-pl-none', text: t('notes.place.addrNone') }));
+				for (const x of r.results) {
+					hits.appendChild(placeRow({ name: x.name, sub: x.address, ref: x.ref, on: false, pick: () => {
+						lat.value = String(x.lat);
+						lon.value = String(x.lon);
+						if (x.address) addr.value = x.address;
+						ref = x.ref || null;
+						clear(hits);
+					} }));
+				}
+				if (r.attribution && r.results.length) hits.appendChild(attributionLine(r.attribution, false));
+			};
+			addr.addEventListener('keydown', (e) => { if (e.key === 'Enter' && searchOn) { e.preventDefault(); find(); } });
+			// a point typed by hand is no hit of the search any more
+			for (const n of [lat, lon]) n.addEventListener('input', () => { ref = null; });
+			const save = async () => {
+				const a = Number(lat.value);
+				const b = Number(lon.value);
+				if (!name.value.trim()) { err.textContent = t('notes.place.nameNeed'); return; }
+				if (lat.value === '' || lon.value === '' || !Number.isFinite(a) || !Number.isFinite(b) || Math.abs(a) > 90 || Math.abs(b) > 180) { err.textContent = t('notes.place.pointNeed'); return; }
+				const rad = Math.max(50, Math.min(2000, Math.round(Number(radius.value)) || 150));
+				const body = { name: name.value.trim(), address: addr.value.trim(), lat: a, lon: b, radius: rad };
+				const r = await Promise.resolve(pl ? api.updatePlace(pl.id, { ...body, named: true }) : api.createPlace(ref ? { ...body, ref } : body)).catch(() => null);
+				if (!ok(r)) { err.textContent = NS.errText(r, t); return; }
+				d.close();
+				done();
+			};
+			const d = dialog(pl ? t('notes.place.edit') : t('notes.place.new'), [
+				field(t('notes.place.name'), name),
+				field(t('notes.place.address'), el('span', { class: 'nz-pair nz-pl-addr' }, [addr, searchOn ? btn(t('notes.place.addrFind'), find, 'btn-sec', 'search', { 'data-act': 'addr-find' }) : null])),
+				hits,
+				el('div', { class: 'nz-pair nz-pl-coords' }, [lat, lon]),
+				field(t('notes.place.radius'), radius),
+				el('p', { class: 'hint', text: t(searchOn ? 'notes.place.editHint' : 'notes.place.editHintOff') }),
+				err,
+			], [btn(t('notes.cancel'), () => d.close(), 'btn-ghost'), btn(t('notes.save'), save, 'btn-pri', null, { 'data-act': 'place-save' })], { wide: true });
+			d.box.setAttribute('data-dialog', 'place-edit');
+			return d;
+		}
+
+		/** „Meine Orte“ for the page „Quellen“ (asked when it is shown and after a change). */
+		async function reloadPlaces() {
+			if (!placesOn()) { S.places = null; return; }
+			const r = await Promise.resolve(api.places()).catch(() => null);
+			if (ok(r)) S.places = { places: r.places || [], family: r.family || [], favs: r.favs || [] };
+			if (S.view.kind === 'sources') renderMain();
+		}
+
+		/**
+		 * „Orte“ on the page „Quellen“: the person's switches (the search on the internet, the hint „in der Nähe“ and its
+		 * quiet hours — they steer the phone) and „Meine Orte“.
+		 */
+		function placesSettings(wrap, save) {
+			const info = S.me.places;
+			const prefs = (S.me.prefs && S.me.prefs.places) || { search: true, nearby: true, quiet: null };
+			const set = async (places) => { await save({ places }); await loadMe(); if (S.view.kind === 'sources') renderMain(); };
+			wrap.appendChild(el('h2', { class: 'nz-set-title', 'data-set': 'places', text: t('notes.place.setTitle') }));
+			const card = el('div', { class: 'card nz-card nz-places-set', 'data-card': 'place-switches' });
+			const adminOff = !info || !info.search.enabled || !NS.offers(S.me, 'placeSearch');
+			card.appendChild(field(t('notes.place.setSearch'), sw(!adminOff && prefs.search !== false, (v) => set({ search: v }), t('notes.place.setSearch'), adminOff), adminOff ? t('notes.place.setSearchAdmin') : t('notes.place.setSearchHint')));
+			card.appendChild(field(t('notes.place.setNearby'), sw(prefs.nearby !== false, (v) => set({ nearby: v }), t('notes.place.setNearby')), t('notes.place.setNearbyHint')));
+			const quiet = prefs.quiet || null;
+			const from = el('input', { class: 'inp nz-inp-sm', type: 'time', value: quiet ? quiet.from : '21:00', 'aria-label': t('notes.place.setQuietFrom') });
+			const to = el('input', { class: 'inp nz-inp-sm', type: 'time', value: quiet ? quiet.to : '07:00', 'aria-label': t('notes.place.setQuietTo') });
+			const saveQuiet = () => { if (from.value && to.value && from.value !== to.value) set({ quiet: { from: from.value, to: to.value } }); };
+			from.addEventListener('change', saveQuiet);
+			to.addEventListener('change', saveQuiet);
+			card.appendChild(field(t('notes.place.setQuiet'), sw(!!quiet, (v) => set({ quiet: v ? { from: from.value || '21:00', to: to.value || '07:00' } : null }), t('notes.place.setQuiet')), t('notes.place.setQuietHint')));
+			if (quiet) card.appendChild(field(t('notes.place.setQuietTimes'), el('span', { class: 'nz-pair' }, [from, to])));
+			card.appendChild(el('p', { class: 'hint nz-places-phone', text: t('notes.place.setHint') }));
+			card.appendChild(el('p', { class: 'hint', text: t('notes.place.privacy') }));
+			wrap.appendChild(card);
+			// „Meine Orte“
+			const mine = el('div', { class: 'card nz-card nz-places-mine', 'data-card': 'places' });
+			const all = S.places;
+			const again = () => reloadPlaces();
+			mine.appendChild(el('div', { class: 'nz-set-h' }, [el('b', { class: 'grow', text: t('notes.place.mine') }), all && canWrite() ? btn(t('notes.place.new'), () => placeEditor(null, all, again), 'btn-sec', 'plus', { 'data-act': 'place-new' }) : null]));
+			if (!all) mine.appendChild(el('p', { class: 'hint', text: t('notes.place.loading') }));
+			else {
+				for (const f of all.family) {
+					mine.appendChild(el('div', { class: 'nz-place-row', 'data-place': `f:${f.familyId}` }, [el('div', { class: 'grow' }, [el('b', { text: f.name }), el('span', { class: 'hint nz-block', text: t('notes.place.family') })]), el('span', { class: 'nz-place-ic', title: t('notes.place.family') }, [icon('home', 16)])]));
+				}
+				for (const x of all.places) {
+					const favs = x.favFor || [];
+					const sub = NS.placeSub(x, t);
+					mine.appendChild(el('div', { class: 'nz-place-row', 'data-place': `p:${x.id}` }, [
+						el('div', { class: 'grow' }, [el('b', { text: x.name }), sub ? el('span', { class: 'hint nz-block', text: sub }) : null]),
+						favs.length && canWrite() ? ib('x', t('notes.place.forget', { label: favs.map((f) => f.label).join(', ') }), async () => {
+							for (const f of favs) { const r = await api.setPlaceFav(f.key, null); if (!ok(r)) { fail(r); break; } }
+							again();
+						}, false, { 'data-act': 'place-forget' }) : null,
+						canWrite() ? ib('edit', t('notes.place.edit'), () => placeEditor(x, all, again), false, { 'data-act': 'place-edit' }) : null,
+						canWrite() ? ib('trash', t('notes.delete'), async () => { const r = await api.deletePlace(x.id); if (!ok(r)) fail(r); again(); }, false, { 'data-act': 'place-delete' }) : null,
+					]));
+				}
+				if (!all.family.length && !all.places.length) mine.appendChild(el('p', { class: 'hint', text: t('notes.place.mineNone') }));
+			}
+			wrap.appendChild(mine);
 		}
 
 		function fromButton(item) {
@@ -1651,6 +2023,8 @@
 			evening.addEventListener('change', () => { if (evening.value) save({ evening: evening.value }); });
 			wrap.appendChild(el('div', { class: 'card nz-card' }, [field(t('notes.remindAt'), evening, t('notes.remindAtHint'))]));
 			wrap.appendChild(el('div', { class: 'card nz-card nz-soon' }, [el('b', { text: t('notes.srcLater') }), el('span', { class: 'hint', text: t('notes.srcLaterHint') })]));
+			// plugin 1.5.0: the person's switches of places and „Meine Orte“
+			if (placesOn() && S.me.places) placesSettings(wrap, save);
 			m.appendChild(wrap);
 		}
 
@@ -1840,7 +2214,13 @@
 		}
 
 		// ── live ─────────────────────────────────────────────
-		if (typeof api.onChanged === 'function') api.onChanged(() => soon());
+		if (typeof api.onChanged === 'function') {
+			api.onChanged((c) => {
+				// plugin 1.5.0: the switches of places may have changed on another device — `me.places` says what holds now
+				if (placesOn() && S.shown && c && Array.isArray(c.what) && c.what.includes('places')) loadMe().then(() => soon(0));
+				else soon();
+			});
+		}
 		if (typeof api.onVault === 'function') api.onVault((v) => { if (v && v.event === 'approved') soon(); });
 		if (typeof api.onImport === 'function') api.onImport(onImport);
 		if (typeof api.onVaultLock === 'function') {

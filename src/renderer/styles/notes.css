@@ -291,3 +291,49 @@
 .nz-qsel option { color: var(--text); background: var(--panel); }
 .nz-attached { min-width: 0; }
 .nz-attached select { min-width: 0; max-width: 190px; }
+
+/* plugin 1.5.0: a task at a place (shown and changed here — the phone reminds) */
+.nz-qchip-place { display: inline-flex; align-items: center; gap: 6px; background: var(--acc-bg); color: var(--acc-t); }
+.nz-qchip-place.plain { background: var(--panel2); color: var(--muted); }
+.nz-qbtn { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; cursor: pointer; }
+.nz-qbtn:hover span { text-decoration: underline; }
+.nz-qbtn:focus-visible, .nz-pl-row:focus-visible, .nz-linkbtn:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.nz-place { align-items: center; }
+.nz-place-btn { min-width: 0; max-width: 210px; }
+.nz-place-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nz-f .nz-place-hint { margin-top: 0; line-height: 1.45; }
+.nz-place-hint.is-ask { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--acc-bg); color: var(--text); }
+.nz-pl-dlg.is-wide { width: 640px; }
+.nz-pl, .nz-pl-body { display: flex; flex-direction: column; gap: 10px; }
+.nz-pl-search { display: flex; gap: 8px; align-items: center; }
+.nz-pl-search[hidden] { display: none; }
+.nz-pl-search input { flex: 1 1 auto; min-width: 0; }
+.nz-pl-search select { flex: 0 1 220px; min-width: 0; width: auto; }
+.nz-pl-list { display: flex; flex-direction: column; gap: 6px; }
+.nz-pl-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 50px; padding: 7px 12px; border: 1px solid var(--line2); border-radius: 12px; background: var(--panel); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.nz-pl-row:hover { background: var(--panel2); }
+.nz-pl-row.is-any { border-style: dashed; }
+.nz-pl-row.on { border-color: var(--acc); background: var(--acc-bg); }
+.nz-pl-dot { width: 18px; height: 18px; flex-shrink: 0; border-radius: 50%; border: 2px solid var(--faint); }
+.nz-pl-row.on .nz-pl-dot { border: 5px solid var(--acc); }
+.nz-pl-tx { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.nz-pl-tx b { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.nz-pl-tx span, .nz-pl-r span { font-size: 12px; color: var(--muted); }
+.nz-pl-r { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.nz-pl-r b { font-size: 13px; font-weight: 700; }
+.nz-pl-none { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--panel2); color: var(--muted); font-size: 13px; }
+.nz-pl-attr { margin: 0; }
+.nz-linkbtn { padding: 0; border: 0; background: transparent; color: var(--acc-t); font: inherit; text-decoration: underline; cursor: pointer; }
+.nz-pl-when { align-self: stretch; }
+.nz-pl-when button { flex: 1 1 0; }
+.nz-pl-phone { margin: 0; }
+.nz-pl-addr { display: flex; }
+.nz-pl-addr input { flex: 1 1 auto; min-width: 0; }
+.nz-pl-coords { display: flex; }
+.nz-pl-coords input { flex: 1 1 0; min-width: 0; }
+.nz-set-title { margin: 10px 0 0; font-size: 16px; font-weight: 700; }
+.nz-places-set .hint, .nz-places-mine .hint { line-height: 1.45; }
+.nz-places-set > p.hint { margin: 8px 0 0; }
+.nz-place-row { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 6px 0; border-top: 1px solid var(--line); }
+.nz-place-row b { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.nz-place-ic { display: inline-flex; width: 34px; justify-content: center; color: var(--faint); }

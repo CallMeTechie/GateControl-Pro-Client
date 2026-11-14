@@ -16,6 +16,10 @@ const { setupWithApiKey } = require('./support/ui');
 // Plugin 1.4.0 (shoppingLists, taskList): the shopping lists in the menu, a list ticked off (items added, changed,
 // deleted; "Alles abgehakt" with the way back), the list at a task (the mark, the details, the chip of the quick entry)
 // and the reminder's button "Liste öffnen" that opens the list in the app. With an older plugin nothing of it shows.
+// Plugin 1.5.0 (places, placeSearch): a task at a place — the mark and the line "Ort", the dialog "Welcher …?" (the
+// places near one of the person's places: this PC has no position and sends none; a search only when the person asks),
+// the place chip of the quick entry (the server's suggestion), "Orte" on the page "Quellen" and the consent for a place
+// someone else set. The phone reminds: the app never asks what to watch (places/watch, places/fired).
 
 function coreDir() {
   const root = path.join(__dirname, '..', '..');
@@ -57,6 +61,12 @@ function seedShopping(n) {
   n.srv.state.attached.set(task.id, list.num);
   return { list, task };
 }
+// … and the words of plugin 1.5.0
+function stage3() {
+  const { STAGE3 } = require(path.join(coreDir(), 'test', 'fixtures', 'notes-server.js'));
+  return [...stage2(), ...STAGE3];
+}
+const OSM_URL = 'https://www.openstreetmap.org/copyright';
 const shopItem = (n, text) => [...n.srv.state.shopItems.values()].find((i) => i.text === text && !i.deleted) || null;
 const posted = (n, re) => n.srv.state.requests.filter((r) => re.test(r.path));
 
@@ -676,5 +686,360 @@ test.describe('notizen', () => {
     await expect(page.locator('#page-notizen')).toHaveClass(/active/);
     await expect(root.locator('.nz-detail .nz-d-title')).toHaveValue('Bei Lidl einkaufen');
     await expect(root.locator('.nz-it[data-view^="shopping:"]')).toHaveCount(0);
+  });
+
+  test('an older plugin (1.4.0): no place at a task, no chip, no "Orte", nothing new asked or sent', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage2() });
+    // what the server would hold stays unseen: an older plugin sends no `place`
+    const nord = n.srv.addPlace({ name: 'Baumarkt Nord', address: 'Industriestraße 4, Berlin', lat: 52.539, lon: 13.424, named: false, ref: 'osm:W101', fav: 'kind:diy' });
+    n.srv.setTaskPlace(12, { placeId: nord.id, key: 'kind:diy', label: 'Baumarkt' });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openNotes(page);
+    await expect(row(root, 't:12')).toBeVisible();
+    await expect(root.locator('.nz-mark[data-kind="place"]')).toHaveCount(0);
+    await row(root, 't:12').click();
+    await expect(root.locator('.nz-detail .nz-d-title')).toHaveValue('Winterreifen-Termin ausmachen');
+    await expect(root.locator('.nz-detail .nz-attached')).toHaveCount(1);
+    await expect(root.locator('.nz-detail .nz-place')).toHaveCount(0);
+    const quick = root.locator('#nz-quick');
+    await quick.fill('beim Baumarkt Schrauben kaufen');
+    await expect.poll(() => posted(n, /\/api\/parse$/).some((r) => r.body.text === 'beim Baumarkt Schrauben kaufen')).toBe(true);
+    await page.waitForTimeout(400);
+    await expect(root.locator('.nz-qchip[data-kind="place"]')).toHaveCount(0);
+    await quick.press('Enter');
+    await expect.poll(() => posted(n, /\/api\/tasks$/).length).toBe(1);
+    expect(posted(n, /\/api\/tasks$/)[0].body).toEqual({ text: 'beim Baumarkt Schrauben kaufen', area: 'private', createList: false, myDay: true });
+    await root.locator('.nz-it[data-view="sources"]').click();
+    await expect(root.locator('.nz-srccard').first()).toBeVisible();
+    await expect(root.locator('[data-set="places"]')).toHaveCount(0);
+    expect(posted(n, /\/api\/places|\/place\//)).toEqual([]);
+  });
+
+  test('plugin 1.5.0: a task at a place — chosen in "Welcher …?", shown at the task, changed and taken off; this PC watches nothing', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage3() });
+    const { app, page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openNotes(page);
+    await row(root, 't:12').click();
+    const d = root.locator('.nz-detail');
+    const placeBtn = d.locator('[data-act="place"]');
+    await expect(placeBtn).toHaveText(/^(Ort wählen|Choose a place)$/);
+    await placeBtn.click();
+    const dlg = page.locator('.nz-dlg[data-dialog="place"]');
+    const title = dlg.locator('.nz-dlg-title');
+    const save = dlg.locator('[data-act="place-save"]');
+    await expect(title).toHaveText(/^(Ort|Place)$/);
+    // this PC has no position: the search is made near one of the person's places — "Zuhause" first
+    await expect(dlg.locator('[data-act="place-near"] option')).toHaveText([/^(in der Nähe von|near) Zuhause$/, /^(in der Nähe von|near) Schule$/]);
+    await expect(dlg.locator('[data-list="mine"] .nz-pl-tx b')).toHaveText(['Zuhause', 'Schule']);
+    await expect(save).toBeDisabled();
+    await expect(dlg.locator('.nz-pl-phone')).toHaveText(/^(Erinnert wird am Handy|Your phone reminds)/);
+    // typing searches nothing; Enter (or "Suchen") does
+    await dlg.locator('[data-act="place-q"]').fill('Baumarkt');
+    await page.waitForTimeout(600);
+    expect(n.srv.state.placeSearches).toEqual([]);
+    await dlg.locator('[data-act="place-q"]').press('Enter');
+    const hits = dlg.locator('[data-list="hits"] .nz-pl-row');
+    await expect(hits.locator('.nz-pl-tx b')).toHaveText(['Baumarkt Nord', 'Baumarkt am Ring', 'Baumarkt Süd', /^(Jeder|Any) Baumarkt$/]);
+    await expect(title).toHaveText(/^(Welcher|Which) Baumarkt\?$/);
+    // estimated minutes and the distance, the nearest first; the first hit is chosen
+    await expect(hits.first().locator('.nz-pl-r')).toHaveText(/^6 (Min\.|min)\s*2[,.]\d km$/);
+    await expect(hits.first()).toHaveAttribute('aria-checked', 'true');
+    expect(n.srv.state.placeSearches).toEqual([{ q: 'Baumarkt', nearFamilyId: 'home' }]);
+    // "© OpenStreetMap" stands where hits stand and opens in the browser
+    await expect(dlg.locator('.nz-pl-attr')).toHaveText(/^(Fahrzeit geschätzt aus der Entfernung\. Kartendaten:|Travel time estimated from the distance\. Map data:)\s*© OpenStreetMap$/);
+    await dlg.locator('[data-act="osm"]').click();
+    await expect.poll(() => app.evaluate(() => globalThis.__gcE2E.events.filter((e) => e.type === 'shell.openExternal').map((e) => e.url))).toContain(OSM_URL);
+    // the second one, on leaving, remembered as "mein Baumarkt"
+    await hits.nth(1).click();
+    await dlg.locator('[data-trigger="exit"]').click();
+    await dlg.locator('[data-act="place-remember"]').check();
+    await page.screenshot({ path: test.info().outputPath('notizen-place-dialog.png') });
+    await save.click();
+    await expect.poll(() => (n.srv.state.taskPlace.get(12) || {}).trigger).toBe('exit');
+    expect(posted(n, /\/api\/tasks\/12$/).pop().body).toEqual({ place: { trigger: 'exit', key: 'kind:diy', label: 'Baumarkt', remember: true, ref: 'osm:W102', name: 'Baumarkt am Ring', address: 'Ringstraße 21, Berlin', lat: 52.501, lon: 13.362 } });
+    await expect(placeBtn).toHaveText(/^Baumarkt am Ring · (beim Verlassen|on leaving)$/);
+    await expect(row(root, 't:12').locator('.nz-mark[data-kind="place"]')).toHaveText('Baumarkt am Ring');
+    await expect(d.locator('.nz-place-hint')).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath('notizen-place-detail.png') });
+
+    // again: the remembered place is one of "Meine Orte" and chosen — only the trigger changes
+    await placeBtn.click();
+    await expect(title).toHaveText(/^(Welcher|Which) Baumarkt\?$/);
+    await expect(dlg.locator('[data-list="mine"] .nz-pl-row[aria-checked="true"] .nz-pl-tx')).toHaveText(/^Baumarkt am Ring\s*Ringstraße 21, Berlin · (gemerkt für „Baumarkt“|remembered for “Baumarkt”)$/);
+    await dlg.locator('[data-trigger="enter"]').click();
+    await save.click();
+    await expect.poll(() => (n.srv.state.taskPlace.get(12) || {}).trigger).toBe('enter');
+    expect(posted(n, /\/api\/tasks\/12$/).pop().body.place.placeId).toBe(n.srv.state.taskPlace.get(12).placeId);
+    await expect(d.locator('.nz-place-hint[data-kind="nearby"]')).toHaveText(/Baumarkt/);
+    // "Jeder Baumarkt": the places of the kind, asked by its key with "Suchen"; the remembered one comes first
+    await placeBtn.click();
+    await expect(dlg.locator('[data-list="mine"] .nz-pl-row[aria-checked="true"]')).toHaveCount(1);
+    await dlg.locator('[data-act="place-search"]').click();
+    await expect(hits.locator('.nz-pl-tx b')).toHaveText(['Baumarkt am Ring', 'Baumarkt Nord', 'Baumarkt Süd', /^(Jeder|Any) Baumarkt$/]);
+    expect(n.srv.state.placeSearches[1]).toEqual({ key: 'kind:diy', label: 'Baumarkt', nearFamilyId: 'home' });
+    await dlg.locator('[data-ref="any"]').click();
+    await save.click();
+    await expect.poll(() => (n.srv.state.taskPlace.get(12) || {}).any).toBe(true);
+    expect(posted(n, /\/api\/tasks\/12$/).pop().body).toEqual({ place: { trigger: 'enter', any: true, key: 'kind:diy', label: 'Baumarkt' } });
+    await expect(placeBtn).toHaveText(/^Jeder Baumarkt · (beim Ankommen|on arriving)$/);
+    // taken off
+    await placeBtn.click();
+    await dlg.locator('[data-act="place-none"]').click();
+    await expect.poll(() => n.srv.state.taskPlace.has(12)).toBe(false);
+    expect(posted(n, /\/api\/tasks\/12$/).pop().body).toEqual({ place: null });
+    await expect(placeBtn).toHaveText(/^(Ort wählen|Choose a place)$/);
+    await expect(row(root, 't:12').locator('.nz-mark[data-kind="place"]')).toHaveCount(0);
+
+    // the map service is busy / not reachable: said in the dialog, nothing is lost
+    await placeBtn.click();
+    n.srv.state.fail['POST places/search'] = { status: 429, code: 'busy', extra: { retryAfter: 20, reason: 'limit' } };
+    await dlg.locator('[data-act="place-q"]').fill('Lidl');
+    await dlg.locator('[data-act="place-search"]').click();
+    await expect(dlg.locator('.note-err')).toHaveText(/20 (Sekunden|seconds)/);
+    delete n.srv.state.fail['POST places/search'];
+    n.srv.state.placeCfg.down = true;
+    await dlg.locator('[data-act="place-search"]').click();
+    await expect(dlg.locator('.note-err')).toHaveText(/^(Der Kartendienst ist gerade nicht erreichbar|The map service cannot be reached right now)/);
+    n.srv.state.placeCfg.down = false;
+    await dlg.locator('[data-act="place-search"]').click();
+    await expect(hits.locator('.nz-pl-tx b')).toHaveText(['Lidl Marktstraße', 'Lidl Bahnhofsplatz', /^(Jeder|Any) Lidl$/]);
+    await page.keyboard.press('Escape');
+    await expect(dlg).toHaveCount(0);
+    // a PC watches no place and sends no position
+    expect(posted(n, /\/api\/places\/(watch|fired)|\/place\/(skip|later)/)).toEqual([]);
+    expect(posted(n, /\/api\/places\/search$/).every((r) => !('near' in r.body) && (r.body.nearFamilyId === 'home'))).toBe(true);
+  });
+
+  test('plugin 1.5.0: the quick entry — the place the line names: searched on a click, decided for an own place and home, taken away', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage3() });
+    const oma = n.srv.addPlace({ name: 'Oma', address: 'Gartenweg 5', lat: 52.4, lon: 13.2 });
+    mock.setPush({ topics: [] });   // the push stream carries the plugin's live events
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openNotes(page);
+    const quick = root.locator('#nz-quick');
+    const chip = root.locator('.nz-qchip[data-kind="place"]');
+    const dlg = page.locator('.nz-dlg[data-dialog="place"]');
+    const tasks = () => posted(n, /\/api\/tasks$/);
+    // a kind of place: the chip offers the choice — nothing is searched while typing
+    await quick.fill('beim Baumarkt Schrauben kaufen');
+    await expect(chip).toHaveText(/^(Ort|Place): Baumarkt …$/);
+    await expect(chip).toHaveAttribute('data-state', 'ask');
+    await page.waitForTimeout(500);
+    expect(n.srv.state.placeSearches).toEqual([]);
+    await page.screenshot({ path: test.info().outputPath('notizen-place-quick.png') });
+    // the chip opens "Welcher Baumarkt?" with the places near home (one search, asked for by the click)
+    await chip.locator('.nz-qbtn').click();
+    await expect(dlg.locator('.nz-dlg-title')).toHaveText(/^(Welcher|Which) Baumarkt\?$/);
+    await expect(dlg.locator('[data-list="hits"] .nz-pl-row[aria-checked="true"] .nz-pl-tx b')).toHaveText('Baumarkt Nord');
+    expect(n.srv.state.placeSearches).toEqual([{ key: 'kind:diy', label: 'Baumarkt', nearFamilyId: 'home' }]);
+    await expect(dlg.locator('[data-act="place-none"]')).toHaveCount(0);
+    // the list behind the dialog is drawn anew meanwhile (someone changed a task): the choice still reaches the line
+    const views = posted(n, /\/api\/views\/myday$/).length;
+    mock.pushPlugin('gatecontrol-notizen', 'changed', { what: ['tasks'] });
+    await expect.poll(() => posted(n, /\/api\/views\/myday$/).length).toBeGreaterThan(views);
+    await expect(quick).toHaveValue('beim Baumarkt Schrauben kaufen');
+    await dlg.locator('[data-act="place-save"]').click();
+    await expect(chip).toHaveText(/^(Ort: Baumarkt Nord · beim Ankommen|Place: Baumarkt Nord · on arriving)$/);
+    await expect(quick).toBeFocused();
+    await quick.press('Enter');
+    await expect.poll(() => tasks().length).toBe(1);
+    expect(tasks()[0].body).toEqual({ text: 'beim Baumarkt Schrauben kaufen', area: 'private', createList: false, myDay: true,
+      place: { trigger: 'enter', key: 'kind:diy', label: 'Baumarkt', ref: 'osm:W101', name: 'Baumarkt Nord', address: 'Industriestraße 4, Berlin', lat: 52.539, lon: 13.424 } });
+    // the words of the place leave the title; the task shows where it hangs
+    const made = [...n.srv.state.tasks.values()].find((x) => x.title === 'Schrauben kaufen');
+    expect(made).toBeTruthy();
+    await expect(row(root, `t:${made.id}`).locator('.nz-mark[data-kind="place"]')).toHaveText('Baumarkt Nord');
+    await expect(page.locator('#toasts .toast', { hasText: 'Baumarkt Nord' }).locator('.toast-text')).toHaveText(/^(Hinzugefügt: Schrauben kaufen – Ort: Baumarkt Nord|Added: Schrauben kaufen – place: Baumarkt Nord)$/);
+    await expect(quick).toHaveValue('');
+    await expect(chip).toHaveCount(0);
+
+    // an own place by its name: decided without a search; taken away with × — the title then stays whole
+    await quick.fill('bei Oma Leiter zurückgeben');
+    await expect(chip).toHaveText(/^(Ort: Oma · beim Ankommen|Place: Oma · on arriving)$/);
+    await expect(chip).toHaveAttribute('data-state', 'set');
+    await chip.locator('.nz-qx').click();
+    await expect(chip).toHaveAttribute('data-state', 'off');
+    await quick.press('Enter');
+    await expect.poll(() => tasks().length).toBe(2);
+    expect(tasks()[1].body).toEqual({ text: 'bei Oma Leiter zurückgeben', area: 'private', createList: false, myDay: true });
+    expect([...n.srv.state.tasks.values()].some((x) => x.title === 'bei Oma Leiter zurückgeben' && !n.srv.state.taskPlace.has(x.id))).toBe(true);
+    // … left as it is: the task hangs on the own place
+    await quick.fill('bei Oma Kuchen abholen');
+    await expect(chip).toHaveAttribute('data-state', 'set');
+    await quick.press('Enter');
+    await expect.poll(() => tasks().length).toBe(3);
+    expect(tasks()[2].body).toEqual({ text: 'bei Oma Kuchen abholen', area: 'private', createList: false, myDay: true, place: { placeId: oma.id, trigger: 'enter' } });
+    // "zu Hause": the place of the family
+    await quick.fill('zu Hause Blumen gießen');
+    await expect(chip).toHaveText(/^(Ort: Zuhause · beim Ankommen|Place: Zuhause · on arriving)$/);
+    await quick.press('Enter');
+    await expect.poll(() => tasks().length).toBe(4);
+    expect(tasks()[3].body.place).toEqual({ familyId: 'home', trigger: 'enter' });
+    await expect.poll(() => [...n.srv.state.tasks.values()].some((x) => x.title === 'Blumen gießen')).toBe(true);
+    // not surely meant ("Apotheke anrufen"): a suggestion only — nothing is set
+    await quick.fill('Apotheke anrufen');
+    await expect(chip).toHaveText(/^(Ort|Place): Apotheke \?$/);
+    await expect(chip).toHaveClass(/plain/);
+    await quick.press('Enter');
+    await expect.poll(() => tasks().length).toBe(5);
+    expect(tasks()[4].body).toEqual({ text: 'Apotheke anrufen', area: 'private', createList: false, myDay: true });
+    // a line without a place: no chip
+    await quick.fill('Rasen mähen');
+    await expect.poll(() => posted(n, /\/api\/parse$/).some((r) => r.body.text === 'Rasen mähen')).toBe(true);
+    await expect(chip).toHaveCount(0);
+    // the only search was the one the click asked for; the parser's own chips are what they were
+    expect(n.srv.state.placeSearches.length).toBe(1);
+    expect(posted(n, /\/api\/places\/(watch|fired)/)).toEqual([]);
+  });
+
+  test('plugin 1.5.0: "Orte" on the page "Quellen" — the switches, "Meine Orte"; with the search off only remembered places', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage3() });
+    const nord = n.srv.addPlace({ name: 'Baumarkt Nord', address: 'Industriestraße 4, Berlin', lat: 52.539, lon: 13.424, named: false, ref: 'osm:W101', fav: 'kind:diy', uses: 6 });
+    const { page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openNotes(page);
+    await root.locator('.nz-it[data-view="sources"]').click();
+    await expect(root.locator('[data-set="places"]')).toHaveText(/^(Orte|Places)$/);
+    const sws = root.locator('[data-card="place-switches"] .sw');
+    await expect(sws).toHaveCount(3);
+    await expect(sws.nth(0)).toHaveAttribute('aria-checked', 'true');
+    await expect(root.locator('.nz-places-phone')).toHaveText(/^(Erinnert wird auf deinem Handy, sobald es am Ort ankommt oder ihn verlässt\. Der Server erfährt nicht, wo du bist\.|Your phone reminds as soon as it arrives at the place or leaves it\. The server does not learn where you are\.)$/);
+    const mine = root.locator('[data-card="places"]');
+    await expect(mine.locator('.nz-place-row b')).toHaveText(['Zuhause', 'Schule', 'Baumarkt Nord']);
+    await expect(mine.locator(`[data-place="p:${nord.id}"] .hint`)).toHaveText(/^Industriestraße 4, Berlin · (gemerkt für „Baumarkt“|remembered for “Baumarkt”)$/);
+    await root.locator('.nz-main').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    await page.screenshot({ path: test.info().outputPath('notizen-place-settings.png') });
+
+    // a new place by its address (looked up through the server, near "Zuhause") — the hit fills latitude and longitude
+    await mine.locator('[data-act="place-new"]').click();
+    const ed = page.locator('.nz-dlg[data-dialog="place-edit"]');
+    await ed.locator('[data-f="name"]').fill('Büro');
+    await ed.locator('[data-f="address"]').fill('Ringstraße 21');
+    await ed.locator('[data-act="addr-find"]').click();
+    await ed.locator('[data-list="addresses"] .nz-pl-row').first().click();
+    await expect(ed.locator('[data-f="lat"]')).toHaveValue('52.5012');
+    await expect(ed.locator('[data-f="address"]')).toHaveValue('Ringstraße 21, 10115 Berlin');
+    await ed.locator('[data-act="place-save"]').click();
+    await expect(mine.locator('.nz-place-row b')).toHaveText(['Zuhause', 'Schule', 'Büro', 'Baumarkt Nord']);
+    expect(posted(n, /\/api\/places\/search$/).pop().body).toEqual({ q: 'Ringstraße 21', address: true, nearFamilyId: 'home' });
+    expect(posted(n, /\/api\/places$/).filter((r) => r.method === 'POST').pop().body).toEqual({ name: 'Büro', address: 'Ringstraße 21, 10115 Berlin', lat: 52.5012, lon: 13.3621, radius: 150, ref: 'osm:W900' });
+    const buero = [...n.srv.state.places.values()].find((x) => x.name === 'Büro');
+    // changed: the name and the radius; a point without a name is refused in the dialog
+    await mine.locator(`[data-place="p:${buero.id}"] [data-act="place-edit"]`).click();
+    await ed.locator('[data-f="name"]').fill('');
+    await ed.locator('[data-act="place-save"]').click();
+    await expect(ed.locator('.nz-err')).toHaveText(/^(Bitte einen Namen angeben\.|Please give it a name\.)$/);
+    await ed.locator('[data-f="name"]').fill('Büro Mitte');
+    await ed.locator('[data-f="radius"]').fill('300');
+    await ed.locator('[data-act="place-save"]').click();
+    await expect.poll(() => [n.srv.state.places.get(buero.id).name, n.srv.state.places.get(buero.id).radius]).toEqual(['Büro Mitte', 300]);
+    await expect(mine.locator('.nz-place-row b')).toHaveText(['Zuhause', 'Schule', 'Büro Mitte', 'Baumarkt Nord']);
+    // "nicht mehr merken": the place taken once leaves "Meine Orte"; an own place deleted
+    await mine.locator(`[data-place="p:${nord.id}"] [data-act="place-forget"]`).click();
+    await expect(mine.locator('.nz-place-row b')).toHaveText(['Zuhause', 'Schule', 'Büro Mitte']);
+    expect(posted(n, /\/api\/places\/favs$/).pop().body).toEqual({ key: 'kind:diy', placeId: null });
+    await mine.locator(`[data-place="p:${buero.id}"] [data-act="place-delete"]`).click();
+    await expect(mine.locator('.nz-place-row b')).toHaveText(['Zuhause', 'Schule']);
+    expect(n.srv.state.places.get(buero.id).deleted).toBe(true);
+
+    // the hint "in der Nähe" off, the quiet hours changed and off — they steer the phone
+    const prefs = () => posted(n, /\/api\/prefs$/).filter((r) => r.method === 'PUT').map((r) => r.body);
+    await sws.nth(1).click();
+    await expect.poll(() => n.srv.state.prefs.places.nearby).toBe(false);
+    await root.locator('[data-card="place-switches"] input[type="time"]').first().fill('22:30');
+    await root.locator('[data-card="place-switches"] input[type="time"]').first().blur();
+    await expect.poll(() => n.srv.state.prefs.places.quiet).toEqual({ from: '22:30', to: '07:00' });
+    await sws.nth(2).click();
+    await expect.poll(() => n.srv.state.prefs.places.quiet).toBeNull();
+    await expect(root.locator('[data-card="place-switches"] input[type="time"]')).toHaveCount(0);
+    // the search switched off for this person: no search is offered any more, remembered places stay
+    const searches = n.srv.state.placeSearches.length;
+    await sws.nth(0).click();
+    await expect.poll(() => n.srv.state.prefs.places.search).toBe(false);
+    expect(prefs()).toEqual([{ places: { nearby: false } }, { places: { quiet: { from: '22:30', to: '07:00' } } }, { places: { quiet: null } }, { places: { search: false } }]);
+    await expect(sws.nth(0)).toHaveAttribute('aria-checked', 'false');
+    await root.locator('.nz-it[data-view="myday"]').click();
+    const quick = root.locator('#nz-quick');
+    const chip = root.locator('.nz-qchip[data-kind="place"]');
+    await quick.fill('beim Baumarkt Farbe holen');
+    await expect(chip).toHaveText(/^(Ort wählen|Choose a place)$/);
+    await chip.locator('.nz-qbtn').click();
+    const dlg = page.locator('.nz-dlg[data-dialog="place"]');
+    await expect(dlg.locator('.nz-pl-search')).toBeHidden();
+    await expect(dlg.locator('[data-state="search-off"]')).toHaveText(/^(Die Ortssuche im Internet ist ausgeschaltet\. Gemerkte Orte funktionieren weiter\.|The place search on the internet is switched off\. Remembered places keep working\.)$/);
+    // what was chosen for the kind before is offered without a search
+    await expect(dlg.locator('[data-list="mine"] .nz-pl-tx b')).toHaveText(['Zuhause', 'Schule', 'Baumarkt Nord']);
+    await page.screenshot({ path: test.info().outputPath('notizen-place-search-off.png') });
+    await dlg.locator(`[data-ref="p:${nord.id}"]`).click();
+    await dlg.locator('[data-act="place-save"]').click();
+    await expect(chip).toHaveText(/Baumarkt Nord/);
+    await quick.press('Enter');
+    await expect.poll(() => posted(n, /\/api\/tasks$/).length).toBe(1);
+    expect(posted(n, /\/api\/tasks$/)[0].body.place).toEqual({ trigger: 'enter', key: 'kind:diy', label: 'Baumarkt', placeId: nord.id });
+    expect(n.srv.state.placeSearches.length).toBe(searches);
+    // switched off by the administrator: the switch says so and cannot be turned on
+    n.srv.state.placeCfg.mode = 'off';
+    await root.locator('.nz-it[data-view="sources"]').click();
+    await expect(sws.nth(0)).toBeDisabled();
+    await expect(root.locator('[data-card="place-switches"] .nz-f').first().locator('.hint')).toHaveText(/^(Vom Administrator ausgeschaltet|Switched off by the administrator)/);
+  });
+
+  test('plugin 1.5.0: a place someone else set — the push asks with "Annehmen" / "Ablehnen", the task asks in the app', async ({ launchApp, mock }) => {
+    const n = await mock.setNotes({ features: stage3() });
+    const lidl = n.srv.addPlace({ name: 'Lidl Marktstraße', address: 'Marktstraße 3, Berlin', lat: 52.526, lon: 13.401, named: false, ref: 'osm:N201' });
+    const task = n.srv.addTask({ title: 'Milch mitbringen', due: { date: '2026-11-08', time: null } });
+    const other = n.srv.addTask({ title: 'Paket abgeben', due: { date: '2026-11-08', time: null }, assigneeId: 12 });
+    n.srv.setTaskPlace(task.id, { placeId: lidl.id, key: 'name:lidl', label: 'Lidl', by: 12, who: 1 });
+    n.srv.setTaskPlace(other.id, { placeId: lidl.id, key: 'name:lidl', label: 'Lidl', by: 1, who: 12 });
+    const topic = 'plugin:gatecontrol-notizen:shared';
+    const push = (id) => ({ id, topic, title: 'Jenny Muster möchte dich erinnern', body: 'Milch mitbringen · beim Ankommen an Lidl Marktstraße', collapse_key: `place:${task.id}`,
+      data: { notizen: { kind: 'place_consent', taskId: task.id, listId: 1, area: 'private', task: task.id }, actions: [{ id: 'place_accept', label: 'Annehmen', type: 'callback' }, { id: 'place_decline', label: 'Ablehnen', type: 'callback' }] } });
+    mock.setPush({ topics: [{ id: topic, label: 'Notizen & Aufgaben · Geteiltes' }], items: [push(91)] });
+    const { app, page, clickToast } = await launchApp();
+    await setupWithApiKey(page, mock);
+    await expect(page.locator('#nav-notizen')).toBeVisible();
+    await expect(page.locator('#inbox-badge')).toHaveText('1');
+    // the buttons of the push are callbacks: answered from the inbox (and from the toast) without the page
+    await page.locator('#nav-inbox').click();
+    await page.locator('#inbox-list .inbox-row').first().click();
+    await expect(page.locator('#inbox-detail .inbox-actions .btn')).toHaveText(['Annehmen', 'Ablehnen']);
+    await page.locator('#inbox-detail [data-action="place_decline"]').click();
+    await expect.poll(() => mock.acks().some((x) => x.action === 'place_decline')).toBe(true);
+    // a second request: the toast carries the buttons; a click on the message opens the task
+    mock.pushNotification(push(92));
+    await expect.poll(() => app.evaluate(() => globalThis.__gcE2E.toasts.map((x) => x.text).filter((x) => x.includes('möchte dich erinnern')).length)).toBeGreaterThan(0);
+    const xml = await app.evaluate(() => globalThis.__gcE2E.toasts.map((x) => x.text).filter((x) => x.includes('möchte dich erinnern')).pop());
+    if (/<toast/.test(xml)) { expect(xml).toContain('Annehmen'); expect(xml).toContain('Ablehnen'); }
+    expect(await clickToast('möchte dich erinnern')).toBe(true);
+    await expect(page.locator('#page-notizen')).toHaveClass(/active/);
+    const root = page.locator('#page-notizen');
+    const d = root.locator('.nz-detail');
+    await expect(d.locator('.nz-d-title')).toHaveValue('Milch mitbringen');
+    // the place shows, with who is asked: this person
+    await expect(d.locator('[data-act="place"]')).toHaveText(/^Lidl Marktstraße · (beim Ankommen|on arriving)$/);
+    const ask = d.locator('.nz-place-hint.is-ask');
+    await expect(ask).toHaveText(/^(Der Ort wurde von jemand anderem gesetzt\. Dein Handy achtet erst darauf, wenn du zustimmst\.|The place was set by someone else\. Your phone only watches it once you agree\.)/);
+    await page.screenshot({ path: test.info().outputPath('notizen-place-consent.png') });
+    await ask.locator('[data-act="place-accept"]').click();
+    await expect.poll(() => n.srv.state.taskPlace.get(task.id).consent).toBe('accepted');
+    expect(posted(n, /\/place\/consent$/).map((r) => r.body)).toEqual([{ accept: true }]);
+    await expect(d.locator('.nz-place-hint.is-ask')).toHaveCount(0);
+    await expect(page.locator('#toasts .toast', { hasText: /Angenommen|Accepted/ })).toBeVisible();
+    // declined: the task stays, without a reminder at the place
+    n.srv.state.taskPlace.get(task.id).consent = 'pending';
+    await root.locator('.nz-it[data-view="planned"]').click();
+    await row(root, `t:${task.id}`).click();
+    await d.locator('[data-act="place-decline"]').click();
+    await expect.poll(() => n.srv.state.taskPlace.get(task.id).consent).toBe('declined');
+    await expect(d.locator('.nz-place-hint[data-kind="declined"]')).toBeVisible();
+    // a place this person set for someone else: it waits, nobody is asked here
+    await root.locator('.nz-it[data-view="planned"]').click();
+    await row(root, `t:${other.id}`).click();
+    await expect(d.locator('.nz-d-title')).toHaveValue('Paket abgeben');
+    await expect(d.locator('.nz-place-hint[data-kind="consentWait"]')).toBeVisible();
+    await expect(d.locator('[data-act="place-accept"]')).toHaveCount(0);
   });
 });
