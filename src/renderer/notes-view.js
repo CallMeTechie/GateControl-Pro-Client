@@ -10,6 +10,9 @@
  * task, pictures and files). Tresor notebooks: end-to-end encrypted in the main process; locked / unlocked with Windows
  * Hello, a new device asks, the recovery key, a new key. "Quellen" (the person's choices per source) and "Umziehen"
  * (Microsoft To Do by device code through Mail; DS Note's .nsx read on this PC with a password for protected notes).
+ * Plugin 1.3.0 (the words of me.features): the card „Gestern offen geblieben“ above „Heute“ in Mein Tag (a row: Erledigt,
+ * Heute, Verschieben; „Alle heute“), a task's marks (Erinnerung, Später: …, im Kalender), the calendar chip of the quick
+ * entry, and the buttons of the morning hint that open the page (open({ kind: 'yesterday', action })).
  *
  * Data: window.gatecontrol.notes (core NotesService over IPC); texts: notes.* of the Pro locales; logic without DOM:
  * notes-state.js (window.GCNotesState), notes-md.js (window.GCNotesMd). Server text only ever goes into textContent
@@ -25,6 +28,8 @@
 		sun: 'M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4|M12 7a5 5 0 1 0 0 10a5 5 0 1 0 0-10',
 		star: 'M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z',
 		cal: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+		bell: 'M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z|M10 21h4',
+		flag: 'M5 21V4M5 4h12l-2 4 2 4H5',
 		user: 'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M4 21a8 8 0 0 1 16 0',
 		list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
 		plus: 'M12 5v14M5 12h14',
@@ -404,7 +409,10 @@
 			if (!d) { m.appendChild(el('p', { class: 'nz-muted', text: t('notes.loading') })); return; }
 			if (d.error) { m.appendChild(el('div', { class: 'note note-err', text: NS.errText(d.error, t) })); return; }
 			let any = false;
-			for (const s of d.view.sections) {
+			// „Gestern offen geblieben“ above „Heute“; its rows are not shown a second time under „Überfällig“
+			const card = NS.yesterdayCard(d.view, S.me);
+			if (card) { any = true; m.appendChild(yesterdayCard(card)); }
+			for (const s of NS.sectionsWithout(d.view.sections, card)) {
 				if (!s.items.length && !(v.kind === 'list' && s.id === 'open')) continue;
 				any = true;
 				m.appendChild(sectionCard(s, v.kind === 'smart' ? v.id : v.kind));
@@ -437,7 +445,9 @@
 					on: { click: (e) => { e.stopPropagation(); complete(x, !x.done); } } }, [icon('check', 13)]));
 			} else row.appendChild(el('span', { class: 'nz-ck-none' }));
 			const meta = NS.metaLine(x, { userId: S.me && S.me.user.id, lists: S.nav ? S.nav.lists : [], inList: S.view.kind === 'list' }, t);
-			row.appendChild(el('div', { class: 'nz-row-tx' }, [el('span', { class: 'nz-row-title', text: x.title }), meta.length ? el('span', { class: 'nz-row-meta', text: meta.join(' · ') }) : null]));
+			const marks = NS.taskMarks(x, S.me, t);
+			row.appendChild(el('div', { class: 'nz-row-tx' }, [el('span', { class: 'nz-row-title', text: x.title }), meta.length || marks.length ? el('span', { class: 'nz-row-meta' }, [
+				meta.length ? el('span', { class: 'nz-row-meta-tx', text: meta.join(' · ') }) : null, ...marks.map(markEl)]) : null]));
 			const chip = NS.sourceChip(x, t);
 			if (chip) row.appendChild(el('span', { class: 'chip chip-sm nz-src', 'data-tone': chip.tone, text: chip.text }));
 			if (x.important) row.appendChild(el('span', { class: 'chip chip-sm nz-src', 'data-tone': 'warn', text: t('notes.important') }));
@@ -448,6 +458,93 @@
 					on: { click: async (e) => { e.stopPropagation(); const r = await api.updateTask(x.id, { important: !x.important }); if (ok(r)) soon(0); else fail(r); } } }, [icon('star', 16)]));
 			}
 			return row;
+		}
+
+		/** A small mark of a task (plugin 1.3.0): the bell „Erinnerung“ / „Später: …“, the calendar „im Kalender“. */
+		function markEl(k) {
+			return el('span', { class: 'nz-mark', 'data-kind': k.kind, title: k.title || null }, [icon(k.kind === 'calendar' ? 'cal' : 'bell', 12), el('span', { text: k.text })]);
+		}
+
+		// ── „Gestern offen geblieben“ (plugin 1.3.0) ─────────
+		const canWrite = () => !(S.me && S.me.readOnly);
+
+		function yesterdayCard(card) {
+			const box = el('div', { class: 'card nz-card nz-sec nz-yd', 'data-id': 'yesterday' });
+			const title = t('notes.y.title');
+			box.appendChild(el('div', { class: 'nz-sec-h nz-yd-h' }, [icon('flag', 15), el('span', { text: title }), el('span', { class: 'nz-n', text: String(card.items.length) }), el('span', { class: 'grow' }),
+				canWrite() && card.items.some((x) => x.canEdit) ? btn(t('notes.y.allToday'), () => decideAll({ action: 'today', area: S.area }), 'btn-ghost nz-yd-all') : null]));
+			for (const x of card.items) {
+				const openNow = S.detail && S.detail.uid === x.uid;
+				const row = el('div', { class: `nz-row nz-yd-row${openNow ? ' on' : ''}`, role: 'button', tabindex: '0', 'data-uid': x.uid, on: {
+					click: () => openDetail(x),
+					keydown: (e) => { if (e.key === 'Enter' && e.target === row) openDetail(x); },
+				} });
+				const l = ((S.nav && S.nav.lists) || []).find((y) => y.id === x.listId);
+				const meta = [NS.whenText(x, S.me && S.me.today, t), l ? `${t(`notes.area.${l.area}`)} › ${l.name}` : ''].filter(Boolean);
+				row.appendChild(el('div', { class: 'nz-row-tx' }, [el('span', { class: 'nz-row-title', text: x.title }), meta.length ? el('span', { class: 'nz-row-meta', text: meta.join(' · ') }) : null]));
+				if (canWrite() && (x.canComplete || x.canEdit)) {
+					const act = (key, fn) => el('button', { type: 'button', class: 'btn btn-sm nz-yd-btn', 'data-act': key, 'aria-label': `${t(`notes.y.${key}`)}: ${x.title}`, text: t(`notes.y.${key}`), on: { click: (e) => { e.stopPropagation(); fn(); } } });
+					row.appendChild(el('div', { class: 'nz-yd-acts' }, [
+						x.canComplete ? act('done', () => complete(x, true)) : null,
+						x.canEdit ? act('today', () => moveRow(x, 'today')) : null,
+						x.canEdit ? act('move', () => askMove(card.moveOptions, (to) => moveRow(x, to))) : null,
+					]));
+				}
+				box.appendChild(row);
+			}
+			return box;
+		}
+
+		async function moveRow(x, to) {
+			const r = await api.moveTask(x.id, to);
+			if (!ok(r)) { fail(r); if (r && r.code === 'not_found') soon(0); return; }
+			soon(0);
+		}
+
+		/** Every task of the card — or the tasks a message named — at once („Alle heute“, „Alle N abhaken?“, „Verschieben auf“). */
+		async function decideAll(body) {
+			const r = await api.decideYesterday(body);
+			if (!ok(r)) { fail(r); return; }
+			if (r.failed && r.failed.length) toast(t('notes.y.someFailed', { n: r.failed.length }), 'error');
+			soon(0);
+		}
+
+		/** „Verschieben auf“: Morgen · Am Wochenende · Anderes Datum → pick(to). */
+		function askMove(options, pick) {
+			let d = null;
+			const choose = (to) => { d.close(); pick(to); };
+			const date = el('input', { class: 'inp nz-inp-sm', type: 'date', min: (S.me && S.me.today) || null, 'aria-label': t('notes.y.otherDate') });
+			const set = btn(t('notes.y.move'), () => { if (date.value) choose(date.value); }, 'btn-sec', null, { disabled: true, 'data-act': 'date' });
+			date.addEventListener('input', () => { set.disabled = !date.value || !!(S.me && S.me.today && date.value < S.me.today); });
+			d = dialog(t('notes.y.askMove'), [
+				el('div', { class: 'nz-yd-choices' }, NS.moveChoices(options, t).map((o) => btn(o.label, () => choose(o.to), 'btn-sec', null, { 'data-to': o.to }))),
+				field(t('notes.y.otherDate'), el('span', { class: 'nz-pair' }, [date, set])),
+			], [btn(t('notes.cancel'), () => d.close(), 'btn-ghost')]);
+		}
+
+		/**
+		 * A button of the morning hint opened the page: „Erledigt“ of several tasks asks once („Alle N abhaken?“),
+		 * „Verschieben“ offers the days. Asked about what is still open of the tasks the message named (both areas).
+		 */
+		async function askYesterday(c) {
+			if (!NS.offers(S.me, 'yesterdayOpen')) return;
+			const here = () => NS.yesterdayCard(S.data && S.data.view, S.me);
+			// the card of the other area when this one has none
+			if (!here()) {
+				const other = S.area === 'work' ? 'private' : 'work';
+				const there = await Promise.resolve(api.view('myday', other)).catch(() => null);
+				if (ok(there) && NS.yesterdayCard(there.view, S.me)) { S.area = other; renderSide(); await Promise.all([reloadNav(), reloadView()]); }
+			}
+			if (c.action !== 'done_ask' && c.action !== 'move') return;
+			if (!canWrite()) return;
+			const r = await Promise.resolve(api.yesterday()).catch(() => null);
+			const open = ok(r) && r.yesterday ? r.yesterday.items.map((x) => x.id) : null;
+			const ids = NS.askedIds(c.taskIds, open);
+			if (!ids.length) { toast(t('notes.y.none')); return; }
+			if (c.action === 'move') { askMove(ok(r) && r.yesterday ? r.yesterday.moveOptions : [], (to) => decideAll({ action: 'move', to, ids })); return; }
+			let d = null;
+			d = dialog(t('notes.y.askDone', { n: ids.length }), [el('p', { class: 'nz-p', text: t('notes.y.askDoneText') })],
+				[btn(t('notes.cancel'), () => d.close(), 'btn-ghost'), btn(t('notes.y.askDoneConfirm'), () => { d.close(); decideAll({ action: 'done', ids }); }, 'btn-pri', null, { 'data-act': 'confirm' })]);
 		}
 
 		async function complete(x, done) {
@@ -473,7 +570,7 @@
 				parsed = NS.quickParse(input.value, ctx);
 				if (!parsed) return;
 				chips.appendChild(el('span', { class: 'nz-chips-l', text: t('notes.quick.found') }));
-				for (const c of NS.quickChips(parsed, ctx, S.area, t, lang())) chips.appendChild(el('span', { class: `chip nz-qchip${c.plain ? ' plain' : ''}`, 'data-kind': c.kind, text: c.text }));
+				for (const c of NS.quickChips(parsed, ctx, S.area, t, lang(), S.me)) chips.appendChild(el('span', { class: `chip nz-qchip${c.plain ? ' plain' : ''}`, 'data-kind': c.kind, title: c.title || null, text: c.text }));
 			};
 			input.addEventListener('input', show);
 			input.addEventListener('keydown', async (e) => {
@@ -611,7 +708,12 @@
 			det.appendChild(field(t('notes.due'), el('span', { class: 'nz-pair' }, [dd, dt])));
 			const rm = el('input', { class: 'inp nz-inp-sm', type: 'datetime-local', value: NS.localInput(task.remindAt), 'aria-label': t('notes.reminder') });
 			rm.addEventListener('change', () => patchTask(task, { remindAt: rm.value ? { date: rm.value.slice(0, 10), time: rm.value.slice(11, 16) } : null }));
-			det.appendChild(field(t('notes.reminder'), rm));
+			// plugin 1.3.0: put off with „Später“; the event in the person's calendar in Mail
+			const marks = NS.taskMarks(task, S.me, t);
+			const later = marks.find((k) => k.kind === 'reminder' && task.snoozed);
+			det.appendChild(field(t('notes.reminder'), rm, later ? later.text : null));
+			const inCal = marks.find((k) => k.kind === 'calendar');
+			if (inCal) det.appendChild(field(t('notes.calendar'), el('span', { class: 'nz-mark nz-mark-lg', 'data-kind': 'calendar' }, [icon('cal', 14), el('span', { text: inCal.long })])));
 			const ro = NS.repeatOptions(task, S.me.today, t, lang());
 			const rs = el('select', { class: 'inp nz-inp-sm', 'aria-label': t('notes.repeat') }, ro.options.map((x) => el('option', { value: x.value, text: x.label })));
 			rs.value = ro.value;
@@ -1494,14 +1596,18 @@
 				if (S.dirty || !S.me) { S.dirty = false; reloadAll(); }
 			},
 			hide() { S.shown = false; },
-			/** A push click / a link: { kind: 'task' | 'list' | 'notebook' | 'vault' | 'home', … } or { note }. */
+			/**
+			 * A push click / a link: { kind: 'task' | 'list' | 'notebook' | 'vault' | 'home', … } or { note }; the morning hint
+			 * { kind: 'yesterday', taskIds, action: 'done_ask' | 'move' | null } → Mein Tag with the card (and the question).
+			 */
 			async open(ctx) {
 				S.shown = true;
 				if (!S.me) { S.dirty = false; await reloadAll(); }
 				const c = ctx && typeof ctx === 'object' ? ctx : null;
 				if (!c) return;
 				if (c.quick) { focusQuick(); return; }
-				if (c.kind === 'task' && c.taskId) { if (S.view.kind !== 'smart') await go({ kind: 'smart', id: 'myday' }); openDetail({ uid: `t:${c.taskId}`, type: 'task', id: c.taskId }); }
+				if (c.kind === 'yesterday') { await go({ kind: 'smart', id: 'myday' }); await askYesterday(c); }
+				else if (c.kind === 'task' && c.taskId) { if (S.view.kind !== 'smart') await go({ kind: 'smart', id: 'myday' }); openDetail({ uid: `t:${c.taskId}`, type: 'task', id: c.taskId }); }
 				else if (c.kind === 'list' && c.listId) go({ kind: 'list', id: c.listId });
 				else if (c.kind === 'notebook' && c.notebookId) go({ kind: 'notes', notebook: c.notebookId });
 				else if (c.kind === 'vault' && c.vaultId) {

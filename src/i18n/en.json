@@ -4419,6 +4419,31 @@
       "linkText": "Text",
       "image": "Picture or file"
     },
+    "calendar": "Calendar",
+    "mark": {
+      "reminder": "Reminder",
+      "later": "Later: {{when}}",
+      "calendar": "in the calendar",
+      "calendarIn": "In the “{{name}}” calendar in Mail",
+      "calendarHint": "A 30-minute event in the “{{name}}” calendar in Mail – without a reminder of its own.",
+      "calendarPending": "Will be added to the calendar in a moment"
+    },
+    "y": {
+      "title": "Left open yesterday",
+      "allToday": "All today",
+      "done": "Done",
+      "today": "Today",
+      "move": "Move",
+      "tomorrow": "Tomorrow",
+      "weekend": "At the weekend",
+      "otherDate": "Another date",
+      "askMove": "Move to",
+      "askDone": "Tick off all {{n}}?",
+      "askDoneText": "The tasks of yesterday then count as done.",
+      "askDoneConfirm": "Tick off",
+      "none": "Nothing of yesterday is open any more.",
+      "someFailed": "You may not change {{n}} of the tasks."
+    },
     "quick": {
       "ph": "Add … “Fri 10 am follow up offer #office”",
       "label": "Quick add",
@@ -4428,7 +4453,9 @@
       "list": "List: {{name}}",
       "newList": "New list “{{name}}”",
       "unknownPerson": "@{{name}} (unknown)",
-      "added": "Added: {{title}}"
+      "added": "Added: {{title}}",
+      "calendar": "Calendar: {{name}}",
+      "calendarHint": "Tasks with a time are entered as an event in the “{{name}}” calendar in Mail. You can switch this off in your settings in the portal."
     },
     "vault": {
       "name": "Vault",

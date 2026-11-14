@@ -70,6 +70,7 @@
 .nz-qchip { background: var(--info-bg); color: var(--info); }
 .nz-qchip[data-kind="important"] { background: var(--warn-bg); color: var(--warn); }
 .nz-qchip[data-kind="list"] { background: var(--acc-bg); color: var(--acc-t); }
+.nz-qchip[data-kind="calendar"] { background: var(--acc-bg); color: var(--acc-t); cursor: help; }
 .nz-qchip.plain { background: var(--panel2); color: var(--muted); }
 
 .nz-card { padding: 4px 0; overflow: hidden; }
@@ -90,6 +91,19 @@
 .nz-row-tx { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .nz-row-title { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .nz-row-meta { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nz-row-meta:has(.nz-mark) { display: flex; flex-wrap: wrap; align-items: center; gap: 1px 8px; }
+.nz-row-meta-tx { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nz-mark { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; color: var(--acc-t); font-weight: 600; }
+.nz-mark-lg { font-size: 13px; font-weight: 500; color: var(--muted); flex-shrink: 1; }
+.nz-mark-lg svg { flex-shrink: 0; color: var(--acc-t); }
+.nz-yd { border-color: var(--acc); }
+.nz-yd-h { color: var(--acc-t); padding-bottom: 8px; }
+.nz-yd-all { color: var(--acc-t); font-weight: 600; }
+.nz-yd-row { flex-wrap: wrap; }
+.nz-yd-acts { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+.nz-yd-btn { border-radius: 16px; background: var(--acc-bg); color: var(--acc-t); font-weight: 600; }
+.nz-yd-btn:hover { background: var(--acc); color: var(--acc-on); }
+.nz-yd-choices { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .nz-src { flex-shrink: 0; border-radius: 11px; }
 .nz-src[data-tone="info"] { background: var(--info-bg); color: var(--info); }
 .nz-src[data-tone="ok"] { background: var(--acc-bg); color: var(--acc-t); }

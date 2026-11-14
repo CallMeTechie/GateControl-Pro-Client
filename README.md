@@ -11,6 +11,8 @@ Windows VPN client with integrated Remote Desktop (RDP) management.
 - Session tracking and audit
 - Notizen & Aufgaben (plugin gatecontrol-notizen): Mein Tag with the to-dos of the other plugins, lists, notes in Markdown,
   Tresor notebooks (end-to-end encrypted, Windows Hello), quick entry with Strg+N, the move from Microsoft To Do and DS Note
+  — with plugin 1.3.0 also the card "Gestern offen geblieben" in Mein Tag, a task's marks (Erinnerung, Später, im Kalender)
+  and the buttons of the reminder messages (the app sets no alarm of its own; the server's push is the reminder)
 
 ## Development
 ```bash

@@ -4,7 +4,9 @@
  * Dates as the lists show them (heute, morgen, Fr. 13. Nov.), the line under a task or an item, the chips of the quick
  * entry (the plugin's own ui/quickparse.js: vendor/notizen, window.GCQuickParse), the repeat choices, where tapping an
  * item of another plugin leads (contract docs/notes-sources-contract.md § 5: Mail's mail, Drive's deadline, Schule —
- * the other plugins' portal tab), texts of failures, of the Tresor states and of an import. window.GCNotesState.
+ * the other plugins' portal tab), texts of failures, of the Tresor states and of an import. Plugin 1.3.0, told by the
+ * words in `me.features` only (never a version): a task's marks (Erinnerung, Später: …, im Kalender), the calendar chip of
+ * the quick entry and the card „Gestern offen geblieben“ of Mein Tag. window.GCNotesState.
  */
 (function (root) {
 	'use strict';
@@ -45,6 +47,84 @@
 		if (time && d.date === today) return time;
 		if (x.type === 'source' && x.kind === 'homework' && x.due && x.due.date === RP().addDays(today, 1)) return t('notes.w.untilTomorrow');
 		return dayText(d.date, today, t) + (time ? ` ${time}` : '');
+	}
+
+	// ── plugin 1.3.0: reminders, the calendar, „Gestern offen geblieben“ ──
+
+	/** Does the plugin offer this (a word of `me.features`)? Nothing known yet counts as no. */
+	function offers(me, feature) {
+		return !!(me && Array.isArray(me.features) && me.features.includes(feature));
+	}
+
+	/**
+	 * The name of the calendar in Mail the person's tasks with a time go into, or null: only when Mail offers it, the
+	 * administrator switched it on and the person did not switch it off (`me.calendar`: available, enabled, mine).
+	 */
+	function calendarName(me) {
+		const c = me && me.calendar;
+		return offers(me, 'taskCalendar') && c && c.available === true && c.enabled === true && c.mine === true ? str(c.name) : null;
+	}
+
+	/** The wall clock of an ISO time with offset as a row shows it ('19:00' today, 'morgen 9:00'). */
+	function clockText(iso, today, t) {
+		const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(str(iso));
+		if (!m) return '';
+		const time = m[2].replace(/^0/, '');
+		return m[1] === today ? time : `${dayText(m[1], today, t)} ${time}`;
+	}
+
+	/**
+	 * The small marks of a task → [{ kind: 'reminder' | 'calendar', text, title?, long? }]: a reminder is still to come
+	 * („Erinnerung“, put off: „Später: …“), the task stands in the person's calendar („im Kalender“).
+	 */
+	function taskMarks(x, me, t) {
+		const out = [];
+		if (!x || x.type !== 'task') return out;
+		if (offers(me, 'reminderActions') && x.reminder && !x.done) {
+			const when = x.snoozed ? clockText(x.reminder.at, me.today, t) : '';
+			out.push({ kind: 'reminder', text: when ? t('notes.mark.later', { when }) : t('notes.mark.reminder') });
+		}
+		const name = calendarName(me);
+		if (name !== null && x.calendar && x.calendar.mine === true) {
+			const pending = x.calendar.state === 'pending';
+			out.push({ kind: 'calendar', text: t('notes.mark.calendar'), title: pending ? t('notes.mark.calendarPending') : t('notes.mark.calendarHint', { name }), long: pending ? t('notes.mark.calendarPending') : t('notes.mark.calendarIn', { name }) });
+		}
+		return out;
+	}
+
+	/**
+	 * The card „Gestern offen geblieben“ of Mein Tag → { title, items, moveOptions } or null (an older plugin, another
+	 * view, nothing open). It stands above „Heute“ until every row is decided.
+	 */
+	function yesterdayCard(view, me) {
+		const y = view && view.view === 'myday' ? view.yesterday : null;
+		if (!offers(me, 'yesterdayOpen') || !y || !Array.isArray(y.items) || !y.items.length) return null;
+		return { day: y.day || null, items: y.items, moveOptions: Array.isArray(y.moveOptions) ? y.moveOptions : [] };
+	}
+
+	/** The sections of a view without the rows the card shows (they stay in „Überfällig“ for older apps). */
+	function sectionsWithout(sections, card) {
+		if (!card) return sections || [];
+		const hide = new Set(card.items.map((x) => x.uid));
+		return (sections || []).map((s) => {
+			if (s.id !== 'overdue') return s;
+			const items = s.items.filter((x) => !hide.has(x.uid));
+			return items.length === s.items.length ? s : { ...s, items, count: items.length };
+		});
+	}
+
+	/** The choices of „Verschieben“ → [{ to, label }] (the server's days; without them the two it always has). */
+	function moveChoices(options, t) {
+		const list = (options || []).filter((o) => o && typeof o.to === 'string' && o.to !== 'today');
+		const base = list.length ? list : [{ to: 'tomorrow' }, { to: 'weekend' }];
+		return base.map((o) => ({ to: o.to, label: o.to === 'tomorrow' || o.to === 'weekend' ? t(`notes.y.${o.to}`) : str(o.label) || o.to }));
+	}
+
+	/** The tasks a button of the morning hint asks about: what it named and is still open (it named none: all open). */
+	function askedIds(named, open) {
+		const ids = [...new Set((named || []).filter((n) => Number.isSafeInteger(n) && n > 0))];
+		if (!Array.isArray(open)) return ids;
+		return ids.length ? ids.filter((n) => open.includes(n)) : open.slice();
 	}
 
 	/** The chip of a row's source ('Mail · Zu tun', 'Drive · Frist') → { text, tone } or null. */
@@ -103,11 +183,14 @@
 	}
 
 	/** The chips under the quick entry ("Erkannt – tippen zum Ändern") → [{ kind, text, plain }]. */
-	function quickChips(p, ctx, area, t, lang) {
+	function quickChips(p, ctx, area, t, lang, me) {
 		if (!p) return [];
 		const out = [];
 		if (p.date) out.push({ kind: 'date', text: dayText(p.date, ctx.today, t) + (p.time ? `, ${p.time}` : '') });
 		if (p.remind) out.push({ kind: 'remind', text: t('notes.quick.remind', { time: p.remind.time }) });
+		// plugin 1.3.0: a task with a day and a time also becomes an event in the person's calendar in Mail — a hint only
+		const cal = p.date && p.time ? calendarName(me) : null;
+		if (cal !== null) out.push({ kind: 'calendar', text: t('notes.quick.calendar', { name: cal }), title: t('notes.quick.calendarHint', { name: cal }) });
 		if (p.repeat) out.push({ kind: 'repeat', text: `↻ ${RP().describe(p.repeat, lang === 'en' ? 'en' : 'de')}` });
 		if (p.important) out.push({ kind: 'important', text: t('notes.important') });
 		if (p.list) out.push({ kind: 'list', text: t('notes.quick.list', { name: p.list.name }) });
@@ -242,7 +325,7 @@
 	}
 
 	root.GCNotesState = {
-		COLORS, SOURCE_TONE, dayText, longDate, whenText, sourceChip, metaLine, sectionTitle, quickCtx, quickParse, quickChips, quickBody,
+		COLORS, SOURCE_TONE, dayText, longDate, whenText, offers, calendarName, clockText, taskMarks, yesterdayCard, sectionsWithout, moveChoices, askedIds, sourceChip, metaLine, sectionTitle, quickCtx, quickParse, quickChips, quickBody,
 		repeatOptions, openTarget, errText, vaultLocked, noteTitle, notebookName, isoDay, formatBytes, importText, groupKey, localInput,
 	};
 })(typeof self !== 'undefined' ? self : this);
