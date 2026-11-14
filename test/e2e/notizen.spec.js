@@ -695,7 +695,8 @@ test.describe('notizen', () => {
     await dlg.locator('input').first().fill('Apotheke');
     await dlg.locator('.btn-pri').click();
     await expect.poll(() => { const l = [...n.srv.state.shopLists.values()].find((x) => x.name === 'Apotheke'); return !!l && n.srv.state.attached.get(11) === l.num; }).toBe(true);
-    expect(posted(n, /\/api\/tasks\/11$/).pop().body).toEqual({ attachedListUid: [...n.srv.state.shopLists.values()].find((x) => x.name === 'Apotheke').uid });
+    // the write itself, not the last request to this path: the page reads the task again right after saving
+    expect(posted(n, /\/api\/tasks\/11$/).filter((r) => r.method === 'PATCH').pop().body).toEqual({ attachedListUid: [...n.srv.state.shopLists.values()].find((x) => x.name === 'Apotheke').uid });
     await expect(row(root, 't:11').locator('.nz-mark[data-kind="list"]')).toHaveText('Apotheke 0/0');
   });
 
