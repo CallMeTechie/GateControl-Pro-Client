@@ -337,3 +337,20 @@
 .nz-place-row { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 6px 0; border-top: 1px solid var(--line); }
 .nz-place-row b { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
 .nz-place-ic { display: inline-flex; width: 34px; justify-content: center; color: var(--faint); }
+
+/* ── plugin 1.6.0: whose turn, stars, the family's list ── */
+.nz-mark[data-kind="stars"] { color: var(--warn); }
+.nz-mark[data-kind="doneby"] { color: var(--muted); }
+.nz-qchip[data-kind="turn"], .nz-qchip[data-kind="stars"] { background: var(--acc-bg); color: var(--acc-t); }
+.nz-qturn { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 2px 0 0; }
+.nz-qturn[hidden] { display: none; }
+.nz-qturn-l { font-size: 12px; font-weight: 600; color: var(--muted); }
+.nz-qturn .hint { flex-basis: 100%; line-height: 1.45; }
+.nz-turn .hint { margin-top: 0; line-height: 1.45; }
+.nz-turn-seg { align-self: center; }
+.nz-turn-seg button:disabled { opacity: .55; cursor: default; }
+.nz-turn-who-l { flex-basis: 100%; font-weight: 600; color: var(--muted); font-size: 12.5px; }
+.nz-turn-who { flex-basis: 100%; flex-direction: row; flex-wrap: wrap; gap: 6px 16px; max-height: none; padding-bottom: 6px; }
+.nz-doneby { display: flex; align-items: center; gap: 10px; min-height: 30px; }
+.nz-locked { margin: 0; line-height: 1.45; }
+.nz-moved { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }

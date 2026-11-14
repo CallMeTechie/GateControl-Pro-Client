@@ -12,6 +12,11 @@
  * the mark and the line „Ort“ of a task, what the dialog „Welcher …?“ sends (`place` of POST / PATCH tasks), where a search
  * is made near (this PC has no position: near one of the person's places), the chip of the quick entry (the server's
  * suggestion — the parser on this PC is untouched) and the hints (consent, „in der Nähe“). The phone reminds, not the PC.
+ * Plugin 1.6.0 (`taskTurns`, `taskStars`, `familyTasks`, `doneFeedback`, `placeMine`): whose turn („Reihum · du bist
+ * dran“, „Wer zuerst“), the stars and „Erledigt von …“ at a row, what the typed line says about several people (the
+ * plugin's second module after the parser: vendor/notizen/turnwords.js, window.GCTurnWords) with the choice „Wer ist
+ * dran?“, what the details send (`turn`, `people`, `stars`), what a parent and a child may in the family's list, and who
+ * is asked to accept a place (`place.canConsent`; without `placeMine` as before).
  * window.GCNotesState.
  */
 (function (root) {
@@ -19,6 +24,7 @@
 
 	const RP = () => root.GCRepeat;
 	const QP = () => root.GCQuickParse;
+	const TW = () => root.GCTurnWords;
 	const SOURCE_TONE = {
 		'gatecontrol-mail': 'info', 'gatecontrol-drive': 'ok', 'gatecontrol-schule': 'pro', 'gatecontrol-familie': 'warn', 'gatecontrol-alltag': 'neutral',
 	};
@@ -86,6 +92,12 @@
 	function taskMarks(x, me, t) {
 		const out = [];
 		if (!x || x.type !== 'task') return out;
+		// plugin 1.6.0: whose turn it is, the stars of a task of the family's list, who it was ticked off for
+		const turn = turnText(x, me, t);
+		if (turn && !x.done) out.push({ kind: 'turn', text: turn, first: x.turn === 'first' });
+		if (starsShown(me, x.listId) && x.stars > 0) out.push({ kind: 'stars', text: starsText(x.stars, t) });
+		const by = doneByText(x, me, t);
+		if (by) out.push({ kind: 'doneby', text: by });
 		if (offers(me, 'reminderActions') && x.reminder && !x.done) {
 			const when = x.snoozed ? clockText(x.reminder.at, me.today, t) : '';
 			out.push({ kind: 'reminder', text: when ? t('notes.mark.later', { when }) : t('notes.mark.reminder') });
@@ -286,12 +298,15 @@
 		const p = task && task.place;
 		if (!p || !offers(me, 'places')) return null;
 		const meId = me.user && me.user.id;
+		// plugin 1.6.0 (`placeMine`): the server says who may answer — everybody else only sees the state. Without the
+		// field (an older plugin) as before: the person the task belongs to, when someone else set the place
+		const told = offers(me, 'placeMine') && typeof p.canConsent === 'boolean';
 		if (p.consent === 'pending') {
 			// the phone of the person the task belongs to watches the place: assigned, else who did not set the place
-			const mine = (task.assignee ? task.assignee.id === meId : p.by !== meId) && p.by !== meId;
+			const mine = told ? p.canConsent : (task.assignee ? task.assignee.id === meId : p.by !== meId) && p.by !== meId;
 			return mine ? { kind: 'consentMe', text: t('notes.place.consentMe'), ask: true } : { kind: 'consentWait', text: t('notes.place.consentWait'), ask: false };
 		}
-		if (p.consent === 'declined') return { kind: 'declined', text: t('notes.place.consentNo'), ask: false };
+		if (p.consent === 'declined') return { kind: 'declined', text: t('notes.place.consentNo'), ask: told && p.canConsent === true };
 		const search = searchState(me);
 		if (p.mode === 'any' && search !== 'on') return { kind: 'needsSearch', text: t('notes.place.needsSearch'), ask: false };
 		if (p.nearby && me.places && me.places.nearby && search === 'on') return { kind: 'nearby', text: t('notes.place.nearbyHint', { label: p.label || '' }), ask: false };
@@ -327,6 +342,110 @@
 		return { state: 'choose', text: t('notes.place.choose'), title: t('notes.place.chipTitle'), plain: true, arg: null, hint };
 	}
 
+	// ── plugin 1.6.0: whose turn, stars, the family's list ──
+
+	/**
+	 * What `me.familyTasks` means for the page → { bound, listId, parent, stars, starsMax, moved } — all off without the
+	 * word `familyTasks`, without the move or for a person outside the family.
+	 */
+	function familyInfo(me) {
+		const f = offers(me, 'familyTasks') && me.familyTasks && me.familyTasks.bound === true && me.familyTasks.listId ? me.familyTasks : null;
+		if (!f) return { bound: false, listId: null, parent: false, stars: false, starsMax: 10, moved: null };
+		return { bound: true, listId: f.listId, parent: f.parent === true, stars: f.stars === true && offers(me, 'taskStars'), starsMax: f.starsMax >= 1 && f.starsMax <= 10 ? f.starsMax : 10, moved: f.moved || null };
+	}
+
+	/** Is this the family's list? */
+	function isFamilyList(me, listId) {
+		const f = familyInfo(me);
+		return f.bound && !!listId && f.listId === listId;
+	}
+
+	/** Are stars shown at a task of this list (the family's list, while the Familie plugin counts them)? */
+	function starsShown(me, listId) {
+		return isFamilyList(me, listId) && familyInfo(me).stars;
+	}
+
+	/** May this person give stars there (a parent of the family)? */
+	function mayStar(me, listId) {
+		return starsShown(me, listId) && familyInfo(me).parent;
+	}
+
+	/** „1 Stern“ / „3 Sterne“ */
+	function starsText(n, t) {
+		return n === 1 ? t('notes.turn.star1') : t('notes.stars', { n });
+	}
+
+	/** Whose turn a task is: „Reihum · du bist dran“ / „Reihum · Lena ist dran“ / „Wer zuerst“ ('' for an ordinary task). */
+	function turnText(x, me, t) {
+		if (!x || !offers(me, 'taskTurns') || !x.turn) return '';
+		if (x.turn === 'first') return t('notes.turn.first');
+		const a = x.assignee;
+		if (!a) return t('notes.turn.rotate');
+		return a.id === (me.user && me.user.id) ? t('notes.turn.rotateMe') : t('notes.turn.rotateWho', { name: firstName(a.name) });
+	}
+
+	/** „Erledigt von Lena“ — for a task ticked off for somebody else, or one that was for several ('' otherwise). */
+	function doneByText(x, me, t) {
+		if (!x || !x.done || !x.doneBy || !(offers(me, 'familyTasks') || offers(me, 'taskTurns'))) return '';
+		const meId = me.user && me.user.id;
+		if (x.doneBy.id === meId && x.turn !== 'first') return '';
+		return t('notes.turn.doneBy', { name: x.doneBy.id === meId ? t('notes.turn.byMe') : firstName(x.doneBy.name) });
+	}
+
+	const firstName = (name) => str(name).trim().split(/\s+/)[0] || str(name);
+
+	/** The choices of „Sterne“ in a task's details: keine, 1 … starsMax → [{ value, label }]. */
+	function starChoices(me, t) {
+		const out = [{ value: 0, label: t('notes.turn.starsNone') }];
+		for (let n = 1; n <= familyInfo(me).starsMax; n++) out.push({ value: n, label: starsText(n, t) });
+		return out;
+	}
+
+	/**
+	 * What the choice „Wer ist dran?“ of a task's details sends (PATCH tasks/<id>): `to` 'one' | 'rotate' | 'first',
+	 * `people` the ids chosen under „Wer macht mit“ → the body, or null when it needs two people and has fewer.
+	 */
+	function turnPatch(task, to, people) {
+		if (to === 'one') return { turn: null };
+		const ids = [...new Set((people || []).filter((n) => Number.isSafeInteger(n) && n > 0))];
+		if (ids.length < 2) return null;
+		const body = { turn: to === 'first' ? 'first' : 'rotate', people: ids };
+		// „reihum“: who is on now stays on when they take part, else the first one
+		if (body.turn === 'rotate' && task && task.assignee && ids.includes(task.assignee.id)) body.assigneeId = task.assignee.id;
+		return body;
+	}
+
+	/** Who takes part when „Reihum“ / „Wer zuerst“ is chosen first: who did already, else every member of the list. */
+	function turnPeople(task, members) {
+		const have = (task && task.people ? task.people : []).map((p) => p.id);
+		return have.length >= 2 ? have : (members || []).map((m) => m.id);
+	}
+
+	/**
+	 * What the typed line says about several people, „reihum“ / „wer zuerst“ and stars — the plugin's ui/turnwords.js
+	 * applied to what the parser read → { title, people, turn, stars } or null (an older plugin, no line). Stars are read
+	 * only when the person may give them and the task goes into the family's list (the open list, or the one named
+	 * with #): „Hotel 4 Sterne buchen“ stays what it is.
+	 */
+	function quickWords(parsed, ctx, me, view) {
+		if (!parsed || !TW() || !offers(me, 'taskTurns')) return null;
+		const target = parsed.list ? parsed.list.id : parsed.listName ? null : view && view.kind === 'list' ? view.id : null;
+		try {
+			const w = TW().apply(parsed, { people: (ctx && ctx.people) || [], stars: mayStar(me, target) });
+			return { title: w.title, people: w.people || [], turn: w.turn || null, stars: w.stars || null };
+		} catch { return null; }
+	}
+
+	/**
+	 * „Wer ist dran?“ of the quick entry (from two people on): what the line says and what the person chose instead →
+	 * { value: 'one' | 'rotate' | 'first', said } or null. `choice`: undefined (untouched) or one of the three.
+	 */
+	function quickTurn(words, choice) {
+		if (!words || words.people.length < 2) return null;
+		const said = words.turn || 'one';
+		return { value: choice === 'one' || choice === 'rotate' || choice === 'first' ? choice : said, said };
+	}
+
 	/** The chip of a row's source ('Mail · Zu tun', 'Drive · Frist') → { text, tone } or null. */
 	function sourceChip(x, t) {
 		if (!x || !x.source) return null;
@@ -348,7 +467,8 @@
 		} else {
 			const l = ctx && ctx.lists ? ctx.lists.find((y) => y.id === x.listId) : null;
 			if (l && !(ctx && ctx.inList)) out.push(`${t(`notes.area.${l.area}`)} › ${l.name}`);
-			if (x.assignee && x.assignee.id !== me && x.assignee.name) out.push(x.assignee.name);
+			// „reihum“ names who is on in its own mark
+			if (x.assignee && x.assignee.id !== me && x.assignee.name && !x.turn) out.push(x.assignee.name);
 			if (x.repeatText) out.push(`↻ ${x.repeatText}`);
 			if (x.hasNote) out.push(t('notes.hasNote'));
 			if (x.attachments) out.push(t('notes.attachmentsN', { n: x.attachments }));
@@ -386,7 +506,7 @@
 	 * The chips under the quick entry ("Erkannt – tippen zum Ändern") → [{ kind, text, plain }]. `qa` (quickAttach): the
 	 * line names a shopping list with # — that word is no task list to be made.
 	 */
-	function quickChips(p, ctx, area, t, lang, me, qa) {
+	function quickChips(p, ctx, area, t, lang, me, qa, words, qt) {
 		if (!p) return [];
 		const out = [];
 		if (p.date) out.push({ kind: 'date', text: dayText(p.date, ctx.today, t) + (p.time ? `, ${p.time}` : '') });
@@ -398,8 +518,15 @@
 		if (p.important) out.push({ kind: 'important', text: t('notes.important') });
 		if (p.list) out.push({ kind: 'list', text: t('notes.quick.list', { name: p.list.name }) });
 		else if (p.listName && !(qa && qa.tag && qa.list)) out.push({ kind: 'list', text: t('notes.quick.newList', { name: p.listName }), plain: true });
-		if (p.assignee) out.push({ kind: 'person', text: `@${p.assignee.name}` });
+		// plugin 1.6.0: several people („Mia, Jonas“), whose turn („Reihum · zuerst Mia“, „Wer zuerst“), the stars
+		if (words && words.people.length > 1) {
+			out.push({ kind: 'person', text: words.people.map((x) => firstName(x.name)).join(', ') });
+			const turn = qt ? qt.value : words.turn || 'one';
+			if (turn === 'rotate') out.push({ kind: 'turn', text: t('notes.turn.rotateFirst', { name: firstName(words.people[0].name) }) });
+			else if (turn === 'first') out.push({ kind: 'turn', text: t('notes.turn.first') });
+		} else if (p.assignee) out.push({ kind: 'person', text: `@${p.assignee.name}` });
 		else if (p.assigneeName) out.push({ kind: 'person', text: t('notes.quick.unknownPerson', { name: p.assigneeName }), plain: true });
+		if (words && words.stars) out.push({ kind: 'stars', text: starsText(words.stars, t) });
 		out.push({ kind: 'area', text: t(`notes.area.${area === 'work' ? 'work' : 'private'}`), plain: true });
 		return out;
 	}
@@ -409,10 +536,16 @@
 	 * attachedListId; taken away → no field; `'auto'` — the suggestion for this line has not come yet: the server attaches
 	 * the list when exactly one fits. `qp` (quickPlace, plugin 1.5.0): a place stands → `place`; taken away or not chosen →
 	 * no field (the title then stays whole); `'auto'` — the suggestion has not come yet: the server sets the place when it
-	 * is decided and surely meant.
+	 * is decided and surely meant. `words` / `qt` (quickWords, quickTurn — plugin 1.6.0): the choice „Wer ist dran?“.
 	 */
-	function quickBody(text, p, view, area, qa, qp) {
+	function quickBody(text, p, view, area, qa, qp, words, qt) {
 		const body = { text: str(text).trim(), area, createList: !!(p && p.listName && !p.list) };
+		// plugin 1.6.0: „Wer ist dran?“ chosen other than the line says — it goes with the task explicitly; „Eine Person“
+		// is `turn: null` (the first person is assigned then). Untouched: the server reads the line as this PC did
+		if (words && qt && qt.value !== qt.said) {
+			if (qt.value === 'one') body.turn = null;
+			else { body.turn = qt.value; body.people = words.people.map((x) => x.id); }
+		}
 		if (qp === 'auto') body.place = 'auto';
 		else if (qp && qp.arg) body.place = qp.arg;
 		if (qa === 'auto') body.attach = 'auto';
@@ -479,6 +612,9 @@
 		const code = (res && res.code) || 'failed';
 		if (res && res.reason === 'read_only') return t('notes.err.read_only');
 		if (res && res.reason === 'vaults_off') return t('notes.err.vaults_off');
+		// plugin 1.6.0: what a child may not, what the Familie plugin decides, stars outside the family's list
+		if (res && res.reason === 'parents_only') return t('notes.err.parents_only');
+		if (res && res.reason === 'family') return t(code === 'invalid' ? 'notes.err.stars_family' : 'notes.err.family_list');
 		const k = `notes.err.${code}`;
 		const s = t(k);
 		return s && s !== k ? s : t('notes.err.failed', { code });
@@ -543,6 +679,7 @@
 	root.GCNotesState = {
 		COLORS, SOURCE_TONE, dayText, longDate, whenText, offers, calendarName, clockText, taskMarks, yesterdayCard, sectionsWithout, moveChoices, askedIds,
 		shopNav, shopList, shopItems, shopWith, shopChoice, shopBelongs, allTickedText, quickAttach,
+		familyInfo, isFamilyList, starsShown, mayStar, starsText, turnText, doneByText, starChoices, turnPatch, turnPeople, quickWords, quickTurn,
 		placeSummary, distText, searchState, nearOptions, nearArg, placeChoiceArg, placeChoiceText, placeSub, placeHint, quickPlace, sourceChip, metaLine, sectionTitle, quickCtx, quickParse, quickChips, quickBody,
 		repeatOptions, openTarget, errText, vaultLocked, noteTitle, notebookName, isoDay, formatBytes, importText, groupKey, localInput,
 	};

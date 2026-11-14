@@ -4609,7 +4609,10 @@
       "login": "Please sign in to the portal.",
       "auth": "The sign-in to the server has expired.",
       "dialog": "No file dialog.",
-      "module_off": "The place search on the internet is switched off."
+      "module_off": "The place search on the internet is switched off.",
+      "parents_only": "Only the parents can change this.",
+      "family_list": "The family's list is managed by the Family plugin.",
+      "stars_family": "Stars exist only in the family's list."
     },
     "place": {
       "field": "Place",
@@ -4739,6 +4742,46 @@
       "allTicked": "All ticked off. “{{title}}” is done.",
       "allTickedN": "All ticked off. {{n}} tasks are done.",
       "undo": "Undo"
+    },
+    "turn": {
+      "label": "Whose turn?",
+      "one": "One person",
+      "rotate": "In turns",
+      "first": "Whoever is first",
+      "hint": "In turns: after it is ticked off, the next person is on. Whoever is first: the task goes to everybody, the first one does it for all.",
+      "rotateMe": "In turns · it is your turn",
+      "rotateWho": "In turns · {{name}} is on",
+      "rotateFirst": "In turns · {{name}} first",
+      "people": "Who takes part",
+      "two": "This needs at least two people.",
+      "star1": "1 star",
+      "stars": "Stars",
+      "starsNone": "none",
+      "starsHint": "The stars are counted and settled in the Family plugin.",
+      "doneBy": "Done by {{name}}",
+      "byMe": "you",
+      "notDone": "Not done yet",
+      "notDoneHint": "The task is open again, the stars are taken back.",
+      "handedBack": "Handed back: {{title}}",
+      "tickFor": "Tick off for",
+      "tickForPick": "Choose a person …",
+      "tickForHint": "This person gets the stars.",
+      "setTitle": "The family's tasks",
+      "feedback": "Message when a child ticks off",
+      "feedbackHint": "“Not done yet” hands the task back.",
+      "feedback_all": "For every task",
+      "feedback_stars": "Only for tasks with stars",
+      "feedback_off": "Never"
+    },
+    "moved": {
+      "title": "Move finished",
+      "what": "Taken over from Family: {{tasks}} tasks and {{places}} place reminders.",
+      "keep": "Repeats, assignments and whose turn it is came along.",
+      "places": "Place reminders are tasks with a place now – your own in your list “Tasks”, those for someone else in a list just for the two of you.",
+      "stars": "The stars are still counted by the Family plugin.",
+      "copy": "The Family plugin keeps a copy. The way back stays open.",
+      "look": "Have a look",
+      "ok": "OK"
     }
   }
 }

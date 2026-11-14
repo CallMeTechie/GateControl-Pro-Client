@@ -18,12 +18,16 @@ const R = require('../src/renderer/vendor/notizen/repeat');
 const Q = require('../src/renderer/vendor/notizen/quickparse');
 global.GCRepeat = R;
 global.GCQuickParse = Q;
+// plugin 1.6.0: the plugin's second small module after the parser (several people, „reihum“, „wer zuerst“, stars)
+const TW = require('../src/renderer/vendor/notizen/turnwords');
+global.GCTurnWords = TW;
 require('../src/renderer/notes-md');
 require('../src/renderer/notes-state');
 const MD = global.GCNotesMd;
 const NS = global.GCNotesState;
 const qv = require('./fixtures/notes/quickparse-vectors.json');
 const rv = require('./fixtures/notes/repeat-vectors.json');
+const tv = require('./fixtures/notes/turnwords-vectors.json');
 
 function coreDir() {
   try {
@@ -64,8 +68,17 @@ describe('the quick entry: the plugin\'s parser as the page loads it', () => {
   it('the page\'s copies are the core\'s (the plugin\'s files, unchanged)', (t2) => {
     const core = coreDir();
     if (!core || !fs.existsSync(path.join(core, 'src', 'vendor', 'notizen', 'quickparse.js'))) { t2.skip('core without vendor/notizen'); return; }
-    for (const f of ['quickparse.js', 'repeat.js']) {
+    for (const f of ['quickparse.js', 'repeat.js', 'turnwords.js']) {
+      if (f === 'turnwords.js' && !fs.existsSync(path.join(core, 'src', 'vendor', 'notizen', f))) continue;   // a core before plugin 1.6.0
       assert.equal(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'vendor', 'notizen', f), 'utf8'), fs.readFileSync(path.join(core, 'src', 'vendor', 'notizen', f), 'utf8'), f);
+    }
+  });
+
+  it('whose turn and stars: every vector of the plugin (test/vectors/turnwords.json), applied after the parser', () => {
+    assert.equal(tv.cases.length, 16);
+    for (const c of tv.cases) {
+      const w = TW.apply(Q.parse(c.input, tv.ctx), { people: tv.ctx.people, stars: c.stars !== false });
+      assert.deepEqual({ title: w.title, people: w.people.map((x) => x.id), turn: w.turn, stars: w.stars }, c.expect, `${c.input}${c.stars === false ? ' (no stars)' : ''}`);
     }
   });
 
@@ -377,6 +390,89 @@ describe('notes-state.js', () => {
     assert.deepEqual(NS.quickBody(text, p, view, 'private', 'auto', 'auto'), { text, area: 'private', createList: false, place: 'auto', attach: 'auto', myDay: true });
   });
 
+  it('plugin 1.6.0: whose turn, stars, the family\'s list — the marks, the quick entry, what the details send; only with the words of me.features', () => {
+    const fam = { available: true, bound: true, listId: 9, parent: true, stars: true, starsMax: 10, moved: { at: '2026-11-08T07:00:00Z', tasks: 12, places: 3, seen: false } };
+    const me = { features: ['tasks', 'taskTurns', 'taskStars', 'familyTasks', 'doneFeedback', 'placeMine', 'places'], user: { id: 1, name: 'Max Muster' }, today: '2026-11-08', time: '08:00', prefs: { times: {} }, familyTasks: fam };
+    const old = { ...me, features: ['tasks', 'places'], familyTasks: null };
+    const child = { ...me, user: { id: 15, name: 'Noah Muster' }, familyTasks: { ...fam, parent: false } };
+    const people = [{ id: 15, name: 'Noah Muster' }, { id: 16, name: 'Mia Muster' }];
+    const rot = { type: 'task', id: 7, listId: 9, title: 'Spülmaschine ausräumen', turn: 'rotate', people, assignee: people[0], stars: 2, family: true, done: false, doneBy: null };
+
+    // the family's list and who may give stars
+    assert.deepEqual([NS.familyInfo(me).bound, NS.familyInfo(old).bound, NS.familyInfo({ ...me, familyTasks: { ...fam, bound: false } }).bound, NS.familyInfo({ ...me, features: ['familyTasks'] }).stars], [true, false, false, false]);
+    assert.deepEqual([NS.isFamilyList(me, 9), NS.isFamilyList(me, 2), NS.isFamilyList(old, 9), NS.mayStar(me, 9), NS.mayStar(child, 9), NS.starsShown(child, 9), NS.mayStar(me, 2), NS.starsShown({ ...me, familyTasks: { ...fam, stars: false } }, 9)],
+      [true, false, false, true, false, true, false, false]);
+    assert.deepEqual([NS.starsText(1, t), NS.starsText(3, t), NS.starChoices({ ...me, familyTasks: { ...fam, starsMax: 3 } }, t).map((c) => c.label)], ['1 Stern', '3 Sterne', ['keine', '1 Stern', '2 Sterne', '3 Sterne']]);
+
+    // the marks of a row
+    assert.deepEqual(NS.taskMarks(rot, me, t).map((k) => [k.kind, k.text]), [['turn', 'Reihum · Noah ist dran'], ['stars', '2 Sterne']]);
+    assert.deepEqual(NS.taskMarks(rot, child, t).map((k) => k.text), ['Reihum · du bist dran', '2 Sterne']);
+    assert.deepEqual(NS.taskMarks({ ...rot, turn: 'first', assignee: null, stars: 0 }, me, t).map((k) => [k.kind, k.text, k.first]), [['turn', 'Wer zuerst', true]]);
+    assert.deepEqual(NS.taskMarks(rot, old, t), []);
+    // stars only in the family's list; „Erledigt von …“ for somebody else (or a task for several)
+    assert.deepEqual(NS.taskMarks({ ...rot, listId: 2, turn: null, people: [] }, me, t), []);
+    assert.deepEqual(NS.taskMarks({ ...rot, done: true, doneBy: people[0] }, me, t).map((k) => [k.kind, k.text]), [['stars', '2 Sterne'], ['doneby', 'Erledigt von Noah']]);
+    assert.deepEqual([NS.doneByText({ ...rot, turn: null, done: true, doneBy: { id: 1, name: 'Max Muster' } }, me, t), NS.doneByText({ ...rot, turn: 'first', done: true, doneBy: { id: 1, name: 'Max Muster' } }, me, t), NS.doneByText({ ...rot, done: true, doneBy: people[0] }, old, t), NS.doneByText(rot, me, t)],
+      ['', 'Erledigt von dir', '', '']);
+    // the grey line does not name who is on a second time
+    assert.deepEqual(NS.metaLine(rot, { userId: 1, lists: [], inList: true }, t), []);
+    assert.deepEqual(NS.metaLine({ ...rot, turn: null }, { userId: 1, lists: [], inList: true }, t), ['Noah Muster']);
+
+    // the quick entry: what the line says (the plugin's turnwords after the parser), the chips, „Wer ist dran?“
+    const ctx = NS.quickCtx(me, { lists: [{ id: 9, name: 'Familie' }, { id: 2, name: 'Haus & Garten' }] }, [{ id: 12, name: 'Jenny Muster' }, ...people]);
+    const line = '@Noah @Mia Spülmaschine ausräumen täglich 18 Uhr reihum 2 Sterne';
+    const p = NS.quickParse(line, ctx);
+    const inFam = { kind: 'list', id: 9 };
+    const w = NS.quickWords(p, ctx, me, inFam);
+    assert.deepEqual([w.title, w.people.map((x) => x.id), w.turn, w.stars], ['Spülmaschine ausräumen', [15, 16], 'rotate', 2]);
+    assert.deepEqual(NS.quickTurn(w, undefined), { value: 'rotate', said: 'rotate' });
+    assert.deepEqual(NS.quickChips(p, ctx, 'private', t, 'de', me, null, w, NS.quickTurn(w)).map((c) => [c.kind, c.text]),
+      [['date', 'heute, 18:00'], ['remind', 'Erinnerung 18:00'], ['repeat', '↻ Täglich'], ['person', 'Noah, Mia'], ['turn', 'Reihum · zuerst Noah'], ['stars', '2 Sterne'], ['area', 'Privat']]);
+    assert.deepEqual(NS.quickChips(p, ctx, 'private', t, 'de', me, null, w, NS.quickTurn(w, 'first')).filter((c) => c.kind === 'turn').map((c) => c.text), ['Wer zuerst']);
+    assert.deepEqual(NS.quickChips(p, ctx, 'private', t, 'de', me, null, w, NS.quickTurn(w, 'one')).filter((c) => c.kind === 'turn'), []);
+    // untouched: the server reads the line as this PC did; chosen otherwise: it goes with the task
+    assert.deepEqual(NS.quickBody(line, p, inFam, 'private', null, null, w, NS.quickTurn(w)), { text: line, area: 'private', createList: false, listId: 9 });
+    assert.deepEqual(NS.quickBody(line, p, inFam, 'private', null, null, w, NS.quickTurn(w, 'first')), { text: line, area: 'private', createList: false, turn: 'first', people: [15, 16], listId: 9 });
+    assert.deepEqual(NS.quickBody(line, p, inFam, 'private', null, null, w, NS.quickTurn(w, 'one')), { text: line, area: 'private', createList: false, turn: null, listId: 9 });
+    // two people without a word: „Eine Person“ until the person chooses
+    const two = NS.quickWords(NS.quickParse('@Noah @Mia Zimmer aufräumen', ctx), ctx, me, inFam);
+    assert.deepEqual([NS.quickTurn(two), NS.quickTurn(two, 'rotate')], [{ value: 'one', said: 'one' }, { value: 'rotate', said: 'one' }]);
+    // one person: no choice; stars only where the person may give them: another list, a child, the list named with #
+    assert.equal(NS.quickTurn(NS.quickWords(NS.quickParse('@Noah Zimmer aufräumen', ctx), ctx, me, inFam)), null);
+    const hotel = NS.quickParse('Hotel 4 Sterne buchen', ctx);
+    assert.deepEqual([NS.quickWords(hotel, ctx, me, { kind: 'smart', id: 'myday' }).title, NS.quickWords(hotel, ctx, me, { kind: 'list', id: 2 }).stars, NS.quickWords(hotel, ctx, child, inFam).stars, NS.quickWords(hotel, ctx, me, inFam).stars],
+      ['Hotel 4 Sterne buchen', null, null, 4]);
+    assert.equal(NS.quickWords(NS.quickParse('Zimmer aufräumen 2 Sterne #familie', ctx), ctx, me, { kind: 'smart', id: 'myday' }).stars, 2);
+    assert.equal(NS.quickWords(NS.quickParse('Zimmer aufräumen 2 Sterne #haus', ctx), ctx, me, inFam).stars, null);
+    // an older plugin: the page reads nothing of it and shows the chips as before
+    assert.equal(NS.quickWords(p, ctx, old, inFam), null);
+    assert.deepEqual(NS.quickChips(p, ctx, 'private', t, 'de', old, null, null, null).filter((c) => c.kind === 'person').map((c) => c.text), ['@Noah Muster']);
+    assert.deepEqual(NS.quickBody(line, p, inFam, 'private', null, null, null, null), { text: line, area: 'private', createList: false, listId: 9 });
+
+    // the details: what „Wer ist dran?“ sends
+    const members = [{ id: 1, name: 'Max Muster' }, { id: 12, name: 'Jenny Muster' }, ...people];
+    assert.deepEqual(NS.turnPatch(rot, 'one', []), { turn: null });
+    assert.deepEqual(NS.turnPatch(rot, 'first', [15, 16, 16]), { turn: 'first', people: [15, 16] });
+    assert.deepEqual(NS.turnPatch(rot, 'rotate', [16, 15]), { turn: 'rotate', people: [16, 15], assigneeId: 15 });
+    assert.deepEqual(NS.turnPatch({ ...rot, assignee: { id: 12 } }, 'rotate', [16, 15]), { turn: 'rotate', people: [16, 15] });
+    assert.equal(NS.turnPatch(rot, 'rotate', [15]), null);
+    assert.deepEqual([NS.turnPeople(rot, members), NS.turnPeople({ ...rot, people: [] }, members)], [[15, 16], [1, 12, 15, 16]]);
+
+    // who is asked to accept a place: the server says it (placeMine) — a third person only sees the state
+    const place = { mode: 'place', name: 'Lidl', trigger: 'enter', by: 12, consent: 'pending' };
+    const task = { type: 'task', id: 8, assignee: { id: 15 }, place };
+    assert.deepEqual([NS.placeHint({ ...task, place: { ...place, mine: true, canConsent: true } }, me, t).ask, NS.placeHint({ ...task, assignee: null, place: { ...place, mine: false, canConsent: false } }, me, t).kind,
+      NS.placeHint({ ...task, assignee: null, place: { ...place, mine: false, canConsent: false } }, me, t).ask], [true, 'consentWait', false]);
+    assert.deepEqual([NS.placeHint({ ...task, place: { ...place, consent: 'declined', canConsent: true } }, me, t).ask, NS.placeHint({ ...task, place: { ...place, consent: 'declined', canConsent: false } }, me, t).ask], [true, false]);
+    // without the word (or the field) as before: the person the task belongs to, when someone else set the place
+    const before = { ...me, features: me.features.filter((f) => f !== 'placeMine') };
+    assert.deepEqual([NS.placeHint({ ...task, assignee: null, place: { ...place, canConsent: false } }, before, t).ask, NS.placeHint({ ...task, assignee: null, place }, me, t).ask, NS.placeHint({ ...task, place: { ...place, consent: 'declined' } }, me, t).ask], [true, true, false]);
+
+    // what the server refuses
+    assert.deepEqual([NS.errText({ code: 'forbidden', reason: 'parents_only' }, t), NS.errText({ code: 'forbidden', reason: 'family' }, t), NS.errText({ code: 'invalid', reason: 'family' }, t), NS.errText({ code: 'not_member' }, t)],
+      ['Das können nur die Eltern ändern.', 'Die Liste der Familie verwaltet das Familien-Plugin.', 'Sterne gibt es nur in der Liste der Familie.', 'Die Person ist nicht in dieser Liste.']);
+  });
+
   it('where an item of another plugin opens (contract § 5)', () => {
     const all = ['mail', 'drive', 'schule', 'notizen'];
     assert.deepEqual(NS.openTarget({ plugin: 'gatecontrol-mail', route: 'message/4711' }, all), { page: 'mail', context: { kind: 'message', messageId: 4711, accountId: null } });
@@ -421,7 +517,7 @@ describe('the page', () => {
 
   it('index.html loads the plugin\'s parser before the page, every notes.* key exists in both languages', () => {
     const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
-    const order = ['vendor/notizen/repeat.js', 'vendor/notizen/quickparse.js', 'notes-md.js', 'notes-state.js', 'notes-view.js', 'renderer.js'].map((s) => html.indexOf(`<script src="${s}"></script>`));
+    const order = ['vendor/notizen/repeat.js', 'vendor/notizen/quickparse.js', 'vendor/notizen/turnwords.js', 'notes-md.js', 'notes-state.js', 'notes-view.js', 'renderer.js'].map((s) => html.indexOf(`<script src="${s}"></script>`));
     assert.ok(order.every((x, i) => x > 0 && (i === 0 || x > order[i - 1])), JSON.stringify(order));
     assert.match(html, /id="nav-notizen"[^>]*hidden/);
     const used = new Set();

@@ -4609,7 +4609,10 @@
       "login": "Bitte im Portal anmelden.",
       "auth": "Die Anmeldung am Server ist abgelaufen.",
       "dialog": "Kein Dateidialog.",
-      "module_off": "Die Ortssuche im Internet ist ausgeschaltet."
+      "module_off": "Die Ortssuche im Internet ist ausgeschaltet.",
+      "parents_only": "Das können nur die Eltern ändern.",
+      "family_list": "Die Liste der Familie verwaltet das Familien-Plugin.",
+      "stars_family": "Sterne gibt es nur in der Liste der Familie."
     },
     "place": {
       "field": "Ort",
@@ -4739,6 +4742,46 @@
       "allTicked": "Alles abgehakt. „{{title}}“ ist erledigt.",
       "allTickedN": "Alles abgehakt. {{n}} Aufgaben sind erledigt.",
       "undo": "Rückgängig"
+    },
+    "turn": {
+      "label": "Wer ist dran?",
+      "one": "Eine Person",
+      "rotate": "Reihum",
+      "first": "Wer zuerst",
+      "hint": "Reihum: Nach dem Abhaken ist die nächste Person dran. Wer zuerst: Die Aufgabe geht an alle, der Erste erledigt sie für alle.",
+      "rotateMe": "Reihum · du bist dran",
+      "rotateWho": "Reihum · {{name}} ist dran",
+      "rotateFirst": "Reihum · zuerst {{name}}",
+      "people": "Wer macht mit",
+      "two": "Dafür braucht es mindestens zwei Personen.",
+      "star1": "1 Stern",
+      "stars": "Sterne",
+      "starsNone": "keine",
+      "starsHint": "Gezählt und abgerechnet werden die Sterne im Familien-Plugin.",
+      "doneBy": "Erledigt von {{name}}",
+      "byMe": "dir",
+      "notDone": "Noch nicht fertig",
+      "notDoneHint": "Die Aufgabe ist wieder offen, die Sterne werden zurückgenommen.",
+      "handedBack": "Zurückgegeben: {{title}}",
+      "tickFor": "Abhaken für",
+      "tickForPick": "Person wählen …",
+      "tickForHint": "Die Sterne bekommt diese Person.",
+      "setTitle": "Aufgaben der Familie",
+      "feedback": "Meldung, wenn ein Kind abhakt",
+      "feedbackHint": "Mit „Noch nicht fertig“ gibst du die Aufgabe zurück.",
+      "feedback_all": "Bei jeder Aufgabe",
+      "feedback_stars": "Nur bei Aufgaben mit Sternen",
+      "feedback_off": "Nie"
+    },
+    "moved": {
+      "title": "Umzug abgeschlossen",
+      "what": "Aus Familie übernommen: {{tasks}} Aufgaben und {{places}} Orts-Erinnerungen.",
+      "keep": "Wiederholungen, Zuweisungen und wer bei „reihum“ gerade dran ist, sind dabei.",
+      "places": "Orts-Erinnerungen sind jetzt Aufgaben mit Ort – eigene in deiner Liste „Aufgaben“, solche für andere in einer Liste nur für euch beide.",
+      "stars": "Die Sterne zählt weiter das Familien-Plugin.",
+      "copy": "Das Familien-Plugin behält eine Kopie. Der Weg zurück bleibt offen.",
+      "look": "Ansehen",
+      "ok": "OK"
     }
   }
 }
