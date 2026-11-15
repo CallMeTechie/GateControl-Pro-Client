@@ -102,6 +102,8 @@
 		thumbtack: 'M9 4h6l-1 6 3 3H7l3-3z|M12 13v8',
 		block: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M5.6 5.6l12.8 12.8',
 		cart: 'M3 4h2l2.4 11h11L21 7H7|M9 20h.01M18 20h.01',
+		// Messenger 1.18: „Aus deinem Adressbuch“
+		book: 'M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z|M5 17a3 3 0 0 1 3-3h11',
 	};
 	const FILLED = new Set(['play', 'pause']);
 
@@ -1107,8 +1109,9 @@
 			}
 			if (!v.messages.length && !v.pending.length) {
 				// Messenger 1.16: a chat just started by number — the number only from this session's memory, never stored
+				// 1.18: … or with a contact of „Neuer Chat“ (WhatsApp, the address book)
 				const st = S.startedByNumber && S.startedByNumber.id === c.id ? S.startedByNumber : null;
-				if (st && CS.bridgeOf(c)) refs.msgs.appendChild(el('div', { class: 'cv-sys', 'data-sys': 'new-chat' }, [el('span', { text: t('chat.nc.first_line', { network: CS.bridgeLabel(c), number: CS.formatNumber(st.number), name: st.name || CS.title(c, t) }) })]));
+				if (st && CS.bridgeOf(c)) refs.msgs.appendChild(el('div', { class: 'cv-sys', 'data-sys': 'new-chat' }, [el('span', { text: CS.startedLine(st, c, t) })]));
 				else refs.msgs.appendChild(el('div', { class: 'cv-empty', text: t('chat.empty') }));
 			}
 			const items = CS.timeline(v.messages, v.pending, c, cx, { unreadFrom: S.unreadFrom.has(c.id) ? S.unreadFrom.get(c.id) : null });
@@ -2721,17 +2724,21 @@
 		}
 
 		async function newChatDialog() {
-			// Messenger 1.15 / 1.16: „WhatsApp-Chat mit Nummer“ under the tabs, for a linked service (GET bridges)
+			// Messenger 1.15 / 1.16: „WhatsApp-Chat mit Nummer“ under the tabs, for a linked service (GET bridges);
+			// 1.18 (`bridge_contacts`): instead the contacts — GateControl, WhatsApp, the address book — and the number
+			// dialog only at the bottom („Nicht dabei? Nummer eingeben“)
 			const f = f14();
+			const contacts = f.bridgeContacts && typeof api.newChatContacts === 'function';
 			const [people, br] = await Promise.all([
 				loadPeople(),
-				f.bridgeNewChat && f.linked && typeof api.bridges === 'function' ? api.bridges().catch(() => null) : Promise.resolve(null),
+				!contacts && f.bridgeNewChat && f.linked && typeof api.bridges === 'function' ? api.bridges().catch(() => null) : Promise.resolve(null),
 			]);
 			const services = br && br.ok !== false ? CS.newChatServices(br.bridges, S.status && S.status.me) : [];
 			let mode = 'direct';
 			let closeFn = null;
 			const tabs = el('div', { class: 'cv-tabs', role: 'group' });
-			const filter = el('input', { class: 'inp', type: 'search', placeholder: t('chat.new.searchPeople'), 'aria-label': t('chat.new.searchPeople') });
+			const searchText = contacts ? t('chat.ncc.search') : t('chat.new.searchPeople');
+			const filter = el('input', { class: 'inp', type: 'search', placeholder: searchText, 'aria-label': searchText });
 			const titleInput = el('input', { class: 'inp', maxlength: String(limits().titleMax || 80), placeholder: t('chat.new.groupTitlePh'), 'aria-label': t('chat.new.groupTitle') });
 			const titleGroup = el('label', { class: 'cv-field', hidden: true }, [el('span', { text: t('chat.new.groupTitle') }), titleInput]);
 			const list = el('div', { class: 'cv-people scroll' });
@@ -2747,9 +2754,15 @@
 				await refreshList();
 				if (r.conversation) openChat(r.conversation.id);
 			} } });
+			const picker = contacts ? contactsPicker({ people, msg, close: () => { if (closeFn) closeFn(null); } }) : null;
 			const draw = () => {
 				clear(list);
 				const q = filter.value.trim().toLowerCase();
+				if (picker) {
+					picker.show(mode === 'direct');
+					list.hidden = mode === 'direct';
+					if (mode === 'direct') picker.setQuery(filter.value);
+				}
 				if (mode === 'direct' && !q) {
 					for (const sv of services) {
 						list.appendChild(el('button', { type: 'button', class: 'cv-person cv-nc-row', 'data-net': sv.id, on: { click: () => { if (closeFn) closeFn(null); numberChatDialog(sv); } } }, [
@@ -2761,8 +2774,8 @@
 						]));
 					}
 				}
-				const ps = people.filter((p) => !q || String(p.name || '').toLowerCase().includes(q));
-				if (!ps.length) list.appendChild(el('p', { class: 'cv-empty', text: t('chat.new.noPeople') }));
+				const ps = picker && mode === 'direct' ? [] : people.filter((p) => !q || String(p.name || '').toLowerCase().includes(q));
+				if (!ps.length && !(picker && mode === 'direct')) list.appendChild(el('p', { class: 'cv-empty', text: t('chat.new.noPeople') }));
 				for (const p of ps) {
 					list.appendChild(personRow(p, mode === 'group' ? { check: true } : { onClick: async () => {
 						const r = await api.create({ kind: 'direct', userIds: [p.id] }).catch((e) => ({ ok: false, error: e && e.message }));
@@ -2779,7 +2792,280 @@
 			for (const k of ['direct', 'group']) tabs.appendChild(el('button', { type: 'button', 'data-mode': k, text: t(`chat.new.${k}`), on: { click: () => { mode = k; draw(); } } }));
 			filter.addEventListener('input', draw);
 			draw();
-			dialog(t('chat.newChat'), el('div', { class: 'cv-new' }, [tabs, titleGroup, filter, list, msg, createBtn]), [], { onOpen: (done) => { closeFn = done; } });
+			const kids = picker ? [tabs, titleGroup, filter, list, picker.box, msg, createBtn, picker.foot] : [tabs, titleGroup, filter, list, msg, createBtn];
+			dialog(t('chat.newChat'), el('div', { class: `cv-new${picker ? ' cv-ncc-new' : ''}` }, kids), [], { cls: picker ? 'cv-ncc-dlg' : '', onOpen: (done) => { closeFn = done; } })
+				.then(() => { closeFn = null; if (picker) picker.stop(); });
+		}
+
+		/**
+		 * Messenger 1.18 (`bridge_contacts`): the person side of „Neuer Chat“ — one search, three sections in this order:
+		 * GateControl, WhatsApp, „Aus deinem Adressbuch“ (GET contacts/new-chat, loaded again ~250 ms after typing, older
+		 * answers dropped), a row „<Nummer> bei WhatsApp prüfen“ when the search looks like a number, and at the bottom
+		 * „Nicht dabei? Nummer eingeben“ (numberChatDialog). A WhatsApp contact starts its chat at once; an address book
+		 * number is checked only when it is tapped — its row shows the states in place (which number, checking, not at
+		 * WhatsApp, too many checks, the bridge not reachable). Neither names nor numbers go anywhere else.
+		 * host: { people (GET people, shown until the first answer), msg (the dialog's error line), close() }
+		 */
+		function contactsPicker(host) {
+			const NET = CS.CONTACTS_NET;
+			const network = CS.bridgeName(NET);
+			const mark = CS.bridgeMark(NET);
+			const st = { q: null, data: null, seq: 0, timer: null, more: { wa: false, ab: false }, pick: null, rows: {}, busy: false, on: true, stopped: false };
+			const box = el('div', { class: 'cv-people cv-ncc scroll', role: 'list', 'aria-live': 'polite' });
+			const priv = el('p', { class: 'cv-nc-priv cv-ncc-priv', hidden: true }, [icon('lock', 13), el('span', { text: t('chat.ncc.privacy', { network }) })]);
+			const footRow = el('button', { type: 'button', class: 'cv-ncc-nfoot', 'data-act': 'enter-number', on: { click: () => numberDialog({}) } }, [
+				icon('phone', 16),
+				el('span', {}, [el('span', { class: 'cv-ncc-lead', text: `${t('chat.ncc.not_here')} ` }), t('chat.ncc.enter_number')]),
+				icon('chevron', 15),
+			]);
+			const foot = el('div', { class: 'cv-ncc-foot', hidden: true }, [priv, footRow]);
+
+			const numberDialog = (opts) => { const sv = CS.contactsService(st.data); host.close(); numberChatDialog(sv, opts); };
+
+			async function load() {
+				const my = ++st.seq;
+				const r = await api.newChatContacts(NET, st.q || '').catch(() => ({ ok: false, code: 'network' }));
+				if (my !== st.seq || st.stopped) return;
+				if (!r || r.ok === false) {
+					// the accounts of this server at least; the number dialog says itself what goes
+					st.data = { gatecontrol: localPeople(), whatsapp: null, addressBook: null, number: null, numberEntry: true, limit: null, failed: true };
+					host.msg.textContent = r && r.code && r.code !== 'network' ? CS.errorText(r, t) : t('chat.ncc.failed');
+				} else {
+					st.data = r;
+					host.msg.textContent = '';
+				}
+				draw();
+			}
+			function setQuery(q) {
+				const v = String(q || '').trim().slice(0, 100);
+				if (v === st.q) return;
+				const first = st.q === null;
+				st.q = v;
+				st.pick = null;
+				st.rows = {};
+				clearTimeout(st.timer);
+				if (first) { draw(); load(); } else st.timer = setTimeout(load, 250);
+			}
+			function reload() { st.rows = {}; st.pick = null; load(); }
+			function localPeople() {
+				const q = (st.q || '').toLowerCase();
+				return (host.people || []).filter((p) => !q || String(p.name || '').toLowerCase().includes(q)).map((p) => ({ ...p, userId: p.id, conversationId: null }));
+			}
+
+			// ── pieces ──
+			const cap = (ic, text, extra) => el('div', { class: 'cv-ncc-cap', role: 'presentation' }, [ic, el('span', { text }), extra || null]);
+			const pill = (text, cls) => el('span', { class: `cv-ncc-pill${cls ? ` is-${cls}` : ''}`, text });
+			const spin = () => el('span', { class: 'cv-nc-spin is-acc', 'aria-hidden': 'true' });
+			const note = (text, cls) => el('div', { class: `cv-ncc-note${cls ? ` is-${cls}` : ''}`, role: 'status', text });
+			function av(p, wa) {
+				const a = avatar(wa ? { ...CS.personAvatar({ name: p.name }), mediaId: p.avatarMediaId || null } : CS.personAvatar(p), 36);
+				return wa ? el('span', { class: 'cv-av-wrap' }, [a, el('span', { class: 'cv-net-mark is-sm', 'aria-hidden': 'true', text: mark })]) : a;
+			}
+			function row(a, name, sub, right, o = {}) {
+				return el('button', { type: 'button', class: `cv-person cv-ncc-row${o.cls ? ` ${o.cls}` : ''}`, role: 'listitem', disabled: o.disabled || null, 'data-row': o.key || null, on: o.onClick ? { click: o.onClick } : null }, [
+					a,
+					el('span', { class: 'cv-ncc-rt' }, [el('b', { class: 'cv-ncc-name', text: name || t('chat.gone') }), sub ? el('small', { text: sub }) : null]),
+					right || null,
+				]);
+			}
+			function moreRow(text, key) {
+				return el('button', { type: 'button', class: 'cv-ncc-more', 'data-more': key, on: { click: () => { st.more[key] = true; draw(); } } }, [el('span', { text }), icon('chevron', 14)]);
+			}
+			function card(kind, ic, title, text, link, onLink) {
+				return el('div', { class: `cv-nc-res cv-ncc-res${kind ? ` is-${kind}` : ''}` }, [
+					el('span', { class: 'cv-nc-ri' }, [icon(ic, 18)]),
+					el('span', { class: 'cv-nc-rb' }, [el('b', { text: title }), el('span', { text }), link ? el('button', { type: 'button', class: 'cv-ncc-link', text: link, on: { click: onLink } }) : null]),
+				]);
+			}
+			const skeleton = () => el('div', { class: 'cv-ncc-sk', 'aria-hidden': 'true' }, [el('i'), el('span', {}, [el('em'), el('em')])]);
+
+			// ── actions ──
+			async function openConv(id, fallback) {
+				if (st.busy) return;
+				st.busy = true;
+				const known = conv(id) || await api.conversation(id).then((r) => (r && r.ok !== false && r.conversation ? r.conversation : null)).catch(() => null);
+				st.busy = false;
+				// not reachable as it is (nothing written in it yet): the server hands the same chat out again
+				if (!known) { if (fallback) fallback(); return; }
+				host.close();
+				await refreshList();
+				await openChat(id);
+			}
+			async function started(r, info) {
+				if (info && r.created) S.startedByNumber = { id: r.conversation.id, ...info };
+				host.close();
+				await refreshList();
+				await openChat(r.conversation.id);
+			}
+			async function gcChat(p) {
+				if (st.busy) return;
+				st.busy = true;
+				const r = await api.create({ kind: 'direct', userIds: [p.userId] }).catch((e) => ({ ok: false, error: e && e.message }));
+				st.busy = false;
+				if (!r || r.ok === false || !r.conversation) { host.msg.textContent = CS.errorText(r, t); return; }
+				host.close();
+				await refreshList();
+				openChat(r.conversation.id);
+			}
+			async function startWa(c) {
+				if (st.busy) return;
+				st.busy = true;
+				st.rows[`wa:${c.ref}`] = { view: 'starting' };
+				host.msg.textContent = '';
+				draw();
+				const r = await api.bridgeContactChat(NET, { ref: c.ref }).catch(() => ({ ok: false, code: 'network' }));
+				st.busy = false;
+				if (st.stopped) return;
+				delete st.rows[`wa:${c.ref}`];
+				if (r && r.ok !== false && r.conversation) { started(r, { kind: 'contact', name: c.name }); return; }
+				// the reference ran out (30 min, a restart of the server) or the link went: the list anew
+				if (CS.contactChatError(r).view === 'reload') { reload(); return; }
+				host.msg.textContent = CS.errorText(r, t);
+				draw();
+			}
+			async function tapBook(x, p) {
+				if (st.busy) return;
+				st.busy = true;
+				st.pick = null;
+				st.rows[x.contactId] = { view: 'checking', key: p.key };
+				host.msg.textContent = '';
+				draw();
+				const r = await api.bridgeContactChat(NET, { contactId: x.contactId, phoneKind: p.key }).catch(() => ({ ok: false, code: 'network' }));
+				st.busy = false;
+				if (st.stopped) return;
+				if (r && r.ok !== false && r.conversation) { started(r, { kind: 'book', name: x.name, number: p.number }); return; }
+				const e = CS.contactChatError(r);
+				if (e.view === 'reload') { reload(); return; }
+				if (e.view === 'none') p.notOnNetwork = true;
+				const n = e.perHour || (st.data && st.data.limit && st.data.limit.perHour) || null;
+				st.rows[x.contactId] = { ...e, key: p.key, at: e.view === 'rate' ? Date.now() + e.retryAfterS * 1000 : 0, n, text: e.view === 'failed' ? CS.errorText(r, t) : null };
+				draw();
+			}
+
+			// ── sections ──
+			function gcSection(list) {
+				if (!list.length) return null;
+				const sec = el('div', { class: 'cv-ncc-sec', 'data-sec': 'gatecontrol' }, [cap(icon('shield', 13), `${t('chat.ncc.sec_gc')} · ${list.length}`)]);
+				for (const p of list) {
+					sec.appendChild(row(av(p), p.name, null, p.conversationId ? pill(t('chat.ncc.open')) : null, { key: `gc:${p.userId}`, onClick: () => {
+						if (p.conversationId) openConv(p.conversationId, () => gcChat(p)); else gcChat(p);
+					} }));
+				}
+				return sec;
+			}
+			function waSection(wa, q) {
+				const sec = el('div', { class: 'cv-ncc-sec', 'data-sec': 'whatsapp' });
+				const loading = !wa;
+				const head = `${network}${!q && wa && wa.state === 'ok' ? ` · ${wa.total}` : ''}`;
+				sec.appendChild(cap(el('span', { class: 'cv-ncc-svc', text: mark }), head, loading ? spin() : null));
+				if (loading) { sec.append(skeleton(), skeleton(), skeleton()); return sec; }
+				if (wa.state === 'unreachable') { sec.appendChild(card('err', 'plug', t('chat.ncc.wa_down_title', { network }), t('chat.ncc.wa_down_text'), t('chat.nc.retry'), reload)); return sec; }
+				if (wa.state === 'logged_out') {
+					sec.appendChild(card('warn', 'logout', t('chat.ncc.wa_out_title', { network }), t('chat.ncc.wa_out_text', { network }), t('chat.nc.relink'), () => { host.close(); openSettings('linked'); }));
+					return sec;
+				}
+				if (!wa.items.length) return null;
+				for (const c of CS.contactsShown(wa.items, q, st.more.wa)) {
+					const busy = st.rows[`wa:${c.ref}`];
+					sec.appendChild(row(av(c, true), c.name, c.alsoInAddressBook ? t('chat.ncc.also_book') : t('chat.ncc.wa_contact', { network }),
+						busy ? spin() : (c.conversationId ? pill(t('chat.ncc.open')) : null), { key: 'wa', cls: busy ? 'is-tap' : '', onClick: () => {
+							if (c.conversationId) openConv(c.conversationId, () => startWa(c)); else startWa(c);
+						} }));
+				}
+				if (!q && !st.more.wa && wa.items.length > CS.CONTACTS_FIRST) sec.appendChild(moreRow(t('chat.ncc.all_wa', { n: wa.items.length, network }), 'wa'));
+				return sec;
+			}
+			function bookSection(ab, waState, q) {
+				if (!ab || !ab.items.length) return null;
+				const off = waState !== 'ok';
+				const sec = el('div', { class: 'cv-ncc-sec', 'data-sec': 'book' }, [cap(icon('book', 13), `${t('chat.ncc.sec_book')}${q ? '' : ` · ${ab.total}`}`)]);
+				if (off) sec.appendChild(note(waState === 'logged_out' ? t('chat.ncc.book_off_out', { network }) : t('chat.ncc.book_off_down', { network })));
+				for (const x of CS.contactsShown(ab.items, q, st.more.ab)) {
+					const rs = st.rows[x.contactId] || null;
+					const one = x.phones.length === 1 ? x.phones[0] : null;
+					const p0 = rs ? x.phones.find((p) => p.key === rs.key) || {} : {};
+					let sub = CS.contactPhonesSub(x, t);
+					let right = x.conversationId ? pill(t('chat.ncc.open')) : null;
+					let cls = off ? 'is-off' : '';
+					let after = null;
+					if (one && one.notOnNetwork && !rs) { cls = 'is-off'; right = pill(t('chat.ncc.not_on', { network }), 'gray'); }
+					if (rs && rs.view === 'checking') { cls = 'is-tap'; sub = t('chat.ncc.checking', { network }); right = spin(); }
+					else if (rs && rs.view === 'none') {
+						cls = 'is-off';
+						right = pill(t('chat.ncc.not_on', { network }), 'gray');
+						after = note(t('chat.ncc.none_text', { number: p0.number || '', name: CS.firstName(x.name), network }));
+					} else if (rs && rs.view === 'rate') {
+						cls = 'is-tap';
+						right = pill(t('chat.ncc.from', { time: CS.hm(new Date(rs.at).toISOString(), ctx().locale) }), 'warn');
+						after = note(rs.n ? t('chat.ncc.rate_text', { n: rs.n, network }) : t('chat.nc.rate_text_short', { network, time: CS.hm(new Date(rs.at).toISOString(), ctx().locale) }), 'warn');
+					} else if (rs && rs.view === 'unreach') after = note(t('chat.ncc.unreach'), 'err');
+					else if (rs && rs.view === 'failed') after = note(rs.text || t('chat.nc.failed'), 'err');
+					const picking = st.pick === x.contactId && !off;
+					if (picking) { cls = 'is-tap'; right = icon('chevron', 15); }
+					sec.appendChild(row(av(x), x.name, sub, right, { key: `ab:${x.contactId}`, cls, disabled: off || (rs && rs.view === 'checking'), onClick: () => {
+						if (x.conversationId) { openConv(x.conversationId, () => tapBook(x, x.phones.find((p) => !p.notOnNetwork) || x.phones[0])); return; }
+						if (x.phones.length > 1) {
+							st.pick = st.pick === x.contactId ? null : x.contactId;
+							delete st.rows[x.contactId];
+							draw();
+							const pk = box.querySelector('.cv-ncc-pick');
+							if (pk && pk.scrollIntoView) pk.scrollIntoView({ block: 'nearest' });
+							return;
+						}
+						tapBook(x, x.phones[0]);
+					} }));
+					if (picking) {
+						const pk = el('div', { class: 'cv-ncc-pick', role: 'group', 'aria-label': t('chat.ncc.which') }, [el('div', { class: 'cv-ncc-pkh', text: t('chat.ncc.which') })]);
+						for (const p of x.phones) {
+							const dim = p.landline || p.notOnNetwork;
+							pk.appendChild(el('button', { type: 'button', class: `cv-ncc-pk${dim ? ' is-dim' : ''}`, 'data-key': p.key, on: { click: () => tapBook(x, p) } }, [
+								el('span', { class: 'cv-ncc-pkt' }, [el('b', { text: CS.phoneKindText(p.kind, t) }), el('span', { class: 'cv-nc-numtx', text: p.number })]),
+								p.notOnNetwork ? el('small', { text: t('chat.ncc.not_on', { network }) }) : (p.landline ? el('small', { text: t('chat.ncc.landline') }) : icon('chevron', 14)),
+							]));
+						}
+						sec.appendChild(pk);
+					}
+					if (after) sec.appendChild(after);
+				}
+				if (!q && !st.more.ab && ab.items.length > CS.CONTACTS_FIRST) sec.appendChild(moreRow(t('chat.ncc.all_book', { n: ab.items.length }), 'ab'));
+				return sec;
+			}
+
+			function draw() {
+				clear(box);
+				const d = st.data;
+				const q = st.q || '';
+				const loading = !d;
+				const gc = d ? d.gatecontrol || [] : localPeople();
+				let parts = [gcSection(gc)];
+				if (loading) parts.push(waSection(null, q));
+				else if (d.whatsapp) parts.push(waSection(d.whatsapp, q), bookSection(d.addressBook, d.whatsapp.state, q));
+				if (d && d.number) {
+					const n = d.number;
+					parts.push(el('div', { class: 'cv-ncc-sec', 'data-sec': 'number' }, [row(el('span', { class: 'cv-av cv-av-icon cv-ncc-dial', 'aria-hidden': 'true', style: 'width:36px;height:36px' }, [icon('phone', 17)]),
+						n.conversationId ? n.show : t('chat.ncc.check_number', { number: n.show, network }), null, n.conversationId ? pill(t('chat.ncc.open')) : null, { key: 'number', onClick: () => {
+							if (n.conversationId) openConv(n.conversationId, () => numberDialog({ number: n.e164 })); else numberDialog({ number: n.e164 });
+						} })]));
+				}
+				parts = parts.filter(Boolean);
+				const empty = !loading && !parts.length;
+				if (empty && q) {
+					box.appendChild(el('div', { class: 'cv-ncc-empty', 'data-empty': 'search' }, [
+						el('span', { class: 'cv-ncc-bub' }, [icon('search', 22)]),
+						el('b', { text: t('chat.ncc.empty_title', { q }) }),
+						el('span', { text: d.whatsapp ? t('chat.ncc.empty_text', { network }) : t('chat.ncc.empty_text_gc') }),
+						d.numberEntry ? el('button', { type: 'button', class: 'btn btn-pri btn-sm', 'data-act': 'enter-number', on: { click: () => numberDialog({}) } }, [icon('phone', 15), t('chat.ncc.enter_number')]) : null,
+					]));
+				} else if (empty) box.appendChild(el('p', { class: 'cv-empty', text: t('chat.new.noPeople') }));
+				for (const x of parts) box.appendChild(x);
+				foot.hidden = !(d && d.numberEntry) || empty || !st.on;
+				priv.hidden = !(d && d.whatsapp);
+				footRow.classList.toggle('is-off', !!(d && d.whatsapp && d.whatsapp.state !== 'ok'));
+			}
+			function show(on) { st.on = !!on; box.hidden = !on; if (st.q !== null) draw(); }
+			function stop() { st.stopped = true; clearTimeout(st.timer); }
+
+			return { box, foot, setQuery, show, stop, reload };
 		}
 
 		/**
@@ -2788,7 +3074,7 @@
 		 * invalid, checking, found, exists, none, rate, unreach, loggedout, unlinked, locked, off, failed.
 		 * sv: { id, name, mark, state, limit } of CS.newChatServices.
 		 */
-		function numberChatDialog(sv) {
+		function numberChatDialog(sv, opts = {}) {
 			const network = sv.name;
 			let state = sv.state || 'input';
 			let found = null;          // { number, name, avatarMediaId, existing }
@@ -2800,6 +3086,8 @@
 			const cc = el('select', { class: 'inp cv-nc-cc', 'aria-label': t('chat.nc.cc') }, CS.NEW_CHAT_CC.map(([land, code]) => el('option', { value: code, text: `${land} ${code}` })));
 			cc.value = '+49';
 			const input = el('input', { class: 'inp cv-nc-num', type: 'tel', inputmode: 'tel', autocomplete: 'off', spellcheck: 'false', maxlength: '32', placeholder: t('chat.nc.placeholder'), 'aria-label': t('chat.nc.label') });
+			// Messenger 1.18: „<Nummer> bei WhatsApp prüfen“ of the contacts brings its number (checked at once, below)
+			if (typeof opts.number === 'string' && /^\+[1-9][0-9]{5,15}$/.test(opts.number)) input.value = CS.formatNumber(opts.number);
 			const okMark = el('span', { class: 'cv-nc-ok', hidden: true, 'aria-hidden': 'true' }, [icon('check', 16, '2.4')]);
 			const hint = el('div', { class: 'cv-nc-hint', role: 'status', 'aria-live': 'polite' });
 			const field = el('div', { class: 'cv-nc-field' }, [
@@ -2934,7 +3222,7 @@
 				busy = false;
 				if (!closeFn) return;
 				if (!r || r.ok === false || !r.conversation) { failed(r); return; }
-				S.startedByNumber = { id: r.conversation.id, number: found.number, name: found.name };
+				S.startedByNumber = { id: r.conversation.id, kind: 'number', number: found.number, name: found.name };
 				close();
 				await refreshList();
 				await openChat(r.conversation.id);
@@ -2976,6 +3264,7 @@
 				const box = rootEl.querySelector('.cv-nc-dlg');
 				if (box) box.appendChild(foot);
 				if (!input.disabled && !field.hidden) setTimeout(() => input.focus(), 40);
+				if (input.value && state === 'input') check();
 			} }).then(() => { closeFn = null; input.value = ''; found = null; });
 		}
 

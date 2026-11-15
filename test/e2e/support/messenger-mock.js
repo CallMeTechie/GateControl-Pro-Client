@@ -44,6 +44,8 @@ const FEATURES_BRIDGED = Object.freeze({ ...FEATURES_LINKED, bridge_chats: true 
 const FEATURES_STAGE4 = Object.freeze({ ...FEATURES_BRIDGED, bridge_media: true, bridge_new_chat: true });
 // Messenger 1.17: older history at a new link, its files on request, the phone warning
 const FEATURES_STAGE5 = Object.freeze({ ...FEATURES_STAGE4, bridge_history: true });
+// Messenger 1.18: „Neuer Chat“ with contacts (GateControl, WhatsApp, the address book)
+const FEATURES_STAGE4C = Object.freeze({ ...FEATURES_STAGE5, bridge_contacts: true });
 const WA_MEDIA_TYPES = Object.freeze({ image: ['image/jpeg', 'image/png', 'image/webp'], video: ['video/mp4'], voice: ['audio/ogg', 'audio/mp4', 'audio/aac', 'audio/mpeg'], file: null });
 
 function createMessenger({ emit = () => {}, features = null, familie = false } = {}) {
@@ -88,6 +90,17 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     history: { available: true, days: 30, default: 30, options: [0, 30, -1], pending: 0 },
     historyFails: null,
     fetchFails: null,
+    // 1.18 (features.bridge_contacts): the WhatsApp contacts of the bridge ({ ref, name, conversationId, … }), the address
+    // book of Mail ({ contactId, name, phones }; null = no Mail), the state of the list, refs that ran out, „nicht bei
+    // WhatsApp“ remembered (`${contactId}|${key}`), a delay of the list, a delay of a check, a refusal of the next chat
+    contacts: [],
+    book: null,
+    listState: 'ok',
+    expired: new Set(),
+    notOn: new Set(),
+    contactsDelayMs: 0,
+    chatDelayMs: 0,
+    chatFails: null,
   };
   const st14 = {
     prefs: { readReceipts: true, typing: true, preview: true, privacy: { lastSeen: 'all', avatar: 'all', statusDefault: 'all', placeInStatus: 'family', groupAdd: 'all', defaultDisappearingS: 0 }, notify: { groupsMentionsOnly: false, reactions: true, statusDigest: false, eventReminderMin: 60 }, chats: { keepArchived: true } },
@@ -138,6 +151,37 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     ? { id: `qr${pr.n}`, type: 'display_and_wait', display: { type: 'qr', data: `2@mock${pr.n}`, matrix: { size: 29, rows: qrRows(pr.n) } } }
     : { id: 'code1', type: 'display_and_wait', display: { type: 'code', data: 'K7P2-M4X9' } });
 
+  /** GET contacts/new-chat (the plugin's contactchat.js, 1.18) → the three sections, filtered by q. → true when answered. */
+  function contactsRoute(method, seg, query, json) {
+    if (seg[0] !== 'contacts' || seg[1] !== 'new-chat' || method !== 'GET') return false;
+    if (!(features && features.bridge_contacts === true)) return json(404, { ok: false, code: 'not_found' }), true;
+    const B = bridge;
+    const net = B.networks[0];
+    const q = String(query.q || '').trim().slice(0, 100);
+    const has = (n) => !q || String(n || '').toLowerCase().includes(q.toLowerCase());
+    log.bridge.push({ op: 'contacts', q: q ? 'set' : '' });
+    const answer = () => {
+      const gatecontrol = users.filter((x) => x.id !== ME && has(x.name)).map((x) => {
+        const c = [...convs.values()].find((y) => y.kind === 'direct' && !y.bridge && y.members.some((mb) => mb.id === x.id));
+        return { userId: x.id, name: x.name, avatarUrl: null, initials: x.initials, colorHex: x.colorHex, conversationId: c ? c.id : null };
+      });
+      const linked = net.logins.length > 0 && net.allowed;
+      const st = !linked ? null : (net.logins.every((l) => l.state === 'logged_out') ? 'logged_out' : (net.state !== 'running' || B.listState === 'unreachable' ? 'unreachable' : B.listState));
+      const items = B.contacts.filter((c) => has(c.name)).sort((x, y) => x.name.localeCompare(y.name, 'de'));
+      const whatsapp = st ? { state: st, total: B.contacts.length, items: st === 'ok' ? items.map((c) => ({ ref: c.ref, name: c.name, avatarMediaId: c.avatarMediaId || null, avatarUrl: null, conversationId: c.conversationId || null, alsoInAddressBook: !!c.alsoInAddressBook, addressBookId: c.addressBookId || null })) : [] } : null;
+      const book = whatsapp && B.book && B.book.length ? B.book : null;
+      const addressBook = book ? { state: st, total: book.length, items: book.filter((x) => has(x.name)).map((x) => ({ contactId: x.contactId, name: x.name, conversationId: x.conversationId || null,
+        phones: x.phones.map((p) => ({ ...p, notOnNetwork: B.notOn.has(`${x.contactId}|${p.key}`) })) })) } : null;
+      const digits = /^[+0-9\s\-./()]{6,40}$/.test(q) ? q.replace(/[\s\-./()]/g, '').replace(/^0(?=[1-9])/, '+49') : '';
+      const number = whatsapp && /^\+[1-9][0-9]{6,14}$/.test(digits) ? { e164: digits, show: digits.replace(/^\+49(\d{3})/, '+49 $1 '), conversationId: null } : null;
+      json(200, { ok: true, network: 'whatsapp', query: q, gatecontrol, whatsapp, addressBook, addressBookReason: whatsapp && !book ? 'no_mail' : null,
+        number, numberEntry: !!whatsapp, limit: { perHour: B.lookupMax, left: Math.max(0, B.lookupMax - B.lookups), retryAfterS: 0 } });
+    };
+    if (B.contactsDelayMs) setTimeout(answer, B.contactsDelayMs);
+    else answer();
+    return true;
+  }
+
   /** bridges/* (the plugin's bridges.js). → true when answered. */
   function bridgeRoute(method, seg, body, json, drop) {
     if (seg[0] !== 'bridges') return false;
@@ -157,6 +201,42 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     const net = B.networks.find((n) => n.id === seg[1]);
     if (!net || seg.length < 3) return json(404, { ok: false, code: 'not_found' }), true;
     if (!B.available) return json(409, { ok: false, code: 'bridge_off', reason: 'no_host' }), true;
+    // 1.18: a WhatsApp contact ({ ref }: nothing checked or counted) or an address book number ({ contactId, phoneKind })
+    if (seg.length === 3 && seg[2] === 'chats' && method === 'POST' && (body.ref != null || body.contactId != null)) {
+      if (!(features && features.bridge_contacts === true)) return json(400, { ok: false, code: 'invalid_number' }), true;
+      const answer = () => {
+        if (B.chatFails) { const f = B.chatFails; B.chatFails = null; return json(f.status, { ok: false, code: f.code, ...(f.reason ? { reason: f.reason } : {}), ...(f.retryAfterS ? { retryAfterS: f.retryAfterS, perHour: f.perHour || 10 } : {}) }); }
+        if (!net.allowed) return json(403, { ok: false, code: 'bridge_locked' });
+        if (net.logins.every((l) => l.state === 'logged_out')) return json(409, { ok: false, code: 'bridge_logged_out', reason: 'logged_out' });
+        if (net.state !== 'running') return json(503, { ok: false, code: 'bridge_unreachable', reason: 'not_running' });
+        if (body.ref != null) {
+          if (B.expired.has(body.ref)) return json(409, { ok: false, code: 'contact_expired' });
+          const c = B.contacts.find((x) => x.ref === body.ref);
+          if (!c) return json(400, { ok: false, code: 'invalid' });
+          log.bridge.push({ op: 'chat_ref' });
+          const existing = c.conversationId && convs.get(c.conversationId);
+          const id = existing ? existing.id : addBridgeConv({ title: c.name });
+          c.conversationId = id;
+          return json(200, { ok: true, conversation: convView(convs.get(id)), created: !existing });
+        }
+        if (!B.book) return json(409, { ok: false, code: 'mail_missing' });
+        const x = B.book.find((y) => y.contactId === body.contactId);
+        const ph = x && x.phones.find((p) => p.key === body.phoneKind);
+        if (!ph) return json(404, { ok: false, code: 'not_found', reason: 'contact_gone' });
+        if (B.notOn.has(`${x.contactId}|${ph.key}`)) return json(404, { ok: false, code: 'not_found', reason: 'not_on_network', remembered: true });
+        if (B.lookups >= B.lookupMax) return json(429, { ok: false, code: 'rate_limited', retryAfterS: 840, perHour: 10 });
+        B.lookups += 1;
+        log.bridge.push({ op: 'chat_book', key: ph.key });
+        if (!B.numbers.has(ph.e164)) { B.notOn.add(`${x.contactId}|${ph.key}`); return json(404, { ok: false, code: 'not_found', reason: 'not_on_network' }); }
+        const existing = [...convs.values()].find((c) => c.bridge && c.bridge.number === ph.e164);
+        const id = existing ? existing.id : addBridgeConv({ title: x.name });
+        convs.get(id).bridge.number = ph.e164;
+        return json(200, { ok: true, conversation: convView(convs.get(id)), created: !existing });
+      };
+      if (B.chatDelayMs) setTimeout(answer, B.chatDelayMs);
+      else answer();
+      return true;
+    }
     // 1.15: a new chat by number (never logged here: only that a lookup came)
     if (seg.length === 3 && (seg[2] === 'resolve' || seg[2] === 'chats') && method === 'POST') {
       if (!(features && features.bridge_new_chat === true)) return json(404, { ok: false, code: 'not_found' }), true;
@@ -543,6 +623,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     log.calls.push({ method, route: route.slice(apiBase.length), query: { ...query } });
     // 1.14: a chat over a bridge exists only for a client that says it knows them
     const bridged = query.bridged === '1' || body.bridged === true;
+    if (contactsRoute(method, route.slice(apiBase.length).split('/'), query, json)) return true;
     if (bridgeRoute(method, route.slice(apiBase.length).split('/'), body, json, drop || (() => json(503, { ok: false, code: 'unavailable' })))) return true;
 
     if (a === 'me') {
@@ -835,4 +916,4 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   return api;
 }
 
-module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141, FEATURES_LINKED, FEATURES_BRIDGED, FEATURES_STAGE4, FEATURES_STAGE5 };
+module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141, FEATURES_LINKED, FEATURES_BRIDGED, FEATURES_STAGE4, FEATURES_STAGE5, FEATURES_STAGE4C };
