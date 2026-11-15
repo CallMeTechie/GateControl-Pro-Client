@@ -30,8 +30,17 @@ const { driveOnDemandChannels } = require('./drive-ondemand');
  * @param {Function} ctx.getMachineFingerprint - () => 64-hex fingerprint (core);
  *   only its 8-character short form is handed to the renderer
  * @param {object} [ctx.driveOnDemand] - ./drive-ondemand.js (drive-ondemand:* channels)
+ * @param {object} [ctx.remoteHost] - ./remote-host.js (remote-host:* channels, Fernzugriff)
  * @returns {string[]} registered channels
  */
+const REMOTE_HOST_CHANNELS = ['remote-host:status', 'remote-host:share', 'remote-host:decide', 'remote-host:new-code', 'remote-host:enable-rdp'];
+
+/** The remote-host:* channels; without the service each answers "off". */
+function remoteHostChannels(rh) {
+  const off = () => ({ enabled: false, status: 'off', code: null, request: null, legacy: false });
+  return Object.fromEntries(REMOTE_HOST_CHANNELS.map((c) => [c, rh && rh.channels && rh.channels[c] ? rh.channels[c] : off]));
+}
+
 function registerProIpc(ipcMain, ctx) {
   const { store, log, apiClient, rdpManager, rdpWolClient } = ctx;
   const getUpdater = ctx.getUpdater || (() => null);
@@ -111,9 +120,13 @@ function registerProIpc(ipcMain, ctx) {
     // ── Drive „Dateien bei Bedarf“ (gc-drive-sync.exe, ./drive-ondemand.js) ──
     // Immer registriert (die Preload-Brücke kennt sie); ohne Dienst „unsupported“.
     ...driveOnDemandChannels(ctx.driveOnDemand || null, log),
+
+    // ── Fernzugriff: this PC as a host (./remote-host.js) ──
+    // Always registered (the preload bridge knows them); without the service an answer of "off".
+    ...remoteHostChannels(ctx.remoteHost || null),
   };
 
   return registerBaseHandlers(ipcMain, { ...ctx, getUpdater, overrides });
 }
 
-module.exports = { registerProIpc };
+module.exports = { registerProIpc, REMOTE_HOST_CHANNELS };
