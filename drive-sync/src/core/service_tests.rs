@@ -345,7 +345,9 @@ fn unregister_refuses_unsynced_changes_unless_forced() {
     assert_eq!(d["count"], 1);
     assert!(d["paths"][0].as_str().unwrap().ends_with("offen.txt"));
     assert!(c.plat.is_registered(), "nichts abgemeldet");
-    assert_eq!(c.svc.status().state, "idle", "Abgleich läuft weiter");
+    // Abgleich läuft weiter (nicht angehalten): der Hintergrund-Abgleich kann die geänderte
+    // Datei gerade noch bearbeiten ("syncing") – er muss aber wieder zu "idle" finden.
+    wait_for(|| c.svc.status().state == "idle");
 
     // Datei frei → wird beim nächsten Versuch hochgeladen, dann klappt es
     c.plat.fs.lock(&f, false);
