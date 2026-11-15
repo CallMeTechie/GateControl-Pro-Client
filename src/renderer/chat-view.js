@@ -209,6 +209,10 @@
 			lists: [],              // own chat filters (GET lists)
 			pinIdx: new Map(),      // conversation id → index of the pinned message shown in the bar
 			newest: new Map(),      // conversation id → newest message id seen (sound for new ones)
+			// Messenger 1.17
+			fetching: new Set(),    // message ids whose file of the history is being asked for
+			quietNext: false,       // the next redraw comes from older messages of the history: no sound
+			quietRender: false,
 		};
 		const ctx = () => ({ t, locale: o.getLocale(), me: S.status && S.status.me, people: S.people });
 		const me = () => (S.status && S.status.me) || null;
@@ -1037,6 +1041,21 @@
 			}
 		}
 
+		/**
+		 * Messenger 1.17: „Laden“ at a file of the older history → POST messages/:id/fetch; the placeholder then reads
+		 * „wird geladen …“ and the file follows by itself (message.update). Nothing to fetch any more (400 invalid) or
+		 * any other refusal → said in a toast, „Laden“ can be pressed again.
+		 */
+		async function fetchOld(m) {
+			if (S.fetching.has(m.id)) return;
+			S.fetching.add(m.id);
+			renderMessages('stay');
+			const r = await api.fetchFile(m.id).catch((e) => ({ ok: false, error: e && e.message }));
+			S.fetching.delete(m.id);
+			if (!r || r.ok === false) toast(r && r.code === 'invalid' ? t('chat.bc.fetch_invalid') : CS.errorText(r, t), 'error');
+			renderMessages('stay');
+		}
+
 		async function resendMsg(m) {
 			const r = await api.resend(m.id).catch((e) => ({ ok: false, error: e && e.message }));
 			if (r && r.ok === false) toast(CS.errorText(r, t), 'error');
@@ -1106,7 +1125,8 @@
 			// a new message of someone else in the open chat: the sound of this PC
 			const last = v.detached ? null : v.messages[v.messages.length - 1];
 			const seen = S.newest.get(c.id);
-			if (last && seen !== undefined && last.id > seen && !last.mine && last.kind !== 'system' && S.shown && document.visibilityState === 'visible') playSound('in');
+			// Messenger 1.17: older messages of the history (at night, as read) make no sound
+			if (last && seen !== undefined && last.id > seen && !last.mine && last.kind !== 'system' && !S.quietRender && S.shown && document.visibilityState === 'visible') playSound('in');
 			if (last) S.newest.set(c.id, Math.max(seen || 0, last.id));
 			if (refs.bars.querySelector('.cv-bar-pin') || (c.pinned && c.pinned.length)) renderBars();
 			if (mode === 'bottom' || (mode === 'keep' && wasBottom)) scrollEnd(false);
@@ -1173,6 +1193,13 @@
 						icon(ph.state === 'failed' && ph.reason === 'infected' ? 'shield' : ph.kind === 'unsupported' ? 'info' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : ph.kind === 'video' ? 'video' : ph.kind === 'location' ? 'pin' : ph.kind === 'file' ? 'file' : 'mic'), 14),
 						el('span', { text: CS.placeholderText(m, c, t) }),
 					]));
+					// Messenger 1.17: a file of the older history — fetched only when asked for
+					if (ph.state === 'on_request' && typeof api.fetchFile === 'function') {
+						b.appendChild(el('div', { class: 'cv-bc-fetch' }, [el('button', {
+							type: 'button', class: 'btn btn-sec btn-sm', 'data-act': 'fetch', text: t('chat.bc.ph_fetch'), disabled: S.fetching.has(m.id) ? true : null,
+							on: { click: (e) => { e.stopPropagation(); fetchOld(m); } },
+						})]));
+					}
 				}
 				// Messenger 1.11: a file the host's virus scan checks or blocked — the state instead of picture / player / file
 				const sc = CS.mediaScan(m, t);
@@ -3024,13 +3051,17 @@
 			if (S.cur !== id || !r || r.ok === false) return;
 			const offline = S.view ? S.view.offline : false;
 			S.view = { ...r, offline };
-			renderMessages('keep');
+			S.quietRender = S.quietNext;
+			S.quietNext = false;
+			try { renderMessages('keep'); } finally { S.quietRender = false; }
 		}
 
 		api.onConversations(() => refreshListSoon());
 		api.onTyping(() => refreshListSoon());
 		api.onMessages((e) => {
 			if (!e || e.conversationId !== S.cur) return;
+			// Messenger 1.17: older messages were filed in (conversation.update reason history) — no sound for them
+			if (e.reason === 'history') S.quietNext = true;
 			clearTimeout(msgTimer);
 			msgTimer = setTimeout(refreshMessages, 30);
 		});
@@ -3042,7 +3073,11 @@
 		if (typeof api.onLists === 'function') api.onLists((lists) => { S.lists = Array.isArray(lists) ? lists : []; renderList(); if (settings && settings.isOpen()) settings.render(); });
 		if (typeof api.onReminders === 'function') api.onReminders(() => { if (settings && settings.isOpen()) settings.render(); });
 		if (o.notify) {
-			o.notify.onNew(() => loadInbox());
+			o.notify.onNew((entry) => {
+				loadInbox();
+				// Messenger 1.17: „Handy seit N Tagen nicht gesehen“ — „Verknüpfte Dienste“, when open, shows it at once
+				if (settings && typeof settings.reloadLinked === 'function' && CS.isBridgePush(entry)) settings.reloadLinked();
+			});
 			o.notify.onUpdate(() => loadInbox());
 		}
 

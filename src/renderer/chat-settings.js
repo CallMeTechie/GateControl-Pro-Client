@@ -431,7 +431,12 @@
 			}
 		}
 
-		return { open, close, isOpen, render, local, LOCAL };
+		/** Messenger 1.17: a push of „Verknüpfte Dienste“ came — the section, when it shows, asks again. */
+		function reloadLinked() {
+			if (linked && isOpen() && section === 'linked') linked.reload();
+		}
+
+		return { open, close, isOpen, render, local, LOCAL, reloadLinked };
 	}
 
 	root.GCChatSettings = { create, LOCAL, local: {

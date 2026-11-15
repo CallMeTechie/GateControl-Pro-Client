@@ -425,8 +425,8 @@ describe('chat-state: Messenger 1.4.0', () => {
   const cx14 = { ...ctx, me: me14 };
 
   it('features, Familie integrations and kinds this version draws', () => {
-    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false });
-    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false });
+    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false, bridgeHistory: false });
+    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false, bridgeHistory: false });
     assert.deepEqual(CS.familie(me14), { lists: true, calendar: false, places: true });
     assert.deepEqual(CS.familie(ME), { lists: false, calendar: false, places: false });
     for (const k of ['poll', 'event', 'arrival', 'action', 'card', 'text']) assert.equal(CS.isShownKind({ kind: k }), true, k);
@@ -976,5 +976,62 @@ describe('chat-state: files, pictures and a new chat by number over a bridge (Me
     const end = view.indexOf('async function addMembersDialog(');
     assert.ok(start > 0 && end > start);
     assert.doesNotMatch(view.slice(start, end), /localStorage|sessionStorage|console\.|indexedDB/);
+  });
+});
+
+describe('chat-state: older history, the phone, „Brücke veraltet“ over a bridge (Messenger 1.17)', () => {
+  const WA = { network: 'whatsapp', label: 'WhatsApp', state: 'ok', closed: false, supports: ['text', 'image'] };
+  const conv = { id: 20, kind: 'direct', title: 'Kim Muster', peer: null, members: [], can: { send: true }, bridge: WA };
+  const phMsg = (placeholder) => ({ id: 5, kind: 'text', text: null, senderId: null, via: 'bridge:whatsapp', bridge: { sender: { contactId: 1, name: 'Kim' }, placeholder } });
+  const net = (extra = {}) => ({ id: 'whatsapp', state: 'running', allowed: true, lock: null, consent: true, outdated: false, clientOutdated: false, logins: [{ id: 'l1', name: '', state: 'connected', since: '2026-11-02T10:00:00.000Z' }], phone: { offline: false, days: null, leftDays: null }, ...extra });
+  const NS = require('../src/renderer/notify-state');
+
+  it('features: bridge_history only from the word', () => {
+    assert.equal(CS.features14({ features: { bridge_chats: true, bridge_history: true } }).bridgeHistory, true);
+    assert.equal(CS.features14(ME).bridgeHistory, false);
+  });
+
+  it('a file of the history: „… – älterer Verlauf“ (on_request); an older app reads the state as unknown', () => {
+    assert.equal(CS.placeholderOf(phMsg({ kind: 'image', name: 'IMG-2041.jpg', state: 'on_request' })).state, 'on_request');
+    assert.equal(CS.placeholderText(phMsg({ kind: 'image', name: 'IMG-2041.jpg', state: 'on_request' }), conv, t), 'chat.bc.ph.image · IMG-2041.jpg – chat.bc.ph_on_request');
+    assert.equal(CS.placeholderText(phMsg({ kind: 'file', name: null, state: 'failed', reason: 'gone' }), conv, t), 'chat.bc.ph.file – chat.bc.ph_fail.gone(WhatsApp)');
+    assert.equal(CS.placeholderOf(phMsg({ kind: 'image', state: 'later' })).state, null);
+  });
+
+  it('the phone warning under a linked service, not when signed out; leftDays 0 → „jederzeit“', () => {
+    assert.equal(CS.linkedRow(net(), ctx).phone, null);
+    assert.equal(CS.linkedRow(net({ phone: { offline: true, days: 12, leftDays: 2 } }), ctx).phone, 'chat.br.phone_offline(WhatsApp,12)');
+    assert.equal(CS.linkedRow(net({ phone: { offline: true, days: 15, leftDays: 0 } }), ctx).phone, 'chat.br.phone_offline_now(WhatsApp,15)');
+    assert.equal(CS.linkedRow(net({ phone: { offline: true, days: null, leftDays: null } }), ctx).phone, 'chat.br.phone_offline(WhatsApp,12)');
+    const out = net({ phone: { offline: true, days: 14, leftDays: 0 }, logins: [{ id: 'l1', state: 'logged_out', since: null }] });
+    assert.equal(CS.linkedRow(out, ctx).phone, null);
+    assert.equal(CS.linkedRow(net({ phone: { offline: true, days: 13, leftDays: 1 } }), ctx).state, 'linked', 'the link still works');
+  });
+
+  it('„Brücke veraltet“ also when the service refuses the bridge (clientOutdated)', () => {
+    assert.deepEqual(CS.linkedRow(net({ clientOutdated: true }), ctx).pill, { text: 'chat.br.pill_outdated', tone: 'warn' });
+    assert.equal(CS.isOutdated(net({ clientOutdated: true })), true);
+    assert.equal(CS.isOutdated(net({ outdated: true })), true);
+    assert.equal(CS.isOutdated(net()), false);
+  });
+
+  it('the row „Älteren Verlauf laden“: choice, nights to come, switched off, none on an older server', () => {
+    const h = CS.historyRow({ available: true, days: 30, default: 30, options: [0, 30, -1], pending: 0 }, t);
+    assert.deepEqual(h, { title: 'chat.br.hist_title', sub: 'chat.br.hist_sub(chat.br.hist_days(30))', available: true, value: 30,
+      options: [{ value: 0, label: 'chat.br.hist_off' }, { value: 30, label: 'chat.br.hist_days(30)' }, { value: -1, label: 'chat.br.hist_all' }] });
+    assert.equal(CS.historyRow({ available: true, days: -1, options: [0, 30, -1], pending: 412 }, t).sub, 'chat.br.hist_sub(chat.br.hist_all) · chat.br.hist_pending(412)');
+    const off = CS.historyRow({ available: false, days: 30, options: [0, 30, -1], pending: 9 }, t);
+    assert.deepEqual([off.sub, off.options, off.available], ['chat.br.hist_admin_off', [], false]);
+    assert.equal(CS.historyRow(null, t), null);
+  });
+
+  it('the push of „Verknüpfte Dienste“ opens them on the chats page', () => {
+    assert.equal(CS.isBridgePush({ topic: 'plugin:gatecontrol-messenger:bridge', data: { deepLink: 'bridges', bridge: 'whatsapp' } }), true);
+    assert.equal(CS.isBridgePush({ topic: 'plugin:gatecontrol-messenger:message', data: {} }), false);
+    assert.equal(CS.isBridgePush(null), false);
+    const context = { type: 'bridges', bridge: 'whatsapp' };
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 40, context }, ['chats', 'inbox']), { page: 'chats', id: null, context });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 40, context }, ['inbox']), { page: 'inbox', id: 40 });
+    assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 41 }, ['chats', 'inbox']), { page: 'chats', id: null });
   });
 });

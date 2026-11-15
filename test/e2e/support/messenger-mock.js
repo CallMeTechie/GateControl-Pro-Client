@@ -42,6 +42,8 @@ const FEATURES_LINKED = Object.freeze({ ...FEATURES_141, linked_services: true }
 const FEATURES_BRIDGED = Object.freeze({ ...FEATURES_LINKED, bridge_chats: true });
 // Messenger 1.15: files and pictures over a bridge, a new chat by phone number
 const FEATURES_STAGE4 = Object.freeze({ ...FEATURES_BRIDGED, bridge_media: true, bridge_new_chat: true });
+// Messenger 1.17: older history at a new link, its files on request, the phone warning
+const FEATURES_STAGE5 = Object.freeze({ ...FEATURES_STAGE4, bridge_history: true });
 const WA_MEDIA_TYPES = Object.freeze({ image: ['image/jpeg', 'image/png', 'image/webp'], video: ['video/mp4'], voice: ['audio/ogg', 'audio/mp4', 'audio/aac', 'audio/mpeg'], file: null });
 
 function createMessenger({ emit = () => {}, features = null, familie = false } = {}) {
@@ -60,6 +62,8 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     toList: [], toCalendar: [], votes: [], pollOps: [], rsvps: [], checks: [], eventEdits: [], actionOps: [], arrivalStops: [],
     // 1.13 / 1.14: every API call, what was asked of the bridge (never a number: only whether one came), resends
     calls: [], bridge: [], resends: [],
+    // 1.17: PUT bridges/history bodies, messages whose file of the history was asked for
+    history: [], fetches: [],
   };
   // 1.13 / 1.14: the bridges as GET bridges tells them, and the login in progress
   const bridge = {
@@ -80,6 +84,10 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     lookupMax: 10,
     resolveDelayMs: 0,
     resolveFails: null,       // { status, code, reason?, retryAfterS? } for the next resolve / chats
+    // 1.17 (features.bridge_history): older history at a new link; historyFails / fetchFails: { status, code } once
+    history: { available: true, days: 30, default: 30, options: [0, 30, -1], pending: 0 },
+    historyFails: null,
+    fetchFails: null,
   };
   const st14 = {
     prefs: { readReceipts: true, typing: true, preview: true, privacy: { lastSeen: 'all', avatar: 'all', statusDefault: 'all', placeInStatus: 'family', groupAdd: 'all', defaultDisappearingS: 0 }, notify: { groupsMentionsOnly: false, reactions: true, statusDigest: false, eventReminderMin: 60 }, chats: { keepArchived: true } },
@@ -135,7 +143,17 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     if (seg[0] !== 'bridges') return false;
     if (!(features && features.linked_services === true)) return json(404, { ok: false, code: 'not_found' }), true;
     const B = bridge;
-    if (seg.length === 1 && method === 'GET') return json(200, { ok: true, bridges: B.available ? { available: true, location: B.location, networks: B.networks } : { available: false, networks: [] } }), true;
+    const hist = features && features.bridge_history === true;
+    if (seg.length === 1 && method === 'GET') return json(200, { ok: true, bridges: B.available ? { available: true, location: B.location, networks: B.networks, ...(hist ? { history: B.history } : {}) } : { available: false, networks: [] } }), true;
+    // 1.17: what of the older messages comes over
+    if (seg.length === 2 && seg[1] === 'history' && method === 'PUT') {
+      if (!hist || !B.history) return json(403, { ok: false, code: 'feature_off' }), true;
+      log.history.push(body);
+      if (B.historyFails) { const f = B.historyFails; B.historyFails = null; return json(f.status, { ok: false, code: f.code }), true; }
+      if (![0, 30, -1].includes(body && body.days)) return json(400, { ok: false, code: 'invalid' }), true;
+      B.history = { ...B.history, days: body.days, pending: body.days === 0 ? 0 : B.history.pending };
+      return json(200, { ok: true, history: B.history }), true;
+    }
     const net = B.networks.find((n) => n.id === seg[1]);
     if (!net || seg.length < 3) return json(404, { ok: false, code: 'not_found' }), true;
     if (!B.available) return json(409, { ok: false, code: 'bridge_off', reason: 'no_host' }), true;
@@ -646,6 +664,18 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       let m = null;
       for (const l of msgs.values()) m = l.find((x) => x.id === Number(b)) || m;
       if (!m || (convs.get(m.conversationId).bridge && !bridged)) return json(404, { ok: false, code: 'not_found' }), true;
+      // 1.17: a file of the older history, fetched now
+      if (c === 'fetch' && method === 'POST') {
+        if (!(features && features.bridge_history === true) || !convs.get(m.conversationId).bridge) return json(404, { ok: false, code: 'not_found' }), true;
+        log.fetches.push(m.id);
+        if (bridge.fetchFails) { const f = bridge.fetchFails; bridge.fetchFails = null; return json(f.status, { ok: false, code: f.code }), true; }
+        const ph = m.bridge && m.bridge.placeholder;
+        if (!ph || ph.state !== 'on_request') return json(400, { ok: false, code: 'invalid' }), true;
+        m.bridge = { ...m.bridge, placeholder: { ...ph, state: 'loading' } };
+        m.changedAt = Date.now();
+        emit('message.update', { conversationId: m.conversationId, messageId: m.id, editedAt: iso(m.changedAt), media: true });
+        return json(200, { ok: true, message: msgView(m) }), true;
+      }
       if (c === 'resend' && method === 'POST') {
         if (!m.bridge || m.bridge.state !== 'failed') return json(400, { ok: false, code: 'invalid' }), true;
         log.resends.push(m.id);
@@ -724,6 +754,18 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       emit('message.update', { conversationId: m.conversationId, messageId: m.id, editedAt: iso(m.changedAt), media: true });
       return m;
     },
+    /**
+     * Messenger 1.17: older messages of the history were filed into a chat at night (no message.new, no push, read):
+     * `list` of addBridgeMsg options (+ `at`: its own time in the past); one conversation.update { reason: history }.
+     */
+    historyArrived(convId, list) {
+      const added = list.map(({ at, ...o }) => { const m = addBridgeMsg(convId, o); if (at) m.createdAt = at; return m; });
+      const c = convs.get(convId);
+      const mb = c.members.find((x) => x.id === ME);
+      if (mb) mb.lastRead = Math.max(mb.lastRead, ...added.map((m) => m.id));
+      emit('conversation.update', { conversationId: convId, reason: 'history' });
+      return added;
+    },
     /** Messenger 1.15: the picture of a chat over a bridge (the contact's, the group's). */
     setBridgeAvatar(convId, mediaId) {
       const c = convs.get(convId);
@@ -793,4 +835,4 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   return api;
 }
 
-module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141, FEATURES_LINKED, FEATURES_BRIDGED, FEATURES_STAGE4 };
+module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141, FEATURES_LINKED, FEATURES_BRIDGED, FEATURES_STAGE4, FEATURES_STAGE5 };

@@ -16,6 +16,11 @@
  *             server waits up to 15 s per call). A code that ran out or was
  *             refused offers "Neuen Code anfordern".
  *
+ * Messenger 1.17 (feature `bridge_history`, GET bridges → history): the row
+ * „Älteren Verlauf laden“ (Aus / Letzte 30 Tage / Alles, PUT bridges/history)
+ * under the services, the warning „Handy seit N Tagen nicht gesehen“ under a
+ * service (networks[].phone) and „Brücke veraltet“ also by `clientOutdated`.
+ *
  * Different from the phone apps: no "open WhatsApp" button (the phone is
  * another device), "Code kopieren" instead. Leaving the section or the
  * settings page drops a login that was not finished; up to three waiting
@@ -47,6 +52,7 @@
 		let run = null;           // the link in progress: { net, process, stopped, timer }
 		let copied = null;        // the code put on the clipboard (cleared again when it is still there)
 		let copyTimer = null;
+		let histSaving = false;   // PUT bridges/history in flight
 
 		const name = (id) => CS.bridgeName(id);
 		const network = (id) => (info && Array.isArray(info.networks) ? info.networks.find((n) => n.id === id) : null) || null;
@@ -203,6 +209,22 @@
 			}
 		}
 
+		/** Messenger 1.17: „Älteren Verlauf laden“ — 0, 30 or -1; holds at the next link. */
+		async function setHistory(days) {
+			if (histSaving || !info || !info.history) return;
+			histSaving = true;
+			paint();
+			const r = await call(api.bridgeHistory(days));
+			histSaving = false;
+			if (r && r.ok !== false && r.history) {
+				info.history = r.history;
+				toast(t('chat.br.hist_saved'), 'success');
+			} else {
+				toast(CS.errorText(r, t), 'error');
+			}
+			paint();
+		}
+
 		/** A refusal outside a running link: said in a toast; locked / switched off → the overview says so. */
 		function refused(r) {
 			toast(CS.errorText(r, t), 'error');
@@ -279,7 +301,7 @@
 				return out;
 			}
 			const cx = kit.ctx();
-			const outdated = nets.filter((n) => n.outdated);
+			const outdated = nets.filter((n) => CS.isOutdated(n));
 			if (outdated.length) out.push(note('info', t('chat.br.outdated_banner', { name: name(outdated[0].id) }), 'cv-br-warn'));
 			const card = el('div', { class: 'cv-set-card cv-br-list' });
 			for (const n of nets) {
@@ -302,8 +324,24 @@
 						]),
 					]));
 				}
+				// Messenger 1.17: the phone was not seen for days — the link still works, but not for long
+				if (r.phone) card.appendChild(el('div', { class: 'cv-br-phone-row', 'data-net': n.id }, [note('info', r.phone, 'cv-br-warn')]));
 			}
 			out.push(el('div', { class: 'cv-set-group' }, [card]));
+			// Messenger 1.17: older messages — what comes over at the next link
+			const h = CS.historyRow(info.history, t);
+			if (h) {
+				let pick = null;
+				if (h.available) {
+					pick = el('select', { class: 'inp cv-select', id: 'cv-br-hist', 'data-act': 'history', 'aria-label': h.title, disabled: histSaving ? true : null }, h.options.map((o) => el('option', { value: String(o.value), text: o.label })));
+					pick.value = String(h.value);
+					pick.addEventListener('change', () => setHistory(Number(pick.value)));
+				}
+				out.push(el('div', { class: 'cv-set-group' }, [el('div', { class: 'cv-set-card' }, [el('div', { class: 'cv-pref', 'data-pref': 'history', 'data-available': h.available ? 'true' : 'false' }, [
+					el('span', { class: 'cv-pref-tx' }, [el('b', { text: h.title }), el('small', { text: h.sub })]),
+					pick,
+				])])]));
+			}
 			out.push(el('div', { class: 'cv-set-group' }, [el('div', { class: 'cv-set-card' }, [el('div', { class: 'cv-pref', 'data-pref': 'runsOn' }, [
 				el('span', { class: 'cv-pref-tx' }, [el('b', { text: t('chat.br.runs_on') }), el('small', { text: `${t(info.location === 'gateway' ? 'chat.br.runs_on_gateway' : 'chat.br.runs_on_server')} · ${t(outdated.length ? 'chat.br.runs_outdated' : 'chat.br.runs_current')}` })]),
 				pill(outdated.length ? { text: t('chat.br.pill_outdated'), tone: 'warn' } : { text: t('chat.br.pill_ok'), tone: 'ok' }),
@@ -311,7 +349,8 @@
 			if (outdated.length) out.push(el('p', { class: 'cv-note', text: t('chat.br.outdated_hint') }));
 			out.push(el('p', { class: 'cv-note', text: t('chat.br.foot_unlink') }));
 			// what the chat list does with a linked service — said only where the server has such chats for this person
-			if (CS.features14(kit.me()).bridgeChats) out.push(note('lock', t('chat.br.foot_preview')));
+			if (info.history) out.push(note('lock', t('chat.br.foot_preview_hist')));
+			else if (CS.features14(kit.me()).bridgeChats) out.push(note('lock', t('chat.br.foot_preview')));
 			return out;
 		}
 
@@ -427,6 +466,10 @@
 				clearCopied();
 				host = null;
 				view = { name: 'overview' };
+			},
+			/** Messenger 1.17: a push of „Verknüpfte Dienste“ came — the overview asks again (nothing else is touched). */
+			reload() {
+				if (host && host.isConnected && view.name === 'overview') load();
 			},
 			/** Is something in progress or shown (tests)? */
 			state: () => ({ view: view.name, phase: view.phase || null, running: !!run }),

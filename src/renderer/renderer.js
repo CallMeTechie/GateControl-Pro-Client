@@ -2758,6 +2758,10 @@ if (notifyAvailable()) {
 			openNotes(target.context);
 		} else if (target.page === 'kameras') {
 			openCameras(target.context);
+		} else if (target.page === 'chats' && target.context && target.context.type === 'bridges') {
+			// Messenger 1.17: the push of „Verknüpfte Dienste“ (the phone was not seen for days)
+			navigateTo('chats');
+			chatView?.openSettings('linked');
 		} else {
 			navigateTo(target.page);
 		}

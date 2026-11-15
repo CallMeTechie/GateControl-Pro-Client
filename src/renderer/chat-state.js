@@ -747,6 +747,8 @@
 			linked: f('linked_services'), bridgeChats: f('bridge_chats'),
 			// Messenger 1.15: files and pictures over a bridge; a new chat by phone number
 			bridgeMedia: f('bridge_media'), bridgeNewChat: f('bridge_new_chat'),
+			// Messenger 1.17: „Älteren Verlauf laden“, files of the history on request, the phone warning
+			bridgeHistory: f('bridge_history'),
 		};
 	}
 
@@ -829,14 +831,15 @@
 	/**
 	 * `bridge.placeholder` of a message → { kind, name, state, reason, geo } or null. Messenger 1.15: `state` loading
 	 * (the server fetches the file) | failed (+ `reason`) | null (nothing to fetch: a location with `geo`, an encrypted
-	 * file, a server without the file route — and every placeholder of 1.14).
+	 * file, a server without the file route — and every placeholder of 1.14). 1.17: on_request — a file of the older
+	 * history, fetched when the person asks for it („Laden“).
 	 */
 	function placeholderOf(m) {
 		const p = m && !m.deleted && m.bridge && typeof m.bridge === 'object' ? m.bridge.placeholder : null;
 		if (!p || typeof p !== 'object' || !PLACEHOLDER_KINDS.includes(p.kind)) return null;
 		const g = p.geo && typeof p.geo === 'object' ? p.geo : null;
 		const geo = g && Number.isFinite(g.lat) && Number.isFinite(g.lon) && Math.abs(g.lat) <= 90 && Math.abs(g.lon) <= 180 ? { lat: g.lat, lon: g.lon } : null;
-		const state = p.state === 'loading' || p.state === 'failed' ? p.state : null;
+		const state = p.state === 'loading' || p.state === 'failed' || p.state === 'on_request' ? p.state : null;
 		return { kind: p.kind, name: str(p.name).slice(0, 200) || null, state, reason: state === 'failed' ? (PH_FAIL.includes(p.reason) ? p.reason : 'other') : null, geo };
 	}
 
@@ -853,6 +856,7 @@
 		if (p.geo) return t('chat.bc.ph.location');
 		const what = [t(`chat.bc.ph.${p.kind}`), p.name].filter(Boolean).join(' · ');
 		if (p.state === 'loading') return `${what} – ${t('chat.bc.ph_loading')}`;
+		if (p.state === 'on_request') return `${what} – ${t('chat.bc.ph_on_request')}`;
 		if (p.state === 'failed') return `${what} – ${t(`chat.bc.ph_fail.${p.reason}`, { network })}`;
 		return `${what} – ${t('chat.bc.ph_later', { network })}`;
 	}
@@ -1054,7 +1058,7 @@
 		const t = ctx.t;
 		const l = mainLogin(n);
 		const name = bridgeName(n.id);
-		const out = { id: n.id, name, mark: bridgeMark(n.id), login: l, state: 'none', sub: '', pill: null, link: false, unlink: false, again: null };
+		const out = { id: n.id, name, mark: bridgeMark(n.id), login: l, state: 'none', sub: '', pill: null, link: false, unlink: false, again: null, phone: null };
 		if (n.state === 'unreachable' || n.state === 'starting' || n.state === 'failed') {
 			out.state = n.state === 'starting' ? 'starting' : 'unreachable';
 			out.sub = t(n.state === 'starting' ? 'chat.br.sub_starting' : 'chat.br.sub_unreachable');
@@ -1063,7 +1067,7 @@
 			out.state = 'linked';
 			const date = linkDate(l.since, ctx.locale);
 			out.sub = [date ? t('chat.br.sub_linked_since', { date }) : t('chat.br.sub_linked'), l.name].filter(Boolean).join(' · ');
-			out.pill = n.outdated ? { text: t('chat.br.pill_outdated'), tone: 'warn' } : { text: t('chat.br.pill_linked'), tone: 'ok' };
+			out.pill = isOutdated(n) ? { text: t('chat.br.pill_outdated'), tone: 'warn' } : { text: t('chat.br.pill_linked'), tone: 'ok' };
 			out.unlink = true;
 		} else if (l && l.state === 'logged_out') {
 			out.state = 'logged_out';
@@ -1088,7 +1092,61 @@
 		if (l && ['logged_out', 'error', 'unknown'].includes(l.state) && n.state === 'running') {
 			out.again = { hint: t(n.allowed ? 'chat.br.relink_hint' : 'chat.br.sub_locked'), link: !!n.allowed, forget: l.state === 'logged_out' };
 		}
+		// Messenger 1.17: the bridge's warning — the phone was not seen for 12 days and more (the link still works)
+		out.phone = phoneWarning(n, l, t);
 		return out;
+	}
+
+	/** „Brücke veraltet“: older than intended (`outdated`) or, Messenger 1.17, refused by the service (`clientOutdated`). */
+	function isOutdated(n) {
+		return !!n && (n.outdated === true || n.clientOutdated === true);
+	}
+
+	/**
+	 * Messenger 1.17: „Handy seit {days} Tagen nicht gesehen. Öffne WhatsApp …“ under a service whose phone the bridge
+	 * did not see for days (`phone.offline`), not for a login that is signed out; `leftDays: 0` → „… jederzeit trennen“.
+	 * → the text or null.
+	 */
+	function phoneWarning(n, l, t) {
+		const p = n && n.phone && typeof n.phone === 'object' ? n.phone : null;
+		if (!p || p.offline !== true || !l || l.state === 'logged_out') return null;
+		const days = Number.isSafeInteger(p.days) && p.days > 0 ? p.days : 12;
+		const name = bridgeName(n.id);
+		return t(p.leftDays === 0 ? 'chat.br.phone_offline_now' : 'chat.br.phone_offline', { name, days });
+	}
+
+	// Messenger 1.17: what of the older messages comes over at a new link
+	const HISTORY_DAYS = [0, 30, -1];
+
+	/** „Aus“ / „Letzte 30 Tage“ / „Alles“. */
+	function historyLabel(d, t) {
+		if (d === 0) return t('chat.br.hist_off');
+		if (d < 0) return t('chat.br.hist_all');
+		return t('chat.br.hist_days', { n: d });
+	}
+
+	/**
+	 * The row „Älteren Verlauf laden“ (GET bridges → history) → null (a server without it: no row) or { title, sub,
+	 * available, value, options: [{ value, label }] }. Switched off by the administrator: no choice, „Auf diesem Server
+	 * abgeschaltet“; `pending` adds „· N kommen heute Nacht“.
+	 */
+	function historyRow(h, t) {
+		if (!h || typeof h !== 'object') return null;
+		const days = HISTORY_DAYS.includes(h.days) ? h.days : 30;
+		const opts = (Array.isArray(h.options) ? h.options : HISTORY_DAYS).filter((d) => HISTORY_DAYS.includes(d));
+		const list = opts.length ? opts : HISTORY_DAYS;
+		const available = h.available === true;
+		let sub = available ? t('chat.br.hist_sub', { choice: historyLabel(days, t) }) : t('chat.br.hist_admin_off');
+		if (available && Number.isSafeInteger(h.pending) && h.pending > 0) sub += ` · ${t('chat.br.hist_pending', { n: h.pending })}`;
+		return { title: t('chat.br.hist_title'), sub, available, value: days, options: available ? list.map((d) => ({ value: d, label: historyLabel(d, t) })) : [] };
+	}
+
+	/** Messenger 1.17: an inbox entry / push of „Verknüpfte Dienste“ (topic `bridge`, deepLink bridges)? */
+	function isBridgePush(entry) {
+		if (!entry || typeof entry !== 'object') return false;
+		const topic = str(entry.topic);
+		const data = entry.data && typeof entry.data === 'object' ? entry.data : {};
+		return topic === 'plugin:gatecontrol-messenger:bridge' || (topic.startsWith('plugin:gatecontrol-messenger:') && data.deepLink === 'bridges');
 	}
 
 	/** Why an attempt to link ended, in words (a code that ran out reads differently from a refusal). */
@@ -1596,7 +1654,7 @@
 		bridgeOf, bridgeName, bridgeMark, bridgeLabel, bridgeNetworks, bridgeBlock, senderName, quoteName, senderKey, placeholderOf, placeholderText, bridgeFailure,
 		bridgeOutKind, bridgeTakesFiles, bridgeMediaRefusal, bridgeImageType, voiceMime, mediaTypeText,
 		NEW_CHAT_CC, newChatNumber, formatNumber, newChatServices, newChatState, newChatErrorState,
-		LINK_NOTES, LINK_FLOWS, linkable, mainLogin, linkDate, linkedRow, linkErrorText, codeChars, qrPath,
+		LINK_NOTES, LINK_FLOWS, linkable, mainLogin, linkDate, linkedRow, isOutdated, phoneWarning, historyRow, historyLabel, isBridgePush, HISTORY_DAYS, linkErrorText, codeChars, qrPath,
 		storyDurations,
 		ownStoryStats,
 		ownStoryLine,
