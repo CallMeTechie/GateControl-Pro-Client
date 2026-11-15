@@ -135,11 +135,14 @@
 
 	// ── Members ──────────────────────────────────────────────
 
+	// whole characters, letters and digits only: an emoji is never cut in half („Schatzimausi 💕“ showed „S“ and a
+	// replacement mark) and never an initial
+	const INI_RE = /[\p{L}\p{N}](?:(?![\uFE00-\uFE0F])\p{M})*/gu;
+	function letters(w) { return String(w || '').normalize('NFC').match(INI_RE) || []; }
 	function initialsOf(name) {
 		const words = str(name).trim().split(/\s+/).filter(Boolean);
-		if (!words.length) return '?';
-		if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-		return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+		const out = words.length > 1 ? (letters(words[0])[0] || '') + (letters(words[words.length - 1])[0] || '') : letters(words[0]).slice(0, 2).join('');
+		return out.toUpperCase() || '?';
 	}
 
 	/** { userId, name, initials, color, avatarUrl } for the avatar of a member. */

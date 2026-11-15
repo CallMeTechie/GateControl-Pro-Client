@@ -81,17 +81,22 @@
 		return {
 			kind: 'person',
 			name: str(p.name),
-			initials: str(p.initials) || initials(p.name),
+			// the server's initials: letters and digits only, whole characters
+			initials: letters(p.initials).slice(0, 3).join('') || initials(p.name),
 			color: COLOR_RE.test(str(p.colorHex)) ? p.colorHex : '#64748B',
 			avatarUrl: typeof p.avatarUrl === 'string' ? p.avatarUrl : null,
 		};
 	}
 
+	// whole characters, letters and digits only: an emoji is never cut in half („Schatzimausi 💕“ showed „S“ and a
+	// replacement mark) and never an initial
+	const INI_RE = /[\p{L}\p{N}](?:(?![\uFE00-\uFE0F])\p{M})*/gu;
+	function letters(w) { return String(w || '').normalize('NFC').match(INI_RE) || []; }
+	/** „Schatzimausi 💕“ → „S“, „van der Berg“ → „VB“, „Kim“ → „KI“, only emoji / nothing → „?“. */
 	function initials(name) {
-		const parts = str(name || '?').trim().split(/\s+/);
-		const a = (parts[0] || '?').charAt(0);
-		const b = parts.length > 1 ? parts[parts.length - 1].charAt(0) : (parts[0] || '').charAt(1);
-		return (a + (b || '')).toUpperCase();
+		const parts = str(name).trim().split(/\s+/).filter(Boolean);
+		const out = parts.length > 1 ? (letters(parts[0])[0] || '') + (letters(parts[parts.length - 1])[0] || '') : letters(parts[0]).slice(0, 2).join('');
+		return out.toUpperCase() || '?';
 	}
 
 	function disLabel(s, t) {

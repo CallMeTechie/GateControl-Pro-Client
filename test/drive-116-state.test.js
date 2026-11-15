@@ -126,6 +126,9 @@ describe('people', () => {
     assert.equal(PPS.initials('Oma Gerda'), 'OG');
     assert.equal(PPS.initials('lea'), 'L');
     assert.equal(PPS.initials(''), '?');
+    // whole characters, letters and digits only (never half an emoji)
+    assert.equal(PPS.initials('Oma 💕'), 'O');
+    assert.equal(PPS.initials('💕'), '?');
     assert.equal(PPS.toneOf(7), PPS.toneOf('7'));
     assert.ok(PPS.toneOf('Lea') >= 0 && PPS.toneOf('Lea') < 5);
   });

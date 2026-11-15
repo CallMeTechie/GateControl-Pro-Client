@@ -91,7 +91,8 @@
 		const name = str(a && a.name).trim();
 		if (name) {
 			const words = name.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
-			const ini = words.slice(0, 2).map((w) => w[0]).join('');
+			// whole characters (a letter outside the BMP is never cut in half)
+			const ini = words.slice(0, 2).map((w) => Array.from(w)[0]).join('');
 			if (ini) return ini.toUpperCase();
 		}
 		const mail = str(a && a.email);

@@ -134,9 +134,13 @@
 	}
 
 	/** Initials of a person ("Oma Gerda" → "OG", no name → "?"). */
+	// whole characters, letters and digits only: an emoji is never cut in half („Schatzimausi 💕“ showed „S“ and a
+	// replacement mark) and never an initial
+	const INI_RE = /[\p{L}\p{N}](?:(?![\uFE00-\uFE0F])\p{M})*/gu;
+	function letters(w) { return String(w || '').normalize('NFC').match(INI_RE) || []; }
 	function initials(name) {
 		const w = str(name).trim().split(/\s+/).filter(Boolean);
-		return w.slice(0, 2).map((x) => Array.from(x)[0].toUpperCase()).join('') || '?';
+		return w.slice(0, 2).map((x) => (letters(x)[0] || '').toUpperCase()).join('') || '?';
 	}
 
 	return { fmt, plural, pages, pageOf, ago, deadlineRow, fileBadge, recentSub, memoryText, activityText, activityTitle, storageText, placesLine, initials };
