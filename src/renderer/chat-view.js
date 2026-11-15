@@ -78,6 +78,10 @@
 		external: 'M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6',
 		copy: 'M9 9h11v11H9z|M5 15H4V4h11v1',
 		link: 'M10 13a5 5 0 0 0 7.1.5l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7|M14 11a5 5 0 0 0-7.1-.5l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7',
+		phone: 'M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2',
+		logout: 'M15 4h4v16h-4|M10 8l-4 4 4 4M6 12h10',
+		plug: 'M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0z|M12 17v5|M3 3l18 18',
+		userx: 'M10 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M3 21c0-4 3-6 7-6s7 2 7 6|M17 8l4 4M21 8l-4 4',
 		retry: 'M21 12a9 9 0 1 1-3-6.7L21 8|M21 3v5h-5',
 		minus: 'M5 12h14',
 		target: 'M12 5a7 7 0 1 0 0 14a7 7 0 1 0 0-14|M12 10a2 2 0 1 0 0 4a2 2 0 1 0 0-4|M12 2v3M12 19v3M2 12h3M19 12h3',
@@ -1021,7 +1025,7 @@
 				refs.bars.appendChild(el('div', { class: 'cv-bc-first' }, [
 					el('b', { text: t('chat.bc.first_title', { network }) }),
 					el('p', { text: t('chat.bc.first_lead', { network }) }),
-					el('ul', null, ['first_1', 'first_2', 'first_3'].map((k) => el('li', { text: t(`chat.bc.${k}`, { network }) }))),
+					el('ul', null, ['first_1', CS.bridgeTakesFiles(c) ? 'first_2_media' : 'first_2', 'first_3'].map((k) => el('li', { text: t(`chat.bc.${k}`, { network }) }))),
 					el('button', { type: 'button', class: 'btn btn-pri btn-sm', 'data-act': 'intro-ok', text: t('chat.bc.first_ok'), on: { click: () => { markIntro(b.network); S.bridgeIntro = null; renderBars(); } } }),
 				]));
 			} else {
@@ -1083,7 +1087,10 @@
 				refs.msgs.appendChild(el('button', { type: 'button', class: 'cv-older btn btn-ghost btn-sm', text: t('chat.loadOlder'), on: { click: () => loadOlder() } }));
 			}
 			if (!v.messages.length && !v.pending.length) {
-				refs.msgs.appendChild(el('div', { class: 'cv-empty', text: t('chat.empty') }));
+				// Messenger 1.16: a chat just started by number — the number only from this session's memory, never stored
+				const st = S.startedByNumber && S.startedByNumber.id === c.id ? S.startedByNumber : null;
+				if (st && CS.bridgeOf(c)) refs.msgs.appendChild(el('div', { class: 'cv-sys', 'data-sys': 'new-chat' }, [el('span', { text: t('chat.nc.first_line', { network: CS.bridgeLabel(c), number: CS.formatNumber(st.number), name: st.name || CS.title(c, t) }) })]));
+				else refs.msgs.appendChild(el('div', { class: 'cv-empty', text: t('chat.empty') }));
 			}
 			const items = CS.timeline(v.messages, v.pending, c, cx, { unreadFrom: S.unreadFrom.has(c.id) ? S.unreadFrom.get(c.id) : null });
 			for (const it of items) {
@@ -1135,7 +1142,9 @@
 			// Messenger 1.14: a contact of another messenger (no account: `bridge.sender`)
 			const contact = m.bridge && m.bridge.sender ? m.bridge.sender : null;
 			if (!mine && c.kind === 'group' && !it.cont && contact) {
-				wrap.appendChild(el('span', { class: 'cv-msg-av' }, [avatar(contact.name ? CS.personAvatar({ name: contact.name }) : { kind: 'icon', icon: 'gone' }, 28)]));
+				// Messenger 1.15: the contact's picture (`avatarMediaId`), fetched once a message of theirs was shown
+				const cav = typeof contact.avatarMediaId === 'string' && contact.avatarMediaId ? contact.avatarMediaId : null;
+				wrap.appendChild(el('span', { class: 'cv-msg-av' }, [avatar(contact.name ? { ...CS.personAvatar({ name: contact.name }), mediaId: cav } : { kind: 'icon', icon: 'gone', mediaId: cav }, 28)]));
 			} else if (!mine && c.kind === 'group' && !it.cont) {
 				const p = CS.member(c, m.senderId);
 				wrap.appendChild(el('span', { class: 'cv-msg-av' }, [avatar(p && !p.gone ? CS.personAvatar(p) : { kind: 'icon', icon: m.senderId === null ? 'system' : 'gone' }, 28)]));
@@ -1155,9 +1164,16 @@
 			} else {
 				if (m.replyTo) b.appendChild(quoteEl(m.replyTo, c, cx));
 				if (m.replyStory) b.appendChild(storyQuoteEl(m.replyStory, c, cx));
-				// Messenger 1.14: a file or kind of message that does not cross the bridge yet — said, never swallowed
+				// Messenger 1.14: a file or kind of message that does not cross the bridge yet — said, never swallowed;
+				// 1.15: „wird geladen …“ while the server fetches it, why it failed, a location on the map
 				const ph = CS.placeholderOf(m);
-				if (ph) b.appendChild(el('div', { class: 'cv-bc-ph', 'data-ph': ph.kind }, [icon(ph.kind === 'unsupported' ? 'info' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : ph.kind === 'video' ? 'video' : ph.kind === 'location' ? 'pin' : ph.kind === 'file' ? 'file' : 'mic'), 14), el('span', { text: CS.placeholderText(m, c, t) })]));
+				if (ph && ph.geo) b.appendChild(locationEl({ location: { lat: ph.geo.lat, lon: ph.geo.lon, label: m.text || null } }));
+				else if (ph) {
+					b.appendChild(el('div', { class: `cv-bc-ph${ph.state ? ` is-${ph.state}` : ''}${ph.reason === 'infected' ? ' is-infected' : ''}`, 'data-ph': ph.kind, 'data-state': ph.state || '', 'aria-busy': ph.state === 'loading' ? 'true' : null }, [
+						icon(ph.state === 'failed' && ph.reason === 'infected' ? 'shield' : ph.kind === 'unsupported' ? 'info' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : ph.kind === 'video' ? 'video' : ph.kind === 'location' ? 'pin' : ph.kind === 'file' ? 'file' : 'mic'), 14),
+						el('span', { text: CS.placeholderText(m, c, t) }),
+					]));
+				}
 				// Messenger 1.11: a file the host's virus scan checks or blocked — the state instead of picture / player / file
 				const sc = CS.mediaScan(m, t);
 				if (sc && sc.blocked && (m.kind === 'image' || m.kind === 'voice' || m.kind === 'file')) b.appendChild(blockedEl(m, sc));
@@ -1169,7 +1185,7 @@
 				const rb = richKind ? richBody(m, c, cx) : null;
 				if (rb) b.appendChild(rb);
 				if (m.undecryptable) b.appendChild(el('div', { class: 'cv-text cv-dim', text: t('chat.msg.undecryptable') }));
-				else if (m.text && m.kind !== 'location' && !(rb && (m.kind === 'card' || !CS.isShownKind(m)))) b.appendChild(el('div', { class: 'cv-text', text: m.text }));
+				else if (m.text && m.kind !== 'location' && !(ph && ph.geo) && !(rb && (m.kind === 'card' || !CS.isShownKind(m)))) b.appendChild(el('div', { class: 'cv-text', text: m.text }));
 			}
 			const meta = el('div', { class: 'cv-meta' }, [
 				m.expiresAt ? el('span', { class: 'cv-exp', title: t('chat.msg.expires', { time: CS.when(m.expiresAt, cx.locale) }) }, [icon('timer', 11)]) : null,
@@ -1183,10 +1199,13 @@
 			if (m.pending && m.failed) {
 				b.appendChild(el('div', { class: 'cv-failed' }, [
 					notSent ? icon('shield', 13) : null,
-					el('span', { text: notSent || t('chat.outbox.failed', { error: CS.errorText(m.error, t) }) }),
+					el('span', { text: notSent || t('chat.outbox.failed', { error: m.error === 'bridge_media_type' ? CS.mediaTypeText(m.reason, c, t) : CS.errorText(m.error, t) }) }),
 					notSent ? null : el('button', { type: 'button', class: 'btn btn-sec btn-xs', on: { click: () => api.retry(m.clientId) } }, [icon('retry', 13), t('chat.outbox.retry')]),
 					el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('chat.outbox.discard'), on: { click: () => { for (const map of [S.local, S.localVideo]) { const u = map.get(m.clientId); if (u) { URL.revokeObjectURL(u); map.delete(m.clientId); } } api.discard(m.clientId); } } }),
 				]));
+			} else if (m.pending && m.scanWait) {
+				// Messenger 1.15: 423 scan_pending — the file is still being checked, the queue sends it again by itself
+				b.appendChild(el('div', { class: 'cv-waiting', 'data-wait': 'scan', text: t('chat.bc.scan_wait') }));
 			} else if (m.pending && m.error) {
 				b.appendChild(el('div', { class: 'cv-waiting', text: t('chat.outbox.waiting') }));
 			}
@@ -1926,10 +1945,11 @@
 			i.style.height = `${Math.min(180, Math.max(42, i.scrollHeight + 2))}px`;
 		}
 
-		function recordingSupported() {
+		/** c: the chat — over a bridge (Messenger 1.15) only a type the service takes (WhatsApp: no WebM). */
+		function recordingSupported(c) {
 			const types = S.status && S.status.me && S.status.me.limits ? S.status.me.limits.types : [];
 			return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && root.MediaRecorder
-				&& CS.recordingMime((m) => root.MediaRecorder.isTypeSupported(m), types));
+				&& CS.voiceMime(c || null, (m) => root.MediaRecorder.isTypeSupported(m), types));
 		}
 
 		/** keepText: rebuild without losing what is typed. */
@@ -1961,10 +1981,12 @@
 				return;
 			}
 			const cx = ctx();
-			// Messenger 1.14: only text crosses a bridge — no files, voice messages, locations, polls, events, actions
+			// Messenger 1.14: only text crosses a bridge — no locations, polls, events, actions; 1.15: files and voice
+			// messages when the chat names them (`bridge.supports`), the mic only for a type the service takes
 			const bridged = !!CS.bridgeOf(c);
+			const bridgeFiles = bridged && CS.bridgeTakesFiles(c);
 			const placeholder = bridged ? t('chat.bc.placeholder', { network: CS.bridgeLabel(c) }) : t('chat.placeholder');
-			if (bridged && S.rec) stopRec(false);
+			if (bridged && S.rec && !recordingSupported(c)) stopRec(false);
 			if (S.reply || S.edit) {
 				const m = S.reply || S.edit;
 				refs.composer.appendChild(el('div', { class: 'cv-replybar' }, [
@@ -2004,14 +2026,14 @@
 			});
 			const features = (cx.me && cx.me.features) || {};
 			refs.composer.appendChild(el('div', { class: `cv-row-compose${bridged ? ' is-bridged' : ''}` }, [
-				bridged ? null : attachButton(c, features),
+				bridged ? (bridgeFiles && features.files !== false ? iconBtn('attach', t('chat.attach'), () => { refs.file.value = ''; refs.file.click(); }, 'cv-attach-btn') : null) : attachButton(c, features),
 				// with the attach menu (Messenger 1.4.0) "Standort senden" is in there
 				!bridged && features.location !== false && typeof api.mapTile === 'function' && !attachMenuOn() ? iconBtn('pin', t('chat.loc.button'), () => locationDialog(), 'cv-loc-btn') : null,
 				refs.input,
-				!bridged && features.voice !== false && recordingSupported() ? iconBtn('mic', t('chat.recStart'), () => startRec()) : null,
+				features.voice !== false && recordingSupported(c) ? iconBtn('mic', t('chat.recStart'), () => startRec()) : null,
 				el('button', { type: 'button', class: 'cv-ib cv-ib-pri', 'aria-label': t('chat.send'), title: t('chat.send'), on: { click: () => submit() } }, [icon('send', 16, '2.2')]),
 			]));
-			refs.composer.appendChild(el('div', { class: 'cv-compose-hint', text: bridged ? (enterSends() ? t('chat.enterHint') : t('chat.enterHintCtrl')) : `${enterSends() ? t('chat.enterHint') : t('chat.enterHintCtrl')} · ${t('chat.dropHint')}` }));
+			refs.composer.appendChild(el('div', { class: 'cv-compose-hint', text: bridged && !bridgeFiles ? (enterSends() ? t('chat.enterHint') : t('chat.enterHintCtrl')) : `${enterSends() ? t('chat.enterHint') : t('chat.enterHintCtrl')} · ${t('chat.dropHint')}` }));
 			grow();
 			if (keep) {
 				refs.input.focus();
@@ -2173,14 +2195,25 @@
 			});
 		}
 
+		/** A refusal of send(): Messenger 1.15 409 bridge_media_type names the service and the kind. */
+		function sendErrorText(r, c) {
+			return r && r.code === 'bridge_media_type' ? CS.mediaTypeText(r.reason, c, t) : CS.errorText(r, t);
+		}
+
 		async function attach(file) {
 			const c = curConv();
 			if (!c || CS.composerBlock(c)) return;
-			// Messenger 1.14: no files into a chat over a bridge yet
-			if (CS.bridgeOf(c)) { toast(CS.errorText('bridge_text_only', t), 'warning'); return; }
+			// Messenger 1.14: no files into a chat over a bridge; 1.15: those it names (`bridge.supports` / `mediaTypes`)
+			const bridged = !!CS.bridgeOf(c);
+			if (bridged && !CS.bridgeTakesFiles(c)) { toast(CS.errorText('bridge_text_only', t), 'warning'); return; }
 			const lim = limits();
 			const k = CS.attachKind(file, lim);
 			if (!k.kind) { toast(CS.errorText(k.reason, t), 'error'); return; }
+			if (bridged) {
+				const no = CS.bridgeMediaRefusal(c, k.kind === 'image' ? 'image' : 'file', k.kind === 'image' ? CS.bridgeImageType(c) : file.type);
+				if (no === 'text_only') { toast(CS.errorText('bridge_text_only', t), 'warning'); return; }
+				if (no) { toast(CS.mediaTypeText(no, c, t), 'warning'); return; }
+			}
 			const caption = refs.input && refs.input.value.trim() ? refs.input.value.trim() : null;
 			const req = { conversationId: c.id };
 			if (caption) req.text = caption;
@@ -2188,8 +2221,10 @@
 			try {
 				if (k.kind === 'image') {
 					const img = await createImageBitmap(file);
-					const main = await canvasBlob(img, lim.imageMaxSide || 2048, 'image/webp', 0.82);
-					const thumb = await canvasBlob(img, 320, 'image/webp', 0.6);
+					// Messenger 1.15: into a chat over a bridge only a type the service takes (WhatsApp: JPEG, PNG, WebP)
+					const outType = bridged ? CS.bridgeImageType(c) : 'image/webp';
+					const main = await canvasBlob(img, lim.imageMaxSide || 2048, outType, 0.82);
+					const thumb = await canvasBlob(img, 320, outType, 0.6);
 					if (img.close) img.close();
 					if (!main.blob || (lim.maxBytes && main.blob.size > lim.maxBytes)) { toast(t('chat.error.too_large'), 'error'); return; }
 					req.kind = 'image';
@@ -2197,7 +2232,7 @@
 					req.file = { name: file.name || 'foto.webp', mime: main.blob.type, data: await blobBytes(main.blob) };
 					if (thumb.blob && thumb.blob.size <= (lim.thumbMaxBytes || 65536)) req.thumb = { mime: thumb.blob.type, data: await blobBytes(thumb.blob) };
 					const r = await api.send(req);
-					if (r && r.ok === false) { toast(CS.errorText(r, t), 'error'); return; }
+					if (r && r.ok === false) { toast(sendErrorText(r, c), 'error'); return; }
 					if (r && r.message && r.message.clientId) S.local.set(r.message.clientId, URL.createObjectURL(main.blob));
 				} else {
 					req.kind = 'file';
@@ -2216,7 +2251,7 @@
 						if (pv && wantThumb && pv.blob) { thumbBlob = pv.blob; req.thumb = { mime: pv.blob.type, data: await blobBytes(pv.blob) }; }
 					}
 					const r = await api.send(req);
-					if (r && r.ok === false) { toast(CS.errorText(r, t), 'error'); return; }
+					if (r && r.ok === false) { toast(sendErrorText(r, c), 'error'); return; }
 					const cid = r && r.message && r.message.clientId;
 					if (cid && thumbBlob) S.local.set(cid, URL.createObjectURL(thumbBlob));
 					if (cid && videoBlob) S.localVideo.set(cid, URL.createObjectURL(videoBlob));
@@ -2235,7 +2270,7 @@
 		let dragDepth = 0;
 		const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
 		refs.chat.addEventListener('dragenter', (e) => {
-			if (!hasFiles(e) || !curConv() || CS.composerBlock(curConv()) || CS.bridgeOf(curConv())) return;
+			if (!hasFiles(e) || !curConv() || CS.composerBlock(curConv()) || (CS.bridgeOf(curConv()) && !CS.bridgeTakesFiles(curConv()))) return;
 			e.preventDefault();
 			dragDepth++;
 			refs.drop.hidden = false;
@@ -2256,7 +2291,7 @@
 			const c = curConv();
 			if (!c || S.rec) return;
 			const lim = limits();
-			const mime = CS.recordingMime((m) => root.MediaRecorder.isTypeSupported(m), lim.types);
+			const mime = CS.voiceMime(c, (m) => root.MediaRecorder.isTypeSupported(m), lim.types);
 			if (!mime) return;
 			let stream;
 			try {
@@ -2322,7 +2357,7 @@
 				if (wf.length) req.meta.waveform = wf;
 				if (rec.replyTo) { req.replyTo = rec.replyTo; S.reply = null; }
 				const r = await api.send(req).catch((e) => ({ ok: false, error: e && e.message }));
-				if (r && r.ok === false) { toast(CS.errorText(r, t), 'error'); return; }
+				if (r && r.ok === false) { toast(sendErrorText(r, conv(rec.conversationId)), 'error'); return; }
 				if (r && r.message && r.message.clientId) S.local.set(r.message.clientId, URL.createObjectURL(blob));
 				if (curConv()) renderComposer(false);
 				scrollBottom(true);
@@ -2488,7 +2523,7 @@
 			const foot = bridge
 				? el('div', { class: 'cv-info-sec cv-bc-info' }, [
 					el('p', { class: 'cv-note cv-note-lock' }, [icon('info', 14), el('span', { text: t('chat.bc.info_note', { network: CS.bridgeLabel(c) }) })]),
-					el('p', { class: 'cv-note', text: t('chat.bc.info_not', { network: CS.bridgeLabel(c) }) }),
+					el('p', { class: 'cv-note', text: t(CS.bridgeTakesFiles(c) ? 'chat.bc.info_not_media' : 'chat.bc.info_not', { network: CS.bridgeLabel(c) }) }),
 				])
 				: el('div', { class: 'cv-info-sec' }, [el('p', { class: 'cv-note cv-note-lock' }, [icon('lock', 14), el('span', { text: t('chat.info.encrypted') })])]);
 			if (c.can && c.can.leave) foot.appendChild(el('button', { type: 'button', class: 'btn btn-danger cv-danger btn-sm', text: t('chat.info.leave'), on: { click: () => leave(c) } }));
@@ -2613,7 +2648,7 @@
 
 		// ── Dialogs ──────────────────────────────────────────
 
-		function dialog(titleText, body, buttons = [], { onOpen, wide = false } = {}) {
+		function dialog(titleText, body, buttons = [], { onOpen, wide = false, head = null, cls = '' } = {}) {
 			return new Promise((resolve) => {
 				let ov = null;
 				const done = (v) => { if (!ov || !ov.parentNode) return; ov.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
@@ -2623,8 +2658,8 @@
 					on: { click: async () => { if (b.onClick) { const r = await b.onClick(); if (r === false) return; done(b.value !== undefined ? b.value : r); } else done(b.value); } },
 				}))) : null;
 				ov = el('div', { class: 'cv-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': titleText }, [
-					el('div', { class: `cv-dlg card${wide ? ' is-wide' : ''}` }, [
-						el('div', { class: 'cv-dlg-head' }, [el('b', { text: titleText }), iconBtn('close', t('chat.common.close'), () => done(null), 'cv-ib-flat')]),
+					el('div', { class: `cv-dlg card${wide ? ' is-wide' : ''}${cls ? ` ${cls}` : ''}` }, [
+						el('div', { class: 'cv-dlg-head' }, [head || el('b', { text: titleText }), iconBtn('close', t('chat.common.close'), () => done(null), 'cv-ib-flat')]),
 						el('div', { class: 'cv-dlg-body' }, [body]),
 						foot,
 					]),
@@ -2659,7 +2694,13 @@
 		}
 
 		async function newChatDialog() {
-			const people = await loadPeople();
+			// Messenger 1.15 / 1.16: „WhatsApp-Chat mit Nummer“ under the tabs, for a linked service (GET bridges)
+			const f = f14();
+			const [people, br] = await Promise.all([
+				loadPeople(),
+				f.bridgeNewChat && f.linked && typeof api.bridges === 'function' ? api.bridges().catch(() => null) : Promise.resolve(null),
+			]);
+			const services = br && br.ok !== false ? CS.newChatServices(br.bridges, S.status && S.status.me) : [];
 			let mode = 'direct';
 			let closeFn = null;
 			const tabs = el('div', { class: 'cv-tabs', role: 'group' });
@@ -2682,6 +2723,17 @@
 			const draw = () => {
 				clear(list);
 				const q = filter.value.trim().toLowerCase();
+				if (mode === 'direct' && !q) {
+					for (const sv of services) {
+						list.appendChild(el('button', { type: 'button', class: 'cv-person cv-nc-row', 'data-net': sv.id, on: { click: () => { if (closeFn) closeFn(null); numberChatDialog(sv); } } }, [
+							el('span', { class: 'cv-av-wrap' }, [
+								el('span', { class: 'cv-av cv-av-icon', 'aria-hidden': 'true', style: 'width:36px;height:36px' }, [icon('phone', 17)]),
+								el('span', { class: 'cv-net-mark is-sm', 'aria-hidden': 'true', text: sv.mark }),
+							]),
+							el('span', { class: 'cv-nc-row-tx' }, [el('b', { text: t('chat.nc.row', { network: sv.name }) }), el('small', { text: t('chat.nc.row_sub') })]),
+						]));
+					}
+				}
 				const ps = people.filter((p) => !q || String(p.name || '').toLowerCase().includes(q));
 				if (!ps.length) list.appendChild(el('p', { class: 'cv-empty', text: t('chat.new.noPeople') }));
 				for (const p of ps) {
@@ -2701,6 +2753,203 @@
 			filter.addEventListener('input', draw);
 			draw();
 			dialog(t('chat.newChat'), el('div', { class: 'cv-new' }, [tabs, titleGroup, filter, list, msg, createBtn]), [], { onOpen: (done) => { closeFn = done; } });
+		}
+
+		/**
+		 * Messenger 1.15 / 1.16: „Neuer WhatsApp-Chat“ per phone number. Checked only on „Prüfen“ (each check asks the
+		 * service); the number lives only in this dialog — never stored, logged or put into a URL. States: input,
+		 * invalid, checking, found, exists, none, rate, unreach, loggedout, unlinked, locked, off, failed.
+		 * sv: { id, name, mark, state, limit } of CS.newChatServices.
+		 */
+		function numberChatDialog(sv) {
+			const network = sv.name;
+			let state = sv.state || 'input';
+			let found = null;          // { number, name, avatarMediaId, existing }
+			let retryAt = 0;
+			let perHour = sv.limit && Number.isSafeInteger(sv.limit.perHour) ? sv.limit.perHour : null;
+			let last = null;           // the action „Erneut versuchen“ repeats: 'check' | 'start'
+			let busy = false;
+			let closeFn = null;
+			const cc = el('select', { class: 'inp cv-nc-cc', 'aria-label': t('chat.nc.cc') }, CS.NEW_CHAT_CC.map(([land, code]) => el('option', { value: code, text: `${land} ${code}` })));
+			cc.value = '+49';
+			const input = el('input', { class: 'inp cv-nc-num', type: 'tel', inputmode: 'tel', autocomplete: 'off', spellcheck: 'false', maxlength: '32', placeholder: t('chat.nc.placeholder'), 'aria-label': t('chat.nc.label') });
+			const okMark = el('span', { class: 'cv-nc-ok', hidden: true, 'aria-hidden': 'true' }, [icon('check', 16, '2.4')]);
+			const hint = el('div', { class: 'cv-nc-hint', role: 'status', 'aria-live': 'polite' });
+			const field = el('div', { class: 'cv-nc-field' }, [
+				el('label', { class: 'cv-nc-label', text: t('chat.nc.label') }),
+				el('div', { class: 'cv-nc-fr' }, [cc, el('span', { class: 'cv-nc-in' }, [input, okMark])]),
+				hint,
+			]);
+			const res = el('div', { class: 'cv-nc-res-wrap', 'aria-live': 'polite' });
+			const priv = el('p', { class: 'cv-nc-priv' }, [icon('lock', 13), el('span', { text: t('chat.nc.privacy', { network }) })]);
+			const foot = el('div', { class: 'cv-dlg-foot cv-nc-foot' });
+			const body = el('div', { class: 'cv-nc' }, [field, res, priv]);
+			const parsed = () => CS.newChatNumber(input.value, cc.value);
+
+			function card(kind, ic, title, text, extra) {
+				return el('div', { class: `cv-nc-res${kind ? ` is-${kind}` : ''}`, 'data-res': state }, [
+					el('span', { class: 'cv-nc-ri' }, [ic]),
+					el('span', { class: 'cv-nc-rb' }, [el('b', { text: title }), text ? el('span', { text }) : null, extra || null]),
+				]);
+			}
+			function personCard(tag) {
+				const a = avatar({ ...CS.personAvatar({ name: found.name || CS.formatNumber(found.number) }), mediaId: found.avatarMediaId || null }, 52);
+				return el('div', { class: 'cv-nc-res is-ok', 'data-res': state }, [
+					a,
+					el('span', { class: 'cv-nc-rb' }, [
+						el('b', { text: found.name || CS.formatNumber(found.number) }),
+						el('span', { class: 'cv-nc-numtx', text: CS.formatNumber(found.number) }),
+						el('span', { class: 'cv-nc-tag', text: tag }),
+					]),
+				]);
+			}
+			function btn(label, { primary = false, onClick = null, disabled = false, spin = false, iconName = null, act = null } = {}) {
+				return el('button', { type: 'button', class: `btn ${primary ? 'btn-pri' : 'btn-sec'}`, disabled: disabled || null, 'data-act': act, on: onClick ? { click: onClick } : null }, [
+					spin ? el('span', { class: 'cv-nc-spin', 'aria-hidden': 'true' }) : null,
+					iconName ? icon(iconName, 15) : null,
+					label,
+				]);
+			}
+			const otherNumber = () => { found = null; state = 'input'; input.value = ''; draw(); input.focus(); };
+			const close = () => { if (closeFn) closeFn(null); };
+			const relink = () => { close(); openSettings('linked'); };
+
+			function draw() {
+				body.setAttribute('data-state', state);
+				const fieldShown = !['loggedout', 'unlinked', 'locked', 'off'].includes(state);
+				field.hidden = !fieldShown;
+				priv.hidden = !fieldShown;
+				const p = parsed();
+				const locked = busy || state === 'checking' || state === 'rate';
+				input.disabled = locked;
+				cc.disabled = locked;
+				const okState = state === 'found' || state === 'exists';
+				okMark.hidden = !okState;
+				input.classList.toggle('is-err', state === 'invalid');
+				input.classList.toggle('is-ok', okState);
+				// the line under the field: how it is checked, or why not
+				hint.className = 'cv-nc-hint';
+				if (state === 'invalid') { hint.classList.add('is-err'); hint.textContent = t(`chat.nc.${p.error && p.error !== 'empty' ? p.error : 'invalid'}`); }
+				else if (state === 'input' && p.number) { hint.classList.add('is-ok'); hint.textContent = t('chat.nc.as', { number: CS.formatNumber(p.number) }); }
+				else if (state === 'input' || state === 'none' || state === 'unreach' || state === 'failed') hint.textContent = t('chat.nc.hint');
+				else hint.textContent = '';
+				hint.hidden = !hint.textContent;
+				clear(res);
+				const shown = found ? CS.formatNumber(found.number) : (p.number ? CS.formatNumber(p.number) : '');
+				switch (state) {
+					case 'checking': res.appendChild(card('', el('span', { class: 'cv-nc-spin is-acc', 'aria-hidden': 'true' }), t('chat.nc.asking', { network }), t('chat.nc.asking_text'))); break;
+					case 'found': res.appendChild(personCard(t('chat.nc.found', { network }))); break;
+					case 'exists': res.appendChild(personCard(t('chat.nc.exists'))); break;
+					case 'none': res.appendChild(card('', icon('userx', 20), t('chat.nc.none_title', { network }), t('chat.nc.none_text', { network, number: shown }))); break;
+					case 'rate': {
+						const time = CS.hm(new Date(retryAt).toISOString(), ctx().locale);
+						const n = perHour;
+						res.appendChild(card('warn', icon('clock', 20), t('chat.nc.rate_title'), n ? t('chat.nc.rate_text', { n, network, time }) : t('chat.nc.rate_text_short', { network, time })));
+						break;
+					}
+					case 'unreach': res.appendChild(card('err', icon('plug', 20), t('chat.nc.unreach_title'), t('chat.nc.unreach_text', { network }))); break;
+					case 'loggedout': res.appendChild(card('warn', icon('logout', 20), t('chat.nc.loggedout_title', { network }), t('chat.nc.loggedout_text', { network }))); break;
+					case 'unlinked': res.appendChild(card('', icon('link', 20), t('chat.nc.unlinked_title', { network }), t('chat.nc.unlinked_text', { network }))); break;
+					case 'locked': res.appendChild(card('', icon('lock', 20), t('chat.nc.locked_title'), t('chat.nc.locked_text', { network }))); break;
+					case 'off': res.appendChild(card('', icon('info', 20), t('chat.nc.off_title'), t('chat.nc.off_text', { network }))); break;
+					case 'failed': res.appendChild(card('err', icon('alert', 20), t('chat.nc.failed'), '')); break;
+					default: break;
+				}
+				clear(foot);
+				const cancel = btn(t('chat.common.cancel'), { onClick: close, act: 'cancel' });
+				const other = btn(t('chat.nc.other'), { onClick: otherNumber, act: 'other' });
+				switch (state) {
+					case 'checking': foot.append(cancel, btn(t('chat.nc.checking'), { primary: true, disabled: true, spin: true, act: 'check' })); break;
+					case 'found': foot.append(other, btn(busy ? t('chat.nc.starting') : t('chat.nc.start'), { primary: true, onClick: start, disabled: busy, spin: busy, act: 'start' })); break;
+					case 'exists': foot.append(other, btn(t('chat.nc.open'), { primary: true, onClick: openExisting, disabled: busy, spin: busy, act: 'open' })); break;
+					case 'rate': foot.append(cancel, btn(t('chat.nc.check'), { primary: true, disabled: true, act: 'check' })); break;
+					case 'unreach': case 'failed': foot.append(cancel, btn(t('chat.nc.retry'), { primary: true, onClick: () => (last === 'start' ? start() : check()), iconName: 'retry', act: 'retry' })); break;
+					case 'loggedout': foot.append(cancel, btn(t('chat.nc.relink'), { primary: true, onClick: relink, act: 'relink' })); break;
+					case 'unlinked': foot.append(cancel, btn(t('chat.nc.link'), { primary: true, onClick: relink, act: 'link' })); break;
+					case 'locked': case 'off': foot.append(btn(t('chat.nc.close'), { onClick: close, act: 'close' })); break;
+					default: foot.append(cancel, btn(t('chat.nc.check'), { primary: true, onClick: check, disabled: state === 'invalid' || !input.value.trim(), act: 'check' })); break;
+				}
+			}
+
+			/** A refusal → its state; only a refusal of the number keeps the found person away. */
+			function failed(r) {
+				const e = CS.newChatErrorState(r);
+				if (e.state === 'rate') { retryAt = Date.now() + e.retryAfterS * 1000; if (e.perHour) perHour = e.perHour; }
+				if (e.state !== 'failed' && e.state !== 'unreach') found = null;
+				state = e.state;
+				draw();
+			}
+
+			async function check() {
+				const p = parsed();
+				if (!p.number) { state = 'invalid'; draw(); input.focus(); return; }
+				last = 'check';
+				found = null;
+				state = 'checking';
+				draw();
+				const r = await api.bridgeResolve(sv.id, p.number, cc.value).catch(() => ({ ok: false, code: 'network' }));
+				if (!closeFn) return;
+				if (!r || r.ok === false) { failed(r); return; }
+				if (!r.found) { state = 'none'; draw(); input.focus(); return; }
+				found = { number: p.number, name: r.name || null, avatarMediaId: r.avatarMediaId || null, existing: r.existing || null };
+				state = found.existing ? 'exists' : 'found';
+				draw();
+				const pri = foot.querySelector('.btn-pri');
+				if (pri) pri.focus();
+			}
+
+			async function start() {
+				if (!found || busy) return;
+				last = 'start';
+				busy = true;
+				draw();
+				const r = await api.bridgeNewChat(sv.id, found.number, cc.value).catch(() => ({ ok: false, code: 'network' }));
+				busy = false;
+				if (!closeFn) return;
+				if (!r || r.ok === false || !r.conversation) { failed(r); return; }
+				S.startedByNumber = { id: r.conversation.id, number: found.number, name: found.name };
+				close();
+				await refreshList();
+				await openChat(r.conversation.id);
+			}
+
+			async function openExisting() {
+				const id = found && found.existing ? found.existing.conversationId : null;
+				if (!id) return;
+				if (conv(id)) { close(); await openChat(id); return; }
+				// not in the list (nothing was written in it yet): the server hands the same chat out again
+				await start();
+			}
+
+			input.addEventListener('input', () => {
+				if (state === 'checking' || state === 'rate') return;
+				if (state !== 'input') { state = 'input'; found = null; }
+				draw();
+			});
+			input.addEventListener('keydown', (e) => {
+				if (e.key !== 'Enter') return;
+				e.preventDefault();
+				if (state === 'found') start();
+				else if (state === 'exists') openExisting();
+				else if (['input', 'invalid', 'none', 'unreach', 'failed'].includes(state)) check();
+			});
+			cc.addEventListener('change', () => { if (state !== 'checking') { state = 'input'; found = null; draw(); input.focus(); } });
+
+			const head = el('span', { class: 'cv-nc-head' }, [
+				el('span', { class: 'cv-av-wrap' }, [
+					el('span', { class: 'cv-nc-hico', 'aria-hidden': 'true' }, [icon('phone', 18)]),
+					el('span', { class: 'cv-net-mark is-sm', 'aria-hidden': 'true', text: sv.mark }),
+				]),
+				el('span', { class: 'cv-nc-ht' }, [el('b', { text: t('chat.nc.title', { network }) }), el('small', { text: t('chat.nc.sub') })]),
+			]);
+			draw();
+			dialog(t('chat.nc.title', { network }), body, [], { head, cls: 'cv-nc-dlg', onOpen: (done) => {
+				closeFn = done;
+				// the foot belongs to the dialog box, below the body
+				const box = rootEl.querySelector('.cv-nc-dlg');
+				if (box) box.appendChild(foot);
+				if (!input.disabled && !field.hidden) setTimeout(() => input.focus(), 40);
+			} }).then(() => { closeFn = null; input.value = ''; found = null; });
 		}
 
 		async function addMembersDialog(c) {

@@ -40,6 +40,9 @@ const STORY_DURATIONS_H = [1, 3, 6, 12, 24];
 // Messenger 1.13: the server offers a bridge; 1.14: this person has chats over one
 const FEATURES_LINKED = Object.freeze({ ...FEATURES_141, linked_services: true });
 const FEATURES_BRIDGED = Object.freeze({ ...FEATURES_LINKED, bridge_chats: true });
+// Messenger 1.15: files and pictures over a bridge, a new chat by phone number
+const FEATURES_STAGE4 = Object.freeze({ ...FEATURES_BRIDGED, bridge_media: true, bridge_new_chat: true });
+const WA_MEDIA_TYPES = Object.freeze({ image: ['image/jpeg', 'image/png', 'image/webp'], video: ['video/mp4'], voice: ['audio/ogg', 'audio/mp4', 'audio/aac', 'audio/mpeg'], file: null });
 
 function createMessenger({ emit = () => {}, features = null, familie = false } = {}) {
   const users = [
@@ -69,6 +72,14 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     loginFails: null,         // { status, code, reason } for the next waiting call; { drop: n } = no answer n times
     phoneRefused: false,
     sendFails: null,          // a reason: the bridge does not take the next message (stored as not sent)
+    // 1.15: files cross (supports + mediaTypes); the new chat by number (features.bridge_new_chat)
+    media: false,
+    scanPending: 0,           // so many sends of a file are refused with 423 scan_pending first
+    numbers: new Map(),       // '+49…' → name of the numbers "at WhatsApp"
+    lookups: 0,
+    lookupMax: 10,
+    resolveDelayMs: 0,
+    resolveFails: null,       // { status, code, reason?, retryAfterS? } for the next resolve / chats
   };
   const st14 = {
     prefs: { readReceipts: true, typing: true, preview: true, privacy: { lastSeen: 'all', avatar: 'all', statusDefault: 'all', placeInStatus: 'family', groupAdd: 'all', defaultDisappearingS: 0 }, notify: { groupsMentionsOnly: false, reactions: true, statusDigest: false, eventReminderMin: 60 }, chats: { keepArchived: true } },
@@ -104,9 +115,9 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   }
 
   /** A message in a chat over a bridge: of a contact, of Marc's phone (`remote`), a placeholder, a notice, an own one with a state. */
-  function addBridgeMsg(convId, { contact = { contactId: 12, name: 'Kim Muster' }, text = 'Hallo', remote = false, placeholder = null, notice = false, state = null, reason = null, replyTo = null } = {}) {
+  function addBridgeMsg(convId, { contact = { contactId: 12, name: 'Kim Muster' }, text = 'Hallo', remote = false, placeholder = null, notice = false, state = null, reason = null, replyTo = null, kind = null, mediaId = null, meta = null, video = null } = {}) {
     const mine = remote || state != null;
-    const m = addMsg(convId, { senderId: mine ? ME : null, text, kind: notice ? 'system' : 'text', replyTo, system: notice ? { event: 'bridge_notice', network: convs.get(convId).bridge.network } : null });
+    const m = addMsg(convId, { senderId: mine ? ME : null, text, kind: kind || (notice ? 'system' : 'text'), replyTo, mediaId, meta, video, system: notice ? { event: 'bridge_notice', network: convs.get(convId).bridge.network } : null });
     m.bridge = { sender: mine || notice ? null : contact, remote, state: mine ? (state || 'sent') : null, reason, placeholder };
     return m;
   }
@@ -128,6 +139,32 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     const net = B.networks.find((n) => n.id === seg[1]);
     if (!net || seg.length < 3) return json(404, { ok: false, code: 'not_found' }), true;
     if (!B.available) return json(409, { ok: false, code: 'bridge_off', reason: 'no_host' }), true;
+    // 1.15: a new chat by number (never logged here: only that a lookup came)
+    if (seg.length === 3 && (seg[2] === 'resolve' || seg[2] === 'chats') && method === 'POST') {
+      if (!(features && features.bridge_new_chat === true)) return json(404, { ok: false, code: 'not_found' }), true;
+      const answer = () => {
+        if (B.resolveFails) { const f = B.resolveFails; B.resolveFails = null; return json(f.status, { ok: false, code: f.code, ...(f.reason ? { reason: f.reason } : {}), ...(f.retryAfterS ? { retryAfterS: f.retryAfterS } : {}) }); }
+        if (!net.allowed) return json(403, { ok: false, code: 'bridge_locked' });
+        if (!net.logins.length) return json(409, { ok: false, code: 'bridge_unlinked', reason: 'unlinked' });
+        if (net.logins.every((l) => l.state === 'logged_out')) return json(409, { ok: false, code: 'bridge_logged_out', reason: 'logged_out' });
+        if (net.state !== 'running') return json(503, { ok: false, code: 'bridge_unreachable', reason: 'not_running' });
+        const num = String(body.number || '').replace(/[\s()-]/g, '');
+        if (!/^\+[1-9][0-9]{6,14}$/.test(num)) return json(400, { ok: false, code: 'invalid_number' });
+        if (B.lookups >= B.lookupMax) return json(429, { ok: false, code: 'rate_limited', retryAfterS: 840, perHour: 10 });
+        B.lookups += 1;
+        log.bridge.push({ op: seg[2], valid: true });
+        const name = B.numbers.get(num);
+        const existing = [...convs.values()].find((c) => c.bridge && c.bridge.number === num);
+        if (seg[2] === 'resolve') return json(200, { ok: true, found: name != null, name: name || null, avatarUrl: null, existing: existing ? { conversationId: existing.id } : null });
+        if (name == null) return json(404, { ok: false, code: 'not_found', reason: 'not_on_network' });
+        const id = existing ? existing.id : addBridgeConv({ title: name });
+        convs.get(id).bridge.number = num;
+        return json(200, { ok: true, conversation: convView(convs.get(id)), created: !existing });
+      };
+      if (B.resolveDelayMs) setTimeout(answer, B.resolveDelayMs);
+      else answer();
+      return true;
+    }
     const gate = (consent = true) => (!net.allowed ? [403, 'bridge_locked'] : (consent && !net.consent ? [409, 'consent_required'] : null));
     if (seg.length === 3 && seg[2] === 'consent' && method === 'POST') {
       const g = gate(false);
@@ -277,7 +314,12 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       ...(features && (features.linked_services === true || features.bridge_chats === true) ? { bridge: null } : {}),
       ...(c.bridge ? {
         title: c.title, peer: null,
-        bridge: { network: c.bridge.network, label: 'WhatsApp', state: c.bridge.state, closed: !!c.bridge.closed, supports: ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing'] },
+        bridge: {
+          network: c.bridge.network, label: 'WhatsApp', state: c.bridge.state, closed: !!c.bridge.closed,
+          supports: ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing', ...(bridge.media ? ['image', 'video', 'voice', 'file'] : [])],
+          ...(bridge.media ? { mediaTypes: WA_MEDIA_TYPES } : {}),
+        },
+        avatarMediaId: c.avatarMediaId || null,
         readUpTo: c.bridge.readUpTo, deliveredUpTo: c.bridge.deliveredUpTo, receipts: [],
         can: { send: c.bridge.state === 'ok' && !c.bridge.closed, pin: true, editInfo: false, manageMembers: false, leave: false, setDisappearing: false },
       } : {}),
@@ -544,17 +586,26 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
         const dup = list.find((x) => x.clientId === body.clientId && x.senderId === ME);
         if (dup) return json(200, { ok: true, message: msgView(dup), duplicate: true }), true;
         if (conv.bridge) {
-          if ((body.kind != null && body.kind !== 'text') || ['mediaId', 'thumbMediaId', 'video', 'location', 'poll', 'event', 'arrival', 'action', 'replyStory', 'meta'].some((k) => body[k] != null)) return json(409, { ok: false, code: 'bridge_text_only', reason: 'kind' }), true;
+          const fileKind = bridge.media && ['image', 'voice', 'file'].includes(body.kind) && body.mediaId;
+          if (!fileKind && ((body.kind != null && body.kind !== 'text') || ['mediaId', 'thumbMediaId', 'video', 'meta'].some((k) => body[k] != null))) return json(409, { ok: false, code: 'bridge_text_only', reason: 'kind' }), true;
+          if (['location', 'poll', 'event', 'arrival', 'action', 'replyStory'].some((k) => body[k] != null)) return json(409, { ok: false, code: 'bridge_text_only', reason: 'kind' }), true;
+          if (fileKind) {
+            const fm = media.get(body.mediaId);
+            if (!fm) return json(409, { ok: false, code: 'media_invalid' }), true;
+            if (bridge.scanPending > 0) { bridge.scanPending -= 1; log.scanPending = (log.scanPending || 0) + 1; return json(423, { ok: false, code: 'scan_pending' }, { 'Retry-After': '1' }), true; }
+            const k = body.kind === 'file' ? (/^video\//.test(fm.mime) ? 'video' : 'file') : body.kind;
+            if (WA_MEDIA_TYPES[k] && !WA_MEDIA_TYPES[k].includes(fm.mime)) return json(409, { ok: false, code: 'bridge_media_type', reason: k }), true;
+          }
           const st = conv.bridge.state;
           if (st === 'locked') return json(403, { ok: false, code: 'bridge_locked' }), true;
           if (st === 'off') return json(409, { ok: false, code: 'bridge_off', reason: 'off' }), true;
           if (st === 'unreachable') return json(503, { ok: false, code: 'bridge_unreachable', reason: 'not_running' }), true;
           if (st === 'logged_out' || st === 'unlinked') return json(409, { ok: false, code: 'bridge_unlinked', reason: st }), true;
           if (conv.bridge.closed) return json(502, { ok: false, code: 'bridge_failed', reason: 'chat_closed' }), true;
-          const bm = addMsg(conv.id, { senderId: ME, text: body.text, clientId: body.clientId, replyTo: body.replyTo || null });
+          const bm = addMsg(conv.id, { senderId: ME, text: body.text || null, clientId: body.clientId, replyTo: body.replyTo || null, ...(fileKind ? { kind: body.kind, mediaId: body.mediaId, meta: body.meta || null, video: body.video || null } : {}) });
           bm.bridge = { sender: null, remote: false, state: bridge.sendFails ? 'failed' : 'sent', reason: bridge.sendFails || null, placeholder: null };
           log.sent.push(body);
-          emit('message.new', { conversationId: conv.id, messageId: bm.id, senderId: ME, clientId: bm.clientId, kind: 'text', createdAt: iso(bm.createdAt), bridge: conv.bridge.network });
+          emit('message.new', { conversationId: conv.id, messageId: bm.id, senderId: ME, clientId: bm.clientId, kind: bm.kind, createdAt: iso(bm.createdAt), bridge: conv.bridge.network });
           return json(200, { ok: true, message: msgView(bm), duplicate: false }), true;
         }
         if ((body.mediaId && !media.has(body.mediaId)) || (body.thumbMediaId && !media.has(body.thumbMediaId))) return json(409, { ok: false, code: 'media_invalid' }), true;
@@ -660,6 +711,26 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       emit('message.new', { conversationId: convId, messageId: m.id, senderId: m.senderId, clientId: null, kind: m.kind, createdAt: iso(m.createdAt), bridge: convs.get(convId).bridge.network });
       return m;
     },
+    /**
+     * Messenger 1.15: the file of a placeholder arrived (message.update { media: true }): `kind`, `mediaId`, `meta`,
+     * `video` of the message; the placeholder goes. `fail` instead: { reason } keeps it as failed.
+     */
+    bridgeFileArrived(messageId, { kind, mediaId, meta = null, video = null, fail = null } = {}) {
+      const m = findMsg(messageId);
+      if (fail) m.bridge.placeholder = { ...m.bridge.placeholder, state: 'failed', reason: fail.reason };
+      else { Object.assign(m, { kind, mediaId, meta, video }); m.bridge.placeholder = null; }
+      m.changedAt = Date.now();
+      m.editedAt = null;
+      emit('message.update', { conversationId: m.conversationId, messageId: m.id, editedAt: iso(m.changedAt), media: true });
+      return m;
+    },
+    /** Messenger 1.15: the picture of a chat over a bridge (the contact's, the group's). */
+    setBridgeAvatar(convId, mediaId) {
+      const c = convs.get(convId);
+      c.avatarMediaId = mediaId;
+      c.updatedAt = Date.now();
+      emit('conversation.update', { conversationId: convId, reason: 'avatar' });
+    },
     /** The state of a chat's bridge changed (unreachable, logged_out, …; `closed`). */
     setBridgeState(convId, patch) {
       const c = convs.get(convId);
@@ -722,4 +793,4 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   return api;
 }
 
-module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141, FEATURES_LINKED, FEATURES_BRIDGED };
+module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141, FEATURES_LINKED, FEATURES_BRIDGED, FEATURES_STAGE4 };

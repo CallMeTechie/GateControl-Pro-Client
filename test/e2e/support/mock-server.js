@@ -203,8 +203,8 @@ async function startMockServer() {
         contentType: req.headers['content-type'] || null,
         raw,
       });
-      const json = (status, obj) => {
-        res.writeHead(status, { 'Content-Type': 'application/json' });
+      const json = (status, obj, headers = null) => {
+        res.writeHead(status, { 'Content-Type': 'application/json', ...(headers || {}) });
         res.end(JSON.stringify(obj));
       };
 
