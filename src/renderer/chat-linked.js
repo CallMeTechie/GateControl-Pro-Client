@@ -21,6 +21,12 @@
  * under the services, the warning „Handy seit N Tagen nicht gesehen“ under a
  * service (networks[].phone) and „Brücke veraltet“ also by `clientOutdated`.
  *
+ * Messenger 1.21 (GateControl with gc.bridges version 9, GET bridges →
+ * recognition): right after WhatsApp was linked, once — „Dürfen andere auf
+ * diesem Server dich an deinem WhatsApp erkennen?“ (Nein · Ja, erkennen
+ * lassen → PUT bridges/recognition). Answered before (here or in „Mein
+ * Profil“): the overview at once.
+ *
  * Different from the phone apps: no "open WhatsApp" button (the phone is
  * another device), "Code kopieren" instead. Leaving the section or the
  * settings page drops a login that was not finished; up to three waiting
@@ -135,7 +141,7 @@
 				mine.stopped = true;
 				toast(t('chat.br.linked', { name: name(mine.net) }), 'success');
 				view = { name: 'overview' };
-				load();
+				load().then(() => askRecognition(mine.net));
 				// the chats of this service may arrive now
 				if (typeof kit.refreshList === 'function') kit.refreshList({ server: true });
 			} else if (step.type === 'phone') {
@@ -151,6 +157,40 @@
 			} else {
 				failed(mine, { code: 'bridge_unsupported' }, true);
 			}
+		}
+
+		/** Messenger 1.21: after a link of WhatsApp, once — may others recognise the person by it? */
+		function askRecognition(net) {
+			const rec = info && info.recognition;
+			if (net !== 'whatsapp' || !rec || !rec.available || rec.asked || typeof api.bridgeRecognition !== 'function') return;
+			if (view.name !== 'overview') return;
+			view = { name: 'recognition', net, saving: false };
+			paint();
+		}
+
+		async function answerRecognition(allowed) {
+			const v = view;
+			if (v.name !== 'recognition' || v.saving) return;
+			v.saving = true;
+			paint();
+			const r = await call(api.bridgeRecognition(allowed));
+			if (view !== v) return;
+			if (!r || r.ok === false) { v.saving = false; paint(); toast(CS.errorText(r, t), 'error'); return; }
+			toast(t(allowed ? 'chat.person.recSavedYes' : 'chat.person.recSavedNo'), 'success');
+			view = { name: 'overview' };
+			load();
+		}
+
+		function recognitionView() {
+			const v = view;
+			const no = el('button', { type: 'button', class: 'btn btn-sec', 'data-act': 'rec-no', text: t('chat.person.recNo'), disabled: v.saving ? true : null, on: { click: () => answerRecognition(false) } });
+			const yes = el('button', { type: 'button', class: 'btn btn-pri', 'data-act': 'rec-yes', text: t('chat.person.recYes'), disabled: v.saving ? true : null, on: { click: () => answerRecognition(true) } });
+			return [
+				el('div', { class: 'cv-br-head cv-br-rec-head' }, [typeof netLogo === 'function' ? netLogo(v.net, { size: 18, cls: 'cv-br-mark' }) : null, el('b', { text: t('chat.person.recTitle') })]),
+				el('p', { class: 'cv-br-lead', text: t('chat.person.recText') }),
+				note('lock', t('chat.person.recNote')),
+				el('div', { class: 'cv-br-bar cv-br-rec' }, [el('span', { class: 'cv-grow' }), no, yes]),
+			];
 		}
 
 		async function poll(mine) {
@@ -278,7 +318,7 @@
 		function paint() {
 			if (!host || !host.isConnected) return;
 			clear(host);
-			const nodes = view.name === 'notes' ? notesView() : (view.name === 'link' ? linkView() : overview());
+			const nodes = view.name === 'notes' ? notesView() : (view.name === 'link' ? linkView() : (view.name === 'recognition' ? recognitionView() : overview()));
 			for (const n of nodes) if (n) host.appendChild(n);
 		}
 

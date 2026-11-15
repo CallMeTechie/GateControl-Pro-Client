@@ -11,6 +11,10 @@
  * plain script before chat-view.js (window.GCChatState) and required by the
  * node tests (test/chat-state.test.js).
  *
+ * Messenger 1.21 (chat_people): persons — one entry for several ways of a
+ * human (`person`): its ways, the way of an answer, a way's view of the entry
+ * (wayConv / sendConv / msgConv) for the composer and the bubbles.
+ *
  * Inputs are what window.gatecontrol.chat returns (core MessengerService:
  * conversations, messages, status().me); `t` is the i18n function (keys
  * chat.* of the core locales). The same file is used by Pro and Community.
@@ -64,6 +68,12 @@
 	/** Avatar description for the view: { kind: 'icon'|'person', icon?, name, initials, color, avatarUrl, mediaId }. */
 	function avatarOf(c) {
 		if (!c) return { kind: 'icon', icon: 'group' };
+		// Messenger 1.21: a person — the picture of the way its name comes from (else of another way), no service sign
+		if (isPerson(c)) {
+			const peer = c.peer && !c.peer.gone ? c.peer : null;
+			const mediaId = typeof c.avatarMediaId === 'string' && c.avatarMediaId ? c.avatarMediaId : null;
+			return { ...personAvatar({ name: c.title, avatarUrl: c.avatarUrl || null, initials: c.person.nameFrom === 'account' && peer ? peer.initials : null, colorHex: peer ? peer.colorHex : null }), ...(mediaId ? { mediaId } : {}) };
+		}
 		// Messenger 1.14: a chat over a bridge has no peer — the contact's initials, a group's sign; 1.15: the contact's
 		// picture (`avatarMediaId`) once the server fetched it
 		if (bridgeOf(c) && c.kind !== 'group') {
@@ -238,6 +248,8 @@
 	}
 
 	function typingText(c, ctx) {
+		// Messenger 1.21: a person writes on one of its ways
+		if (isPerson(c)) return (Array.isArray(c.typingContacts) && c.typingContacts.length) || (Array.isArray(c.typing) && c.typing.length) ? ctx.t('chat.typing') : null;
 		// Messenger 1.14: contacts of a chat over a bridge (`typingContacts`)
 		if (bridgeOf(c)) {
 			const who = Array.isArray(c.typingContacts) ? c.typingContacts : [];
@@ -322,6 +334,8 @@
 	/** Ticks of an own message: 'pending'|'failed'|'sent'|'delivered'|'read'|null. */
 	function status(m, c) {
 		if (!m) return null;
+		// Messenger 1.21: a message of a person — the ticks of its way (GateControl's marks, a bridge's own state)
+		if (isPerson(c)) return status(m, msgConv(c, m));
 		if (m.pending) return m.failed ? 'failed' : 'pending';
 		if (!m.mine || m.kind === 'system') return null;
 		// Messenger 1.14, a chat over a bridge: what the other messenger said about this very message
@@ -342,7 +356,9 @@
 	}
 
 	/** What the message menu offers. */
-	function messageActions(m, c, ctx, now = Date.now()) {
+	function messageActions(m, c0, ctx, now = Date.now()) {
+		// Messenger 1.21: what a message of a person allows is what its way allows
+		const c = isPerson(c0) ? msgConv(c0, m) : c0;
 		const limits = (ctx.me && ctx.me.limits) || {};
 		const features = (ctx.me && ctx.me.features) || {};
 		if (!m || m.pending) return { reply: false, react: false, edit: false, deleteMe: false, deleteAll: false, copy: false, pin: false, pinned: false, remind: false, suggest: false };
@@ -393,7 +409,7 @@
 				lastDay = dk;
 				prev = null;
 			}
-			if (!unreadShown && unreadFrom !== null && !m.pending && !m.mine && m.id > unreadFrom && m.kind !== 'system') {
+			if (!unreadShown && unreadFrom !== null && !isPerson(c) && !m.pending && !m.mine && m.id > unreadFrom && m.kind !== 'system') {
 				out.push({ type: 'unread' });
 				unreadShown = true;
 				prev = null;
@@ -414,6 +430,8 @@
 		return items.filter((c) => {
 			if (title(c, ctx.t).toLowerCase().includes(s)) return true;
 			if (preview(c, ctx).text.toLowerCase().includes(s)) return true;
+			// Messenger 1.21: a person is found by every name it has („Schatz“ and „Jenny“)
+			if (isPerson(c) && Array.isArray(c.person.names) && c.person.names.some((n) => str(n).toLowerCase().includes(s))) return true;
 			return Array.isArray(c.members) && c.members.some((m) => m && str(m.name).toLowerCase().includes(s));
 		});
 	}
@@ -440,6 +458,8 @@
 		const typing = typingText(c, ctx);
 		if (typing) return { text: typing, typing: true };
 		if (!c) return { text: '', typing: false };
+		// Messenger 1.21: the ways of a person („GateControl · WhatsApp“, with their logos)
+		if (isPerson(c)) return { text: personSub(c), typing: false, person: true };
 		// Messenger 1.20: „Kanal · WhatsApp“
 		if (isChannel(c)) return { text: ctx.t('chat.ch.sub', { network: bridgeLabel(c) }), typing: false };
 		// Messenger 1.14: „über WhatsApp“
@@ -460,7 +480,9 @@
 	}
 
 	/** Why the composer is closed: null | 'readonly' | 'peerGone'. */
-	function composerBlock(c) {
+	function composerBlock(c0) {
+		// Messenger 1.21: a person — the composer of the way the answer takes
+		const c = isPerson(c0) ? sendConv(c0) : c0;
 		if (!c) return 'readonly';
 		// Messenger 1.14: a chat over a bridge that takes nothing right now (bridgeBlock says why)
 		// Messenger 1.20: a channel (only the channel writes), a group where only admins write (while the bridge runs)
@@ -781,6 +803,8 @@
 
 	/** `bridge` of a conversation ({ network, label, state, closed, supports }) or null inside GateControl. */
 	function bridgeOf(c) {
+		// Messenger 1.21: a person is no chat over a bridge itself — its ways are (wayConv)
+		if (isPerson(c)) return null;
 		const b = c && c.bridge;
 		return b && typeof b === 'object' && typeof b.network === 'string' && b.network ? b : null;
 	}
@@ -806,8 +830,11 @@
 	function bridgeNetworks(list) {
 		const out = [];
 		for (const c of Array.isArray(list) ? list : []) {
-			const b = bridgeOf(c);
-			if (b && !out.some((x) => x.id === b.network)) out.push({ id: b.network, label: bridgeLabel(c) });
+			// Messenger 1.21: the bridged ways of a person count as well
+			for (const x of isPerson(c) ? c.person.ways.map((w) => wayConv(c, w)) : [c]) {
+				const b = bridgeOf(x);
+				if (b && !out.some((y) => y.id === b.network)) out.push({ id: b.network, label: bridgeLabel(x) });
+			}
 		}
 		return out;
 	}
@@ -828,7 +855,8 @@
 	}
 
 	/** Who wrote a message: the contact of a chat over a bridge, else the account (nameOf). */
-	function senderName(m, c, ctx, opts) {
+	function senderName(m, c0, ctx, opts) {
+		const c = isPerson(c0) ? msgConv(c0, m) : c0;
 		const mb = m && m.bridge && typeof m.bridge === 'object' ? m.bridge : null;
 		if (mb && mb.sender) return str(mb.sender.name) || ctx.t('chat.bc.unknown_contact');
 		// Messenger 1.20: a post of a channel — the channel wrote it
@@ -871,7 +899,8 @@
 	 * „Bild · grill.jpg – folgt; in WhatsApp ansehen“, 1.15: „… – wird geladen …“ / „… – zu groß für deinen Server – in
 	 * WhatsApp ansehen“ / „… – gesperrt – Schadsoftware gefunden“; „Nachricht dieser Art …“; null without placeholder.
 	 */
-	function placeholderText(m, c, t) {
+	function placeholderText(m, c0, t) {
+		const c = isPerson(c0) ? msgConv(c0, m) : c0;
 		const p = placeholderOf(m);
 		if (!p) return null;
 		const network = bridgeLabel(c) || bridgeName(str(m.via).replace(/^bridge:/, ''));
@@ -885,6 +914,158 @@
 		return `${what} – ${t('chat.bc.ph_later', { network })}`;
 	}
 
+
+	// ── Messenger 1.21: persons ──
+
+	const GC_WAY = 'gatecontrol';
+	const WAY_RE = /^[a-z]{2,20}$/;
+
+	/** One entry for several ways of a human (`person` { id, ways, reply, names, … }; its id is the lead's). */
+	function isPerson(c) {
+		const p = c && c.person;
+		return !!(p && typeof p === 'object' && Number.isSafeInteger(p.id) && Array.isArray(p.ways) && p.ways.length > 0);
+	}
+
+	/** The way of a message (`way`): 'gatecontrol' or a bridge's network, else null. */
+	function wayOf(m) {
+		return m && typeof m.way === 'string' && WAY_RE.test(m.way) ? m.way : null;
+	}
+
+	/** The name of a way (never translated): „GateControl“, „WhatsApp“, … */
+	function wayLabel(way, label) {
+		if (label) return str(label).slice(0, 40);
+		return way === GC_WAY ? 'GateControl' : bridgeName(way);
+	}
+
+	/** The ways of a person, each kind once (GateControl first, as the server orders them) → [{ way, label }] */
+	function personWays(c) {
+		if (!isPerson(c)) return [];
+		const out = [];
+		for (const w of c.person.ways) {
+			const way = w && WAY_RE.test(str(w.way)) ? w.way : null;
+			if (way && !out.some((x) => x.way === way)) out.push({ way, label: wayLabel(way, w.label) });
+		}
+		return out;
+	}
+
+	/** „GateControl · WhatsApp“ under the name of a person. */
+	function personSub(c) {
+		return personWays(c).map((w) => w.label).join(' · ');
+	}
+
+	/** The way an answer takes now (`person.reply`, the server's pick) → that way of `person.ways`, or null. */
+	function replyWay(c) {
+		if (!isPerson(c) || !c.person.reply) return null;
+		const id = c.person.reply.conversationId;
+		return c.person.ways.find((w) => w && w.conversationId === id) || null;
+	}
+
+	/**
+	 * The entry seen as one of its ways — a chat over a bridge (`bridge`, `can` of the way) or the GateControl chat (its
+	 * read marks): what the composer and the bubbles of that way check, as in a chat of its own.
+	 */
+	function wayConv(c, w) {
+		if (!isPerson(c) || !w) return c;
+		const gc = !w.bridge;
+		return {
+			...c,
+			person: null,
+			bridge: w.bridge || null,
+			can: { ...(c.can || {}), ...(w.can || {}) },
+			title: w.title || c.title,
+			peer: gc ? c.peer : null,
+			readUpTo: gc ? c.readUpTo : null,
+			deliveredUpTo: gc ? c.deliveredUpTo : null,
+			receipts: gc ? c.receipts : [],
+		};
+	}
+
+	/** The composer of a person: the way the answer takes (else the GateControl way, else the first). */
+	function sendConv(c) {
+		if (!isPerson(c)) return c;
+		const ways = c.person.ways;
+		return wayConv(c, replyWay(c) || ways.find((w) => w && !w.bridge) || ways[0]);
+	}
+
+	/** A message of a person seen in its way (its conversation, else its `way`). */
+	function msgConv(c, m) {
+		if (!isPerson(c)) return c;
+		const ways = c.person.ways;
+		const w = (m && ways.find((x) => x && x.conversationId === m.conversationId)) || (wayOf(m) && ways.find((x) => x && x.way === wayOf(m))) || null;
+		return w ? wayConv(c, w) : sendConv(c);
+	}
+
+	/** The source chips of a person's history: Alle · GateControl · WhatsApp → [{ way: null | way, label }] */
+	function sourceChips(c, t) {
+		if (!isPerson(c)) return [];
+		return [{ way: null, label: t('chat.person.srcAll') }, ...personWays(c)];
+	}
+
+	/** The options of „Name in deiner Liste“ of a person: the account's name, the name of each bridged way. */
+	function personNameOptions(c) {
+		if (!isPerson(c)) return [];
+		const p = c.person;
+		const out = [];
+		if (p.userId != null) {
+			const gw = p.ways.find((w) => w && !w.bridge);
+			out.push({ value: 'account', label: str((gw && gw.title) || p.name) });
+		}
+		for (const w of p.ways) if (w && w.bridge && w.title) out.push({ value: String(w.conversationId), label: str(w.title) });
+		const seen = new Set();
+		return out.filter((o) => { if (!o.label || seen.has(o.label)) return false; seen.add(o.label); return true; });
+	}
+
+	/** The value of the name choice now: 'account' or the conversation id of a way (as a string). */
+	function personNameValue(c) {
+		if (!isPerson(c)) return null;
+		const nf = c.person.nameFrom;
+		return nf === 'account' || nf == null ? 'account' : String(nf);
+	}
+
+	/**
+	 * The name dialog of a merge by hand: [{ value: 'account' | conversationId, label }] — the account's name first (the
+	 * default), the chat's own name, the picked chat's. `pick`: { account } | { chat }.
+	 */
+	function mergeNameOptions(c, pick) {
+		const out = [];
+		const p = isPerson(c) ? c.person : null;
+		const acc = pick && pick.account ? pick.account : null;
+		if (acc) out.push({ value: 'account', label: str(acc.name) });
+		else if (p && p.userId != null) out.push({ value: 'account', label: str(((p.ways.find((w) => w && !w.bridge)) || {}).title || p.name) });
+		else if (!p && c && !bridgeOf(c) && c.peer) out.push({ value: 'account', label: str(c.peer.name || c.title) });
+		if (p) for (const w of p.ways) { if (w && w.bridge) out.push({ value: w.conversationId, label: str(w.title) }); }
+		else if (c && bridgeOf(c)) out.push({ value: c.id, label: str(c.title) });
+		if (pick && pick.chat) out.push({ value: pick.chat.conversationId, label: str(pick.chat.title) });
+		const seen = new Set();
+		return out.filter((o) => { if (!o.label || seen.has(o.label)) return false; seen.add(o.label); return true; });
+	}
+
+	/** POST persons of a merge by hand: the chat (or the person's lead), the picked chat, the picked account, the name. */
+	function mergeRequest(c, pick, name) {
+		const ids = [isPerson(c) ? c.person.conversationId : c.id];
+		if (pick && pick.chat) ids.push(pick.chat.conversationId);
+		const req = { conversationIds: ids };
+		if (pick && pick.account) req.userId = pick.account.userId;
+		if (name != null) req.name = name;
+		return req;
+	}
+
+	/** May the chat info offer „Mit Person zusammenführen …“? A chat with one person — never a group or a channel. */
+	function canMergeByHand(c, me) {
+		if (!c || !hasFeature(me, 'chat_people') || isPerson(c)) return false;
+		if (c.kind !== 'direct' || isChannel(c) || isNotice(c) || c.readonly || c.managedBy) return false;
+		return !!bridgeOf(c) || !!(c.peer && !c.peer.gone);
+	}
+
+	/** The candidates of „Mit Person zusammenführen“ filtered by the search field (accounts by name, chats by title). */
+	function filterCandidates(r, q) {
+		const s = str(q).trim().toLowerCase();
+		const hit = (n) => !s || str(n).toLowerCase().includes(s);
+		return {
+			accounts: (r && Array.isArray(r.accounts) ? r.accounts : []).filter((a) => hit(a.name)),
+			chats: (r && Array.isArray(r.chats) ? r.chats : []).filter((x) => hit(x.title)),
+		};
+	}
 
 	// ── Messenger 1.20: channels, format, links, link previews, the messengers' logos ──
 
@@ -1814,14 +1995,16 @@
 		const items = (Array.isArray(list) ? list : []).filter((c) => !!c.archived === !!archived);
 		if (archived || filter === 'all') return items;
 		// Messenger 1.14: „Nur GateControl“ and one chip per linked service
-		if (filter === 'gc') return items.filter((c) => !bridgeOf(c));
-		if (str(filter).startsWith('net:')) return items.filter((c) => bridgeOf(c) && `net:${bridgeOf(c).network}` === filter);
+		// Messenger 1.21: a person counts for every way it has
+		if (filter === 'gc') return items.filter((c) => (isPerson(c) ? personWays(c).some((w) => w.way === GC_WAY) : !bridgeOf(c)));
+		if (str(filter).startsWith('net:')) return items.filter((c) => (isPerson(c) ? personWays(c).some((w) => `net:${w.way}` === filter) : bridgeOf(c) && `net:${bridgeOf(c).network}` === filter));
 		if (filter === 'unread') return items.filter((c) => (c.unread || 0) > 0);
 		if (filter === 'groups') return items.filter((c) => c.kind === 'group');
 		if (str(filter).startsWith('list:')) {
 			const l = (Array.isArray(lists) ? lists : []).find((x) => x && `list:${x.id}` === filter);
 			const ids = new Set(l && Array.isArray(l.conversationIds) ? l.conversationIds : []);
-			return items.filter((c) => ids.has(c.id));
+			// Messenger 1.21: an entry with the id of any way of a person counts for it
+			return items.filter((c) => ids.has(c.id) || (isPerson(c) && c.person.ways.some((w) => ids.has(w.conversationId))));
 		}
 		return items;
 	}
@@ -1874,6 +2057,8 @@
 		STORY_DURATION_DEFAULT_H,
 		PRESETS,
 		features14,
+		GC_WAY, isPerson, wayOf, wayLabel, personWays, personSub, replyWay, wayConv, sendConv, msgConv, sourceChips, personNameOptions, personNameValue,
+		mergeNameOptions, mergeRequest, canMergeByHand, filterCandidates,
 		isChannel, channelEntryText, channelNetworks, filterChannels, hasOwnReaction, safeHref, linkify, richText, linkPreview, netGlyph,
 		bridgeOf, bridgeName, bridgeMark, bridgeLabel, bridgeNetworks, bridgeBlock, senderName, quoteName, senderKey, placeholderOf, placeholderText, bridgeFailure,
 		bridgeOutKind, bridgeTakesFiles, bridgeMediaRefusal, bridgeImageType, voiceMime, mediaTypeText,
