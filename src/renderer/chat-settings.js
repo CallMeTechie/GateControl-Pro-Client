@@ -189,7 +189,8 @@
 				]),
 				group(null, [
 					f14().status ? row(t('chat.st.yours'), line || t('chat.st.none'), el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('chat.set.changeStatus'), on: { click: () => kit.statusDialog() } })) : null,
-					row(t('chat.set.profile'), t('chat.set.profileHint'), typeof kit.openPortal === 'function' ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => kit.openPortal() } }, [icon('external', 13), t('chat.set.inPortal')]) : el('span')),
+					// „Mein Profil“ (the user profile) is kept in the portal: its profile page
+					row(t('chat.profile.title'), t('chat.profile.hint'), typeof kit.openProfile === 'function' ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', 'data-act': 'profile', on: { click: () => kit.openProfile() } }, [icon('external', 13), t('chat.profile.open')]) : el('span')),
 				// Messenger 1.14: with chats over a bridge the sentence about the own server does not hold for every chat
 				], f14().bridgeChats ? null : t('chat.info.encrypted')),
 			);

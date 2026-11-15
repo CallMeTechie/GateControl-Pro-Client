@@ -46,6 +46,8 @@ const FEATURES_STAGE4 = Object.freeze({ ...FEATURES_BRIDGED, bridge_media: true,
 const FEATURES_STAGE5 = Object.freeze({ ...FEATURES_STAGE4, bridge_history: true });
 // Messenger 1.18: „Neuer Chat“ with contacts (GateControl, WhatsApp, the address book)
 const FEATURES_STAGE4C = Object.freeze({ ...FEATURES_STAGE5, bridge_contacts: true });
+// Messenger 1.20 (Chats v2, Teil A): channels on their own page, groups where only admins write, format, link previews
+const FEATURES_V2A = Object.freeze({ ...FEATURES_STAGE4C, bridge_channels: true });
 const WA_MEDIA_TYPES = Object.freeze({ image: ['image/jpeg', 'image/png', 'image/webp'], video: ['video/mp4'], voice: ['audio/ogg', 'audio/mp4', 'audio/aac', 'audio/mpeg'], file: null });
 
 function createMessenger({ emit = () => {}, features = null, familie = false } = {}) {
@@ -129,17 +131,21 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   }
 
   /** A chat over a bridge: one member (Marc), no peer. */
-  function addBridgeConv({ kind = 'direct', title = 'Kim Muster', network = 'whatsapp', state = 'ok', closed = false } = {}) {
-    const id = addConv({ kind, members: [ME], title });
-    Object.assign(convs.get(id), { bridge: { network, state, closed, readUpTo: null, deliveredUpTo: null } });
+  function addBridgeConv({ kind = 'direct', title = 'Kim Muster', network = 'whatsapp', state = 'ok', closed = false, channel = false, readOnly = false } = {}) {
+    const id = addConv({ kind: channel ? 'group' : kind, members: [ME], title });
+    // 1.20: a channel (muted from the start, read only), a group where only admins write
+    Object.assign(convs.get(id), { bridge: { network, state, closed, readUpTo: null, deliveredUpTo: null, channel, readOnly: readOnly || channel, reactions: 'own' }, notify: channel ? 'none' : 'all' });
     return id;
   }
 
   /** A message in a chat over a bridge: of a contact, of Marc's phone (`remote`), a placeholder, a notice, an own one with a state. */
-  function addBridgeMsg(convId, { contact = { contactId: 12, name: 'Kim Muster' }, text = 'Hallo', remote = false, placeholder = null, notice = false, state = null, reason = null, replyTo = null, kind = null, mediaId = null, meta = null, video = null } = {}) {
+  function addBridgeMsg(convId, { contact = { contactId: 12, name: 'Kim Muster' }, text = 'Hallo', remote = false, placeholder = null, notice = false, state = null, reason = null, replyTo = null, kind = null, mediaId = null, meta = null, video = null, post = false, marks = null, preview = null } = {}) {
     const mine = remote || state != null;
     const m = addMsg(convId, { senderId: mine ? ME : null, text, kind: kind || (notice ? 'system' : 'text'), replyTo, mediaId, meta, video, system: notice ? { event: 'bridge_notice', network: convs.get(convId).bridge.network } : null });
-    m.bridge = { sender: mine || notice ? null : contact, remote, state: mine ? (state || 'sent') : null, reason, placeholder };
+    // 1.20: a post of a channel (`post`), the format of the text, a link preview
+    m.bridge = { sender: mine || notice || post ? null : contact, remote, state: mine ? (state || 'sent') : null, reason, placeholder, ...(post ? { channel: true } : {}) };
+    m.marks = marks;
+    m.preview = preview;
     return m;
   }
 
@@ -360,6 +366,8 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       ...(c.bridge ? {
         via: `bridge:${c.bridge.network}`,
         bridge: m.bridge || { sender: null, remote: false, state: m.senderId === ME ? 'sent' : null, reason: null, placeholder: null },
+        marks: m.deleted ? null : (m.marks || null),
+        preview: m.deleted ? null : (m.preview || null),
         ...(m.senderId === ME && m.bridge && m.bridge.state ? { status: m.bridge.state === 'pending' ? 'sending' : m.bridge.state } : {}),
         reactions: m.deleted ? [] : m.reactions.concat(m.contactReactions || []),
       } : {}),
@@ -386,6 +394,9 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     return ev ? { messageId: ev.id, title: ev.event.title, startsAt: ev.event.startsAt, yesCount: ev.event.rsvp.yes.length } : null;
   }
 
+  const chanWord = () => !!(features && features.bridge_channels === true);
+  const isChan = (x) => !!(x.bridge && x.bridge.channel && chanWord());
+
   function convView(c) {
     const list = msgs.get(c.id).filter((m) => !m.hidden);
     const mine = c.members.find((x) => x.id === ME);
@@ -400,8 +411,8 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       managedBy: c.managedBy || null, readonly: false, disappearingS: 0, createdBy: ME, createdAt: iso(c.createdAt), updatedAt: iso(c.updatedAt),
       lastMessageId: last ? last.id : null,
       members: c.members.map((x) => ({ ...person(x.id), role: x.role, joinedAt: iso(c.createdAt) })),
-      me: { role: mine.role, mutedUntil: null, notify: 'all', lastReadId: mine.lastRead, lastDeliveredId: mine.lastDelivered },
-      muted: false,
+      me: { role: mine.role, mutedUntil: null, notify: c.notify || 'all', lastReadId: mine.lastRead, lastDeliveredId: mine.lastDelivered },
+      muted: c.notify === 'none',
       unread: list.filter((m) => m.senderId !== ME && m.id > mine.lastRead && !m.deleted).length,
       lastMessage: last ? msgView(last) : null,
       typing: [],
@@ -414,12 +425,16 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
         title: c.title, peer: null,
         bridge: {
           network: c.bridge.network, label: 'WhatsApp', state: c.bridge.state, closed: !!c.bridge.closed,
+          ...(chanWord() ? { channel: !!c.bridge.channel, readOnly: !!c.bridge.readOnly, ...(c.bridge.channel ? { reactions: c.bridge.reactions } : {}) } : {}),
           supports: ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing', ...(bridge.media ? ['image', 'video', 'voice', 'file'] : [])],
           ...(bridge.media ? { mediaTypes: WA_MEDIA_TYPES } : {}),
         },
         avatarMediaId: c.avatarMediaId || null,
         readUpTo: c.bridge.readUpTo, deliveredUpTo: c.bridge.deliveredUpTo, receipts: [],
-        can: { send: c.bridge.state === 'ok' && !c.bridge.closed, pin: true, editInfo: false, manageMembers: false, leave: false, setDisappearing: false },
+        can: {
+          send: c.bridge.state === 'ok' && !c.bridge.closed && !(chanWord() && c.bridge.readOnly), pin: true, editInfo: false, manageMembers: false, leave: false, setDisappearing: false,
+          ...(chanWord() ? { sendReason: c.bridge.channel ? 'channel' : (c.bridge.readOnly ? 'admins_only' : null), react: c.bridge.state === 'ok' && !c.bridge.closed && (!c.bridge.channel || c.bridge.reactions === 'own') } : {}),
+        },
       } : {}),
     };
   }
@@ -639,9 +654,19 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     if (route14(method, route.slice(apiBase.length).split('/'), query, body, json)) return true;
     if (a === 'prefs') return json(200, { ok: true, prefs: { readReceipts: true, typing: true, preview: true, ...body } }), true;
     if (a === 'people') return json(200, { ok: true, people: users.filter((x) => x.id !== ME).map((x) => ({ id: x.id, name: x.name, avatarUrl: null, initials: x.initials, colorHex: x.colorHex, color: 'green', ...(api.features14 ? { ...presence(x.id), blocked: st14.blocks.has(x.id) } : {}) })) }), true;
+    // 1.20: a client that knows channels (?channels=1) gets them on their own page
+    const chans = chanWord() && (query.channels === '1' || body.channels === true);
+    const chanList = () => [...convs.values()].filter((x) => isChan(x) && msgs.get(x.id).some((m) => !m.hidden)).map(convView);
     if (a === 'conversations' && !b && method === 'GET') {
       const since = query.since ? Date.parse(query.since) : null;
-      return json(200, { ok: true, conversations: [...convs.values()].filter((x) => (!since || x.updatedAt >= since) && (!x.bridge || (bridged && msgs.get(x.id).length))).map(convView), removed: [], serverTime: iso(Date.now()) }), true;
+      const cl = chans && bridged ? chanList() : null;
+      return json(200, { ok: true, conversations: [...convs.values()].filter((x) => (!since || x.updatedAt >= since) && (!x.bridge || (bridged && msgs.get(x.id).length)) && !(chans && isChan(x))).map(convView), removed: [],
+        ...(cl ? { channels: { count: cl.length, unread: cl.reduce((n, x) => n + x.unread, 0) } } : {}), serverTime: iso(Date.now()) }), true;
+    }
+    if (a === 'channels' && !b && method === 'GET') {
+      if (!chans || !bridged) return json(404, { ok: false, code: 'not_found' }), true;
+      const cl = chanList();
+      return json(200, { ok: true, channels: cl, removed: [], unread: cl.reduce((n, x) => n + x.unread, 0), serverTime: iso(Date.now()) }), true;
     }
     if (a === 'conversations' && !b && method === 'POST') {
       if (body.kind === 'direct') {
@@ -658,6 +683,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       if (!c && method === 'GET') return json(200, { ok: true, conversation: convView(conv) }), true;
       if (!c && method === 'PATCH') {
         if (body.title) conv.title = body.title;
+        if (body.notify === 'all' || body.notify === 'none') { conv.notify = body.notify; log.notifies = (log.notifies || []).concat({ id: conv.id, notify: body.notify }); }
         conv.updatedAt = Date.now();
         return json(200, { ok: true, conversation: convView(conv), left: false }), true;
       }
@@ -684,6 +710,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       if (c === 'messages' && method === 'POST') {
         const dup = list.find((x) => x.clientId === body.clientId && x.senderId === ME);
         if (dup) return json(200, { ok: true, message: msgView(dup), duplicate: true }), true;
+        if (conv.bridge && conv.bridge.readOnly && chanWord()) return json(409, { ok: false, code: 'bridge_read_only', reason: conv.bridge.channel ? 'channel' : 'admins_only' }), true;
         if (conv.bridge) {
           const fileKind = bridge.media && ['image', 'voice', 'file'].includes(body.kind) && body.mediaId;
           if (!fileKind && ((body.kind != null && body.kind !== 'text') || ['mediaId', 'thumbMediaId', 'video', 'meta'].some((k) => body[k] != null))) return json(409, { ok: false, code: 'bridge_text_only', reason: 'kind' }), true;
@@ -747,11 +774,13 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       if (!m || (convs.get(m.conversationId).bridge && !bridged)) return json(404, { ok: false, code: 'not_found' }), true;
       // 1.17: a file of the older history, fetched now
       if (c === 'fetch' && method === 'POST') {
-        if (!(features && features.bridge_history === true) || !convs.get(m.conversationId).bridge) return json(404, { ok: false, code: 'not_found' }), true;
+        const ph = m.bridge && m.bridge.placeholder;
+        // 1.19: a file that failed, once more (`retry: true`) — also without bridge_history
+        const again = !!(ph && ph.state === 'failed' && ph.retry === true);
+        if ((!again && !(features && features.bridge_history === true)) || !convs.get(m.conversationId).bridge) return json(404, { ok: false, code: 'not_found' }), true;
         log.fetches.push(m.id);
         if (bridge.fetchFails) { const f = bridge.fetchFails; bridge.fetchFails = null; return json(f.status, { ok: false, code: f.code }), true; }
-        const ph = m.bridge && m.bridge.placeholder;
-        if (!ph || ph.state !== 'on_request') return json(400, { ok: false, code: 'invalid' }), true;
+        if (!ph || (ph.state !== 'on_request' && !again)) return json(400, { ok: false, code: 'invalid' }), true;
         m.bridge = { ...m.bridge, placeholder: { ...ph, state: 'loading' } };
         m.changedAt = Date.now();
         emit('message.update', { conversationId: m.conversationId, messageId: m.id, editedAt: iso(m.changedAt), media: true });
@@ -765,6 +794,8 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
         return json(200, { ok: true, message: msgView(m) }), true;
       }
       if (c === 'reaction') {
+        const mc = convs.get(m.conversationId);
+        if (mc.bridge && mc.bridge.channel && chanWord() && mc.bridge.reactions === 'off') return json(409, { ok: false, code: 'bridge_read_only', reason: 'reactions_off', error: 'Reagieren geht in Kanälen nicht: WhatsApp hat eine Reaktion abgelehnt.' }), true;
         m.reactions = body.emoji ? [{ emoji: body.emoji, count: 1, userIds: [ME] }] : [];
         log.reactions.push({ id: m.id, emoji: body.emoji });
         return json(200, { ok: true, reactions: m.reactions }), true;
@@ -916,4 +947,4 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   return api;
 }
 
-module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141, FEATURES_LINKED, FEATURES_BRIDGED, FEATURES_STAGE4, FEATURES_STAGE5, FEATURES_STAGE4C };
+module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141, FEATURES_LINKED, FEATURES_BRIDGED, FEATURES_STAGE4, FEATURES_STAGE5, FEATURES_STAGE4C, FEATURES_V2A };

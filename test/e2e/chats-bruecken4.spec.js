@@ -169,7 +169,7 @@ test.describe('chats – files, pictures and a new chat by number over a bridge 
     await expect(cv.locator(`.cv-row[data-id="${kim}"] .cv-av-img`)).toHaveCount(0);
     ms.setBridgeAvatar(kim, ms.addMedia('image/png', PNG));
     await expect(cv.locator(`.cv-row[data-id="${kim}"] .cv-av-img`)).toBeVisible();
-    await expect(cv.locator(`.cv-row[data-id="${kim}"] .cv-net-mark`)).toHaveText('WA');
+    await expect(cv.locator(`.cv-row[data-id="${kim}"] .cv-net-mark`)).toHaveAttribute('data-net', 'whatsapp');
     await cv.locator(`.cv-row[data-id="${group}"]`).click();
     await expect(cv.locator('.cv-msg.is-in .cv-msg-av .cv-av-img').first()).toBeVisible();
   });
@@ -186,7 +186,7 @@ test.describe('chats – files, pictures and a new chat by number over a bridge 
     const row = cv.locator('.cv-nc-row[data-net="whatsapp"]');
     await expect(row.locator('b')).toHaveText('WhatsApp-Chat mit Nummer');
     await expect(row.locator('small')).toHaveText('Nummer eingeben und prüfen');
-    await expect(row.locator('.cv-net-mark')).toHaveText('WA');
+    await expect(row.locator('.cv-net-mark')).toHaveAttribute('data-net', 'whatsapp');
     await shots(page, 'nc-einstieg');
     // not in the group tab
     await cv.locator('.cv-tabs button[data-mode="group"]').click();

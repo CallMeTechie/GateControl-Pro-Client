@@ -623,8 +623,15 @@
 
 /* ── Messenger 1.13 / 1.14: linked services, chats over a bridge ── */
 /* the service's sign at a chat's picture ("WA") */
-.cv-net-mark { position: absolute; right: -4px; bottom: -3px; min-width: 22px; height: 16px; padding: 0 4px; border-radius: 6px; background: var(--acc); color: var(--acc-on); box-shadow: 0 0 0 2px var(--bg); font-family: var(--font-mono); font-size: 9px; font-weight: 700; line-height: 16px; text-align: center; letter-spacing: .02em; }
-.cv-net-mark.is-sm { min-width: 20px; height: 14px; font-size: 8px; line-height: 14px; }
+/* Messenger 1.20: the messenger's logo (WhatsApp white on green, GateControl's shield on the accent, others grey) */
+.cv-net-mark { position: absolute; right: -4px; bottom: -3px; width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; background: var(--line2); color: var(--text); box-shadow: 0 0 0 2px var(--bg); display: inline-flex; align-items: center; justify-content: center; }
+.cv-net-mark.is-sm { width: 15px; height: 15px; }
+.cv-net-mark svg, .cv-br-mark svg, .cv-ncc-svc svg, .cv-chip-net svg { display: block; }
+.is-net-whatsapp.cv-net-mark, .is-net-whatsapp.cv-ncc-svc { background: #1F8F5A; color: #fff; }
+.is-net-gatecontrol.cv-net-mark, .is-net-gatecontrol.cv-ncc-svc { background: var(--acc); color: var(--acc-on); }
+.cv-chip-net { display: inline-flex; flex-shrink: 0; color: var(--muted); }
+.cv-chip-net.is-net-whatsapp { color: #1F8F5A; }
+.cv-chip-net.is-net-gatecontrol { color: var(--acc-t); }
 .cv-info .cv-net-mark, .cv-head .cv-net-mark { box-shadow: 0 0 0 2px var(--panel); }
 /* bars under the header: the state of the link, the line "läuft über …", the explanation of the first visit */
 .cv-bc-state, .cv-bc-strip { display: flex; align-items: flex-start; gap: 10px; padding: 9px 16px; font-size: 12.5px; line-height: 1.45; color: var(--muted); background: var(--panel2); }
@@ -656,7 +663,8 @@
 .cv-br { display: flex; flex-direction: column; gap: 14px; }
 .cv-br-lead { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
 .cv-br-row, .cv-br-again { flex-wrap: wrap; }
-.cv-br-mark { flex-shrink: 0; min-width: 44px; height: 22px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--line2); background: var(--panel2); color: var(--muted); font-family: var(--font-mono); font-size: 11px; font-weight: 700; line-height: 20px; text-align: center; }
+.cv-br-mark { flex-shrink: 0; width: 34px; height: 34px; box-sizing: border-box; border-radius: 10px; border: 1px solid var(--line2); background: var(--panel2); color: var(--muted); display: inline-flex; align-items: center; justify-content: center; }
+.cv-br-mark.is-net-whatsapp { color: #1F8F5A; }
 .cv-br-row .cv-pref-tx, .cv-br-again .cv-pref-tx { flex: 1 1 220px; min-width: 0; }
 .cv-br-act { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
 .cv-br-again { padding-left: 58px; }
@@ -765,7 +773,7 @@
 .cv-ncc-cap { display: flex; align-items: center; gap: 7px; padding: 8px 8px 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
 .cv-ncc-cap > span:not(.cv-ncc-svc) { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv-ncc-cap .cv-nc-spin { width: 12px; height: 12px; margin-left: 2px; }
-.cv-ncc-svc { display: inline-grid; place-items: center; height: 15px; padding: 0 4px; border-radius: 4px; background: var(--acc); color: var(--acc-on); font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: .04em; }
+.cv-ncc-svc { display: inline-grid; place-items: center; width: 16px; height: 16px; flex-shrink: 0; border-radius: 50%; background: var(--line2); color: var(--text); }
 .cv-ncc-row { min-height: 50px; }
 .cv-ncc-row:disabled { cursor: default; }
 .cv-ncc-row:disabled:hover { background: transparent; }
@@ -813,3 +821,26 @@
 .cv-ncc-nfoot > svg:last-child { color: var(--muted); }
 .cv-ncc-lead { color: var(--muted); font-weight: 400; }
 .cv-ncc-nfoot.is-off { opacity: .7; }
+
+/* ── Messenger 1.20: channels, read-only chats, format, links, link previews ── */
+.cv-row-chan .cv-av-chan { background: var(--panel2); color: var(--muted); border: 1px solid var(--line2); box-sizing: border-box; }
+.cv-dot { width: 9px; height: 9px; flex-shrink: 0; border-radius: 50%; background: var(--faint); }
+.cv-chan-head { display: flex; align-items: center; gap: 8px; padding: 2px 8px 8px; }
+.cv-chan-ht { display: flex; flex-direction: column; min-width: 0; }
+.cv-chan-ht small { color: var(--muted); font-size: 12px; }
+.cv-chan-hint { margin: 10px 16px; color: var(--muted); font-size: 12.5px; line-height: 1.45; text-align: center; }
+.cv-chan-note { display: flex; align-items: flex-start; gap: 5px; margin-top: 6px; font-size: 11.5px; line-height: 1.4; color: var(--muted); max-width: 360px; }
+.cv-chan-note svg { flex-shrink: 0; margin-top: 1px; }
+.cv-readonly { justify-content: center; }
+.cv-link { color: var(--acc-t); text-decoration: underline; overflow-wrap: anywhere; cursor: pointer; }
+.cv-out .cv-link { color: inherit; }
+.cv-mk-code { font-family: var(--font-mono); font-size: .92em; padding: 0 3px; border-radius: 4px; background: var(--panel2); }
+.cv-lp { display: flex; flex-direction: column; width: 100%; max-width: 340px; margin: 0 0 6px; padding: 0; border-radius: 10px; overflow: hidden; border: 1px solid var(--line2); background: var(--panel2); color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.cv-lp:hover, .cv-lp:focus-visible { border-color: var(--acc); }
+.cv-lp-pic { display: block; width: 100%; max-height: 220px; overflow: hidden; background: var(--line); }
+.cv-lp-pic img { display: block; width: 100%; height: 100%; max-height: 220px; object-fit: cover; }
+.cv-lp-wait { display: flex; align-items: center; justify-content: center; gap: 6px; max-height: 220px; min-height: 60px; color: var(--muted); font-size: 12.5px; background: var(--line); }
+.cv-lp-tx { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; }
+.cv-lp-tx b { font-size: 13.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cv-lp-tx span { font-size: 12.5px; line-height: 1.35; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.cv-lp-tx small { font-size: 11.5px; color: var(--muted); }

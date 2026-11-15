@@ -3070,7 +3070,8 @@ chatView = chatApi && window.GCChatView && $('#page-chats')
 		// → plg-gatecontrol-door, one-time login link). → false without a portal (VPN not
 		// connected): the chat page says so.
 		openRoute: (route, target) => openCardRoute(route, target),
-		openPortal: () => (currentPortalUrl ? portal.open().catch(() => false) : Promise.resolve(false)),
+		// `next`: a portal tab — '/portal#profil' for „Mein Profil“ (user profile; older servers open the portal)
+		openPortal: (next) => (currentPortalUrl ? portal.open(next ? { next } : undefined).catch(() => false) : Promise.resolve(false)),
 		// "In Drive speichern" of a picture / voice message / file (Messenger 1.10 with Drive)
 		driveSave,
 	})

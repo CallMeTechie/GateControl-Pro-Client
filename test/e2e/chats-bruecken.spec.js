@@ -331,8 +331,8 @@ test.describe('chats – linked services and chats over a bridge', () => {
 
     // the list: the service's sign at the picture, a filter per service
     await expect(cv.locator('.cv-row[data-id]')).toHaveCount(3);
-    await expect(cv.locator(`.cv-row[data-id="${kim}"] .cv-net-mark`)).toHaveText('WA');
-    await expect(cv.locator(`.cv-row[data-id="${group}"] .cv-net-mark`)).toHaveText('WA');
+    await expect(cv.locator(`.cv-row[data-id="${kim}"] .cv-net-mark`)).toHaveAttribute('data-net', 'whatsapp');
+    await expect(cv.locator(`.cv-row[data-id="${group}"] .cv-net-mark`)).toHaveAttribute('data-net', 'whatsapp');
     await expect(cv.locator(`.cv-row[data-id="${marc}"] .cv-net-mark`)).toHaveCount(0);
     await expect(cv.locator(`.cv-row[data-id="${group}"] .cv-row-pv`)).toHaveText('Unbekannter Kontakt: Ich!');
     await expect(cv.locator('.cv-chip-btn[data-filter="gc"]')).toHaveText('Nur GateControl');
@@ -347,7 +347,7 @@ test.describe('chats – linked services and chats over a bridge', () => {
     // the chat: "über WhatsApp", the explanation on the first visit, then the line with "Mehr"
     await cv.locator(`.cv-row[data-id="${kim}"]`).click();
     await expect(cv.locator('.cv-head-sub')).toHaveText('über WhatsApp');
-    await expect(cv.locator('.cv-head .cv-net-mark')).toHaveText('WA');
+    await expect(cv.locator('.cv-head .cv-net-mark')).toHaveAttribute('data-net', 'whatsapp');
     const first = cv.locator('.cv-bc-first');
     await expect(first.locator('b')).toHaveText('Chat über WhatsApp');
     await expect(first.locator('li')).toHaveCount(3);
@@ -426,7 +426,7 @@ test.describe('chats – linked services and chats over a bridge', () => {
     await cv.locator('.cv-head-who').click();
     const info = cv.locator('.cv-info');
     await expect(info.locator('.cv-info-top .cv-dim')).toHaveText('Kontakt bei WhatsApp');
-    await expect(info.locator('.cv-info-top .cv-net-mark')).toHaveText('WA');
+    await expect(info.locator('.cv-info-top .cv-net-mark')).toHaveAttribute('data-net', 'whatsapp');
     await expect(info.locator('.cv-info-btns')).toHaveCount(0);
     await expect(info.locator('.cv-bc-info')).toContainText('Dieser Chat läuft über WhatsApp.');
     await expect(info.locator('.cv-bc-info')).toContainText('Was hier nicht geht');
@@ -541,7 +541,7 @@ test.describe('chats – linked services and chats over a bridge', () => {
 
     features.bridge_chats = true;
     ms.receiveBridge(kim, { text: 'Hallo von drüben' });
-    await expect(cv.locator(`.cv-row[data-id="${kim}"] .cv-net-mark`)).toHaveText('WA');
+    await expect(cv.locator(`.cv-row[data-id="${kim}"] .cv-net-mark`)).toHaveAttribute('data-net', 'whatsapp');
     await expect(cv.locator(`.cv-row[data-id="${kim}"] .cv-row-pv`)).toHaveText('Hallo von drüben');
     await expect(cv.locator('.cv-chip-btn[data-filter="net:whatsapp"]')).toHaveText('WhatsApp');
     // GET me was read again: the word is known now, no "newer version" banner
