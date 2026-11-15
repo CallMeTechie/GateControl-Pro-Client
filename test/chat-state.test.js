@@ -1118,3 +1118,125 @@ describe('chat-state: „Neuer Chat“ with contacts (Messenger 1.18)', () => {
     assert.doesNotMatch(view.slice(start, end), /localStorage|sessionStorage|console\.|indexedDB/);
   });
 });
+
+// Messenger 1.20 (Chats v2, Teil A): channels, groups where only admins write, format, links, link previews, the
+// messengers' logos, the retry of a bridged file.
+describe('chat-state – channels, format and links (Messenger 1.20)', () => {
+  const chan = (extra = {}) => ({
+    id: 40, kind: 'group', title: 'Sicherheit kompakt', members: [member(7, 'Marc')], muted: true, unread: 2,
+    me: { lastReadId: 0, notify: 'none', mutedUntil: null },
+    bridge: { network: 'whatsapp', label: 'WhatsApp', state: 'ok', closed: false, channel: true, readOnly: true, reactions: 'own', supports: ['text', 'reply', 'reaction'] },
+    can: { send: false, sendReason: 'channel', react: true, pin: true },
+    lastMessage: { id: 90, kind: 'text', text: 'Jetzt patchen', senderId: null, mine: false, createdAt: at(10, 0), bridge: { sender: null, channel: true } },
+    ...extra,
+  });
+  const admins = () => ({ ...chan(), id: 41, title: 'Elternbeirat', muted: false, bridge: { ...chan().bridge, channel: false }, can: { send: false, sendReason: 'admins_only', react: true } });
+  const post = (extra = {}) => ({ id: 91, kind: 'text', text: 'Hallo', senderId: null, mine: false, createdAt: new Date(NOW - 60000).toISOString(), bridge: { sender: null, channel: true, state: null }, reactions: [], ...extra });
+
+  it('a channel: no „Name:“ in the list, „Kanal · WhatsApp“, read only, the entry’s line', () => {
+    assert.equal(CS.isChannel(chan()), true);
+    assert.equal(CS.isChannel(admins()), false);
+    assert.equal(CS.isChannel(direct()), false);
+    assert.equal(CS.preview(chan(), ctx).text, 'Jetzt patchen');
+    assert.equal(CS.headSub(chan(), ctx).text, 'chat.ch.sub(WhatsApp)');
+    assert.equal(CS.composerBlock(chan()), 'channel');
+    assert.equal(CS.composerBlock(admins()), 'admins_only');
+    // the bridge away: the bar says why, the composer the old way
+    const down = { ...admins(), bridge: { ...admins().bridge, state: 'unreachable' } };
+    assert.equal(CS.composerBlock(down), 'bridge');
+    assert.equal(CS.bridgeBlock(chan()), null);
+    assert.equal(CS.bridgeBlock(admins()), null);
+    assert.equal(CS.bridgeBlock(down).key, 'state_unreachable');
+    assert.equal(CS.channelEntryText({ count: 2, unread: 0 }, t), 'chat.ch.entryNone');
+    assert.equal(CS.channelEntryText({ count: 2, unread: 1 }, t), 'chat.ch.entryOne');
+    assert.equal(CS.channelEntryText({ count: 2, unread: 7 }, t), 'chat.ch.entryNew(7)');
+    assert.equal(CS.channelEntryText({ count: 2, unread: 140 }, t), 'chat.ch.entryNew(99+)');
+    assert.equal(CS.channelNetworks([chan(), chan({ id: 42 })]), 'WhatsApp');
+    assert.deepEqual(CS.filterChannels([chan(), chan({ id: 42, title: 'Wetter', lastMessage: null })], 'wett', ctx).map((c) => c.id), [42]);
+    assert.deepEqual(CS.filterChannels([chan()], 'patchen', ctx).map((c) => c.id), [40]);
+    assert.equal(CS.senderName(post(), chan(), ctx), 'Sicherheit kompakt');
+  });
+
+  it('the menu: no answer, edit or delete for all in a channel / admins-only group — but a reaction while can.react', () => {
+    const a = CS.messageActions(post(), chan(), ctx, NOW);
+    assert.equal(a.reply, false);
+    assert.equal(a.react, true);
+    assert.equal(a.deleteAll, false);
+    assert.equal(CS.messageActions(post(), admins(), ctx, NOW).react, true);
+    // the bridge refused one: reacting in channels is off
+    assert.equal(CS.messageActions(post(), chan({ can: { send: false, sendReason: 'channel', react: false } }), ctx, NOW).react, false);
+    assert.equal(CS.messageActions(post({ mine: true }), chan(), ctx, NOW).react, false);
+    // a GateControl chat as before
+    assert.equal(CS.messageActions({ ...post(), bridge: null, senderId: 8 }, direct(), ctx, NOW).react, true);
+    assert.equal(CS.hasOwnReaction(post({ reactions: [{ emoji: '👍', count: 1, userIds: [7] }] }), ctx), true);
+    assert.equal(CS.hasOwnReaction(post({ reactions: [{ emoji: '👍', count: 3, userIds: [8] }] }), ctx), false);
+    assert.equal(CS.errorText({ code: 'bridge_read_only', reason: 'reactions_off' }, t), 'chat.error.reactions_off');
+  });
+
+  it('linkify: http(s) and www. addresses, trailing punctuation is text, no other schemes', () => {
+    assert.deepEqual(CS.linkify('Siehe https://ex.example/a?b=1. Und www.test.example/x), oder?'), [
+      { text: 'Siehe ' }, { text: 'https://ex.example/a?b=1', href: 'https://ex.example/a?b=1' }, { text: '. Und ' },
+      { text: 'www.test.example/x', href: 'https://www.test.example/x' }, { text: '), oder?' },
+    ]);
+    assert.deepEqual(CS.linkify('javascript:alert(1) file:///c:/x ftp://a.example'), [{ text: 'javascript:alert(1) file:///c:/x ftp://a.example' }]);
+    assert.deepEqual(CS.linkify('„https://ex.example/“'), [{ text: '„' }, { text: 'https://ex.example/', href: 'https://ex.example/' }, { text: '“' }]);
+    assert.equal(CS.safeHref('https://user:pw@ex.example/'), null);
+    assert.equal(CS.safeHref('http://ex.example'), 'http://ex.example/');
+    assert.equal(CS.safeHref('data:text/html,x'), null);
+    assert.deepEqual(CS.linkify(''), []);
+  });
+
+  it('richText: marks (UTF-16, nested), link marks only http(s), unknown or outside marks ignored, linkify inside', () => {
+    const text = 'Neu 👍 fett und kursiv – mehr: https://ex.example/n';
+    const i = text.indexOf('fett');
+    const segs = CS.richText(text, [
+      { type: 'bold', start: i, end: i + 15 }, { type: 'italic', start: i + 9, end: i + 15 },
+      { type: 'underline', start: 0, end: 3 }, { type: 'bold', start: 0, end: 999 }, { type: 'link', start: 0, end: 3, url: 'javascript:x' },
+    ]);
+    assert.equal(segs.map((x) => x.text).join(''), text);
+    const by = (s) => segs.find((x) => x.text === s);
+    assert.equal(by('fett und ').bold, true);
+    assert.equal(by('fett und ').italic, false);
+    assert.deepEqual([by('kursiv').bold, by('kursiv').italic], [true, true]);
+    assert.equal(segs[0].href, null);
+    assert.equal(by('https://ex.example/n').href, 'https://ex.example/n');
+    const linked = CS.richText('Hier lesen', [{ type: 'link', start: 0, end: 4, url: 'https://ex.example/l' }, { type: 'code', start: 5, end: 10 }]);
+    assert.deepEqual(linked.map((x) => [x.text, x.href, x.code]), [['Hier', 'https://ex.example/l', false], [' ', null, false], ['lesen', null, true]]);
+    assert.deepEqual(CS.richText('<b>nicht fett</b>', null).map((x) => [x.text, x.bold]), [['<b>nicht fett</b>', false]]);
+    assert.deepEqual(CS.richText('Zeile 1\n\nZeile 2', []).map((x) => x.text), ['Zeile 1\n\nZeile 2']);
+  });
+
+  it('the link preview: http(s) only, its picture loading / there / failed', () => {
+    const m = post({ preview: { url: 'https://sk.example/news', title: 'Lücke', description: 'Text', site: null, image: { mediaId: '0123456789abcdef0123456789abcdef', url: null, mime: 'image/jpeg', w: 640, h: 360, state: null } } });
+    assert.deepEqual(CS.linkPreview(m), { href: 'https://sk.example/news', title: 'Lücke', description: 'Text', site: 'sk.example', image: { mediaId: '0123456789abcdef0123456789abcdef', w: 640, h: 360, loading: false } });
+    assert.equal(CS.linkPreview(post({ preview: { ...m.preview, image: { mediaId: null, w: 10, h: 5, state: 'loading' } } })).image.loading, true);
+    assert.equal(CS.linkPreview(post({ preview: { ...m.preview, image: { mediaId: null, state: 'failed' } } })).image, null);
+    assert.equal(CS.linkPreview(post({ preview: { ...m.preview, url: 'javascript:alert(1)' } })), null);
+    assert.equal(CS.linkPreview(post({ kind: 'image', preview: m.preview })), null);
+    assert.equal(CS.linkPreview(post()), null);
+  });
+
+  it('logos instead of „WA“: WhatsApp, GateControl, anything else a speech bubble', () => {
+    assert.equal(CS.netGlyph('whatsapp').known, true);
+    assert.equal(CS.netGlyph('gatecontrol').known, true);
+    const o = CS.netGlyph('telegram');
+    assert.equal(o.known, false);
+    assert.equal(o.paths.length, 1);
+    assert.equal(CS.netGlyph('__proto__').known, false);
+  });
+
+  it('a bridged file that failed with retry: „Erneut versuchen“', () => {
+    const ph = (p) => CS.placeholderOf({ id: 1, bridge: { placeholder: p } });
+    assert.equal(ph({ kind: 'image', state: 'failed', reason: 'unavailable', retry: true }).retry, true);
+    assert.equal(ph({ kind: 'image', state: 'failed', reason: 'unavailable' }).retry, false);
+    assert.equal(ph({ kind: 'image', state: 'loading', retry: true }).retry, false);
+  });
+
+  it('the view builds texts from elements only (no innerHTML) and opens links over the shell', () => {
+    const view = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'chat-view.js'), 'utf8');
+    assert.doesNotMatch(view, /\.innerHTML\s*=|insertAdjacentHTML|outerHTML\s*=/);
+    const start = view.indexOf('function openLink(');
+    assert.ok(start > 0);
+    assert.match(view.slice(start, start + 400), /CS\.safeHref\(href\)[\s\S]*shell\.openExternal\(u\)/);
+  });
+});

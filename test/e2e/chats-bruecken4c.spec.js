@@ -101,7 +101,8 @@ test.describe('chats – „Neuer Chat“ with contacts (Messenger 1.18)', () =>
     await expect(dlg.locator('.cv-nc-row')).toHaveCount(0);
     await expect(dlg.locator('[data-sec="gatecontrol"] .cv-ncc-cap')).toHaveText('GateControl · 2');
     await expect(dlg.locator('[data-sec="gatecontrol"] [data-row="gc:8"] .cv-ncc-pill')).toHaveText('Chat öffnen');
-    await expect(dlg.locator('[data-sec="whatsapp"] .cv-ncc-cap')).toHaveText('WAWhatsApp · 5');
+    await expect(dlg.locator('[data-sec="whatsapp"] .cv-ncc-cap')).toHaveText('WhatsApp · 5');
+    await expect(dlg.locator('[data-sec="whatsapp"] .cv-ncc-cap .cv-ncc-svc.is-net-whatsapp svg')).toHaveCount(1);
     const wa = dlg.locator('[data-sec="whatsapp"] .cv-ncc-row');
     await expect(wa).toHaveCount(3);
     await expect(wa.locator('.cv-ncc-name')).toHaveText(['Anna Albers', 'Jonas Fischer', 'Kim Muster']);
@@ -202,7 +203,7 @@ test.describe('chats – „Neuer Chat“ with contacts (Messenger 1.18)', () =>
     await cv.locator('[aria-label="Neuer Chat"]').click();
     const search = dlg.locator('input[type=search]');
     await search.fill('berg');
-    await expect(dlg.locator('[data-sec="whatsapp"] .cv-ncc-cap')).toHaveText('WAWhatsApp');
+    await expect(dlg.locator('[data-sec="whatsapp"] .cv-ncc-cap')).toHaveText('WhatsApp');
     await expect(dlg.locator('[data-sec="whatsapp"] .cv-ncc-name')).toHaveText(['Lena Berger']);
     await expect(dlg.locator('[data-sec="gatecontrol"]')).toHaveCount(0);
     await expect(dlg.locator('[data-sec="book"]')).toHaveCount(0);

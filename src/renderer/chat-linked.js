@@ -41,7 +41,7 @@
 	const NS = 'http://www.w3.org/2000/svg';
 
 	function create(kit) {
-		const { api, t, el, icon, iconBtn, clear, confirmDialog, toast } = kit;
+		const { api, t, el, icon, iconBtn, clear, confirmDialog, toast, netLogo } = kit;
 		let host = null;          // where the section is drawn right now (the page redraws it at will)
 		let info = null;          // GET bridges
 		let loading = false;
@@ -307,7 +307,8 @@
 			for (const n of nets) {
 				const r = CS.linkedRow(n, cx);
 				card.appendChild(el('div', { class: 'cv-pref cv-br-row', 'data-net': n.id, 'data-state': r.state }, [
-					el('span', { class: 'cv-br-mark', 'aria-hidden': 'true', text: r.mark }),
+					// Messenger 1.20: the messenger's logo instead of „WA“
+					typeof netLogo === 'function' ? netLogo(n.id, { size: 18, cls: 'cv-br-mark' }) : el('span', { class: 'cv-br-mark', 'aria-hidden': 'true', text: r.mark }),
 					el('span', { class: 'cv-pref-tx' }, [el('b', { text: r.name }), el('small', { text: r.sub })]),
 					el('span', { class: 'cv-br-act' }, [
 						pill(r.pill),

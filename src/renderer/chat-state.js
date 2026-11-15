@@ -264,6 +264,8 @@
 		if (m.mine) return { text: `${ctx.t('chat.you')}: ${s}`, typing: false };
 		// Messenger 1.6 notice channel: everything in it comes from GateControl
 		if (isNotice(c)) return { text: s, typing: false };
+		// Messenger 1.20: a channel writes everything itself
+		if (isChannel(c)) return { text: s, typing: false };
 		if (c.kind === 'group') return { text: `${senderName(m, c, ctx)}: ${s}`, typing: false };
 		return { text: s, typing: false };
 	}
@@ -354,7 +356,10 @@
 		const crosses = (what) => !b || (!notSent && Array.isArray(b.supports) && b.supports.includes(what));
 		return {
 			reply: live && canSend && crosses('reply'),
-			react: live && features.reactions !== false && canSend && crosses('reaction'),
+			// Messenger 1.20: a channel or a group where only admins write — no answer, but a reaction (`can.react`; in a
+			// channel the person's own, until the bridge refused one)
+			react: live && features.reactions !== false && crosses('reaction')
+				&& (b && c.can && c.can.react === false ? false : (canSend || (!!b && !!(c.can && c.can.react) && !m.mine && mb.state !== 'failed'))),
 			copy: live && !!m.text,
 			edit: live && m.mine && ['text', 'image', 'file'].includes(m.kind) && features.edit !== false && withinWindow(m, limits, now)
 				&& (!b || (m.kind === 'text' && !mb.remote && !mb.placeholder && canSend && crosses('edit'))),
@@ -435,6 +440,8 @@
 		const typing = typingText(c, ctx);
 		if (typing) return { text: typing, typing: true };
 		if (!c) return { text: '', typing: false };
+		// Messenger 1.20: „Kanal · WhatsApp“
+		if (isChannel(c)) return { text: ctx.t('chat.ch.sub', { network: bridgeLabel(c) }), typing: false };
 		// Messenger 1.14: „über WhatsApp“
 		if (bridgeOf(c)) return { text: ctx.t('chat.bc.via', { network: bridgeLabel(c) }), typing: false };
 		// Messenger 1.6 notice channel: "Mitteilungen von Schule – nur für dich"
@@ -456,6 +463,9 @@
 	function composerBlock(c) {
 		if (!c) return 'readonly';
 		// Messenger 1.14: a chat over a bridge that takes nothing right now (bridgeBlock says why)
+		// Messenger 1.20: a channel (only the channel writes), a group where only admins write (while the bridge runs)
+		if (bridgeOf(c) && c.can && c.can.send === false && c.can.sendReason === 'channel') return 'channel';
+		if (bridgeOf(c) && c.can && c.can.send === false && c.can.sendReason === 'admins_only' && bridgeOf(c).state === 'ok' && !bridgeOf(c).closed) return 'admins_only';
 		if (bridgeOf(c)) return c.can && c.can.send === false ? 'bridge' : null;
 		if (c.readonly) return 'readonly';
 		if (c.kind === 'direct' && c.peer && c.peer.gone) return 'peerGone';
@@ -479,6 +489,8 @@
 		// Messenger 1.11: 423 quarantined | scan_pending | scan_blocked of a file, 422 infected, 503 scan_unavailable
 		const scanText = SCAN ? SCAN.refusalText(res && typeof res === 'object' ? res : { code }, t) : null;
 		if (scanText) return scanText;
+		// Messenger 1.20: 409 bridge_read_only — reacting in channels went off (the bridge refused a reaction)
+		if (code === 'bridge_read_only' && res && typeof res === 'object' && res.reason === 'reactions_off') return t('chat.error.reactions_off');
 		if (code) {
 			const key = `chat.error.${code}`;
 			const v = t(key);
@@ -809,6 +821,8 @@
 		if (!b) return null;
 		if (BRIDGE_STATES.includes(b.state)) return { key: `state_${b.state}`, relink: b.state === 'logged_out' || b.state === 'unlinked', warn: b.state !== 'unlinked' && b.state !== 'off' };
 		if (b.closed) return { key: 'closed', relink: false, warn: false };
+		// Messenger 1.20: read only by design (a channel, a group where only admins write) — the composer says so
+		if (c.can && c.can.send === false && (c.can.sendReason === 'channel' || c.can.sendReason === 'admins_only')) return null;
 		if (c.can && c.can.send === false) return { key: 'cannot_send', relink: false, warn: false };
 		return null;
 	}
@@ -817,6 +831,8 @@
 	function senderName(m, c, ctx, opts) {
 		const mb = m && m.bridge && typeof m.bridge === 'object' ? m.bridge : null;
 		if (mb && mb.sender) return str(mb.sender.name) || ctx.t('chat.bc.unknown_contact');
+		// Messenger 1.20: a post of a channel — the channel wrote it
+		if (m && !m.mine && isChannel(c)) return title(c, ctx.t);
 		if (m && !m.mine && bridgeOf(c) && (m.senderId === null || m.senderId === undefined)) return bridgeLabel(c);
 		return nameOf(c, m ? m.senderId : null, ctx, opts);
 	}
@@ -847,7 +863,8 @@
 		const g = p.geo && typeof p.geo === 'object' ? p.geo : null;
 		const geo = g && Number.isFinite(g.lat) && Number.isFinite(g.lon) && Math.abs(g.lat) <= 90 && Math.abs(g.lon) <= 180 ? { lat: g.lat, lon: g.lon } : null;
 		const state = p.state === 'loading' || p.state === 'failed' || p.state === 'on_request' ? p.state : null;
-		return { kind: p.kind, name: str(p.name).slice(0, 200) || null, state, reason: state === 'failed' ? (PH_FAIL.includes(p.reason) ? p.reason : 'other') : null, geo };
+		// Messenger 1.19: `retry` — a file that failed may be asked for once more („Erneut versuchen“)
+		return { kind: p.kind, name: str(p.name).slice(0, 200) || null, state, reason: state === 'failed' ? (PH_FAIL.includes(p.reason) ? p.reason : 'other') : null, geo, retry: state === 'failed' && p.retry === true };
 	}
 
 	/**
@@ -866,6 +883,134 @@
 		if (p.state === 'on_request') return `${what} – ${t('chat.bc.ph_on_request')}`;
 		if (p.state === 'failed') return `${what} – ${t(`chat.bc.ph_fail.${p.reason}`, { network })}`;
 		return `${what} – ${t('chat.bc.ph_later', { network })}`;
+	}
+
+
+	// ── Messenger 1.20: channels, format, links, link previews, the messengers' logos ──
+
+	/** A channel of another messenger (`bridge.channel`): read only, on the page „Kanäle“. */
+	function isChannel(c) {
+		const b = bridgeOf(c);
+		return !!b && b.channel === true;
+	}
+
+	/** The second line of the entry „Kanäle“: „3 neue Beiträge“ / „1 neuer Beitrag“ / „Keine neuen Beiträge“. */
+	function channelEntryText(sum, t) {
+		const n = sum && Number.isSafeInteger(sum.unread) && sum.unread > 0 ? sum.unread : 0;
+		if (!n) return t('chat.ch.entryNone');
+		return n === 1 ? t('chat.ch.entryOne') : t('chat.ch.entryNew', { n: n > 99 ? '99+' : n });
+	}
+
+	/** The networks of the channels for the page's subtitle („WhatsApp“). */
+	function channelNetworks(list) {
+		return bridgeNetworks(list).map((n) => n.label).join(' · ');
+	}
+
+	/** The channels filtered by the page's search (name, newest post). */
+	function filterChannels(list, q, ctx) {
+		const s = str(q).trim().toLowerCase();
+		const items = Array.isArray(list) ? list : [];
+		if (!s) return items;
+		return items.filter((c) => title(c, ctx.t).toLowerCase().includes(s) || preview(c, ctx).text.toLowerCase().includes(s));
+	}
+
+	/** Has the person an own reaction on this message (the note under it in a channel)? */
+	function hasOwnReaction(m, ctx) {
+		const meId = ctx && ctx.me && ctx.me.user ? ctx.me.user.id : null;
+		return !!m && Array.isArray(m.reactions) && m.reactions.some((r) => r && Array.isArray(r.userIds) && r.userIds.includes(meId));
+	}
+
+	/** An http(s) address (a `www.` one as https) → its href, or null (no other scheme, no user / password). */
+	function safeHref(raw) {
+		const v = str(raw).trim();
+		if (!v || v.length > 2048) return null;
+		const s = /^www\./i.test(v) ? `https://${v}` : v;
+		let u;
+		try { u = new URL(s); } catch (_) { return null; }
+		return (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname && !u.username && !u.password ? u.href : null;
+	}
+
+	const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"]{2,2000}/gi;
+	const TRAIL_RE = /[.,;:!?)\]}'"»“”]+$/;
+
+	/** Plain text → [{ text, href? }]: http(s) and www. addresses become links (trailing punctuation stays text). */
+	function linkify(text) {
+		const s = str(text);
+		const out = [];
+		let last = 0;
+		URL_RE.lastIndex = 0;
+		let m;
+		while ((m = URL_RE.exec(s))) {
+			const raw = m[0].replace(TRAIL_RE, '');
+			const href = raw.length > 3 ? safeHref(raw) : null;
+			if (!href) continue;
+			if (m.index > last) out.push({ text: s.slice(last, m.index) });
+			out.push({ text: raw, href });
+			last = m.index + raw.length;
+			URL_RE.lastIndex = last;
+		}
+		if (last < s.length) out.push({ text: s.slice(last) });
+		return out;
+	}
+
+	const MARK_TYPES = ['bold', 'italic', 'strike', 'code'];
+
+	/**
+	 * A text with its `marks` (bold, italic, strike, code, link — UTF-16 offsets, `end` exclusive, may nest; unknown
+	 * types and marks outside the text are left out) → [{ text, bold, italic, strike, code, href }] — the pieces the view
+	 * builds as elements (never HTML). Addresses without a mark are linkified in every piece.
+	 */
+	function richText(text, marks) {
+		const s = str(text);
+		const list = (Array.isArray(marks) ? marks : []).filter((k) => k && typeof k === 'object' && (MARK_TYPES.includes(k.type) || k.type === 'link')
+			&& Number.isSafeInteger(k.start) && Number.isSafeInteger(k.end) && k.start >= 0 && k.end <= s.length && k.end > k.start);
+		const plain = (piece, extra) => linkify(piece).map((x) => ({ bold: false, italic: false, strike: false, code: false, href: null, ...extra, ...x, ...(extra.href ? { href: extra.href } : {}) }));
+		if (!list.length) return s ? plain(s, {}) : [];
+		const cuts = [...new Set([0, s.length, ...list.flatMap((k) => [k.start, k.end])])].sort((a, b) => a - b);
+		const out = [];
+		for (let i = 0; i < cuts.length - 1; i++) {
+			const a = cuts[i];
+			const b = cuts[i + 1];
+			const on = list.filter((k) => k.start <= a && k.end >= b);
+			const link = on.find((k) => k.type === 'link' && safeHref(k.url));
+			const extra = { bold: on.some((k) => k.type === 'bold'), italic: on.some((k) => k.type === 'italic'), strike: on.some((k) => k.type === 'strike'), code: on.some((k) => k.type === 'code'), href: link ? safeHref(link.url) : null };
+			const piece = s.slice(a, b);
+			if (extra.href) out.push({ ...extra, text: piece });
+			else out.push(...plain(piece, extra));
+		}
+		return out;
+	}
+
+	/**
+	 * `preview` of a text message → { href, title, description, site, image: { mediaId, w, h, loading } | null } or
+	 * null (no http(s) address). A picture that failed or has no file is left out.
+	 */
+	function linkPreview(m) {
+		const p = m && m.kind === 'text' && !m.deleted && m.preview && typeof m.preview === 'object' ? m.preview : null;
+		const href = p ? safeHref(p.url) : null;
+		if (!href) return null;
+		const im = p.image && typeof p.image === 'object' ? p.image : null;
+		const dim = (v) => (Number.isSafeInteger(v) && v > 0 && v <= 100000 ? v : null);
+		let image = null;
+		if (im && im.state === 'loading') image = { mediaId: null, w: dim(im.w), h: dim(im.h), loading: true };
+		else if (im && im.state !== 'failed' && typeof im.mediaId === 'string' && /^[0-9a-f]{32}$/.test(im.mediaId)) image = { mediaId: im.mediaId, w: dim(im.w), h: dim(im.h), loading: false };
+		let host = '';
+		try { host = new URL(href).hostname; } catch (_) { host = ''; }
+		return { href, title: str(p.title).slice(0, 300) || null, description: str(p.description).slice(0, 1000) || null, site: str(p.site).slice(0, 100) || host, image };
+	}
+
+	// The messengers' logos (plain glyphs, only to say which service it is; 24×24, filled, evenodd) — like the portal's
+	// MS.netLogo; a network this version does not know gets a speech bubble.
+	const NET_GLYPHS = {
+		whatsapp: ['M12 2.6a9.3 9.3 0 0 0-8 14l-1.3 4.8 4.9-1.3A9.3 9.3 0 1 0 12 2.6zm0 1.7a7.6 7.6 0 1 1-3.9 14.1l-.3-.2-2.9.8.8-2.8-.2-.3A7.6 7.6 0 0 1 12 4.3z', 'M9.2 7.6c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.4 0 .6l-.5.7c-.1.2-.2.3 0 .6.6 1 1.4 1.8 2.5 2.4.3.1.4.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.4.4.1.3 0 1-.3 1.4-.4.5-1.3 1-2 1-1 .1-2.3-.4-4-1.6-1.5-1.2-2.5-2.6-2.9-3.6-.4-1-.2-2 .5-2.8z'],
+		gatecontrol: ['M12 2.5l7.5 2.8v5.9c0 4.8-3.2 8.6-7.5 10.3-4.3-1.7-7.5-5.5-7.5-10.3V5.3z'],
+	};
+	const NET_OTHER = ['M4 5h16v11H9l-5 4z'];
+
+	/** The logo of a network → { known, paths } (paths of a 24×24 glyph). */
+	function netGlyph(network) {
+		const known = Object.prototype.hasOwnProperty.call(NET_GLYPHS, str(network));
+		return { known, paths: known ? NET_GLYPHS[str(network)] : NET_OTHER };
 	}
 
 	// ── Messenger 1.15: files over a bridge ──
@@ -1729,6 +1874,7 @@
 		STORY_DURATION_DEFAULT_H,
 		PRESETS,
 		features14,
+		isChannel, channelEntryText, channelNetworks, filterChannels, hasOwnReaction, safeHref, linkify, richText, linkPreview, netGlyph,
 		bridgeOf, bridgeName, bridgeMark, bridgeLabel, bridgeNetworks, bridgeBlock, senderName, quoteName, senderKey, placeholderOf, placeholderText, bridgeFailure,
 		bridgeOutKind, bridgeTakesFiles, bridgeMediaRefusal, bridgeImageType, voiceMime, mediaTypeText,
 		NEW_CHAT_CC, newChatNumber, formatNumber, newChatServices, newChatState, newChatErrorState,

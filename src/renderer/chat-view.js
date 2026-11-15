@@ -26,6 +26,11 @@
  * family group) under the GateControl entry, notice channels tagged
  * "Mitteilungen", notice cards (chat-rich.js) and "Wo Mitteilungen
  * erscheinen" in the chat settings (notify-routes.js).
+ * Messenger 1.20 (Chats v2, Teil A): with `bridge_channels` the WhatsApp channels leave the list — the entry
+ * „Kanäle“ (TV symbol, grey dot for new posts) above it opens their page; a channel is read only (bell, bar, „Nur
+ * lesen“), a group where only admins write says so instead of the composer. Texts show their format (`marks`) and
+ * clickable addresses in every chat (opened in the browser), a link preview sits on top of the bubble, a bridged file
+ * that failed has „Erneut versuchen“, the messengers' logos replace „WA“. The own picture's menu has „Mein Profil“.
  *
  * Map tiles and addresses come from the main process (chat.mapTile /
  * mapSearch / mapReverse → core MapService, OpenStreetMap) as bytes / data;
@@ -104,6 +109,8 @@
 		cart: 'M3 4h2l2.4 11h11L21 7H7|M9 20h.01M18 20h.01',
 		// Messenger 1.18: „Aus deinem Adressbuch“
 		book: 'M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z|M5 17a3 3 0 0 1 3-3h11',
+		// Messenger 1.20: channels (the TV symbol)
+		tv: 'M3 7h18v12H3z|M8 3l4 4 4-4',
 	};
 	const FILLED = new Set(['play', 'pause']);
 
@@ -125,6 +132,34 @@
 			s.appendChild(p);
 		}
 		return s;
+	}
+
+	/**
+	 * Messenger 1.20: the logo of a messenger at a picture, a row or a chip (instead of the letters „WA“) — a plain glyph
+	 * from static path data (chat-state netGlyph), on the service's colour; an unknown network gets a speech bubble.
+	 * `label`: „über WhatsApp“ for assistive tech (else hidden from it). cls: 'cv-net-mark' (corner of a picture) or another.
+	 */
+	function netLogo(network, { size = 10, label = null, cls = 'cv-net-mark' } = {}) {
+		const g = CS.netGlyph(network);
+		const s = document.createElementNS(NS, 'svg');
+		s.setAttribute('viewBox', '0 0 24 24');
+		s.setAttribute('width', String(size));
+		s.setAttribute('height', String(size));
+		s.setAttribute('aria-hidden', 'true');
+		s.setAttribute('focusable', 'false');
+		for (const d of g.paths) {
+			const p = document.createElementNS(NS, 'path');
+			p.setAttribute('d', d);
+			p.setAttribute('fill', 'currentColor');
+			p.setAttribute('fill-rule', 'evenodd');
+			s.appendChild(p);
+		}
+		const box = document.createElement('span');
+		box.className = `${cls} is-net-${g.known ? network : 'other'}`;
+		box.setAttribute('data-net', g.known ? network : 'other');
+		if (label) { box.setAttribute('role', 'img'); box.setAttribute('aria-label', label); box.title = label; } else box.setAttribute('aria-hidden', 'true');
+		box.appendChild(s);
+		return box;
 	}
 
 	/** el('div', { class, text, on: { click }, attrs… }, [children]) — text only via textContent. */
@@ -215,11 +250,15 @@
 			fetching: new Set(),    // message ids whose file of the history is being asked for
 			quietNext: false,       // the next redraw comes from older messages of the history: no sound
 			quietRender: false,
+			// Messenger 1.20: the channels (chat:channels), the entry's { count, unread }, the page „Kanäle“ in the list pane
+			chans: [],
+			chanSum: null,
+			chanView: false,
 		};
 		const ctx = () => ({ t, locale: o.getLocale(), me: S.status && S.status.me, people: S.people });
 		const me = () => (S.status && S.status.me) || null;
 		const f14 = () => CS.features14(me());
-		const conv = (id) => S.convs.find((c) => c.id === id) || null;
+		const conv = (id) => S.convs.find((c) => c.id === id) || S.chans.find((c) => c.id === id) || null;
 		const curConv = () => (typeof S.cur === 'number' ? conv(S.cur) : null);
 
 		// ── Skeleton ─────────────────────────────────────────
@@ -236,7 +275,8 @@
 		refs.h = el('h1', { class: 'cv-h', text: t('chat.title') });
 		refs.prefsBtn = iconBtn('gear', t('chat.prefsOpen'), () => openSettings(), 'cv-ib-flat');
 		// Messenger 1.4.0: the own avatar sets the status; chips filter the list
-		refs.meBtn = el('button', { type: 'button', class: 'cv-me', hidden: true, 'aria-label': t('chat.st.yours'), title: t('chat.st.yours'), on: { click: () => { if (status) status.statusDialog(); } } });
+		// the own avatar: a menu with „Dein Status“ and „Mein Profil“ (the user profile in the portal)
+		refs.meBtn = el('button', { type: 'button', class: 'cv-me', hidden: true, 'aria-label': t('chat.st.yours'), title: t('chat.st.yours'), 'aria-haspopup': 'menu', on: { click: () => meMenu() } });
 		refs.chips = el('div', { class: 'cv-chips cv-filter', role: 'group', 'aria-label': t('chat.filter.label'), hidden: true });
 		refs.newBtn = el('button', { type: 'button', class: 'cv-ib cv-ib-pri', 'aria-label': t('chat.newChat'), title: t('chat.newChat'), on: { click: () => newChatDialog() } }, [icon('pen', 16, '2.4')]);
 		refs.list.append(
@@ -303,18 +343,33 @@
 			return box;
 		}
 
-		/** A chat's picture; a chat over a bridge (Messenger 1.14) carries the service's sign ("WA") at its corner. */
+		/** A chat's picture; a chat over a bridge (Messenger 1.14) carries the service's sign at its corner (1.20: its logo). */
 		function convAvatar(c, size) {
 			const a = avatar(CS.avatarOf(c), size);
 			const b = CS.bridgeOf(c);
 			if (!b) return a;
-			return el('span', { class: 'cv-av-wrap' }, [a, el('span', { class: `cv-net-mark${size < 40 ? ' is-sm' : ''}`, title: CS.bridgeLabel(c), 'aria-hidden': 'true', text: CS.bridgeMark(b.network) })]);
+			// Messenger 1.20: the messenger's logo instead of „WA“
+			return el('span', { class: 'cv-av-wrap' }, [a, netLogo(b.network, { size: size < 40 ? 9 : 11, label: t('chat.bc.via', { network: CS.bridgeLabel(c) }), cls: `cv-net-mark${size < 40 ? ' is-sm' : ''}` })]);
 		}
 
 		// Messenger 1.14: the explanation of a chat over a bridge was read (per service, this PC)
 		const INTRO_KEY = 'gc.chat.bridgeIntro';
 		const introSeen = (net) => { try { return JSON.parse(root.localStorage.getItem(INTRO_KEY) || '[]').includes(net); } catch (_) { return false; } };
 		const markIntro = (net) => { try { const l = JSON.parse(root.localStorage.getItem(INTRO_KEY) || '[]'); if (!l.includes(net)) root.localStorage.setItem(INTRO_KEY, JSON.stringify(l.concat(net).slice(-20))); } catch (_) { /* storage unavailable */ } };
+
+		/** The menu of the own avatar: „Dein Status“, „Mein Profil“ (portal, /portal#profil). */
+		function meMenu() {
+			if (typeof o.openPortal !== 'function') { if (status) status.statusDialog(); return; }
+			popMenu(refs.meBtn, [
+				status ? ['user', t('chat.st.yours'), () => status.statusDialog(), { id: 'status' }] : null,
+				['external', t('chat.profile.title'), () => openProfile(), { id: 'profile' }],
+			]);
+		}
+		/** „Mein Profil“: the portal on its profile page (older servers open the portal home). */
+		function openProfile() {
+			if (typeof o.openPortal !== 'function') return;
+			Promise.resolve(o.openPortal('/portal#profil')).then((ok) => { if (ok === false) toast(t('chat.card.noPortal'), 'warning'); });
+		}
 
 		// ── Messenger 1.4.0: modules and their kit ───────────
 
@@ -442,7 +497,7 @@
 		const enterSends = () => !root.GCChatSettings || root.GCChatSettings.local.get('gc.chat.enterSends', true) !== false;
 
 		const kit = {
-			api, t, el, icon, iconBtn, clear, toast, CS, rootEl,
+			api, t, el, icon, iconBtn, clear, toast, CS, rootEl, netLogo,
 			dialog: (...a) => dialog(...a),
 			confirmDialog: (...a) => confirmDialog(...a),
 			avatar: (a, size) => avatar(a, size),
@@ -467,6 +522,8 @@
 			// another plugin's page (card link) / the portal: false → not reachable now (no VPN)
 			openRoute: typeof o.openRoute === 'function' ? (route, target) => Promise.resolve(o.openRoute(route, target || null)).then((ok) => { if (ok === false) toast(t('chat.card.noPortal'), 'warning'); }) : null,
 			openPortal: typeof o.openPortal === 'function' ? () => Promise.resolve(o.openPortal()).then((ok) => { if (ok === false) toast(t('chat.card.noPortal'), 'warning'); }) : null,
+			// the user profile: „Mein Profil“ in the portal
+			openProfile: typeof o.openPortal === 'function' ? () => openProfile() : null,
 			afterSend: () => { playSound('out'); scrollBottom(true); },
 			exportChat,
 			playSound,
@@ -606,6 +663,10 @@
 			// what the bubbles show of the conversation: the ticks, and (a chat over a bridge) whether "Erneut senden" is offered
 			const ticks = (c) => (c ? `${c.readUpTo}|${c.deliveredUpTo}|${c.can && c.can.send === false ? 0 : 1}` : '');
 			S.convs = Array.isArray(r.conversations) ? r.conversations : [];
+			// Messenger 1.20 (bridge_channels): the channels are not in the list — the entry „Kanäle“ and their page
+			S.chanSum = r.channels && typeof r.channels === 'object' ? r.channels : null;
+			if (S.chanSum && (S.chanSum.count > 0 || S.chans.length) && typeof api.channels === 'function') await loadChannels();
+			else if (!S.chanSum) { S.chans = []; S.chanView = false; }
 			if (typeof S.cur === 'number' && !conv(S.cur)) closeChat();
 			renderList();
 			if (typeof S.cur === 'number') {
@@ -617,7 +678,50 @@
 			}
 		}
 
+		/** Messenger 1.20: the channels (chat:channels, from the core's cache). */
+		async function loadChannels() {
+			const r = await api.channels().catch(() => null);
+			if (!r || r.ok === false) return;
+			S.chans = Array.isArray(r.channels) ? r.channels : [];
+			if (r.summary) S.chanSum = r.summary;
+			if (S.chanView && !S.chanSum) S.chanView = false;
+		}
+
+		/** Messenger 1.20: the entry „Kanäle“ above the list — a grey dot while a channel has a new post. */
+		function chanEntryEl() {
+			const sum = S.chanSum || { count: 0, unread: 0 };
+			const sub = CS.channelEntryText(sum, t);
+			const b = el('button', { type: 'button', class: `cv-row cv-row-chan${sum.unread ? ' has-new' : ''}`, role: 'listitem', 'data-row': 'channels',
+				'aria-label': sum.unread ? t('chat.ch.entryAria') : t('chat.ch.entry'),
+				on: { click: () => { S.chanView = true; S.q = ''; refs.q.value = ''; renderList(); loadChannels().then(renderList); } } }, [
+				el('span', { class: 'cv-av cv-av-icon cv-av-chan', 'aria-hidden': 'true', style: 'width:42px;height:42px' }, [icon('tv', 20)]),
+				el('span', { class: 'cv-row-tx' }, [
+					el('span', { class: 'cv-row-top' }, [el('b', { class: 'cv-row-name', text: t('chat.ch.entry') })]),
+					el('span', { class: 'cv-row-bottom' }, [el('span', { class: 'cv-row-pv', text: sub }), sum.unread ? el('span', { class: 'cv-dot', 'aria-hidden': 'true' }) : null]),
+				]),
+			]);
+			return b;
+		}
+
+		/** Messenger 1.20: the page „Kanäle“ in the list pane (back arrow, the channels like chats, the hint under them). */
+		function renderChannels() {
+			const c = ctx();
+			refs.chips.hidden = true;
+			clear(refs.rows);
+			const nets = CS.channelNetworks(S.chans);
+			refs.rows.appendChild(el('div', { class: 'cv-chan-head' }, [
+				iconBtn('back', t('chat.common.back'), () => { S.chanView = false; S.q = ''; refs.q.value = ''; renderList(); }, 'cv-ib-flat'),
+				el('span', { class: 'cv-chan-ht' }, [el('b', { text: t('chat.ch.title') }), nets ? el('small', { text: nets }) : null]),
+			]));
+			const list = CS.filterChannels(S.chans, S.q, c);
+			for (const cv of list) refs.rows.appendChild(rowEl(cv, c));
+			if (list.length && !S.q) refs.rows.appendChild(el('p', { class: 'cv-chan-hint', text: t('chat.ch.pageHint') }));
+			refs.listEmpty.hidden = list.length > 0;
+			refs.listEmpty.textContent = S.chans.length ? t('chat.noMatch') : t('chat.ch.emptyList');
+		}
+
 		function renderList() {
+			if (S.chanView) { renderChannels(); return; }
 			const c = ctx();
 			const f = f14();
 			// Messenger 1.4.0: archived chats apart, chips (unread, groups, own lists)
@@ -634,6 +738,8 @@
 			if (S.archived) {
 				refs.rows.appendChild(el('button', { type: 'button', class: 'cv-archived-head', on: { click: () => { S.archived = false; renderList(); } } }, [icon('back', 16), el('b', { text: t('chat.archive.title') }), el('span', { class: 'cv-dim', text: String(arch.count) })]));
 			} else {
+				// Messenger 1.20: the entry „Kanäle“ as the first row, while the person follows a channel with a post
+				if (!S.q && S.chanSum && S.chanSum.count > 0) refs.rows.appendChild(chanEntryEl());
 				const inbox = !!o.notify && !S.q;
 				const labels = !S.q && (!!strip || (f.status && !!o.notify) || sec.pinned.length > 0);
 				// "Mein Status" above "Angeheftet"
@@ -678,7 +784,10 @@
 			clear(refs.chips);
 			const unread = S.convs.filter((x) => !x.archived && (x.unread || 0) > 0).length;
 			for (const [k, label] of chips) {
+				// Messenger 1.20: the source chips carry the messenger's logo
+				const net = k === 'gc' ? 'gatecontrol' : (k.startsWith('net:') ? k.slice(4) : null);
 				refs.chips.appendChild(el('button', { type: 'button', class: 'cv-chip-btn', 'data-filter': k, 'aria-pressed': S.filter === k ? 'true' : 'false', on: { click: () => { S.filter = k; renderList(); } } }, [
+					net ? netLogo(net, { size: 9, cls: 'cv-chip-net' }) : null,
 					el('span', { text: label }),
 					k === 'unread' && unread ? el('small', { text: String(unread) }) : null,
 				]));
@@ -955,19 +1064,32 @@
 			if (!c) return;
 			const cx = ctx();
 			const sub = CS.headSub(c, cx);
-			clear(refs.head).append(
+			clear(refs.head).append(...[
 				iconBtn('back', t('chat.common.back'), () => closeChat(), 'cv-ib-flat cv-only-narrow'),
 				el('button', { type: 'button', class: 'cv-head-who', 'aria-label': t('chat.info.open'), on: { click: () => toggleInfo() } }, [
 					convAvatar(c, 38),
 					el('span', { class: 'cv-head-tx' }, [el('b', { text: CS.title(c, t) }), el('span', { class: `cv-head-sub${sub.typing ? ' is-typing' : ''}`, text: sub.text })]),
 				]),
 				el('span', { class: 'cv-grow' }),
+				// Messenger 1.20: a channel's bell — struck through while it sends no pushes (the default)
+				CS.isChannel(c) ? bellBtn(c) : null,
 				iconBtn('search', t('chat.search.inChat'), () => toggleSearch(), 'cv-ib-flat'),
 				iconBtn('info', t('chat.info.open'), () => toggleInfo(), `cv-ib-flat${S.infoOpen ? ' is-on' : ''}`),
-			);
+			].filter(Boolean));
 			const subEl = refs.head.querySelector('.cv-head-sub');
 			if (subEl && sub.online) subEl.classList.add('is-online');
 			renderBars();
+		}
+
+		/** Messenger 1.20: the bell of a channel → PATCH { notify: all | none }. */
+		function bellBtn(c) {
+			const label = c.muted ? t('chat.ch.bellOn') : t('chat.ch.bellOff');
+			const b = iconBtn(c.muted ? 'bellOff' : 'bell', label, () => setChannelBell(c, !!c.muted), 'cv-ib-flat cv-chan-bell');
+			b.setAttribute('aria-pressed', c.muted ? 'false' : 'true');
+			return b;
+		}
+		function setChannelBell(c, on) {
+			return patchConv(c, { notify: on ? 'all' : 'none', mutedUntil: null });
 		}
 
 		/**
@@ -1019,6 +1141,24 @@
 			const b = CS.bridgeOf(c);
 			if (!b) return;
 			const network = CS.bridgeLabel(c);
+			// Messenger 1.20: a channel — read only, muted until its bell is on; when the bridge is away new posts come later
+			if (CS.isChannel(c)) {
+				if (b.state === 'unreachable') {
+					refs.bars.appendChild(el('div', { class: 'cv-bc-state is-warn', role: 'status', 'data-state': 'channel_down' }, [icon('alert', 16), el('span', { class: 'cv-bc-tx', text: t('chat.ch.down', { network }) })]));
+					return;
+				}
+				const block = CS.bridgeBlock(c);
+				if (block) {
+					refs.bars.appendChild(el('div', { class: `cv-bc-state${block.warn ? ' is-warn' : ''}`, role: 'status', 'data-state': block.key }, [icon(block.warn ? 'alert' : 'info', 16), el('span', { class: 'cv-bc-tx', text: t(`chat.bc.${block.key}`, { network }) })]));
+					return;
+				}
+				refs.bars.appendChild(el('div', { class: 'cv-bc-strip cv-chan-bar' }, [
+					icon('info', 14),
+					el('span', { class: 'cv-bc-tx', text: [t('chat.ch.bar', { network }), c.muted ? t('chat.ch.barMuted') : null].filter(Boolean).join(' ') }),
+					c.muted ? el('button', { type: 'button', class: 'cv-bc-more', 'data-act': 'bell-on', text: t('chat.ch.turnOn'), on: { click: () => setChannelBell(c, true) } }) : null,
+				]));
+				return;
+			}
 			const block = CS.bridgeBlock(c);
 			if (block) {
 				refs.bars.appendChild(el('div', { class: `cv-bc-state${block.warn ? ' is-warn' : ''}`, role: 'status', 'data-state': block.key }, [
@@ -1112,7 +1252,8 @@
 				// 1.18: … or with a contact of „Neuer Chat“ (WhatsApp, the address book)
 				const st = S.startedByNumber && S.startedByNumber.id === c.id ? S.startedByNumber : null;
 				if (st && CS.bridgeOf(c)) refs.msgs.appendChild(el('div', { class: 'cv-sys', 'data-sys': 'new-chat' }, [el('span', { text: CS.startedLine(st, c, t) })]));
-				else refs.msgs.appendChild(el('div', { class: 'cv-empty', text: t('chat.empty') }));
+				// Messenger 1.20: a channel without posts
+				else refs.msgs.appendChild(el('div', { class: 'cv-empty', text: CS.isChannel(c) ? t('chat.ch.empty') : t('chat.empty') }));
 			}
 			const items = CS.timeline(v.messages, v.pending, c, cx, { unreadFrom: S.unreadFrom.has(c.id) ? S.unreadFrom.get(c.id) : null });
 			for (const it of items) {
@@ -1164,7 +1305,11 @@
 			const wrap = el('div', { class: `cv-msg${mine ? ' is-out' : ' is-in'}${it.cont ? ' is-cont' : ''}`, 'data-id': m.id ? String(m.id) : '', 'data-client': m.clientId || '' });
 			// Messenger 1.14: a contact of another messenger (no account: `bridge.sender`)
 			const contact = m.bridge && m.bridge.sender ? m.bridge.sender : null;
-			if (!mine && c.kind === 'group' && !it.cont && contact) {
+			// Messenger 1.20: in a channel everything comes from the channel — no sender picture, no name
+			const chan = CS.isChannel(c);
+			if (chan) {
+				// nothing in front of the bubble
+			} else if (!mine && c.kind === 'group' && !it.cont && contact) {
 				// Messenger 1.15: the contact's picture (`avatarMediaId`), fetched once a message of theirs was shown
 				const cav = typeof contact.avatarMediaId === 'string' && contact.avatarMediaId ? contact.avatarMediaId : null;
 				wrap.appendChild(el('span', { class: 'cv-msg-av' }, [avatar(contact.name ? { ...CS.personAvatar({ name: contact.name }), mediaId: cav } : { kind: 'icon', icon: 'gone', mediaId: cav }, 28)]));
@@ -1176,7 +1321,7 @@
 			}
 			const richKind = !m.deleted && (!CS.isShownKind(m) || ['poll', 'event', 'arrival', 'action', 'card'].includes(m.kind));
 			const b = el('div', { class: `cv-bub${mine ? ' cv-out' : ' cv-in'}${m.deleted ? ' is-deleted' : ''}${m.pending ? ' is-pending' : ''}${m.failed ? ' is-failed' : ''}${richKind ? ` cv-bub-rich is-${CS.isShownKind(m) ? m.kind : 'unknown'}` : ''}` });
-			if (!mine && c.kind === 'group' && !it.cont) {
+			if (!mine && c.kind === 'group' && !it.cont && !chan) {
 				const p = CS.member(c, m.senderId);
 				const name = el('b', { class: 'cv-sender', text: CS.senderName(m, c, cx) });
 				if (p && p.colorHex) name.style.color = p.colorHex;
@@ -1187,6 +1332,9 @@
 			} else {
 				if (m.replyTo) b.appendChild(quoteEl(m.replyTo, c, cx));
 				if (m.replyStory) b.appendChild(storyQuoteEl(m.replyStory, c, cx));
+				// Messenger 1.20: the link preview on top of the bubble
+				const lp = CS.linkPreview(m);
+				if (lp) b.appendChild(linkPreviewEl(lp));
 				// Messenger 1.14: a file or kind of message that does not cross the bridge yet — said, never swallowed;
 				// 1.15: „wird geladen …“ while the server fetches it, why it failed, a location on the map
 				const ph = CS.placeholderOf(m);
@@ -1203,6 +1351,13 @@
 							on: { click: (e) => { e.stopPropagation(); fetchOld(m); } },
 						})]));
 					}
+					// Messenger 1.19: a file that failed and may be asked for once more
+					if (ph.retry && typeof api.fetchFile === 'function') {
+						b.appendChild(el('div', { class: 'cv-bc-fetch' }, [el('button', {
+							type: 'button', class: 'btn btn-sec btn-sm', 'data-act': 'retry-file', disabled: S.fetching.has(m.id) ? true : null,
+							on: { click: (e) => { e.stopPropagation(); fetchOld(m); } },
+						}, [icon('retry', 13), t('chat.bc.ph_retry')])]));
+					}
 				}
 				// Messenger 1.11: a file the host's virus scan checks or blocked — the state instead of picture / player / file
 				const sc = CS.mediaScan(m, t);
@@ -1215,7 +1370,8 @@
 				const rb = richKind ? richBody(m, c, cx) : null;
 				if (rb) b.appendChild(rb);
 				if (m.undecryptable) b.appendChild(el('div', { class: 'cv-text cv-dim', text: t('chat.msg.undecryptable') }));
-				else if (m.text && m.kind !== 'location' && !(ph && ph.geo) && !(rb && (m.kind === 'card' || !CS.isShownKind(m)))) b.appendChild(el('div', { class: 'cv-text', text: m.text }));
+				// Messenger 1.20: the format of the text (`marks`) and clickable addresses — in every chat
+				else if (m.text && m.kind !== 'location' && !(ph && ph.geo) && !(rb && (m.kind === 'card' || !CS.isShownKind(m)))) b.appendChild(richTextEl(m.text, m.marks));
 			}
 			const meta = el('div', { class: 'cv-meta' }, [
 				m.expiresAt ? el('span', { class: 'cv-exp', title: t('chat.msg.expires', { time: CS.when(m.expiresAt, cx.locale) }) }, [icon('timer', 11)]) : null,
@@ -1247,6 +1403,8 @@
 				b.appendChild(el('div', { class: 'cv-failed cv-bc-failed' }, [el('span', { text: bf.text }), c.can && c.can.send ? again : null]));
 			}
 			if (!m.deleted && Array.isArray(m.reactions) && m.reactions.length) b.appendChild(reactionsEl(m, c, cx));
+			// Messenger 1.20: in a channel only the person's own reaction shows — said under it
+			if (chan && !m.deleted && CS.hasOwnReaction(m, cx)) b.appendChild(el('div', { class: 'cv-chan-note', 'data-note': 'reactions' }, [icon('info', 12), el('span', { text: t('chat.ch.reactions', { network: CS.bridgeLabel(c) }) })]));
 			const body = el('div', { class: 'cv-msg-body' }, [b]);
 			if (!m.pending) {
 				const acts = CS.messageActions(m, c, cx);
@@ -1260,6 +1418,49 @@
 			}
 			wrap.appendChild(body);
 			return wrap;
+		}
+
+		/** Messenger 1.20: open an address of a message in the browser (only http / https; main checks it again). */
+		function openLink(href) {
+			const u = CS.safeHref(href);
+			if (u && root.gatecontrol && root.gatecontrol.shell) root.gatecontrol.shell.openExternal(u);
+		}
+
+		/**
+		 * Messenger 1.20: a text with its format and clickable addresses (CS.richText) — built from text nodes and elements,
+		 * never HTML of anybody else.
+		 */
+		function richTextEl(text, marks) {
+			const box = el('div', { class: 'cv-text' });
+			for (const seg of CS.richText(text, marks)) {
+				let node = seg.href
+					? el('a', { class: 'cv-link', href: seg.href, title: seg.href, 'aria-label': `${seg.text} – ${t('chat.msg.openLink')}`, text: seg.text, on: { click: (e) => { e.preventDefault(); e.stopPropagation(); openLink(seg.href); } } })
+					: document.createTextNode(seg.text);
+				for (const [k, tag] of [['code', 'code'], ['strike', 's'], ['italic', 'i'], ['bold', 'b']]) {
+					if (seg[k]) { const w = el(tag, { class: `cv-mk-${k}` }); w.appendChild(node); node = w; }
+				}
+				box.appendChild(node);
+			}
+			return box;
+		}
+
+		/** Messenger 1.20: a link preview — picture, title, description, site; a click opens the address in the browser. */
+		function linkPreviewEl(p) {
+			const card = el('button', { type: 'button', class: 'cv-lp', title: p.href, 'aria-label': [p.title, t('chat.msg.openLink')].filter(Boolean).join(' – '), on: { click: (e) => { e.stopPropagation(); openLink(p.href); } } });
+			const im = p.image;
+			if (im && im.loading) {
+				card.appendChild(el('span', { class: 'cv-lp-wait', style: im.w && im.h ? `aspect-ratio:${im.w} / ${im.h}` : null }, [icon('image', 16), el('span', { text: t('chat.ch.picLoading') })]));
+			} else if (im && im.mediaId) {
+				const pic = el('span', { class: 'cv-lp-pic', style: im.w && im.h ? `aspect-ratio:${im.w} / ${im.h}` : null });
+				card.appendChild(pic);
+				mediaUrl(im.mediaId).then((u) => { if (u) pic.appendChild(el('img', { src: u, alt: '', draggable: 'false' })); else pic.remove(); });
+			}
+			card.appendChild(el('span', { class: 'cv-lp-tx' }, [
+				p.title ? el('b', { text: p.title }) : null,
+				p.description ? el('span', { text: p.description }) : null,
+				el('small', { text: p.site }),
+			]));
+			return card;
 		}
 
 		/** Messenger 1.4.0 kinds (chat-rich.js); without the module: the "newer version" bubble. */
@@ -2002,6 +2203,11 @@
 					refs.composer.appendChild(el('div', { class: 'cv-blocked' }, [icon('block', 15), el('span', { class: 'cv-grow', text: t('chat.block.composer') }), el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('chat.block.unblock'), on: { click: () => setBlocked(c, false) } })]));
 					return;
 				}
+				// Messenger 1.20: a channel (only the channel writes), a group where only admins write
+				if (block === 'channel' || block === 'admins_only') {
+					refs.composer.appendChild(el('div', { class: 'cv-blocked cv-readonly', 'data-block': block }, [icon(block === 'channel' ? 'eye' : 'lock', 15), el('span', { text: t(block === 'channel' ? 'chat.ch.readonly' : 'chat.grp.adminsOnly') })]));
+					return;
+				}
 				if (block === 'bridge') {
 					// Messenger 1.14: the bar above says why (not reachable, signed out, …)
 					refs.composer.appendChild(el('div', { class: 'cv-blocked cv-bc-closed' }, [icon('info', 15), el('span', { text: t('chat.bc.cannot_send', { network: CS.bridgeLabel(c) }) })]));
@@ -2465,7 +2671,10 @@
 			refs.info.appendChild(el('div', { class: 'cv-info-head' }, [el('b', { text: t('chat.info.title') }), iconBtn('close', t('chat.common.close'), () => toggleInfo(), 'cv-ib-flat')]));
 			const notice = CS.isNotice(c);
 			const bridge = CS.bridgeOf(c);
-			const sub = bridge
+			const sub = CS.isChannel(c)
+				// Messenger 1.20: „Kanal über WhatsApp · nur lesen“
+				? t('chat.ch.info', { network: CS.bridgeLabel(c) })
+				: bridge
 				// Messenger 1.14: a contact or a group of another messenger
 				? t(c.kind === 'group' ? 'chat.bc.info_kind_group' : 'chat.bc.info_kind_direct', { network: CS.bridgeLabel(c) })
 				: notice
@@ -2768,7 +2977,7 @@
 						list.appendChild(el('button', { type: 'button', class: 'cv-person cv-nc-row', 'data-net': sv.id, on: { click: () => { if (closeFn) closeFn(null); numberChatDialog(sv); } } }, [
 							el('span', { class: 'cv-av-wrap' }, [
 								el('span', { class: 'cv-av cv-av-icon', 'aria-hidden': 'true', style: 'width:36px;height:36px' }, [icon('phone', 17)]),
-								el('span', { class: 'cv-net-mark is-sm', 'aria-hidden': 'true', text: sv.mark }),
+								netLogo(sv.id, { size: 9, cls: 'cv-net-mark is-sm' }),
 							]),
 							el('span', { class: 'cv-nc-row-tx' }, [el('b', { text: t('chat.nc.row', { network: sv.name }) }), el('small', { text: t('chat.nc.row_sub') })]),
 						]));
@@ -2809,7 +3018,6 @@
 		function contactsPicker(host) {
 			const NET = CS.CONTACTS_NET;
 			const network = CS.bridgeName(NET);
-			const mark = CS.bridgeMark(NET);
 			const st = { q: null, data: null, seq: 0, timer: null, more: { wa: false, ab: false }, pick: null, rows: {}, busy: false, on: true, stopped: false };
 			const box = el('div', { class: 'cv-people cv-ncc scroll', role: 'list', 'aria-live': 'polite' });
 			const priv = el('p', { class: 'cv-nc-priv cv-ncc-priv', hidden: true }, [icon('lock', 13), el('span', { text: t('chat.ncc.privacy', { network }) })]);
@@ -2859,7 +3067,7 @@
 			const note = (text, cls) => el('div', { class: `cv-ncc-note${cls ? ` is-${cls}` : ''}`, role: 'status', text });
 			function av(p, wa) {
 				const a = avatar(wa ? { ...CS.personAvatar({ name: p.name }), mediaId: p.avatarMediaId || null } : CS.personAvatar(p), 36);
-				return wa ? el('span', { class: 'cv-av-wrap' }, [a, el('span', { class: 'cv-net-mark is-sm', 'aria-hidden': 'true', text: mark })]) : a;
+				return wa ? el('span', { class: 'cv-av-wrap' }, [a, netLogo(NET, { size: 9, cls: 'cv-net-mark is-sm' })]) : a;
 			}
 			function row(a, name, sub, right, o = {}) {
 				return el('button', { type: 'button', class: `cv-person cv-ncc-row${o.cls ? ` ${o.cls}` : ''}`, role: 'listitem', disabled: o.disabled || null, 'data-row': o.key || null, on: o.onClick ? { click: o.onClick } : null }, [
@@ -2957,7 +3165,7 @@
 				const sec = el('div', { class: 'cv-ncc-sec', 'data-sec': 'whatsapp' });
 				const loading = !wa;
 				const head = `${network}${!q && wa && wa.state === 'ok' ? ` · ${wa.total}` : ''}`;
-				sec.appendChild(cap(el('span', { class: 'cv-ncc-svc', text: mark }), head, loading ? spin() : null));
+				sec.appendChild(cap(netLogo(NET, { size: 11, cls: 'cv-ncc-svc' }), head, loading ? spin() : null));
 				if (loading) { sec.append(skeleton(), skeleton(), skeleton()); return sec; }
 				if (wa.state === 'unreachable') { sec.appendChild(card('err', 'plug', t('chat.ncc.wa_down_title', { network }), t('chat.ncc.wa_down_text'), t('chat.nc.retry'), reload)); return sec; }
 				if (wa.state === 'logged_out') {
@@ -3253,7 +3461,7 @@
 			const head = el('span', { class: 'cv-nc-head' }, [
 				el('span', { class: 'cv-av-wrap' }, [
 					el('span', { class: 'cv-nc-hico', 'aria-hidden': 'true' }, [icon('phone', 18)]),
-					el('span', { class: 'cv-net-mark is-sm', 'aria-hidden': 'true', text: sv.mark }),
+					netLogo(sv.id, { size: 9, cls: 'cv-net-mark is-sm' }),
 				]),
 				el('span', { class: 'cv-nc-ht' }, [el('b', { text: t('chat.nc.title', { network }) }), el('small', { text: t('chat.nc.sub') })]),
 			]);
@@ -3433,5 +3641,5 @@
 		};
 	}
 
-	root.GCChatView = { mount, icon };
+	root.GCChatView = { mount, icon, netLogo };
 })(typeof self !== 'undefined' ? self : this);

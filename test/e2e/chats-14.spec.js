@@ -60,8 +60,10 @@ test.describe('chats – Messenger 1.4.0', () => {
     await page.clock.resume();
     await expect(annaSt).not.toHaveClass(/is-unseen/);
 
-    // own status: own avatar in the list head → "Dein Status"
+    // own status: own avatar in the list head → its menu (with „Mein Profil“) → "Dein Status"
     await page.locator('#page-chats .cv-me').click();
+    await expect(page.locator('#page-chats .cv-menu-item[data-item="profile"]')).toBeVisible();
+    await page.locator('#page-chats .cv-menu-item[data-item="status"]').click();
     const dlg = page.locator('#page-chats .cv-overlay').last();
     await dlg.locator('input').first().fill('Im Garten');
     await dlg.locator('.cv-preset[data-preset="dnd"]').click();
@@ -140,6 +142,7 @@ test.describe('chats – Messenger 1.4.0', () => {
 
     // "Dein Status" → the card "Meine Storys" → "Ansehen"
     await page.locator('#page-chats .cv-me').click();
+    await page.locator('#page-chats .cv-menu-item[data-item="status"]').click();
     const dlg = page.locator('#page-chats .cv-overlay:not(.cv-story)').last();
     const card = dlg.locator('.cv-mystories');
     await expect(card).toBeVisible();
