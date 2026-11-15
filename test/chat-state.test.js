@@ -425,8 +425,8 @@ describe('chat-state: Messenger 1.4.0', () => {
   const cx14 = { ...ctx, me: me14 };
 
   it('features, Familie integrations and kinds this version draws', () => {
-    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false, bridgeHistory: false });
-    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false, bridgeHistory: false });
+    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false, bridgeHistory: false, bridgeContacts: false });
+    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false, bridgeHistory: false, bridgeContacts: false });
     assert.deepEqual(CS.familie(me14), { lists: true, calendar: false, places: true });
     assert.deepEqual(CS.familie(ME), { lists: false, calendar: false, places: false });
     for (const k of ['poll', 'event', 'arrival', 'action', 'card', 'text']) assert.equal(CS.isShownKind({ kind: k }), true, k);
@@ -1033,5 +1033,68 @@ describe('chat-state: older history, the phone, „Brücke veraltet“ over a br
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 40, context }, ['chats', 'inbox']), { page: 'chats', id: null, context });
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 40, context }, ['inbox']), { page: 'inbox', id: 40 });
     assert.deepEqual(NS.navigateTarget({ route: 'plg-gatecontrol-messenger', id: 41 }, ['chats', 'inbox']), { page: 'chats', id: null });
+  });
+});
+
+describe('chat-state: „Neuer Chat“ with contacts (Messenger 1.18)', () => {
+  const WA = { network: 'whatsapp', label: 'WhatsApp', state: 'ok', closed: false, supports: ['text'] };
+  const conv = { id: 21, kind: 'direct', title: 'Sabine Wolf', peer: null, members: [], can: { send: true }, bridge: WA };
+
+  it('features: bridge_contacts only from the word', () => {
+    assert.equal(CS.features14({ features: { bridge_new_chat: true, bridge_contacts: true } }).bridgeContacts, true);
+    assert.equal(CS.features14({ features: { bridge_new_chat: true } }).bridgeContacts, false);
+  });
+
+  it('the line under an address book contact, the kinds of numbers, the first name', () => {
+    const one = { phones: [{ key: 'mobile', kind: 'mobile', number: '+49 151 23456780' }] };
+    assert.equal(CS.contactPhonesSub(one, t), 'chat.ncc.kind_mobile · +49 151 23456780');
+    assert.equal(CS.contactPhonesSub({ phones: [{}, {}, {}] }, t), 'chat.ncc.numbers(3)');
+    assert.equal(CS.phoneKindText('work-2', t), 'chat.ncc.kind_work');
+    assert.equal(CS.phoneKindText('fax', t), 'chat.ncc.kind_other');
+    assert.equal(CS.firstName('  Sabine  Wolf'), 'Sabine');
+    assert.equal(CS.firstName(null), '');
+  });
+
+  it('long sections: three rows, all while searching or opened', () => {
+    const items = [1, 2, 3, 4, 5];
+    assert.deepEqual(CS.contactsShown(items, '', false), [1, 2, 3]);
+    assert.deepEqual(CS.contactsShown(items, ' ber ', false), items);
+    assert.deepEqual(CS.contactsShown(items, '', true), items);
+    assert.deepEqual(CS.contactsShown(null, '', false), []);
+  });
+
+  it('the number dialog of the footer takes its first state from the WhatsApp section', () => {
+    const limit = { perHour: 10, left: 7, retryAfterS: 0 };
+    assert.deepEqual(CS.contactsService({ whatsapp: { state: 'ok' }, limit }), { id: 'whatsapp', name: 'WhatsApp', mark: 'WA', state: 'input', limit });
+    assert.equal(CS.contactsService({ whatsapp: { state: 'logged_out' } }).state, 'loggedout');
+    assert.equal(CS.contactsService({ whatsapp: { state: 'unreachable' } }).state, 'unreach');
+    assert.equal(CS.contactsService(null).limit, null);
+  });
+
+  it('refusals of a contact’s chat → its row (409 contact_expired: the list anew)', () => {
+    const v = (r) => CS.contactChatError(r).view;
+    for (const code of ['contact_expired', 'bridge_logged_out', 'bridge_unlinked']) assert.equal(v({ code }), 'reload', code);
+    assert.equal(v({ code: 'not_found', reason: 'contact_gone' }), 'reload');
+    assert.deepEqual(CS.contactChatError({ code: 'not_found', reason: 'not_on_network', remembered: true }), { view: 'none', remembered: true });
+    assert.deepEqual(CS.contactChatError({ code: 'rate_limited', retryAfterS: 840, perHour: 10 }), { view: 'rate', retryAfterS: 840, perHour: 10 });
+    assert.equal(CS.contactChatError({ code: 'rate_limited' }).retryAfterS, 3600);
+    for (const code of ['bridge_unreachable', 'bridge_off', 'timeout', 'network']) assert.equal(v({ code }), 'unreach', code);
+    assert.equal(v({ code: 'mail_missing' }), 'failed');
+    assert.equal(v(null), 'failed');
+  });
+
+  it('the first line of a chat just started: by number, with a WhatsApp contact, from the address book', () => {
+    assert.equal(CS.startedLine({ kind: 'contact', name: 'Lena Berger' }, conv, t), 'chat.nc.first_line_contact(WhatsApp,Lena Berger)');
+    assert.equal(CS.startedLine({ kind: 'book', name: 'Sabine Wolf', number: '+49 151 23456780' }, conv, t), 'chat.nc.first_line_book(WhatsApp,Sabine Wolf,+49 151 23456780)');
+    assert.equal(CS.startedLine({ kind: 'number', number: '+4915123456789', name: null }, conv, t), 'chat.nc.first_line(WhatsApp,+49 151 23456789,Sabine Wolf)');
+    assert.equal(CS.startedLine(null, conv, t), '');
+  });
+
+  it('the contacts never go into storage or the log', () => {
+    const view = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'chat-view.js'), 'utf8');
+    const start = view.indexOf('function contactsPicker(');
+    const end = view.indexOf('function numberChatDialog(');
+    assert.ok(start > 0 && end > start);
+    assert.doesNotMatch(view.slice(start, end), /localStorage|sessionStorage|console\.|indexedDB/);
   });
 });

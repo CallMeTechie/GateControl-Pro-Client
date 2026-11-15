@@ -749,6 +749,8 @@
 			bridgeMedia: f('bridge_media'), bridgeNewChat: f('bridge_new_chat'),
 			// Messenger 1.17: „Älteren Verlauf laden“, files of the history on request, the phone warning
 			bridgeHistory: f('bridge_history'),
+			// Messenger 1.18: „Neuer Chat“ with contacts (GateControl, WhatsApp, the address book)
+			bridgeContacts: f('bridge_contacts'),
 		};
 	}
 
@@ -1018,6 +1020,77 @@
 			case 'not_found': return { state: 'none' };
 			default: return { state: 'failed' };
 		}
+	}
+
+	// ── Messenger 1.18: „Neuer Chat“ with contacts ──
+
+	// The service the contacts are of (GET contacts/new-chat?network=), rows of a long section before „Alle …“.
+	const CONTACTS_NET = 'whatsapp';
+	const CONTACTS_FIRST = 3;
+	const PHONE_KINDS = ['mobile', 'work', 'home', 'other'];
+
+	/** „Mobil“ / „Geschäftlich“ / „Privat“ / „Weitere“ of a number's kind (or key: mobile-2 → mobile). */
+	function phoneKindText(kind, t) {
+		const k = str(kind).replace(/-.*/, '');
+		return t(`chat.ncc.kind_${PHONE_KINDS.includes(k) ? k : 'other'}`);
+	}
+
+	/** The line under an address book contact: „Mobil · +49 …“ for one number, „3 Nummern“ for several. */
+	function contactPhonesSub(x, t) {
+		const phones = x && Array.isArray(x.phones) ? x.phones : [];
+		if (phones.length === 1) return `${phoneKindText(phones[0].kind, t)} · ${str(phones[0].number)}`;
+		return t('chat.ncc.numbers', { n: phones.length });
+	}
+
+	/** The first word of a name („Hat {name} eine andere Nummer …“). */
+	const firstName = (name) => str(name).trim().split(/\s+/)[0] || '';
+
+	/** The rows of a long section shown: all while searching or opened („Alle …“), else the first three. */
+	function contactsShown(items, q, open) {
+		const list = Array.isArray(items) ? items : [];
+		return str(q).trim() || open ? list : list.slice(0, CONTACTS_FIRST);
+	}
+
+	/**
+	 * The number dialog of 1.15 / 1.16 („Nicht dabei? Nummer eingeben“) for the list's service → { id, name, mark, state,
+	 * limit } like newChatServices — its first state from the WhatsApp section (signed out, not reachable).
+	 */
+	function contactsService(data) {
+		const d = data && typeof data === 'object' ? data : {};
+		const wa = d.whatsapp && typeof d.whatsapp === 'object' ? d.whatsapp : null;
+		const state = wa && wa.state === 'logged_out' ? 'loggedout' : (wa && wa.state === 'unreachable' ? 'unreach' : 'input');
+		return { id: CONTACTS_NET, name: bridgeName(CONTACTS_NET), mark: bridgeMark(CONTACTS_NET), state, limit: d.limit || null };
+	}
+
+	/**
+	 * A refusal of POST …/chats for a contact → what its row shows: { view: 'reload' } (load the list again:
+	 * contact_expired, signed out, the contact gone), 'none' (not at WhatsApp; remembered), 'rate' (+ retryAfterS,
+	 * perHour), 'unreach' or 'failed'.
+	 */
+	function contactChatError(res) {
+		const r = res && typeof res === 'object' ? res : { code: res };
+		switch (r.code) {
+			case 'contact_expired': case 'bridge_logged_out': return { view: 'reload' };
+			case 'bridge_unlinked': return { view: 'reload' };
+			case 'not_found': return r.reason === 'not_on_network' ? { view: 'none', remembered: r.remembered === true } : { view: 'reload' };
+			case 'rate_limited': return {
+				view: 'rate',
+				retryAfterS: Number.isSafeInteger(r.retryAfterS) && r.retryAfterS > 0 ? r.retryAfterS : 3600,
+				...(Number.isSafeInteger(r.perHour) && r.perHour > 0 ? { perHour: r.perHour } : {}),
+			};
+			case 'bridge_unreachable': case 'bridge_off': case 'timeout': case 'network': return { view: 'unreach' };
+			default: return { view: 'failed' };
+		}
+	}
+
+	/** The first line of a chat just started (by number, a WhatsApp contact or the address book) → text, or ''. */
+	function startedLine(st, c, t) {
+		if (!st || !c) return '';
+		const network = bridgeLabel(c) || bridgeName(CONTACTS_NET);
+		const name = st.name || title(c, t);
+		if (st.kind === 'contact') return t('chat.nc.first_line_contact', { network, name });
+		if (st.kind === 'book') return t('chat.nc.first_line_book', { network, name, number: str(st.number) });
+		return t('chat.nc.first_line', { network, number: formatNumber(st.number), name });
 	}
 
 	/** An own message of a chat over a bridge that was not sent → { text, resend } (the reason in words), or null. */
@@ -1654,6 +1727,7 @@
 		bridgeOf, bridgeName, bridgeMark, bridgeLabel, bridgeNetworks, bridgeBlock, senderName, quoteName, senderKey, placeholderOf, placeholderText, bridgeFailure,
 		bridgeOutKind, bridgeTakesFiles, bridgeMediaRefusal, bridgeImageType, voiceMime, mediaTypeText,
 		NEW_CHAT_CC, newChatNumber, formatNumber, newChatServices, newChatState, newChatErrorState,
+		CONTACTS_NET, CONTACTS_FIRST, phoneKindText, contactPhonesSub, firstName, contactsShown, contactsService, contactChatError, startedLine,
 		LINK_NOTES, LINK_FLOWS, linkable, mainLogin, linkDate, linkedRow, isOutdated, phoneWarning, historyRow, historyLabel, isBridgePush, HISTORY_DAYS, linkErrorText, codeChars, qrPath,
 		storyDurations,
 		ownStoryStats,
