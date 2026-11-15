@@ -129,11 +129,14 @@
 
 	// ── Children ────────────────────────────────────────────
 
+	// whole characters, letters and digits only: an emoji is never cut in half („Schatzimausi 💕“ showed „S“ and a
+	// replacement mark) and never an initial
+	const INI_RE = /[\p{L}\p{N}](?:(?![\uFE00-\uFE0F])\p{M})*/gu;
+	function letters(w) { return String(w || '').normalize('NFC').match(INI_RE) || []; }
 	function initials(name) {
 		const parts = str(name).trim().split(/\s+/).filter(Boolean);
-		if (!parts.length) return '?';
-		if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-		return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+		const out = parts.length > 1 ? (letters(parts[0])[0] || '') + (letters(parts[parts.length - 1])[0] || '') : letters(parts[0]).slice(0, 2).join('');
+		return out.toUpperCase() || '?';
 	}
 
 	function studentColor(s) {

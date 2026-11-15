@@ -93,6 +93,7 @@ describe('the words of the tiles', () => {
     assert.equal(OS.placesLine({ top: [{ name: 'Köln' }, { name: 'Hamburg' }, { name: 'Mallorca' }] }), 'Köln · Hamburg · Mallorca');
     assert.equal(OS.initials('Oma Gerda'), 'OG');
     assert.equal(OS.initials(''), '?');
+    assert.equal(OS.initials('💕 Lea'), 'L', 'an emoji is never an initial');
     assert.equal(OS.fmt(3871, 'de'), '3.871');
   });
 

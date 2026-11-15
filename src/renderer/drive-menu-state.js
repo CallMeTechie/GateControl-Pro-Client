@@ -34,7 +34,8 @@
 		const name = str(m.name).trim();
 		return {
 			name,
-			initial: name ? name.charAt(0).toUpperCase() : '?',
+			// whole characters, letters and digits only (never half an emoji)
+			initial: ((str(name).normalize('NFC').match(/[\p{L}\p{N}]/u) || [])[0] || '?').toUpperCase(),
 			seat: m.seat === 'family' ? t('drive.menu.seat.family') : m.seat === 'business' ? t('drive.menu.seat.business') : '',
 		};
 	}

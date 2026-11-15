@@ -750,7 +750,7 @@ function renderServices() {
 		const tile = h('button', 'row card svc-tile svc-open');
 		tile.type = 'button';
 		tile.disabled = !connected;
-		tile.appendChild(h('span', 'svc-initial', (svc.name || '?').trim().charAt(0)));
+		tile.appendChild(h('span', 'svc-initial', Array.from((svc.name || '?').trim())[0] || '?'));
 		const meta = h('span', 'svc-meta');
 		meta.appendChild(h('span', 'svc-name', svc.name));
 		meta.appendChild(h('span', 'svc-host', svc.domain || hostOf(svc.url)));
@@ -762,7 +762,7 @@ function renderServices() {
 	servicesList.forEach((svc) => {
 		const card = h('div', 'card svc-card');
 		const top = h('div', 'svc-card-top');
-		top.appendChild(h('span', 'svc-initial lg', (svc.name || '?').trim().charAt(0)));
+		top.appendChild(h('span', 'svc-initial lg', Array.from((svc.name || '?').trim())[0] || '?'));
 		const meta = h('div', 'svc-meta');
 		meta.appendChild(h('div', 'svc-name', svc.name));
 		meta.appendChild(h('div', 'svc-host', svc.domain || hostOf(svc.url)));

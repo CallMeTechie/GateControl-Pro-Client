@@ -98,6 +98,26 @@ describe('chat-state: names, titles, previews', () => {
     assert.equal(CS.personAvatar({ name: 'X', colorHex: 'red' }).color, '#64748B', 'only #rrggbb colours');
     assert.equal(CS.initials('Anna Maria Schmidt'), 'AS');
   });
+
+  // second real test over WhatsApp: the chat „Schatzimausi 💕“ showed „S“ and a replacement mark (half the heart)
+  it('initials: whole characters, letters and digits only — never half an emoji, never an emoji', () => {
+    const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    assert.equal(CS.initials('Schatzimausi 💕'), 'S');
+    assert.equal(CS.initials('💕'), '?', 'only emoji: the single fallback character');
+    assert.equal(CS.initials('💕 ❤️ 👨‍👩‍👧'), '?');
+    assert.equal(CS.initials('Ä Ö'), 'ÄÖ');
+    assert.equal(CS.initials('A\u0308rger'), 'ÄR', 'a letter with a combining mark stays whole');
+    assert.equal(CS.initials('van der Berg'), 'VB');
+    assert.equal(CS.initials('Kim'), 'KI');
+    assert.equal(CS.initials('💕Mama'), 'MA');
+    assert.equal(CS.initials('1️⃣'), '1');
+    assert.equal(CS.initials(''), '?');
+    assert.equal(CS.initials('\u{1D49C}lice \u{1D505}ob'), '\u{1D49C}\u{1D505}');
+    for (const s of ['Schatzimausi 💕', '💕 x', 'a 💕', 'A😀']) assert.doesNotMatch(CS.initials(s), LONE, `no half character of ${s}`);
+    // a bridged chat without a picture: its avatar
+    assert.equal(CS.personAvatar({ name: 'Schatzimausi 💕' }).initials, 'S');
+    assert.equal(CS.personAvatar({ name: 'Mama', initials: 'M💕' }).initials, 'M', 'the server’s initials: letters only');
+  });
 });
 
 describe('chat-state: times, ticks, timeline', () => {

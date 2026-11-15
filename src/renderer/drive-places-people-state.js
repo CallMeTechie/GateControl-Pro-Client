@@ -240,9 +240,13 @@
 	// ── People ───────────────────────────────────────────
 
 	/** "Oma Gerda" → "OG", "lea" → "L" */
+	// whole characters, letters and digits only: an emoji is never cut in half („Schatzimausi 💕“ showed „S“ and a
+	// replacement mark) and never an initial
+	const INI_RE = /[\p{L}\p{N}](?:(?![\uFE00-\uFE0F])\p{M})*/gu;
+	function letters(w) { return String(w || '').normalize('NFC').match(INI_RE) || []; }
 	function initials(name) {
 		const w = str(name).trim().split(/\s+/).filter(Boolean);
-		return w.slice(0, 2).map((x) => x.charAt(0).toUpperCase()).join('') || '?';
+		return w.slice(0, 2).map((x) => (letters(x)[0] || '').toUpperCase()).join('') || '?';
 	}
 
 	const TONES = 5;
