@@ -31,6 +31,12 @@
  * lesen“), a group where only admins write says so instead of the composer. Texts show their format (`marks`) and
  * clickable addresses in every chat (opened in the browser), a link preview sits on top of the bubble, a bridged file
  * that failed has „Erneut versuchen“, the messengers' logos replace „WA“. The own picture's menu has „Mein Profil“.
+ * Messenger 1.21 (Chats v2, Teil B, `chat_people`): persons — one entry for the GateControl chat and the WhatsApp chat
+ * of a human (the logos of its ways behind the name, found by every name), the shared history by time with the logo
+ * of each message's way and the source chips (Alle · GateControl · WhatsApp); the composer is that of the way the
+ * server picks („Nachricht über WhatsApp“, the line about WhatsApp's encryption) — never chosen here. The suggestion
+ * card above the list and its dialog with the choice of the name, „Wege von …“ (Trennen, the name) and „Mit Person
+ * zusammenführen …“ in the chat info. Built from elements and text nodes only.
  *
  * Map tiles and addresses come from the main process (chat.mapTile /
  * mapSearch / mapReverse → core MapService, OpenStreetMap) as bytes / data;
@@ -254,11 +260,16 @@
 			chans: [],
 			chanSum: null,
 			chanView: false,
+			// Messenger 1.21 (chat_people): the open suggestions („… ist vielleicht …“), the source chip of the open person
+			sugg: [],
+			way: null,
 		};
 		const ctx = () => ({ t, locale: o.getLocale(), me: S.status && S.status.me, people: S.people });
 		const me = () => (S.status && S.status.me) || null;
 		const f14 = () => CS.features14(me());
 		const conv = (id) => S.convs.find((c) => c.id === id) || S.chans.find((c) => c.id === id) || null;
+		// Messenger 1.21: the entry a conversation is shown as (a way of a person → the person)
+		const entryOf = (id) => conv(id) || S.convs.find((c) => CS.isPerson(c) && c.person.ways.some((w) => w.conversationId === id)) || null;
 		const curConv = () => (typeof S.cur === 'number' ? conv(S.cur) : null);
 
 		// ── Skeleton ─────────────────────────────────────────
@@ -296,6 +307,7 @@
 		refs.pick = el('div', { class: 'cv-pick' }, [icon('pen', 34, '1.6'), refs.pickTitle, refs.pickText]);
 		refs.head = el('header', { class: 'cv-head', hidden: true });
 		refs.bars = el('div', { class: 'cv-bars', hidden: true });   // 1.4.0: next event, pinned messages
+		refs.src = el('div', { class: 'cv-chips cv-src', role: 'group', 'aria-label': t('chat.person.src'), hidden: true }); // 1.21: source chips
 		refs.searchBar = el('div', { class: 'cv-searchbar', hidden: true });
 		refs.msgs = el('div', { class: 'cv-msgs scroll', role: 'log', 'aria-live': 'polite', tabindex: '-1' });
 		refs.toLatest = el('button', { type: 'button', class: 'cv-tolatest', hidden: true, 'aria-label': t('chat.toLatest'), title: t('chat.toLatest'), on: { click: () => scrollBottom(true) } }, [icon('down', 18)]);
@@ -303,7 +315,7 @@
 		refs.drop = el('div', { class: 'cv-drop', hidden: true }, [icon('attach', 28, '1.8'), el('span', { text: t('chat.dropNow') })]);
 		refs.file = el('input', { type: 'file', multiple: true, hidden: true, tabindex: '-1' });
 		refs.avatarFile = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', hidden: true, tabindex: '-1' });
-		refs.chat.append(refs.pick, refs.head, refs.bars, refs.searchBar, refs.msgs, refs.toLatest, refs.composer, refs.drop, refs.file, refs.avatarFile);
+		refs.chat.append(refs.pick, refs.head, refs.src, refs.bars, refs.searchBar, refs.msgs, refs.toLatest, refs.composer, refs.drop, refs.file, refs.avatarFile);
 
 		refs.info = el('aside', { class: 'cv-info scroll', hidden: true, 'aria-label': t('chat.info.title') });
 		refs.state = el('div', { class: 'cv-state', hidden: true });
@@ -350,6 +362,11 @@
 			if (!b) return a;
 			// Messenger 1.20: the messenger's logo instead of „WA“
 			return el('span', { class: 'cv-av-wrap' }, [a, netLogo(b.network, { size: size < 40 ? 9 : 11, label: t('chat.bc.via', { network: CS.bridgeLabel(c) }), cls: `cv-net-mark${size < 40 ? ' is-sm' : ''}` })]);
+		}
+
+		/** Messenger 1.21: the logos of a person's ways in a row (behind the name in the list, in the head). */
+		function wayLogos(c, size = 10) {
+			return el('span', { class: 'cv-ways' }, CS.personWays(c).map((w) => netLogo(w.way, { size, label: t('chat.person.via', { network: w.label }), cls: 'cv-way' })));
 		}
 
 		// Messenger 1.14: the explanation of a chat over a bridge was read (per service, this PC)
@@ -667,7 +684,11 @@
 			S.chanSum = r.channels && typeof r.channels === 'object' ? r.channels : null;
 			if (S.chanSum && (S.chanSum.count > 0 || S.chans.length) && typeof api.channels === 'function') await loadChannels();
 			else if (!S.chanSum) { S.chans = []; S.chanView = false; }
-			if (typeof S.cur === 'number' && !conv(S.cur)) closeChat();
+			if (typeof S.cur === 'number' && !conv(S.cur)) {
+				// Messenger 1.21: the open chat became a way of a person — the person opens instead
+				const e = entryOf(S.cur);
+				if (e) setTimeout(() => openChat(e.id), 0); else closeChat();
+			}
 			renderList();
 			if (typeof S.cur === 'number') {
 				renderHead();
@@ -738,6 +759,8 @@
 			if (S.archived) {
 				refs.rows.appendChild(el('button', { type: 'button', class: 'cv-archived-head', on: { click: () => { S.archived = false; renderList(); } } }, [icon('back', 16), el('b', { text: t('chat.archive.title') }), el('span', { class: 'cv-dim', text: String(arch.count) })]));
 			} else {
+				// Messenger 1.21: GateControl recognised a person on two ways — one card, merged only after „Zusammenführen“
+				if (!S.q && S.sugg.length && CS.hasFeature(me(), 'chat_people')) refs.rows.appendChild(suggestionCard(S.sugg[0]));
 				// Messenger 1.20: the entry „Kanäle“ as the first row, while the person follows a channel with a post
 				if (!S.q && S.chanSum && S.chanSum.count > 0) refs.rows.appendChild(chanEntryEl());
 				const inbox = !!o.notify && !S.q;
@@ -818,6 +841,8 @@
 				el('span', { class: 'cv-row-tx' }, [
 					el('span', { class: 'cv-row-top' }, [
 						el('b', { class: 'cv-row-name', text: name }),
+						// Messenger 1.21: the ways of a person behind the name (no sign at the picture)
+						CS.isPerson(c) ? wayLogos(c, 9) : null,
 						// Messenger 1.6: a notice channel (GateControl's notifications of one source, read only)
 						CS.isNotice(c) ? el('span', { class: 'cv-chip cv-row-tag', text: t('chat.notice.tag') }) : null,
 						pinned ? el('span', { class: 'cv-row-pin' }, [icon('pin', 12)]) : null,
@@ -853,12 +878,17 @@
 			if (S.cur === 'inbox' && visible) markInboxSeen();
 		}
 
-		async function openChat(id) {
+		async function openChat(id0) {
+			// Messenger 1.21: a way of a person opens the person (its entry's id)
+			let id = id0;
+			const known = entryOf(id);
+			if (known) id = known.id;
 			const c = conv(id);
 			if (!c) {
 				// From a toast before the list knew it.
 				const r = await api.conversation(id).catch(() => null);
 				if (!r || !r.conversation) return;
+				id = r.conversation.id;
 				await refreshList();
 			}
 			const cc = conv(id);
@@ -870,7 +900,9 @@
 				S.edit = null;
 				closeSearch();
 				S.view = null;
-				S.unreadFrom.set(id, cc.unread > 0 && cc.me ? cc.me.lastReadId || 0 : null);
+				S.way = null;
+				// Messenger 1.21: a person's ways are mixed by time — no unread line by id
+				S.unreadFrom.set(id, cc.unread > 0 && cc.me && !CS.isPerson(cc) ? cc.me.lastReadId || 0 : null);
 			}
 			S.cur = id;
 			rootEl.setAttribute('data-pane', 'chat');
@@ -1068,7 +1100,10 @@
 				iconBtn('back', t('chat.common.back'), () => closeChat(), 'cv-ib-flat cv-only-narrow'),
 				el('button', { type: 'button', class: 'cv-head-who', 'aria-label': t('chat.info.open'), on: { click: () => toggleInfo() } }, [
 					convAvatar(c, 38),
-					el('span', { class: 'cv-head-tx' }, [el('b', { text: CS.title(c, t) }), el('span', { class: `cv-head-sub${sub.typing ? ' is-typing' : ''}`, text: sub.text })]),
+					el('span', { class: 'cv-head-tx' }, [el('b', { text: CS.title(c, t) }), sub.person
+						// Messenger 1.21: the logos of the ways and „GateControl · WhatsApp“
+						? el('span', { class: 'cv-head-sub cv-head-ways' }, [wayLogos(c, 10), el('span', { text: sub.text })])
+						: el('span', { class: `cv-head-sub${sub.typing ? ' is-typing' : ''}`, text: sub.text })]),
 				]),
 				el('span', { class: 'cv-grow' }),
 				// Messenger 1.20: a channel's bell — struck through while it sends no pushes (the default)
@@ -1079,6 +1114,32 @@
 			const subEl = refs.head.querySelector('.cv-head-sub');
 			if (subEl && sub.online) subEl.classList.add('is-online');
 			renderBars();
+			renderSrc();
+		}
+
+		/** Messenger 1.21: the source chips of a person's shared history (Alle · GateControl · WhatsApp). */
+		function renderSrc() {
+			const c = curConv();
+			clear(refs.src);
+			const chips = CS.sourceChips(c, t);
+			refs.src.hidden = chips.length < 2;
+			if (refs.src.hidden) return;
+			for (const ch of chips) {
+				refs.src.appendChild(el('button', { type: 'button', class: 'cv-chip-btn', 'data-way': ch.way || 'all', 'aria-pressed': (S.way || null) === ch.way ? 'true' : 'false', on: { click: () => setWay(ch.way) } }, [
+					ch.way ? netLogo(ch.way, { size: 9, cls: 'cv-chip-net' }) : null,
+					el('span', { text: ch.label }),
+				]));
+			}
+		}
+
+		async function setWay(way) {
+			const c = curConv();
+			if (!c || (S.way || null) === way || typeof api.personWay !== 'function') return;
+			S.way = way;
+			renderSrc();
+			const r = await api.personWay(c.id, way).catch(() => null);
+			if (S.cur !== c.id || S.way !== way) return;
+			if (r && r.ok !== false) { S.view = r; renderMessages('bottom'); } else toast(CS.errorText(r, t), 'error');
 		}
 
 		/** Messenger 1.20: the bell of a channel → PATCH { notify: all | none }. */
@@ -1259,7 +1320,8 @@
 			for (const it of items) {
 				if (it.type === 'day') refs.msgs.appendChild(el('div', { class: 'cv-day' }, [el('span', { text: it.label })]));
 				else if (it.type === 'unread') refs.msgs.appendChild(el('div', { class: 'cv-unread-line' }, [el('span', { text: t('chat.unreadLine') })]));
-				else refs.msgs.appendChild(it.m.kind === 'system' ? systemEl(it.m, c, cx) : bubbleEl(it, c, cx));
+				// Messenger 1.21: a message of a person is drawn as in its way's own chat (plus the way's logo)
+				else refs.msgs.appendChild(it.m.kind === 'system' ? systemEl(it.m, CS.msgConv(c, it.m), cx) : bubbleEl(it, CS.msgConv(c, it.m), cx, CS.isPerson(c) ? c : null));
 			}
 			if (v.detached && v.hasMoreAfter) {
 				refs.msgs.appendChild(el('button', { type: 'button', class: 'cv-newer btn btn-ghost btn-sm', text: t('chat.toLatest'), on: { click: () => goLatest() } }));
@@ -1299,7 +1361,7 @@
 			]);
 		}
 
-		function bubbleEl(it, c, cx) {
+		function bubbleEl(it, c, cx, person = null) {
 			const m = it.m;
 			const mine = !!m.mine;
 			const wrap = el('div', { class: `cv-msg${mine ? ' is-out' : ' is-in'}${it.cont ? ' is-cont' : ''}`, 'data-id': m.id ? String(m.id) : '', 'data-client': m.clientId || '' });
@@ -1376,6 +1438,8 @@
 			const meta = el('div', { class: 'cv-meta' }, [
 				m.expiresAt ? el('span', { class: 'cv-exp', title: t('chat.msg.expires', { time: CS.when(m.expiresAt, cx.locale) }) }, [icon('timer', 11)]) : null,
 				m.editedAt && !m.deleted ? el('span', { text: t('chat.msg.edited') }) : null,
+				// Messenger 1.21: the way of a message in a person's shared history
+				person && CS.wayOf(m) ? netLogo(CS.wayOf(m), { size: 9, label: t('chat.person.via', { network: CS.wayLabel(CS.wayOf(m)) }), cls: 'cv-way cv-msg-way' }) : null,
 				el('span', { text: CS.hm(m.createdAt, cx.locale) }),
 				mine ? ticks(it.status) : null,
 			]);
@@ -2185,8 +2249,11 @@
 
 		/** keepText: rebuild without losing what is typed. */
 		function renderComposer(reset) {
-			const c = curConv();
-			if (!c) { refs.composer.hidden = true; return; }
+			const entry = curConv();
+			if (!entry) { refs.composer.hidden = true; return; }
+			// Messenger 1.21: a person — the composer of the way the server picks (never chosen here); its id stays the entry's
+			const c = CS.sendConv(entry);
+			const rw = CS.replyWay(entry);
 			refs.composer.hidden = false;
 			const text = !reset && refs.input ? refs.input.value : '';
 			// A re-render (e.g. the chat list refreshed while typing) keeps the
@@ -2221,7 +2288,9 @@
 			// messages when the chat names them (`bridge.supports`), the mic only for a type the service takes
 			const bridged = !!CS.bridgeOf(c);
 			const bridgeFiles = bridged && CS.bridgeTakesFiles(c);
-			const placeholder = bridged ? t('chat.bc.placeholder', { network: CS.bridgeLabel(c) }) : t('chat.placeholder');
+			// Messenger 1.21: „Nachricht über WhatsApp“ / „Nachricht über GateControl“ — and over a bridge the line above
+			const placeholder = rw ? t('chat.person.placeholder', { way: CS.wayLabel(rw.way, rw.label) }) : (bridged ? t('chat.bc.placeholder', { network: CS.bridgeLabel(c) }) : t('chat.placeholder'));
+			if (rw && rw.bridge && !S.edit) refs.composer.appendChild(el('div', { class: 'cv-wayhint', 'data-way': rw.way }, [icon('info', 13), el('span', { text: t('chat.person.waHint', { network: CS.wayLabel(rw.way, rw.label) }) })]));
 			if (bridged && S.rec && !recordingSupported(c)) stopRec(false);
 			if (S.reply || S.edit) {
 				const m = S.reply || S.edit;
@@ -2437,7 +2506,8 @@
 		}
 
 		async function attach(file) {
-			const c = curConv();
+			// Messenger 1.21: a person — what the way of the answer takes (its id stays the entry's)
+			const c = CS.sendConv(curConv());
 			if (!c || CS.composerBlock(c)) return;
 			// Messenger 1.14: no files into a chat over a bridge; 1.15: those it names (`bridge.supports` / `mediaTypes`)
 			const bridged = !!CS.bridgeOf(c);
@@ -2524,7 +2594,7 @@
 		// ── Voice recording (MediaRecorder) ──────────────────
 
 		async function startRec() {
-			const c = curConv();
+			const c = CS.sendConv(curConv());
 			if (!c || S.rec) return;
 			const lim = limits();
 			const mime = CS.voiceMime(c, (m) => root.MediaRecorder.isTypeSupported(m), lim.types);
@@ -2671,7 +2741,11 @@
 			refs.info.appendChild(el('div', { class: 'cv-info-head' }, [el('b', { text: t('chat.info.title') }), iconBtn('close', t('chat.common.close'), () => toggleInfo(), 'cv-ib-flat')]));
 			const notice = CS.isNotice(c);
 			const bridge = CS.bridgeOf(c);
-			const sub = CS.isChannel(c)
+			const person = CS.isPerson(c);
+			const sub = person
+				// Messenger 1.21: „Nur für dich zusammengeführt – Jenny Backes sieht davon nichts.“
+				? t('chat.person.onlyYou', { name: CS.title(c, t) })
+				: CS.isChannel(c)
 				// Messenger 1.20: „Kanal über WhatsApp · nur lesen“
 				? t('chat.ch.info', { network: CS.bridgeLabel(c) })
 				: bridge
@@ -2692,6 +2766,11 @@
 				]));
 			}
 			refs.info.appendChild(top);
+			// Messenger 1.21: the ways of a person („Trennen“), or „Mit Person zusammenführen …“ in a chat with one person
+			if (person) refs.info.appendChild(waysSection(c));
+			else if (CS.canMergeByHand(c, cx.me) && typeof api.personCandidates === 'function') {
+				refs.info.appendChild(el('div', { class: 'cv-info-sec cv-merge-sec' }, [el('button', { type: 'button', class: 'btn btn-sec btn-sm', 'data-act': 'merge-person', on: { click: () => pickDialog(c) } }, [icon('plus', 13), t('chat.person.addWay')])]));
+			}
 
 			const sec = el('div', { class: 'cv-info-sec' }, [el('div', { class: 'cv-sec', text: t('chat.info.chat') })]);
 			const mute = el('select', { class: 'inp cv-select', 'aria-label': t('chat.info.notifications') }, [
@@ -2759,7 +2838,11 @@
 				refs.info.appendChild(ms);
 			}
 			// a chat over a bridge does not lie on the own server only: what runs where, and what does not work there
-			const foot = bridge
+			// (Messenger 1.21: a person with a bridged way says it for that way)
+			const pw = person ? c.person.ways.find((w) => w && w.bridge) : null;
+			const foot = pw
+				? el('div', { class: 'cv-info-sec cv-bc-info' }, [el('p', { class: 'cv-note cv-note-lock' }, [icon('info', 14), el('span', { text: t('chat.bc.info_note', { network: CS.wayLabel(pw.way, pw.label) }) })])])
+				: bridge
 				? el('div', { class: 'cv-info-sec cv-bc-info' }, [
 					el('p', { class: 'cv-note cv-note-lock' }, [icon('info', 14), el('span', { text: t('chat.bc.info_note', { network: CS.bridgeLabel(c) }) })]),
 					el('p', { class: 'cv-note', text: t(CS.bridgeTakesFiles(c) ? 'chat.bc.info_not_media' : 'chat.bc.info_not', { network: CS.bridgeLabel(c) }) }),
@@ -2883,6 +2966,165 @@
 			if (!meId || !(await confirmDialog(t('chat.info.leaveQ'), t('chat.info.leave'), true))) return;
 			const r = await patchConv(c, { remove: [meId] });
 			if (r && r.left) closeChat();
+		}
+
+		// ── Messenger 1.21: persons ──────────────────────────
+
+		/** Load the open suggestions (the core asks the server at most every 15 minutes). */
+		async function loadSuggestions() {
+			if (!CS.hasFeature(me(), 'chat_people') || typeof api.suggestions !== 'function') { S.sugg = []; return; }
+			const r = await api.suggestions().catch(() => null);
+			if (r && r.ok !== false) { S.sugg = Array.isArray(r.suggestions) ? r.suggestions : []; renderList(); }
+		}
+
+		/** The picture of a contact with the logo of its messenger at the corner. */
+		function contactFace(name, mediaId, network, label, size = 40) {
+			const a = avatar({ ...CS.personAvatar({ name }), mediaId: mediaId || null }, size);
+			return el('span', { class: 'cv-av-wrap' }, [a, netLogo(network, { size: size < 40 ? 9 : 11, label: t('chat.bc.via', { network: label }), cls: `cv-net-mark${size < 40 ? ' is-sm' : ''}` })]);
+		}
+		function accountFace(acc, size = 40) {
+			return el('span', { class: 'cv-av-wrap' }, [avatar(CS.personAvatar(acc), size), netLogo('gatecontrol', { size: size < 40 ? 9 : 11, label: t('chat.bc.via', { network: 'GateControl' }), cls: `cv-net-mark${size < 40 ? ' is-sm' : ''}` })]);
+		}
+
+		/** The suggestion card above the list: „„Schatzimausi 💕“ bei WhatsApp ist vielleicht Jenny Backes.“ · „Ansehen“. */
+		function suggestionCard(s) {
+			return el('div', { class: 'cv-sugg', role: 'region', 'aria-label': t('chat.person.cardAria'), 'data-sugg': s.id }, [
+				contactFace(s.contact.name, s.contact.avatarMediaId, s.network, s.label || CS.wayLabel(s.network)),
+				el('span', { class: 'cv-sugg-tx' }, [el('b', { text: s.text || '' }), el('span', { class: 'cv-dim', text: t('chat.person.cardSub') })]),
+				el('button', { type: 'button', class: 'btn btn-sec btn-sm', 'data-act': 'sugg-open', text: t('chat.person.cardOpen'), on: { click: () => suggestionDialog(s) } }),
+			]);
+		}
+
+		/** „Name in deiner Liste“: radio buttons [{ value, label }] → { node, value() }. */
+		function nameChoice(options, current) {
+			const group = `cv-pn-${Math.random().toString(36).slice(2, 8)}`;
+			const box = el('div', { class: 'cv-pn', role: 'radiogroup', 'aria-label': t('chat.person.mergeName') }, [el('div', { class: 'cv-sec', text: t('chat.person.mergeName') })]);
+			const radios = options.map((opt, i) => {
+				const r = el('input', { type: 'radio', name: group, value: String(opt.value), checked: current != null ? String(opt.value) === String(current) : i === 0 });
+				box.appendChild(el('label', { class: 'cv-pn-opt' }, [r, el('span', { text: opt.label })]));
+				return r;
+			});
+			return { node: box, value: () => { const i = radios.findIndex((r) => r.checked); return options[i >= 0 ? i : 0].value; } };
+		}
+
+		/** After a merge: the list again and the person opened. */
+		async function merged(r) {
+			if (!r || r.ok === false) { toast(CS.errorText(r, t), 'error'); return false; }
+			toast(t('chat.person.merged'), 'success');
+			await refreshList();
+			if (r.conversation && r.conversation.id) openChat(r.conversation.id);
+			return true;
+		}
+
+		/** „Zu einer Person zusammenführen?“ for a suggestion: the pair, why, the name (the account's by default). */
+		function suggestionDialog(s) {
+			const choice = nameChoice([{ value: 'account', label: s.account.name }, { value: s.conversationId, label: s.contact.name }], 'account');
+			const label = s.label || CS.wayLabel(s.network);
+			const body = el('div', { class: 'cv-merge' }, [
+				el('div', { class: 'cv-pair' }, [
+					contactFace(s.contact.name, s.contact.avatarMediaId, s.network, label),
+					el('span', { class: 'cv-pair-who' }, [el('b', { text: s.contact.name }), el('small', { text: t('chat.person.wayChat', { network: label }) })]),
+					el('span', { class: 'cv-pair-plus', 'aria-hidden': 'true', text: '+' }),
+					accountFace(s.account),
+					el('span', { class: 'cv-pair-who' }, [el('b', { text: s.account.name }), el('small', { text: 'GateControl' })]),
+				]),
+				s.reason ? el('p', { class: `cv-why${s.strength === 'medium' ? ' is-medium' : ''}` }, [icon(s.strength === 'medium' ? 'info' : 'check', 15), el('span', { text: s.reason })]) : null,
+				el('p', { class: 'cv-dlg-msg', text: t('chat.person.mergeText') }),
+				choice.node,
+			]);
+			const answer = (action) => async () => {
+				const r = await api.answerSuggestion(s.id, action).catch((e) => ({ ok: false, error: e && e.message }));
+				if (!r || r.ok === false) { toast(CS.errorText(r, t), 'error'); return false; }
+				S.sugg = S.sugg.filter((x) => x.id !== s.id);
+				renderList();
+				return true;
+			};
+			return dialog(t('chat.person.mergeTitle'), body, [
+				{ label: t('chat.person.never'), onClick: answer('never') },
+				{ label: t('chat.person.later'), onClick: answer('later') },
+				{ label: t('chat.person.merge'), primary: true, onClick: async () => merged(await api.mergePersons({ conversationIds: [s.conversationId], userId: s.userId, name: choice.value() }).catch((e) => ({ ok: false, error: e && e.message }))) },
+			], { cls: 'cv-merge-dlg' });
+		}
+
+		/** The name dialog of a merge by hand (an account or a chat picked). */
+		function confirmMerge(c, pick) {
+			const opts = CS.mergeNameOptions(c, pick);
+			const choice = nameChoice(opts, CS.isPerson(c) && !pick.account ? CS.personNameValue(c) : null);
+			const body = el('div', { class: 'cv-merge' }, [el('p', { class: 'cv-dlg-msg', text: t('chat.person.mergeText') }), opts.length > 1 ? choice.node : null]);
+			return dialog(t('chat.person.mergeTitle'), body, [
+				{ label: t('chat.common.cancel'), value: null },
+				{ label: t('chat.person.merge'), primary: true, onClick: async () => merged(await api.mergePersons(CS.mergeRequest(c, pick, opts.length ? choice.value() : null)).catch((e) => ({ ok: false, error: e && e.message }))) },
+			], { cls: 'cv-merge-dlg' });
+		}
+
+		/** „Mit Person zusammenführen …“: an account (while the chat has none) or another chat with one person. */
+		async function pickDialog(c) {
+			const r = await api.personCandidates(c.id).catch((e) => ({ ok: false, error: e && e.message }));
+			if (!r || r.ok === false) { toast(CS.errorText(r, t), 'error'); return; }
+			const q = el('input', { class: 'inp', type: 'search', placeholder: t('chat.person.pickSearch'), 'aria-label': t('chat.person.pickSearch'), spellcheck: 'false' });
+			const list = el('div', { class: 'cv-pick-list', role: 'list' });
+			let close = null;
+			const choose = (pick) => { if (close) close(null); confirmMerge(c, pick); };
+			const draw = () => {
+				clear(list);
+				const f = CS.filterCandidates(r, q.value);
+				if (f.accounts.length) list.appendChild(el('div', { class: 'cv-sec', text: t('chat.person.pickAccounts') }));
+				for (const a of f.accounts) {
+					list.appendChild(el('button', { type: 'button', class: 'cv-person', 'data-user': String(a.userId), on: { click: () => choose({ account: a }) } }, [
+						accountFace(a, 34), el('span', { class: 'cv-person-name' }, [el('b', { text: a.name }), el('small', { text: 'GateControl' })]),
+					]));
+				}
+				if (f.chats.length) list.appendChild(el('div', { class: 'cv-sec', text: t('chat.person.pickChats') }));
+				for (const x of f.chats) {
+					list.appendChild(el('button', { type: 'button', class: 'cv-person', 'data-conv': String(x.conversationId), on: { click: () => choose({ chat: x }) } }, [
+						contactFace(x.title, x.avatarMediaId, x.network || 'other', x.label || CS.wayLabel(x.network), 34),
+						el('span', { class: 'cv-person-name' }, [el('b', { text: x.title }), el('small', { text: t('chat.person.wayChat', { network: x.label || CS.wayLabel(x.network) }) })]),
+					]));
+				}
+				if (!f.accounts.length && !f.chats.length) list.appendChild(el('p', { class: 'cv-empty', text: t('chat.person.pickNone') }));
+			};
+			q.addEventListener('input', draw);
+			draw();
+			return dialog(t('chat.person.pickTitle'), el('div', { class: 'cv-stack' }, [el('p', { class: 'cv-note', text: t('chat.person.pickHint') }), q, list]), [], { onOpen: (done) => { close = done; } });
+		}
+
+		/** „Wege von …“ in the chat info: each way with its logo and „Trennen“, the name, „Mit Person zusammenführen …“. */
+		function waysSection(c) {
+			const p = c.person;
+			const sec = el('div', { class: 'cv-info-sec cv-ways-sec' }, [el('div', { class: 'cv-sec', text: t('chat.person.waysTitle', { name: CS.title(c, t) }) })]);
+			for (const w of p.ways) {
+				const label = CS.wayLabel(w.way, w.label);
+				const sub = w.bridge ? t('chat.person.wayAs', { name: w.title || '' }) : t('chat.person.wayAccount', { name: w.title || '' });
+				sec.appendChild(el('div', { class: 'cv-wrow', 'data-way': w.way, 'data-conv': String(w.conversationId) }, [
+					netLogo(w.way, { size: 18, cls: 'cv-br-mark' }),
+					el('span', { class: 'cv-wrow-tx' }, [el('b', { text: label }), el('small', { text: sub })]),
+					el('button', { type: 'button', class: 'btn btn-ghost btn-sm', 'data-act': 'split', text: t('chat.person.split'), on: { click: () => splitWay(c, w) } }),
+				]));
+			}
+			const opts = CS.personNameOptions(c);
+			if (opts.length > 1) {
+				const sel = el('select', { class: 'inp cv-select', 'aria-label': t('chat.person.mergeName'), 'data-act': 'person-name' }, opts.map((x) => el('option', { value: x.value, text: x.label })));
+				sel.value = CS.personNameValue(c);
+				sel.addEventListener('change', async () => {
+					const r = await api.renamePerson(c.id, sel.value === 'account' ? 'account' : Number(sel.value)).catch((e) => ({ ok: false, error: e && e.message }));
+					if (!r || r.ok === false) toast(CS.errorText(r, t), 'error');
+					await refreshList();
+				});
+				sec.appendChild(kv(t('chat.person.mergeName'), 'pen', sel));
+			}
+			sec.appendChild(el('p', { class: 'cv-note', text: t('chat.person.splitNote') }));
+			if (typeof api.personCandidates === 'function') sec.appendChild(el('button', { type: 'button', class: 'btn btn-sec btn-sm', 'data-act': 'merge-person', on: { click: () => pickDialog(c) } }, [icon('plus', 13), t('chat.person.addWay')]));
+			return sec;
+		}
+
+		/** „Trennen“: the way is its own chat again — nothing is lost. */
+		async function splitWay(c, w) {
+			if (!(await confirmDialog(t('chat.person.splitQ', { network: CS.wayLabel(w.way, w.label) }), t('chat.person.split')))) return;
+			const r = await api.splitPerson(c.id, w.conversationId).catch((e) => ({ ok: false, error: e && e.message }));
+			if (!r || r.ok === false) { toast(CS.errorText(r, t), 'error'); return; }
+			toast(t('chat.person.splitDone'), 'success');
+			await refreshList();
+			if (S.cur === c.id) reloadMessages();
 		}
 
 		// ── Dialogs ──────────────────────────────────────────
@@ -3541,6 +3783,18 @@
 		// ── Live updates ─────────────────────────────────────
 
 		let msgTimer = null;
+		/** Messenger 1.21: the messages of the open chat from the server (it became a person, or was split). */
+		async function reloadMessages() {
+			const id = S.cur;
+			if (typeof id !== 'number') return;
+			const r = await api.messages(id).catch(() => null);
+			if (S.cur !== id || !r || r.ok === false) return;
+			S.view = r;
+			renderHead();
+			renderComposer(false);
+			renderMessages('bottom');
+		}
+
 		async function refreshMessages() {
 			const id = S.cur;
 			if (typeof id !== 'number') return;
@@ -3560,8 +3814,12 @@
 			// Messenger 1.17: older messages were filed in (conversation.update reason history) — no sound for them
 			if (e.reason === 'history') S.quietNext = true;
 			clearTimeout(msgTimer);
+			// Messenger 1.21: the chat became a person (or a person was split) — its messages from the server again
+			if (e.reason === 'person') { S.way = null; msgTimer = setTimeout(reloadMessages, 30); return; }
 			msgTimer = setTimeout(refreshMessages, 30);
 		});
+		// Messenger 1.21: the suggestions changed (answered, merged, asked again)
+		if (typeof api.onSuggestions === 'function') api.onSuggestions((list) => { S.sugg = Array.isArray(list) ? list : []; renderList(); });
 		api.onState((st) => { S.status = st; applyStatus(); if (st && st.state === 'available') refreshListSoon(); });
 		api.onUnread((n) => { if (S.status) S.status.unread = n; if (typeof o.onUnread === 'function' && S.status && S.status.state === 'available') o.onUnread(n); });
 		api.onNavigate((e) => { if (e && Number.isSafeInteger(e.conversationId)) openChat(e.conversationId); });
@@ -3594,7 +3852,7 @@
 
 		// ── Public ───────────────────────────────────────────
 
-		loadStatus().then(() => refreshList());
+		loadStatus().then(() => refreshList()).then(() => loadSuggestions());
 		loadInbox();
 
 		return {
@@ -3603,6 +3861,8 @@
 				S.shown = true;
 				api.view(true).catch(() => {});
 				refreshList();
+				// Messenger 1.21: the suggestions when „Chats“ opens (the core asks at most every 15 minutes)
+				loadSuggestions();
 				loadInbox();
 				reportOpen();
 				if (typeof S.cur === 'number') refreshMessages();

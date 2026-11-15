@@ -844,3 +844,37 @@
 .cv-lp-tx b { font-size: 13.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .cv-lp-tx span { font-size: 12.5px; line-height: 1.35; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .cv-lp-tx small { font-size: 11.5px; color: var(--muted); }
+/* Messenger 1.21: persons — the logos of the ways, the suggestion card, the merge dialog, the source chips, the composer line, „Wege von …“ */
+.cv-ways { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.cv-way { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; flex-shrink: 0; border-radius: 50%; background: var(--line2); color: var(--text); vertical-align: middle; }
+.cv-way svg { display: block; }
+.cv-way.is-net-whatsapp { background: #1F8F5A; color: #fff; }
+.cv-way.is-net-gatecontrol { background: var(--acc); color: var(--acc-on); }
+.cv-msg-way { width: 13px; height: 13px; }
+.cv-head-ways { display: inline-flex; align-items: center; gap: 5px; }
+.cv-src { padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.cv-sugg { display: flex; align-items: center; gap: 12px; margin: 4px 8px 8px; padding: 10px 12px; border: 1px dashed color-mix(in srgb, var(--acc) 45%, var(--line2)); border-radius: 14px; background: color-mix(in srgb, var(--acc) 8%, var(--panel)); }
+.cv-sugg-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; font-size: 13px; line-height: 1.35; }
+.cv-sugg-tx b { font-weight: 700; overflow-wrap: anywhere; }
+.cv-sugg .btn { flex-shrink: 0; }
+.cv-merge { display: flex; flex-direction: column; gap: 10px; }
+.cv-pair { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cv-pair-who { display: flex; flex-direction: column; min-width: 0; font-size: 14px; }
+.cv-pair-who small, .cv-person-name small, .cv-wrow-tx small { color: var(--muted); font-size: 12px; }
+.cv-pair-plus { font-weight: 700; color: var(--muted); padding: 0 2px; }
+.cv-why { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--panel2); font-size: 13px; line-height: 1.4; }
+.cv-why svg { flex-shrink: 0; margin-top: 2px; color: var(--acc-t); }
+.cv-why.is-medium svg { color: var(--muted); }
+.cv-pn { display: flex; flex-direction: column; gap: 6px; }
+.cv-pn-opt { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.cv-pn-opt input { width: 18px; height: 18px; margin: 0; accent-color: var(--acc); }
+.cv-person-name { display: flex; flex-direction: column; }
+.cv-pick-list { display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow: auto; }
+.cv-pick-list .cv-sec { margin: 8px 0 2px; }
+.cv-wayhint { display: flex; gap: 6px; align-items: flex-start; padding: 0 2px 6px; font-size: 12px; line-height: 1.4; color: var(--muted); }
+.cv-wayhint svg { flex-shrink: 0; margin-top: 1px; }
+.cv-wrow { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.cv-wrow-tx { display: flex; flex-direction: column; min-width: 0; flex: 1; font-size: 14px; }
+.cv-wrow-tx small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-ways-sec > .btn { margin-top: 6px; align-self: flex-start; }
+.cv-br-rec-head { gap: 10px; }

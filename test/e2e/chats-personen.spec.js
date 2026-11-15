@@ -1,0 +1,238 @@
+'use strict';
+
+const { test, expect } = require('./support/fixtures');
+const { setupWithApiKey } = require('./support/ui');
+const { FEATURES_V2A, FEATURES_V2B } = require('./support/messenger-mock');
+
+// Messenger 1.21 (Chats v2, Teil B): persons — the chat with Anna's GateControl account and her WhatsApp chat
+// („Schatzimausi 💕“) as ONE entry: the logos of the ways behind the name, found by every name, the shared history by
+// time with the logo of each message's way, the source chips, the composer that names the way the server picks (no
+// choice) with the line about WhatsApp's encryption, the suggestion card and its dialog with the choice of the name,
+// „Nicht jetzt“, „Wege von …“ with „Trennen“ and the name, „Mit Person zusammenführen …“ in a WhatsApp chat, the
+// question after linking WhatsApp. An older plugin (1.20) keeps the ways apart. Texts are checked in German.
+
+const SHOTS = process.env.GC_E2E_SHOTS || null;
+const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` }); };
+const theme = (page, th) => page.evaluate((x) => { if (x === 'light') document.documentElement.setAttribute('data-theme', 'light'); else document.documentElement.removeAttribute('data-theme'); }, th);
+const lang = (page, l) => page.evaluate((x) => window.gatecontrol.locale.set(x), l);
+async function shots(page, name) {
+  if (!SHOTS) return;
+  for (const l of ['de', 'en']) {
+    await lang(page, l);
+    for (const th of ['dark', 'light']) {
+      await theme(page, th);
+      await page.waitForTimeout(150);
+      await shot(page, `${name}-${th}-${l}`);
+    }
+  }
+  await lang(page, 'de');
+  await theme(page, 'dark');
+}
+
+const LINKED_LOGIN = { id: 'login1', name: '+49 1512 0000000', state: 'connected', since: '2026-11-02T10:00:00.000Z' };
+const T0 = Date.now() - 3600000;
+const SCHATZ = { contactId: 31, name: 'Schatzimausi 💕' };
+
+function setup(mock, { features = FEATURES_V2B, person = true } = {}) {
+  mock.setPush({ topics: [], items: [] });
+  const ms = mock.setMessenger({ features });
+  ms.bridge.networks[0].logins = [LINKED_LOGIN];
+  ms.bridge.networks[0].consent = '2026-11-01T10:00:00.000Z';
+  const gc = ms.addConv({ kind: 'direct', members: [7, 8] });
+  const wa = ms.addBridgeConv({ title: 'Schatzimausi 💕' });
+  const kim = ms.addBridgeConv({ title: 'Kim Muster' });
+  const g1 = ms.at(ms.addMsg(gc, { senderId: 8, text: 'Kommst du heute?' }), T0);
+  const w1 = ms.at(ms.addBridgeMsg(wa, { text: 'Bin unterwegs 🚗', contact: SCHATZ }), T0 + 60000);
+  const g2 = ms.at(ms.addMsg(gc, { senderId: 7, text: 'Ja, um acht.' }), T0 + 120000);
+  const w2 = ms.at(ms.addBridgeMsg(wa, { text: 'Bis gleich 💕', contact: SCHATZ }), T0 + 180000);
+  ms.at(ms.addBridgeMsg(kim, { text: 'Hallo' }), T0 + 240000);
+  const pid = person ? ms.addPerson({ convIds: [gc, wa], userId: 8 }) : null;
+  return { ms, gc, wa, kim, pid, g1, w1, g2, w2 };
+}
+
+async function openChats(launchApp, mock) {
+  const launched = await launchApp();
+  await setupWithApiKey(launched.page, mock);
+  await lang(launched.page, 'de');
+  await launched.page.locator('#nav-chats').click();
+  await expect(launched.page.locator('#page-chats')).toHaveClass(/active/);
+  return launched;
+}
+
+test.describe('chats – persons (Messenger 1.21)', () => {
+  test('an older plugin (1.20): the ways stay two chats, no ?people=1, no persons/…', async ({ launchApp, mock }) => {
+    const { ms, gc, wa } = setup(mock, { features: FEATURES_V2A });
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    await expect(cv.locator(`.cv-row[data-id="${gc}"]`)).toBeVisible();
+    await expect(cv.locator(`.cv-row[data-id="${wa}"]`)).toBeVisible();
+    await expect(cv.locator('.cv-ways')).toHaveCount(0);
+    expect(ms.log.calls.filter((c) => c.route === 'conversations').every((c) => c.query.people === undefined)).toBe(true);
+    expect(ms.log.calls.some((c) => c.route.startsWith('persons'))).toBe(false);
+  });
+
+  test('one entry per person: logos behind the name, every name finds it, the shared history and the source chips', async ({ launchApp, mock }) => {
+    const { ms, gc, wa, pid, g1, w1, g2, w2 } = setup(mock);
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    const row = cv.locator(`.cv-row[data-id="${gc}"]`);
+    await expect(row).toBeVisible();
+    await expect(cv.locator(`.cv-row[data-id="${wa}"]`)).toHaveCount(0);
+    await expect(row.locator('.cv-row-name')).toHaveText('Anna');
+    await expect(row.locator('.cv-ways .cv-way')).toHaveCount(2);
+    await expect(row.locator('.cv-ways .cv-way').nth(1)).toHaveAttribute('aria-label', 'über WhatsApp');
+    await expect(row.locator('.cv-net-mark')).toHaveCount(0);
+    expect(ms.log.calls.find((c) => c.route === 'conversations').query.people).toBe('1');
+    // „Schatz“ finds Anna
+    await cv.locator('.cv-q').fill('Schatz');
+    await expect(cv.locator('.cv-row[data-id]')).toHaveCount(1);
+    await expect(cv.locator(`.cv-row[data-id="${gc}"]`)).toBeVisible();
+    await cv.locator('.cv-q').fill('');
+    await shots(page, 'person-liste');
+
+    await row.click();
+    await expect(cv.locator('.cv-head .cv-head-sub')).toHaveText('GateControl · WhatsApp');
+    await expect(cv.locator('.cv-head .cv-head-ways .cv-way')).toHaveCount(2);
+    const ids = () => cv.locator('.cv-msgs .cv-msg').evaluateAll((l) => l.map((n) => Number(n.getAttribute('data-id'))));
+    await expect.poll(ids).toEqual([g1.id, w1.id, g2.id, w2.id]);
+    await expect(cv.locator(`.cv-msg[data-id="${w1.id}"] .cv-msg-way`)).toHaveAttribute('data-net', 'whatsapp');
+    await expect(cv.locator(`.cv-msg[data-id="${g1.id}"] .cv-msg-way`)).toHaveAttribute('data-net', 'gatecontrol');
+    expect(ms.log.calls.some((c) => c.route === `persons/${pid}/messages`)).toBe(true);
+    // the source chips
+    const chips = cv.locator('.cv-src .cv-chip-btn');
+    await expect(chips).toHaveText(['Alle', 'GateControl', 'WhatsApp']);
+    await expect(chips.first()).toHaveAttribute('aria-pressed', 'true');
+    await shots(page, 'person-chat');
+    await cv.locator('.cv-src [data-way="whatsapp"]').click();
+    await expect.poll(ids).toEqual([w1.id, w2.id]);
+    expect(ms.log.calls.filter((c) => c.route === `persons/${pid}/messages`).at(-1).query.way).toBe('whatsapp');
+    await cv.locator('.cv-src [data-way="all"]').click();
+    await expect.poll(ids).toEqual([g1.id, w1.id, g2.id, w2.id]);
+    // read through persons/:id/read up to the newest message shown
+    await expect.poll(() => ms.people21.reads.at(-1)).toEqual({ personId: pid, upTo: w2.id });
+  });
+
+  test('sending without a choice of way: „Nachricht über WhatsApp“ and its line, then back to GateControl', async ({ launchApp, mock }) => {
+    const { ms, gc, wa } = setup(mock);
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    await cv.locator(`.cv-row[data-id="${gc}"]`).click();
+    const input = cv.locator('.cv-input');
+    await expect(input).toHaveAttribute('placeholder', 'Nachricht über WhatsApp');
+    await expect(cv.locator('.cv-wayhint')).toHaveText('Geht über WhatsApp. Die Verschlüsselung von WhatsApp endet an der Brücke neben deinem Server.');
+    await expect(cv.locator('.cv-select-way, .cv-way-pick')).toHaveCount(0);
+    await shots(page, 'person-senden');
+    await input.fill('Bin gleich da');
+    await input.press('Enter');
+    await expect.poll(() => ms.messages(wa).some((m) => m.text === 'Bin gleich da')).toBe(true);
+    expect(ms.messages(gc).some((m) => m.text === 'Bin gleich da')).toBe(false);
+    expect(ms.log.calls.some((c) => c.method === 'POST' && /^persons\/\d+\/messages$/.test(c.route))).toBe(true);
+    // Anna writes inside GateControl: the next answer goes there, the line goes
+    ms.receive(gc, { text: 'Ich warte am Eingang.' });
+    await expect(input).toHaveAttribute('placeholder', 'Nachricht über GateControl');
+    await expect(cv.locator('.cv-wayhint')).toHaveCount(0);
+  });
+
+  test('the suggestion card: „Ansehen“, the dialog with the name, „Nicht jetzt“, „Zusammenführen“', async ({ launchApp, mock }) => {
+    const { ms, wa, kim } = setup(mock, { person: false });
+    const sugg = (conversationId, userId, contact, account) => ({
+      id: `${conversationId}-${userId}`, conversationId, userId, network: 'whatsapp', label: 'WhatsApp', strength: 'strong', via: 'own_whatsapp',
+      contact: { name: contact, avatarUrl: null, avatarMediaId: null }, account: { name: account, avatarUrl: null, initials: account.slice(0, 2).toUpperCase(), colorHex: '#F97316' },
+      text: `„${contact}“ bei WhatsApp ist vielleicht ${account}.`, reason: `${account} hat das eigene WhatsApp mit GateControl verknüpft, und es ist dein Kontakt „${contact}“.`,
+    });
+    ms.people21.suggestions = [sugg(kim, 9, 'Kim Muster', 'Lena'), sugg(wa, 8, 'Schatzimausi 💕', 'Anna')];
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    const card = cv.locator('.cv-sugg');
+    await expect(card).toContainText('„Kim Muster“ bei WhatsApp ist vielleicht Lena.');
+    await expect(card).toContainText('Zu einem Chat zusammenführen?');
+    await shots(page, 'person-vorschlag');
+    await card.locator('[data-act="sugg-open"]').click();
+    const dlg = cv.locator('.cv-merge-dlg');
+    await expect(dlg.locator('.cv-dlg-head')).toHaveText('Zu einer Person zusammenführen?');
+    await expect(dlg.locator('.cv-why')).toContainText('Lena hat das eigene WhatsApp');
+    await expect(dlg.locator('.cv-pn-opt input').first()).toBeChecked();
+    await shots(page, 'person-dialog');
+    await dlg.locator('.cv-dlg-foot .btn', { hasText: 'Nicht jetzt' }).click();
+    await expect.poll(() => ms.people21.answers).toEqual([{ id: `${kim}-9`, action: 'later' }]);
+    await expect(card).toContainText('„Schatzimausi 💕“ bei WhatsApp ist vielleicht Anna.');
+    await card.locator('[data-act="sugg-open"]').click();
+    // the contact's name instead of the account's
+    await dlg.locator('.cv-pn-opt', { hasText: 'Schatzimausi 💕' }).locator('input').check();
+    await dlg.locator('.cv-dlg-foot .btn', { hasText: 'Zusammenführen' }).click();
+    await expect.poll(() => ms.people21.merges.at(-1)).toEqual({ conversationIds: [wa], userId: 8, name: wa });
+    await expect(cv.locator('.cv-sugg')).toHaveCount(0);
+    const head = cv.locator('.cv-head .cv-head-tx b');
+    await expect(head).toHaveText('Schatzimausi 💕');
+    await expect(cv.locator('.cv-head .cv-head-sub')).toHaveText('GateControl · WhatsApp');
+    await expect(cv.locator(`.cv-row[data-id="${wa}"]`)).toHaveCount(0);
+  });
+
+  test('„Wege von …“: the ways, the name, „Trennen“ (nothing lost); „Mit Person zusammenführen …“ in a WhatsApp chat', async ({ launchApp, mock }) => {
+    const { ms, gc, wa, kim, pid } = setup(mock);
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    await cv.locator(`.cv-row[data-id="${gc}"]`).click();
+    await cv.locator('.cv-head-who').click();
+    const info = cv.locator('.cv-info');
+    await expect(info).toBeVisible();
+    await expect(info.locator('.cv-info-top .cv-dim')).toHaveText('Nur für dich zusammengeführt – Anna sieht davon nichts.');
+    const sec = info.locator('.cv-ways-sec');
+    await expect(sec.locator('.cv-sec')).toHaveText('Wege von Anna');
+    await expect(sec.locator('.cv-wrow')).toHaveCount(2);
+    await expect(sec.locator('.cv-wrow[data-way="gatecontrol"] small')).toHaveText('Konto Anna');
+    await expect(sec.locator('.cv-wrow[data-way="whatsapp"] small')).toHaveText('als „Schatzimausi 💕“');
+    await shots(page, 'person-wege');
+    // the name in the list
+    await sec.locator('[data-act="person-name"]').selectOption(String(wa));
+    await expect.poll(() => ms.people21.names.at(-1)).toBe(wa);
+    await expect(cv.locator(`.cv-row[data-id="${gc}"] .cv-row-name`)).toHaveText('Schatzimausi 💕');
+    // „Trennen“
+    await sec.locator('.cv-wrow[data-way="whatsapp"] [data-act="split"]').click();
+    const conf = cv.locator('.cv-overlay').last();
+    await expect(conf).toContainText('Den WhatsApp-Chat wieder getrennt zeigen? Es geht keine Nachricht verloren.');
+    await conf.locator('.cv-dlg-foot .btn').last().click();
+    await expect.poll(() => ms.people21.splits).toEqual([{ personId: pid, conversationId: wa }]);
+    await expect(cv.locator(`.cv-row[data-id="${wa}"]`)).toBeVisible();
+    await expect(cv.locator(`.cv-row[data-id="${gc}"] .cv-ways`)).toHaveCount(0);
+
+    // by hand: in Kim's WhatsApp chat, the account Lena
+    await cv.locator(`.cv-row[data-id="${kim}"]`).click();
+    if (!(await info.isVisible())) await cv.locator('.cv-head-who').click();
+    await info.locator('[data-act="merge-person"]').click();
+    const pick = cv.locator('.cv-overlay').last();
+    await expect(pick).toContainText('Wähle ein GateControl-Konto oder einen anderen Chat mit derselben Person.');
+    await expect(pick.locator('.cv-sec').first()).toHaveText('GateControl-Konten');
+    await pick.locator('.cv-q, input[type="search"]').fill('Len');
+    await expect(pick.locator('.cv-person')).toHaveCount(1);
+    await shots(page, 'person-auswahl');
+    await pick.locator('.cv-person[data-user="9"]').click();
+    const named = cv.locator('.cv-merge-dlg');
+    await expect(named.locator('.cv-pn-opt')).toHaveCount(2);
+    await named.locator('.cv-dlg-foot .btn', { hasText: 'Zusammenführen' }).click();
+    await expect.poll(() => ms.people21.merges.at(-1)).toEqual({ conversationIds: [kim], userId: 9, name: 'account' });
+    await expect(cv.locator('.cv-head .cv-head-tx b')).toHaveText('Lena');
+  });
+
+  test('after linking WhatsApp, once: „Dürfen andere auf diesem Server dich an deinem WhatsApp erkennen?“', async ({ launchApp, mock }) => {
+    const { ms } = setup(mock, { person: false });
+    ms.bridge.networks[0].logins = [];
+    ms.bridge.confirmAfter = 1;
+    ms.people21.recognition = { asked: false, allowed: false };
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    await cv.locator('.cv-list-title .cv-ib-flat').first().click();
+    const set = cv.locator('.cv-settings');
+    await set.locator('.cv-set-item[data-section="linked"]').click();
+    await set.locator('[data-act="link"]').click();
+    await set.locator('#cv-br-phone').fill('+49 1512 0000000');
+    await set.locator('[data-act="code"]').click();
+    await expect(set.locator('.cv-br-rec-head')).toHaveText('Dürfen andere auf diesem Server dich an deinem WhatsApp erkennen?');
+    await expect(set.locator('.cv-br')).toContainText('Du kannst das jederzeit in „Mein Profil“ unter „Erkennung“ ändern.');
+    await shots(page, 'person-erkennung');
+    await set.locator('[data-act="rec-yes"]').click();
+    await expect.poll(() => ms.people21.recognition).toEqual({ asked: true, allowed: true });
+    await expect(set.locator('.cv-br-row[data-net="whatsapp"]')).toHaveAttribute('data-state', 'linked');
+    await expect(set.locator('.cv-br-rec-head')).toHaveCount(0);
+  });
+});

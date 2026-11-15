@@ -1240,3 +1240,100 @@ describe('chat-state – channels, format and links (Messenger 1.20)', () => {
     assert.match(view.slice(start, start + 400), /CS\.safeHref\(href\)[\s\S]*shell\.openExternal\(u\)/);
   });
 });
+
+describe('chat-state: persons (Messenger 1.21, Chats v2 Teil B)', () => {
+  const WA_BRIDGE = { network: 'whatsapp', label: 'WhatsApp', state: 'ok', supports: ['text', 'reply', 'reaction', 'edit', 'delete'] };
+  const person = (over = {}) => ({
+    id: 12, kind: 'direct', title: 'Anna', avatarUrl: '/avatars/a.webp', avatarMediaId: null, unread: 2, readUpTo: 4701, deliveredUpTo: 4702, bridge: null,
+    peer: { userId: 8, name: 'Anna', initials: 'AN', colorHex: '#F97316' }, can: { send: true, pin: true }, me: { lastReadId: 4700 },
+    person: {
+      id: 1, name: 'Anna', nameFrom: 'account', userId: 8, conversationId: 12, names: ['Anna', 'Schatzimausi 💕'],
+      ways: [
+        { way: 'gatecontrol', label: 'GateControl', conversationId: 12, title: 'Anna', bridge: null, can: { send: true, react: true } },
+        { way: 'whatsapp', label: 'WhatsApp', conversationId: 13, title: 'Schatzimausi 💕', bridge: WA_BRIDGE, can: { send: true, react: true } },
+      ],
+      reply: { way: 'whatsapp', label: 'WhatsApp', conversationId: 13 },
+    },
+    ...over,
+  });
+
+  it('a person, its ways, the line under its name, the way of an answer', () => {
+    const c = person();
+    assert.equal(CS.isPerson(c), true);
+    assert.equal(CS.isPerson({ id: 1, person: { id: 1, ways: [] } }), false);
+    assert.deepEqual(CS.personWays(c), [{ way: 'gatecontrol', label: 'GateControl' }, { way: 'whatsapp', label: 'WhatsApp' }]);
+    assert.equal(CS.personSub(c), 'GateControl · WhatsApp');
+    assert.equal(CS.replyWay(c).conversationId, 13);
+    assert.equal(CS.bridgeOf(c), null, 'no service sign at the picture');
+    assert.deepEqual(CS.headSub(c, ctx), { text: 'GateControl · WhatsApp', typing: false, person: true });
+    assert.equal(CS.wayOf({ way: 'whatsapp' }), 'whatsapp');
+    assert.equal(CS.wayOf({ way: 'x y' }), null);
+    assert.equal(CS.wayLabel('gatecontrol'), 'GateControl');
+  });
+
+  it('the composer is the way the server picks: WhatsApp — no location there; back to GateControl', () => {
+    const c = person();
+    const s = CS.sendConv(c);
+    assert.equal(s.id, 12, 'the entry’s id (the core sends through persons/:id)');
+    assert.equal(CS.bridgeOf(s).network, 'whatsapp');
+    assert.equal(CS.composerBlock(c), null);
+    const gc = CS.sendConv(person({ person: { ...person().person, reply: { way: 'gatecontrol', conversationId: 12 } } }));
+    assert.equal(CS.bridgeOf(gc), null);
+    const down = person();
+    down.person.ways[1].can = { send: false };
+    assert.equal(CS.composerBlock(down), 'bridge');
+  });
+
+  it('each message in its way: the ticks of GateControl, the state of the bridge; what may be done with it', () => {
+    const c = person();
+    const gcMsg = { id: 4701, conversationId: 12, way: 'gatecontrol', mine: true, kind: 'text', text: 'Hi', createdAt: at(10, 0) };
+    const waMsg = { id: 4710, conversationId: 13, way: 'whatsapp', mine: true, kind: 'text', text: 'Hi', createdAt: at(10, 5), status: 'delivered', bridge: { state: 'sent' } };
+    assert.equal(CS.status(gcMsg, c), 'read');
+    assert.equal(CS.status(waMsg, c), 'delivered');
+    assert.equal(CS.msgConv(c, waMsg).bridge.network, 'whatsapp');
+    assert.equal(CS.msgConv(c, gcMsg).bridge, null);
+    // a message written in WhatsApp's own app cannot be edited here
+    const remote = { ...waMsg, bridge: { state: 'sent', remote: true }, createdAt: new Date(NOW - 60000).toISOString() };
+    assert.equal(CS.messageActions(remote, c, ctx, NOW).edit, false);
+    assert.equal(CS.messageActions({ ...gcMsg, createdAt: new Date(NOW - 60000).toISOString() }, c, ctx, NOW).edit, true);
+    // no unread line by id in a person's history (its ways are mixed by time)
+    const tl = CS.timeline([{ ...gcMsg, mine: false, senderId: 8 }], [], c, ctx, { unreadFrom: 0, now: NOW });
+    assert.equal(tl.some((x) => x.type === 'unread'), false);
+  });
+
+  it('the list: found by every name, the chips „Nur GateControl“ / „WhatsApp“ count each way, a list with any way’s id', () => {
+    const c = person();
+    const plain = { id: 30, kind: 'direct', title: 'Kim', bridge: WA_BRIDGE, lastMessage: null };
+    assert.deepEqual(CS.filterConversations([c, plain], 'schatz', ctx).map((x) => x.id), [12]);
+    assert.deepEqual(CS.listFilter([c, plain], { filter: 'gc' }).map((x) => x.id), [12]);
+    assert.deepEqual(CS.listFilter([c, plain], { filter: 'net:whatsapp' }).map((x) => x.id), [12, 30]);
+    assert.deepEqual(CS.listFilter([c, plain], { filter: 'list:a', lists: [{ id: 'a', conversationIds: [13] }] }).map((x) => x.id), [12]);
+    assert.deepEqual(CS.bridgeNetworks([c]), [{ id: 'whatsapp', label: 'WhatsApp' }]);
+    assert.equal(CS.typingText({ ...c, typingContacts: [{ name: 'S' }] }, ctx), 'chat.typing');
+    const a = CS.avatarOf(c);
+    assert.equal(a.kind, 'person');
+    assert.equal(a.initials, 'AN');
+    assert.equal(a.avatarUrl, '/avatars/a.webp');
+  });
+
+  it('the source chips, the name choice, a merge by hand', () => {
+    const c = person();
+    assert.deepEqual(CS.sourceChips(c, t).map((x) => x.way), [null, 'gatecontrol', 'whatsapp']);
+    assert.deepEqual(CS.sourceChips({ id: 1 }, t), []);
+    assert.deepEqual(CS.personNameOptions(c), [{ value: 'account', label: 'Anna' }, { value: '13', label: 'Schatzimausi 💕' }]);
+    assert.equal(CS.personNameValue(c), 'account');
+    assert.equal(CS.personNameValue(person({ person: { ...person().person, nameFrom: 13 } })), '13');
+    const wa = { id: 40, kind: 'direct', title: 'Schatz', bridge: WA_BRIDGE, peer: null };
+    assert.deepEqual(CS.mergeNameOptions(wa, { account: { userId: 8, name: 'Anna' } }), [{ value: 'account', label: 'Anna' }, { value: 40, label: 'Schatz' }]);
+    assert.deepEqual(CS.mergeRequest(wa, { account: { userId: 8 } }, 'account'), { conversationIds: [40], userId: 8, name: 'account' });
+    assert.deepEqual(CS.mergeRequest(c, { chat: { conversationId: 50, title: 'Anna 2' } }, 50), { conversationIds: [12, 50], name: 50 });
+    const me = { features: { chat_people: true } };
+    assert.equal(CS.canMergeByHand(wa, me), true);
+    assert.equal(CS.canMergeByHand({ ...wa, kind: 'group' }, me), false);
+    assert.equal(CS.canMergeByHand({ ...wa, bridge: { ...WA_BRIDGE, channel: true } }, me), false);
+    assert.equal(CS.canMergeByHand(c, me), false, 'a person merges in „Wege von …“');
+    assert.equal(CS.canMergeByHand(wa, { features: {} }), false);
+    const f = CS.filterCandidates({ accounts: [{ userId: 8, name: 'Anna' }, { userId: 9, name: 'Lena' }], chats: [{ conversationId: 3, title: 'Lenas Handy' }] }, 'len');
+    assert.deepEqual([f.accounts.map((x) => x.userId), f.chats.map((x) => x.conversationId)], [[9], [3]]);
+  });
+});
