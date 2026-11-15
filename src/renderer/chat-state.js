@@ -64,8 +64,13 @@
 	/** Avatar description for the view: { kind: 'icon'|'person', icon?, name, initials, color, avatarUrl, mediaId }. */
 	function avatarOf(c) {
 		if (!c) return { kind: 'icon', icon: 'group' };
-		// Messenger 1.14: a chat over a bridge has no peer and no picture yet — the contact's initials, a group's sign
-		if (bridgeOf(c) && c.kind !== 'group') return c.title ? personAvatar({ name: c.title }) : { kind: 'icon', icon: 'gone' };
+		// Messenger 1.14: a chat over a bridge has no peer — the contact's initials, a group's sign; 1.15: the contact's
+		// picture (`avatarMediaId`) once the server fetched it
+		if (bridgeOf(c) && c.kind !== 'group') {
+			const mediaId = typeof c.avatarMediaId === 'string' && c.avatarMediaId ? c.avatarMediaId : null;
+			const pic = mediaId ? { mediaId } : {};
+			return c.title ? { ...personAvatar({ name: c.title }), ...pic } : { kind: 'icon', icon: 'gone', ...pic };
+		}
 		if (c.kind === 'group') return { kind: 'icon', icon: c.readonly ? 'system' : 'group', mediaId: c.avatarMediaId || null };
 		const p = c.peer;
 		if (!p || p.gone) return { kind: 'icon', icon: 'gone' };
@@ -740,6 +745,8 @@
 			notices: f('notices'), noticeRoutes: f('notice_routes'),
 			// Messenger 1.13: „Verknüpfte Dienste“; 1.14: this person has chats over a bridge
 			linked: f('linked_services'), bridgeChats: f('bridge_chats'),
+			// Messenger 1.15: files and pictures over a bridge; a new chat by phone number
+			bridgeMedia: f('bridge_media'), bridgeNewChat: f('bridge_new_chat'),
 		};
 	}
 
@@ -817,19 +824,196 @@
 		return mb && mb.sender && mb.sender.contactId != null ? `c${mb.sender.contactId}` : m.senderId;
 	}
 
-	/** `bridge.placeholder` of a message ({ kind, name }) or null. */
+	const PH_FAIL = ['too_large', 'type', 'infected', 'quota', 'gone', 'unavailable'];
+
+	/**
+	 * `bridge.placeholder` of a message → { kind, name, state, reason, geo } or null. Messenger 1.15: `state` loading
+	 * (the server fetches the file) | failed (+ `reason`) | null (nothing to fetch: a location with `geo`, an encrypted
+	 * file, a server without the file route — and every placeholder of 1.14).
+	 */
 	function placeholderOf(m) {
 		const p = m && !m.deleted && m.bridge && typeof m.bridge === 'object' ? m.bridge.placeholder : null;
-		return p && typeof p === 'object' && PLACEHOLDER_KINDS.includes(p.kind) ? { kind: p.kind, name: str(p.name).slice(0, 200) || null } : null;
+		if (!p || typeof p !== 'object' || !PLACEHOLDER_KINDS.includes(p.kind)) return null;
+		const g = p.geo && typeof p.geo === 'object' ? p.geo : null;
+		const geo = g && Number.isFinite(g.lat) && Number.isFinite(g.lon) && Math.abs(g.lat) <= 90 && Math.abs(g.lon) <= 180 ? { lat: g.lat, lon: g.lon } : null;
+		const state = p.state === 'loading' || p.state === 'failed' ? p.state : null;
+		return { kind: p.kind, name: str(p.name).slice(0, 200) || null, state, reason: state === 'failed' ? (PH_FAIL.includes(p.reason) ? p.reason : 'other') : null, geo };
 	}
 
-	/** „Bild · grill.jpg – folgt; in WhatsApp ansehen“ / „Nachricht dieser Art wird hier noch nicht angezeigt – …“, or null. */
+	/**
+	 * „Bild · grill.jpg – folgt; in WhatsApp ansehen“, 1.15: „… – wird geladen …“ / „… – zu groß für deinen Server – in
+	 * WhatsApp ansehen“ / „… – gesperrt – Schadsoftware gefunden“; „Nachricht dieser Art …“; null without placeholder.
+	 */
 	function placeholderText(m, c, t) {
 		const p = placeholderOf(m);
 		if (!p) return null;
 		const network = bridgeLabel(c) || bridgeName(str(m.via).replace(/^bridge:/, ''));
 		if (p.kind === 'unsupported') return t('chat.bc.ph.unsupported', { network });
-		return `${[t(`chat.bc.ph.${p.kind}`), p.name].filter(Boolean).join(' · ')} – ${t('chat.bc.ph_later', { network })}`;
+		// a location of the bridge: shown on the map (its label is the message's text)
+		if (p.geo) return t('chat.bc.ph.location');
+		const what = [t(`chat.bc.ph.${p.kind}`), p.name].filter(Boolean).join(' · ');
+		if (p.state === 'loading') return `${what} – ${t('chat.bc.ph_loading')}`;
+		if (p.state === 'failed') return `${what} – ${t(`chat.bc.ph_fail.${p.reason}`, { network })}`;
+		return `${what} – ${t('chat.bc.ph_later', { network })}`;
+	}
+
+	// ── Messenger 1.15: files over a bridge ──
+
+	/** The kind a file goes out as over a bridge (like the plugin): image | voice | video (a file of video/*) | file. */
+	function bridgeOutKind(kind, mime) {
+		if (kind === 'image' || kind === 'voice') return kind;
+		return /^video\//.test(str(mime).toLowerCase()) ? 'video' : 'file';
+	}
+
+	/** Does a chat over a bridge take files at all (`bridge.supports` names one of the kinds)? */
+	function bridgeTakesFiles(c) {
+		const b = bridgeOf(c);
+		return !!b && Array.isArray(b.supports) && ['image', 'video', 'voice', 'file'].some((k) => b.supports.includes(k));
+	}
+
+	/**
+	 * May this file go into the chat over a bridge? → null (yes), 'text_only' (no files of this kind) or the kind whose
+	 * types it misses ('image' | 'voice' | 'video'); `mediaTypes[kind]` null = any type.
+	 */
+	function bridgeMediaRefusal(c, kind, mime) {
+		const b = bridgeOf(c);
+		if (!b) return null;
+		const k = bridgeOutKind(kind, mime);
+		if (!Array.isArray(b.supports) || !b.supports.includes(k)) return 'text_only';
+		const types = b.mediaTypes && typeof b.mediaTypes === 'object' ? b.mediaTypes[k] : null;
+		if (!Array.isArray(types)) return null;
+		return types.includes(str(mime).split(';')[0].trim().toLowerCase()) ? null : k;
+	}
+
+	/** The picture type to send into a chat over a bridge: WebP when it takes it, else JPEG. */
+	function bridgeImageType(c) {
+		const b = bridgeOf(c);
+		const types = b && b.mediaTypes && Array.isArray(b.mediaTypes.image) ? b.mediaTypes.image : null;
+		return !types || types.includes('image/webp') ? 'image/webp' : 'image/jpeg';
+	}
+
+	/**
+	 * A recording type for a voice message: in a chat over a bridge only one the service takes (`mediaTypes.voice` —
+	 * WhatsApp takes no WebM, which is mostly all Chromium records), else as recordingMime. → mime or null (no mic).
+	 */
+	function voiceMime(c, isTypeSupported, types) {
+		const b = bridgeOf(c);
+		if (!b) return recordingMime(isTypeSupported, types);
+		if (!Array.isArray(b.supports) || !b.supports.includes('voice')) return null;
+		const want = b.mediaTypes && Array.isArray(b.mediaTypes.voice) ? b.mediaTypes.voice : null;
+		const allowed = Array.isArray(types) ? types : [];
+		for (const m of ['audio/ogg;codecs=opus', 'audio/mp4;codecs=opus', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/aac', 'audio/mpeg', 'audio/webm;codecs=opus', 'audio/webm']) {
+			const base = m.split(';')[0];
+			if (want && !want.includes(base)) continue;
+			if (allowed.length && !allowed.includes(base)) continue;
+			try { if (isTypeSupported(m)) return m; } catch (_) { /* old engine */ }
+		}
+		return null;
+	}
+
+	/** „WhatsApp nimmt Videos nur als MP4 an.“ for a refusal 409 bridge_media_type / a check before sending. */
+	function mediaTypeText(reason, c, t) {
+		const k = ['image', 'video', 'voice', 'file'].includes(reason) ? reason : 'file';
+		return t(`chat.bc.media_type.${k}`, { network: bridgeLabel(c) || 'WhatsApp' });
+	}
+
+	// ── Messenger 1.15 / 1.16: a new chat by phone number ──
+
+	// The country codes of the dialog's list (others: paste the number with +).
+	const NEW_CHAT_CC = [
+		['DE', '+49'], ['AT', '+43'], ['CH', '+41'], ['NL', '+31'], ['BE', '+32'], ['LU', '+352'], ['FR', '+33'], ['IT', '+39'], ['ES', '+34'],
+		['PL', '+48'], ['CZ', '+420'], ['DK', '+45'], ['GB', '+44'], ['TR', '+90'], ['US', '+1'],
+	];
+
+	/**
+	 * A number as typed in the dialog → { number: '+49…' | null, error: null | 'empty' | 'invalid' | 'invalid_mobile_de' |
+	 * 'invalid_chars' }. Like the core's bridgeNumber (which checks it again): spaces, brackets, dots, dashes and slashes
+	 * go, 00 → +, a + keeps its country, any other number gets `cc` and loses its leading 0.
+	 */
+	function newChatNumber(raw, cc = '+49') {
+		const code = /^\+[1-9][0-9]{0,3}$/.test(str(cc)) ? cc : '+49';
+		let v = str(raw).trim().replace(/[\s()/.\u2010-\u2015-]/g, '');
+		if (!v) return { number: null, error: 'empty' };
+		if (!/^\+?[0-9]+$/.test(v) || v.length > 24) return { number: null, error: 'invalid_chars' };
+		if (v.startsWith('00')) v = `+${v.slice(2)}`;
+		else if (!v.startsWith('+')) v = code + v.replace(/^0+/, '');
+		if (v.startsWith('+49')) {
+			const nat = v.slice(3);
+			if (/^1[5-7]/.test(nat) && nat.length < 10) return { number: null, error: 'invalid_mobile_de' };
+			if (nat.length < 6) return { number: null, error: 'invalid' };
+		}
+		if (!/^\+[1-9][0-9]{7,14}$/.test(v)) return { number: null, error: 'invalid' };
+		return { number: v, error: null };
+	}
+
+	/** '+4915123456789' → '+49 151 23456789' (the country code of the list, then three digits, then the rest). */
+	function formatNumber(n) {
+		const v = str(n);
+		if (!/^\+[0-9]{4,16}$/.test(v)) return v;
+		const cc = NEW_CHAT_CC.map((x) => x[1]).sort((a, b) => b.length - a.length).find((x) => v.startsWith(x));
+		const code = cc || v.slice(0, 3);
+		const rest = v.slice(code.length);
+		return rest.length > 6 ? `${code} ${rest.slice(0, 3)} ${rest.slice(3)}` : `${code} ${rest}`;
+	}
+
+	/**
+	 * The services offered for a new chat by number (GET bridges; only with the feature `bridge_new_chat`): linked for
+	 * this person — also signed out, not reachable or locked by the parents (the dialog then says why) —, never when the
+	 * parents switched new chats off for the child (`newChat.reason: child_new_chat_off`). → [{ id, name, mark, state }]
+	 * with `state` the dialog's first state: input | loggedout | unlinked | unreach | locked | off.
+	 */
+	function newChatServices(bridges, me) {
+		if (!hasFeature(me, 'bridge_new_chat')) return [];
+		const b = bridges && typeof bridges === 'object' ? bridges : {};
+		if (b.available === false) return [];
+		const out = [];
+		for (const n of Array.isArray(b.networks) ? b.networks : []) {
+			if (!n || !linkable(n.id)) continue;
+			const nc = n.newChat && typeof n.newChat === 'object' ? n.newChat : null;
+			if (nc && nc.reason === 'child_new_chat_off') continue;
+			const logins = Array.isArray(n.logins) ? n.logins : [];
+			if (!logins.length && !(nc && nc.reason && nc.reason !== 'unlinked')) continue;
+			out.push({ id: n.id, name: bridgeName(n.id), mark: bridgeMark(n.id), state: newChatState(n), limit: nc && nc.limit ? nc.limit : null });
+		}
+		return out;
+	}
+
+	/** The dialog's first state for a service of GET bridges (newChat.reason of 1.16, else the link's state). */
+	function newChatState(n) {
+		const nc = n && n.newChat && typeof n.newChat === 'object' ? n.newChat : null;
+		const byReason = { unlinked: 'unlinked', logged_out: 'loggedout', unreachable: 'unreach', child_locked: 'locked', off: 'off' };
+		if (nc && !nc.available && byReason[nc.reason]) return byReason[nc.reason];
+		if (nc && nc.available) return 'input';
+		if (n && n.allowed === false) return 'locked';
+		if (n && (n.state === 'unreachable' || n.state === 'failed' || n.state === 'starting')) return 'unreach';
+		const l = mainLogin(n);
+		if (!l) return 'unlinked';
+		if (l.state === 'logged_out') return 'loggedout';
+		return 'input';
+	}
+
+	/**
+	 * A refusal of resolve / chats → the dialog's state: invalid | rate (+ retryAfterS) | loggedout | unlinked | locked |
+	 * unreach | off | none | failed.
+	 */
+	function newChatErrorState(res) {
+		const r = res && typeof res === 'object' ? res : { code: res };
+		switch (r.code) {
+			case 'invalid_number': return { state: 'invalid' };
+			case 'rate_limited': return {
+				state: 'rate',
+				retryAfterS: Number.isSafeInteger(r.retryAfterS) && r.retryAfterS > 0 ? r.retryAfterS : 600,
+				// Messenger 1.16: the brake per hour comes with the refusal
+				...(Number.isSafeInteger(r.perHour) && r.perHour > 0 ? { perHour: r.perHour } : {}),
+			};
+			case 'bridge_unlinked': return { state: r.reason === 'logged_out' ? 'loggedout' : 'unlinked' };
+			case 'bridge_logged_out': return { state: 'loggedout' };
+			case 'bridge_locked': case 'child_new_chat_off': return { state: 'locked' };
+			case 'bridge_unreachable': case 'bridge_failed': case 'timeout': case 'network': return { state: 'unreach' };
+			case 'bridge_off': case 'feature_off': case 'unsupported': return { state: 'off' };
+			case 'not_found': return { state: 'none' };
+			default: return { state: 'failed' };
+		}
 	}
 
 	/** An own message of a chat over a bridge that was not sent → { text, resend } (the reason in words), or null. */
@@ -1410,6 +1594,8 @@
 		PRESETS,
 		features14,
 		bridgeOf, bridgeName, bridgeMark, bridgeLabel, bridgeNetworks, bridgeBlock, senderName, quoteName, senderKey, placeholderOf, placeholderText, bridgeFailure,
+		bridgeOutKind, bridgeTakesFiles, bridgeMediaRefusal, bridgeImageType, voiceMime, mediaTypeText,
+		NEW_CHAT_CC, newChatNumber, formatNumber, newChatServices, newChatState, newChatErrorState,
 		LINK_NOTES, LINK_FLOWS, linkable, mainLogin, linkDate, linkedRow, linkErrorText, codeChars, qrPath,
 		storyDurations,
 		ownStoryStats,

@@ -425,8 +425,8 @@ describe('chat-state: Messenger 1.4.0', () => {
   const cx14 = { ...ctx, me: me14 };
 
   it('features, Familie integrations and kinds this version draws', () => {
-    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false });
-    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false });
+    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false });
+    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false });
     assert.deepEqual(CS.familie(me14), { lists: true, calendar: false, places: true });
     assert.deepEqual(CS.familie(ME), { lists: false, calendar: false, places: false });
     for (const k of ['poll', 'event', 'arrival', 'action', 'card', 'text']) assert.equal(CS.isShownKind({ kind: k }), true, k);
@@ -861,5 +861,120 @@ describe('Chats page: linked services and chats over a bridge', () => {
     assert.match(read('styles/chat.css'), /\.cv-br-qrbox \{[^}]*background: #fff/);
     // no version checks anywhere in the chat modules
     for (const f of ['chat-linked.js', 'chat-settings.js', 'chat-view.js', 'chat-state.js']) assert.doesNotMatch(read(f), /st(atus)?\.version|\.version\s*[<>]=?/, f);
+  });
+});
+
+describe('chat-state: files, pictures and a new chat by number over a bridge (Messenger 1.15 / 1.16)', () => {
+  const MEDIA = { network: 'whatsapp', label: 'WhatsApp', state: 'ok', closed: false, supports: ['text', 'reply', 'image', 'video', 'voice', 'file'], mediaTypes: { image: ['image/jpeg', 'image/png', 'image/webp'], video: ['video/mp4'], voice: ['audio/ogg', 'audio/mp4', 'audio/aac', 'audio/mpeg'], file: null } };
+  const conv = (bridge, extra = {}) => ({ id: 20, kind: 'direct', title: 'Kim Muster', peer: null, members: [], can: { send: true }, bridge, ...extra });
+  const phMsg = (placeholder, text = null) => ({ id: 5, kind: 'text', text, senderId: null, via: 'bridge:whatsapp', bridge: { sender: { contactId: 1, name: 'Kim' }, placeholder } });
+
+  it('features: bridge_media and bridge_new_chat only from the words', () => {
+    const f = CS.features14({ features: { bridge_chats: true, bridge_media: true, bridge_new_chat: true } });
+    assert.deepEqual([f.bridgeMedia, f.bridgeNewChat], [true, true]);
+    assert.deepEqual([CS.features14(ME).bridgeMedia, CS.features14(ME).bridgeNewChat], [false, false]);
+  });
+
+  it('a chat takes files only when `supports` names them; the type from `mediaTypes`', () => {
+    const old = conv({ ...MEDIA, supports: ['text', 'reply'], mediaTypes: undefined });
+    assert.equal(CS.bridgeTakesFiles(old), false);
+    assert.equal(CS.bridgeTakesFiles(conv(MEDIA)), true);
+    assert.equal(CS.bridgeTakesFiles(direct()), false);
+    assert.equal(CS.bridgeMediaRefusal(old, 'image', 'image/jpeg'), 'text_only');
+    assert.equal(CS.bridgeMediaRefusal(conv(MEDIA), 'image', 'image/webp'), null);
+    assert.equal(CS.bridgeMediaRefusal(conv(MEDIA), 'file', 'video/quicktime'), 'video');
+    assert.equal(CS.bridgeMediaRefusal(conv(MEDIA), 'file', 'video/mp4'), null);
+    assert.equal(CS.bridgeMediaRefusal(conv(MEDIA), 'file', 'application/zip'), null);
+    assert.equal(CS.bridgeMediaRefusal(conv(MEDIA), 'voice', 'audio/webm'), 'voice');
+    assert.equal(CS.bridgeMediaRefusal(direct(), 'image', 'image/gif'), null);
+    assert.equal(CS.bridgeImageType(conv(MEDIA)), 'image/webp');
+    assert.equal(CS.bridgeImageType(conv({ ...MEDIA, mediaTypes: { image: ['image/jpeg'] } })), 'image/jpeg');
+    assert.equal(CS.mediaTypeText('video', conv(MEDIA), t), 'chat.bc.media_type.video(WhatsApp)');
+  });
+
+  it('the mic: only a recording type the service takes (Chromium mostly records WebM → no mic)', () => {
+    const webmOnly = (m) => m.startsWith('audio/webm');
+    const withMp4 = (m) => m.startsWith('audio/webm') || m === 'audio/mp4';
+    assert.equal(CS.voiceMime(conv(MEDIA), webmOnly, []), null);
+    assert.equal(CS.voiceMime(conv(MEDIA), withMp4, []), 'audio/mp4');
+    assert.equal(CS.voiceMime(conv(MEDIA), withMp4, ['audio/webm']), null, 'the server must take it as well');
+    assert.equal(CS.voiceMime(conv({ ...MEDIA, supports: ['text'] }), withMp4, []), null);
+    assert.equal(CS.voiceMime(direct(), webmOnly, ['audio/webm']), 'audio/webm;codecs=opus', 'own chats as before');
+  });
+
+  it('placeholders: loading, failed with the reason, a location, and as in 1.14 without a state', () => {
+    const c = conv(MEDIA);
+    assert.equal(CS.placeholderText(phMsg({ kind: 'image', name: 'grill.jpg', state: 'loading' }), c, t), 'chat.bc.ph.image · grill.jpg – chat.bc.ph_loading');
+    assert.equal(CS.placeholderText(phMsg({ kind: 'video', name: null, state: 'failed', reason: 'too_large' }), c, t), 'chat.bc.ph.video – chat.bc.ph_fail.too_large(WhatsApp)');
+    assert.equal(CS.placeholderText(phMsg({ kind: 'file', name: 'x.exe', state: 'failed', reason: 'weird' }), c, t), 'chat.bc.ph.file · x.exe – chat.bc.ph_fail.other(WhatsApp)');
+    assert.equal(CS.placeholderText(phMsg({ kind: 'image', name: null, state: null }), c, t), 'chat.bc.ph.image – chat.bc.ph_later(WhatsApp)');
+    const loc = CS.placeholderOf(phMsg({ kind: 'location', name: null, state: null, geo: { lat: 50.1, lon: 7.2 } }, 'Grillplatz'));
+    assert.deepEqual(loc.geo, { lat: 50.1, lon: 7.2 });
+    assert.equal(CS.summary(phMsg({ kind: 'location', name: null, state: null, geo: { lat: 50.1, lon: 7.2 } }, 'Grillplatz'), c, ctx), 'chat.bc.ph.location: Grillplatz');
+    assert.equal(CS.placeholderOf(phMsg({ kind: 'location', geo: { lat: 99, lon: 7 } })).geo, null);
+    assert.equal(CS.placeholderOf(phMsg({ kind: 'file', state: 'failed', reason: 'infected' })).reason, 'infected');
+  });
+
+  it('a bridged contact’s picture: avatarMediaId (initials until it is there)', () => {
+    assert.deepEqual(CS.avatarOf(conv(MEDIA, { avatarMediaId: 'a'.repeat(32) })).mediaId, 'a'.repeat(32));
+    assert.ok(!CS.avatarOf(conv(MEDIA, { avatarMediaId: null })).mediaId);
+    assert.equal(CS.avatarOf(conv(MEDIA, { avatarMediaId: null })).initials, 'KM');
+    assert.equal(CS.avatarOf(conv(MEDIA, { title: null, avatarMediaId: 'b'.repeat(32) })).mediaId, 'b'.repeat(32));
+  });
+
+  it('the number of the dialog: +49 by default, checks, the way it is shown', () => {
+    assert.deepEqual(CS.newChatNumber('0151 23456789'), { number: '+4915123456789', error: null });
+    assert.deepEqual(CS.newChatNumber('151-2345 6789'), { number: '+4915123456789', error: null });
+    assert.deepEqual(CS.newChatNumber('0664 1234567', '+43'), { number: '+436641234567', error: null });
+    assert.deepEqual(CS.newChatNumber('+43 664 1234567'), { number: '+436641234567', error: null });
+    assert.deepEqual(CS.newChatNumber('0043 664 1234567'), { number: '+436641234567', error: null });
+    assert.equal(CS.newChatNumber('0151 234').error, 'invalid_mobile_de');
+    assert.equal(CS.newChatNumber('030 12').error, 'invalid');
+    assert.equal(CS.newChatNumber('0151 abc').error, 'invalid_chars');
+    assert.equal(CS.newChatNumber('  ').error, 'empty');
+    assert.equal(CS.formatNumber('+4915123456789'), '+49 151 23456789');
+    assert.equal(CS.formatNumber('+12125550123'), '+1 212 5550123');
+    assert.equal(CS.formatNumber('+4203601234567'), '+420 360 1234567');
+  });
+
+  it('which services offer „WhatsApp-Chat mit Nummer“ and the dialog’s first state', () => {
+    const me = { features: { bridge_chats: true, bridge_new_chat: true } };
+    const login = (state) => [{ id: 'l1', name: '+49', state, since: null }];
+    const net = (extra) => ({ id: 'whatsapp', state: 'running', allowed: true, logins: login('connected'), newChat: null, ...extra });
+    const list = (n) => CS.newChatServices({ available: true, networks: [n] }, me);
+    assert.deepEqual(list(net()).map((x) => [x.id, x.name, x.mark, x.state]), [['whatsapp', 'WhatsApp', 'WA', 'input']]);
+    assert.deepEqual(CS.newChatServices({ available: true, networks: [net()] }, { features: { bridge_chats: true } }), [], 'no word, no row');
+    assert.deepEqual(list(net({ logins: [] })), [], 'never linked');
+    assert.equal(list(net({ logins: login('logged_out') }))[0].state, 'loggedout');
+    assert.equal(list(net({ state: 'unreachable' }))[0].state, 'unreach');
+    assert.equal(list(net({ allowed: false }))[0].state, 'locked');
+    assert.deepEqual(list(net({ newChat: { available: false, reason: 'child_new_chat_off', limit: null } })), [], 'the parents switched it off: no row');
+    assert.equal(list(net({ newChat: { available: false, reason: 'child_locked', limit: null } }))[0].state, 'locked');
+    assert.equal(list(net({ newChat: { available: true, reason: null, limit: { perHour: 10, left: 7, retryAfterS: 0 } } }))[0].limit.perHour, 10);
+    assert.deepEqual(list({ ...net(), id: 'signal' }), [], 'a service this version cannot link');
+    assert.deepEqual(CS.newChatServices({ available: false, networks: [net()] }, me), []);
+  });
+
+  it('refusals of resolve / chats → the dialog’s state', () => {
+    const st = (r) => CS.newChatErrorState(r).state;
+    assert.equal(st({ code: 'invalid_number' }), 'invalid');
+    assert.deepEqual(CS.newChatErrorState({ code: 'rate_limited', retryAfterS: 840 }), { state: 'rate', retryAfterS: 840 });
+    assert.equal(CS.newChatErrorState({ code: 'rate_limited' }).retryAfterS, 600);
+    assert.equal(st({ code: 'bridge_unlinked', reason: 'logged_out' }), 'loggedout');
+    assert.equal(st({ code: 'bridge_unlinked', reason: 'unlinked' }), 'unlinked');
+    assert.equal(st({ code: 'bridge_locked' }), 'locked');
+    assert.equal(st({ code: 'child_new_chat_off' }), 'locked');
+    assert.equal(st({ code: 'bridge_unreachable' }), 'unreach');
+    assert.equal(st({ code: 'feature_off' }), 'off');
+    assert.equal(st({ code: 'not_found', reason: 'not_on_network' }), 'none');
+    assert.equal(st(null), 'failed');
+  });
+
+  it('the dialog never stores or logs the number', () => {
+    const view = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'chat-view.js'), 'utf8');
+    const start = view.indexOf('function numberChatDialog(');
+    const end = view.indexOf('async function addMembersDialog(');
+    assert.ok(start > 0 && end > start);
+    assert.doesNotMatch(view.slice(start, end), /localStorage|sessionStorage|console\.|indexedDB/);
   });
 });
