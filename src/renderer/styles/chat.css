@@ -660,6 +660,10 @@
 .cv-br-row .cv-pref-tx, .cv-br-again .cv-pref-tx { flex: 1 1 220px; min-width: 0; }
 .cv-br-act { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
 .cv-br-again { padding-left: 58px; }
+/* Messenger 1.17: the phone was not seen for days — under the service's row */
+.cv-br-phone-row { padding: 0 0 10px 58px; border-bottom: 1px solid var(--line); }
+.cv-set-card .cv-br-phone-row:last-child { border-bottom: 0; }
+.cv-br-row:has(+ .cv-br-phone-row) { border-bottom: 0; }
 .cv-br-pill.is-ok { background: var(--acc-bg); border-color: transparent; color: var(--acc-t); }
 .cv-br-pill.is-warn { background: var(--warn-bg); border-color: transparent; color: var(--warn); }
 .cv-br-pill.is-err { background: var(--err-bg); border-color: transparent; color: var(--err); }
@@ -703,6 +707,8 @@
 .cv-bc-ph.is-failed > svg { color: var(--warn); }
 .cv-bc-ph.is-infected > svg { color: var(--err); }
 @media (prefers-reduced-motion: reduce) { .cv-bc-ph.is-loading > span { animation: none; } }
+/* Messenger 1.17: „Laden“ at a file of the older history */
+.cv-bc-fetch { margin-top: 6px; }
 
 /* Messenger 1.15 / 1.16: „Neuer WhatsApp-Chat“ per phone number */
 .cv-nc-row-tx { display: flex; flex-direction: column; flex-grow: 1; min-width: 0; }

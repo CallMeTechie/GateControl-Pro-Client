@@ -480,6 +480,8 @@
 			// Mail: a new mail opens it, a failed send the outbox (core MailService.clickContext)
 			// Notizen & Aufgaben: a reminder opens its task, a shared list / notebook it, a Tresor request the Tresor (core NotesService.clickContext)
 			if (page === 'schule' || page === 'gatedrop' || page === 'vault' || page === 'drive' || page === 'mail' || page === 'notizen') return { page, id: null, context: evt.context && typeof evt.context === 'object' ? evt.context : null };
+			// Messenger 1.17: „Handy seit N Tagen nicht gesehen“ opens „Verknüpfte Dienste“ (core ChatNotifier, context type 'bridges')
+			if (page === 'chats' && evt.context && typeof evt.context === 'object' && evt.context.type === 'bridges') return { page, id: null, context: evt.context };
 			return { page, id: page === 'inbox' ? id : null };
 		}
 		// Kameras im Heimnetz: only a camera push the core's CamerasService claimed (context with cameraId) opens
