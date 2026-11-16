@@ -801,7 +801,45 @@
 			bridgeHistory: f('bridge_history'),
 			// Messenger 1.18: „Neuer Chat“ with contacts (GateControl, WhatsApp, the address book)
 			bridgeContacts: f('bridge_contacts'),
+			// Messenger 1.25: the contacts' WhatsApp status updates in the status row, the switch „WhatsApp mitteilen …“
+			bridgeStatus: f('bridge_status'),
 		};
+	}
+
+	/**
+	 * Messenger 1.25: the status row's entries — the accounts (`items`) and the contacts' WhatsApp status updates
+	 * (`bridged`) mixed: unseen first, then the newest story, else the server's order. A bridged entry stands for no
+	 * account: `user` { id: null, name } and `bridged` { network, contactId, chatId, canReply, avatarMediaId }, its key
+	 * `wa:<contactId>`.
+	 */
+	function mixFeed(items, bridged) {
+		const newest = (it) => { const l = Array.isArray(it.stories) ? it.stories : []; return l.length ? String(l[l.length - 1].createdAt || '') : ''; };
+		const all = (Array.isArray(items) ? items : []).map((it, k) => ({ it: { ...it, key: String(it.user && it.user.id) }, k }));
+		(Array.isArray(bridged) ? bridged : []).forEach((b, k) => {
+			if (!b || !b.contact || !Array.isArray(b.stories) || !b.stories.length) return;
+			const prefix = { whatsapp: 'wa', signal: 'sg', telegram: 'tg' }[b.network] || b.network;
+			all.push({
+				k: 10000 + k,
+				it: {
+					key: `${prefix}:${b.contact.id}`,
+					user: { id: null, name: b.contact.name || null },
+					status: null,
+					stories: b.stories,
+					unseen: b.stories.some((s) => s && !s.seen),
+					bridged: { network: b.network, contactId: b.contact.id, chatId: b.chatId || null, canReply: b.canReply === true, avatarMediaId: b.contact.avatarMediaId || null },
+				},
+			});
+		});
+		all.sort((a, b) => {
+			const ua = !!a.it.unseen;
+			const ub = !!b.it.unseen;
+			if (ua !== ub) return ua ? -1 : 1;
+			const na = newest(a.it);
+			const nb = newest(b.it);
+			if (na !== nb) return na < nb ? 1 : -1;
+			return a.k - b.k;
+		});
+		return all.map((x) => x.it);
 	}
 
 	// ── Messenger 1.14: chats over a bridge (another messenger, today WhatsApp) ──
@@ -2121,6 +2159,7 @@
 		statusLine,
 		shortWhen,
 		statusRing,
+		mixFeed,
 		firstUnseen,
 		relAge,
 		remaining,
