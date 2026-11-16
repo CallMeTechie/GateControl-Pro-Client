@@ -19,6 +19,12 @@
  * Mounted by chat-view.js with its kit: window.GCChatStatus.create(kit).
  * Shown only when `GET me` features has `status` (stories: `stories`).
  *
+ * Messenger 1.25 (`bridge_status`, Entwurf „Status über WhatsApp“): the contacts' WhatsApp status updates
+ * (`bridged` of the feed) are mixed into the strip (unseen first, then the newest; the WhatsApp logo at the ring).
+ * Their viewer has no viewers and no delete; the same reactions and an answer „Antwort über WhatsApp“ go as a message
+ * into the WhatsApp chat with the contact — said under the field. A text status in the app's green (WhatsApp brings
+ * no colour), one this client cannot show: „öffne ihn in WhatsApp“.
+ *
  * Note: user data only ever goes into textContent / attributes; story
  * pictures and videos come as bytes (chat.media) and are shown as blob: URLs.
  */
@@ -43,7 +49,9 @@
 			return S.feed;
 		}
 		function set(feed) {
-			S.feed = { items: Array.isArray(feed.items) ? feed.items : [], me: feed.me || null };
+			// Messenger 1.25: the contacts' WhatsApp status updates mixed in (CS.mixFeed)
+			const bridged = f14().bridgeStatus && Array.isArray(feed.bridged) ? feed.bridged : [];
+			S.feed = { items: CS.mixFeed(Array.isArray(feed.items) ? feed.items : [], bridged), me: feed.me || null };
 			for (const fn of listeners) { try { fn(S.feed); } catch (_) { /* view */ } }
 		}
 		/** The own feed item (status, stories) or a stub. */
@@ -70,9 +78,15 @@
 
 		function ringAvatar(item, size, ring) {
 			const wrap = el('span', { class: `cv-ring is-${ring}` });
-			wrap.appendChild(kit.avatar(CS.personAvatar({ ...item.user, initials: item.user.initials }), size));
+			const b = item.bridged;
+			// Messenger 1.25: a WhatsApp contact's picture (fetched like a bridged chat's) with the logo on the ring
+			wrap.appendChild(kit.avatar(b ? { ...CS.personAvatar({ name: item.user.name }), mediaId: b.avatarMediaId || null } : CS.personAvatar({ ...item.user, initials: item.user.initials }), size));
+			if (b) wrap.appendChild(kit.netLogo(b.network, { size: 11, cls: 'cv-net-mark cv-st-net' }));
 			return wrap;
 		}
+		const netName = (n) => CS.wayLabel(n);
+		/** The name of a strip entry: the account's, a WhatsApp contact's (or „WhatsApp-Kontakt“). */
+		const nameOf = (it) => (it.user && it.user.name) || (it.bridged ? t('chat.st.bridgedUnknown', { network: netName(it.bridged.network) }) : t('chat.gone'));
 
 		/** The strip element (null when the server has no status). */
 		function strip() {
@@ -98,10 +112,10 @@
 			const items = S.feed ? S.feed.items : [];
 			items.forEach((it, i) => {
 				const ring = CS.statusRing(it);
-				const line = CS.statusLine(it.status, kit.ctx());
-				const name = it.user && it.user.name ? it.user.name : t('chat.gone');
+				const line = it.bridged ? t('chat.st.bridgedVia', { network: netName(it.bridged.network) }) : CS.statusLine(it.status, kit.ctx());
+				const name = nameOf(it);
 				box.appendChild(el('button', {
-					type: 'button', class: `cv-st${ring === 'unseen' ? ' is-unseen' : ''}`, role: 'listitem', 'data-user': String(it.user && it.user.id),
+					type: 'button', class: `cv-st${ring === 'unseen' ? ' is-unseen' : ''}`, role: 'listitem', 'data-user': it.key || String(it.user && it.user.id),
 					title: line ? `${name}: ${line}` : name, 'aria-label': `${name}${ring === 'unseen' ? `, ${t('chat.st.new')}` : ''}${line ? `: ${line}` : ''}`,
 					on: { click: () => (it.stories && it.stories.length ? viewer(items, i, CS.firstUnseen(it.stories)) : statusCard(it)) },
 				}, [ringAvatar(it, 50, ring), el('span', { class: 'cv-st-cap', text: name.split(' ')[0] })]));
@@ -436,15 +450,18 @@
 				const list = person.stories || [];
 				const st = list[s];
 				if (!st) { close(); return; }
-				const own = person.user && person.user.id === meId();
+				const br = person.bridged || null;
+				const own = !br && person.user && person.user.id === meId();
 				prevBtn.disabled = p === 0 && s === 0;
 				clear(bars);
 				list.forEach((_, i) => bars.appendChild(el('span', { class: 'cv-story-bar' }, [el('i', { style: `width:${i < s ? 100 : 0}%` })])));
 				clear(headEl).append(...[
-					kit.avatar(CS.personAvatar(person.user), 36),
+					br ? kit.avatar({ ...CS.personAvatar({ name: person.user.name }), mediaId: br.avatarMediaId || null }, 36) : kit.avatar(CS.personAvatar(person.user), 36),
 					el('span', { class: 'cv-story-who' }, [
-						el('b', { text: own ? t('chat.st.mine') : (person.user.name || t('chat.gone')) }),
-						el('small', { text: [CS.relAge(st.createdAt, cx), CS.remaining(st.expiresAt, cx)].filter(Boolean).join(' · ') }),
+						el('b', { text: own ? t('chat.st.mine') : nameOf(person) }),
+						// Messenger 1.25: „über WhatsApp · vor 2 Std.“ with the logo
+						br ? el('small', { class: 'cv-story-via' }, [kit.netLogo(br.network, { size: 9, cls: 'cv-net-inl' }), el('span', { text: t('chat.story.bridgedAgo', { network: netName(br.network), age: CS.relAge(st.createdAt, cx) }) })])
+							: el('small', { text: [CS.relAge(st.createdAt, cx), CS.remaining(st.expiresAt, cx)].filter(Boolean).join(' · ') }),
 					]),
 					el('span', { class: 'cv-grow' }),
 					own ? iconBtn('trash', t('chat.story.delete'), async () => {
@@ -461,9 +478,13 @@
 				].filter(Boolean));
 				clear(stage);
 				stage.className = `cv-story-stage is-${st.kind} font-${st.font || 'sans'}`;
-				stage.style.background = st.kind === 'text' ? (/^#[0-9a-fA-F]{6}$/.test(st.bg || '') ? st.bg : CS.STORY_COLORS[0]) : '#000';
+				stage.style.background = br && (st.kind === 'text' || st.kind === 'unsupported') ? '' : (st.kind === 'text' ? (/^#[0-9a-fA-F]{6}$/.test(st.bg || '') ? st.bg : CS.STORY_COLORS[0]) : '#000');
+				if (br) stage.classList.add('is-bridged');
 				const extra = [st.place ? t('chat.story.place', { place: st.place }) : null].filter(Boolean).join(' · ');
-				if (st.kind === 'text') {
+				if (st.kind === 'unsupported') {
+					stage.appendChild(el('div', { class: 'cv-story-text cv-story-unsup', text: t('chat.story.bridgedUnsupported', { network: br ? netName(br.network) : '' }) }));
+					schedule(5000);
+				} else if (st.kind === 'text') {
 					stage.appendChild(el('div', { class: 'cv-story-text', text: st.text || '' }));
 					schedule(Math.min(15000, 5000 + (st.text || '').length * 40));
 				} else {
@@ -489,7 +510,9 @@
 				stage.addEventListener('pointerup', () => pause(false));
 				stage.addEventListener('pointerleave', () => pause(false));
 				clear(foot);
-				if (own) {
+				if (br) {
+					bridgedFoot(person, st, br);
+				} else if (own) {
 					const n = Number(st.viewerCount) || 0;
 					foot.appendChild(el('button', { type: 'button', class: 'btn btn-sec btn-sm cv-story-viewers', on: { click: () => { pause(true); viewersDialog(st).then(() => pause(false)); } } }, [icon('eye', 14), t('chat.story.viewers', { n })]));
 				} else {
@@ -517,6 +540,42 @@
 						el('small', { class: 'cv-story-hint', text: t('chat.story.replyHint', { name: person.user.name || '' }) }),
 					);
 				}
+			}
+			/**
+			 * Messenger 1.25: under a WhatsApp contact's status — seen (WhatsApp learns it only on the person's own switch),
+			 * the same reactions as under a story here and the field „Antwort über WhatsApp“; both go as a message into
+			 * the WhatsApp chat, which the line under them says (with the logo).
+			 */
+			function bridgedFoot(person, st, br) {
+				const net = netName(br.network);
+				if (!st.seen) {
+					st.seen = true;
+					api.bridgedStorySeen(st.id).catch(() => {});
+				}
+				const hint = el('small', { class: 'cv-story-hint cv-story-via' }, [kit.netLogo(br.network, { size: 9, cls: 'cv-net-inl' }), el('span', { text: br.canReply ? t('chat.story.bridgedReplyHint', { network: net }) : t('chat.story.bridgedNoChat', { network: net }) })]);
+				if (!br.canReply) { foot.append(hint); return; }
+				const reply = el('input', { class: 'inp cv-story-reply', maxlength: '4000', placeholder: t('chat.story.bridgedReplyPh', { network: net }), 'aria-label': t('chat.story.bridgedReplyPh', { network: net }) });
+				reply.addEventListener('focus', () => pause(true));
+				reply.addEventListener('blur', () => { if (!reply.value) pause(false); });
+				const sendReply = async () => {
+					const v = reply.value.trim();
+					if (!v) return;
+					const r = await api.bridgedStoryReply(st.id, { text: v }).catch((e) => ({ ok: false, error: e && e.message }));
+					if (!r || r.ok === false) { toast(CS.errorText(r, t), 'error'); return; }
+					reply.value = '';
+					toast(t('chat.story.bridgedReplied', { network: net }), 'success');
+					reply.blur();
+				};
+				reply.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendReply(); } });
+				foot.append(
+					el('div', { class: 'cv-story-emojis', role: 'group', 'aria-label': t('chat.story.react') }, CS.STORY_EMOJIS.map((em) => el('button', { type: 'button', text: em, 'aria-label': em, on: { click: async () => {
+						const r = await api.bridgedStoryReply(st.id, { emoji: em }).catch((e) => ({ ok: false, error: e && e.message }));
+						if (!r || r.ok === false) toast(CS.errorText(r, t), 'error');
+						else toast(t('chat.story.bridgedReacted', { emoji: em, network: net }), 'success');
+					} } }))),
+					el('div', { class: 'cv-row-inline' }, [reply, iconBtn('send', t('chat.send'), sendReply, 'cv-ib-pri')]),
+					hint,
+				);
 			}
 			kit.mount(ov);
 			show();

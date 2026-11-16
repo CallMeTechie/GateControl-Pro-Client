@@ -898,3 +898,17 @@
 .cv-wrow-tx small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv-ways-sec > .btn { margin-top: 6px; align-self: flex-start; }
 .cv-br-rec-head { gap: 10px; }
+
+/* Messenger 1.25: WhatsApp status updates in the status strip — the service's logo on the ring, the viewer's line
+   „über WhatsApp · …“, a text status in the app's green (WhatsApp brings no colour) */
+.cv-ring { position: relative; }
+.cv-ring .cv-st-net { right: -2px; bottom: -1px; z-index: 1; }
+.cv-net-inl { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; flex: none; background: var(--line2); color: var(--text); }
+.cv-net-inl.is-net-whatsapp { background: #1F8F5A; color: #fff; }
+.cv-net-inl.is-net-signal { background: #3A76F0; color: #fff; }
+.cv-net-inl.is-net-telegram { background: #27A7E7; color: #fff; }
+.cv-story-via { display: inline-flex; align-items: center; gap: 6px; }
+.cv-story-hint.cv-story-via { align-self: center; justify-content: center; }
+.cv-story-stage.is-bridged.is-text, .cv-story-stage.is-bridged.is-unsupported { background: #0d5c40; }
+[data-theme="light"] .cv-story-stage.is-bridged.is-text, [data-theme="light"] .cv-story-stage.is-bridged.is-unsupported { background: #0b6e4a; }
+.cv-story-unsup { font-size: 17px; font-weight: 600; }

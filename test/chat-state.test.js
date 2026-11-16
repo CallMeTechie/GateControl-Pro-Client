@@ -458,8 +458,8 @@ describe('chat-state: Messenger 1.4.0', () => {
   const cx14 = { ...ctx, me: me14 };
 
   it('features, Familie integrations and kinds this version draws', () => {
-    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false, bridgeHistory: false, bridgeContacts: false });
-    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false, bridgeHistory: false, bridgeContacts: false });
+    assert.deepEqual(CS.features14(me14), { status: true, stories: true, polls: true, events: true, arrival: true, actions: true, tools: true, privacy: true, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false, bridgeHistory: false, bridgeContacts: false, bridgeStatus: false });
+    assert.deepEqual(CS.features14(ME), { status: false, stories: false, polls: false, events: false, arrival: false, actions: false, tools: false, privacy: false, storyDuration: false, notices: false, noticeRoutes: false, linked: false, bridgeChats: false, bridgeMedia: false, bridgeNewChat: false, bridgeHistory: false, bridgeContacts: false, bridgeStatus: false });
     assert.deepEqual(CS.familie(me14), { lists: true, calendar: false, places: true });
     assert.deepEqual(CS.familie(ME), { lists: false, calendar: false, places: false });
     for (const k of ['poll', 'event', 'arrival', 'action', 'card', 'text']) assert.equal(CS.isShownKind({ kind: k }), true, k);
@@ -518,6 +518,19 @@ describe('chat-state: Messenger 1.4.0', () => {
     assert.equal(CS.statusRing({ stories: [{ seen: true }, { seen: false }] }), 'unseen');
     assert.equal(CS.statusRing({ stories: [{ seen: true }] }), 'seen');
     assert.equal(CS.statusRing({ stories: [] }), 'none');
+    // Messenger 1.25: the contacts' WhatsApp status updates mixed in — unseen first, then the newest; own key, no account
+    const mixed = CS.mixFeed(
+      [{ user: { id: 8, name: 'Kim' }, stories: [{ id: 1, createdAt: '2026-11-16T09:00:00.000Z', seen: false }], unseen: true },
+        { user: { id: 9, name: 'Jo' }, stories: [{ id: 2, createdAt: '2026-11-16T06:00:00.000Z', seen: true }], unseen: false }],
+      [{ network: 'whatsapp', contact: { id: 21, name: 'Alex' }, chatId: 44, canReply: true, stories: [{ id: 101, createdAt: '2026-11-16T09:30:00.000Z', seen: false }] },
+        { network: 'whatsapp', contact: { id: 22, name: 'Robin' }, chatId: null, canReply: false, stories: [{ id: 102, createdAt: '2026-11-16T05:00:00.000Z', seen: true }] },
+        { network: 'whatsapp', contact: { id: 23 }, stories: [] }],
+    );
+    assert.deepEqual(mixed.map((x) => x.key), ['wa:21', '8', '9', 'wa:22']);
+    assert.deepEqual(mixed[0].bridged, { network: 'whatsapp', contactId: 21, chatId: 44, canReply: true, avatarMediaId: null });
+    assert.equal(mixed[0].user.id, null, 'a contact is no account');
+    assert.equal(CS.statusRing(mixed[3]), 'seen');
+    assert.deepEqual(CS.mixFeed([], undefined), []);
     assert.equal(CS.firstUnseen([{ seen: true }, { seen: false }]), 1);
     assert.equal(CS.firstUnseen([{ seen: true }]), 0);
     assert.equal(CS.relAge(new Date(NOW - 12 * 60000).toISOString(), ctx, NOW), 'chat.rel.minAgo(12)');

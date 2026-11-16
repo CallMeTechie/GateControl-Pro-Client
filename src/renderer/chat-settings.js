@@ -215,6 +215,13 @@
 				row(t('chat.prefs.typing'), t('chat.prefs.typingHint'), toggle(t('chat.prefs.typing'), p.typing !== false, (v) => savePrefs({ typing: v })), 'typing'),
 				f.privacy ? row(t('chat.set.defaultDis'), t('chat.set.defaultDisHint'), select(t('chat.set.defaultDis'), pv.defaultDisappearingS || 0, (me().limits && Array.isArray(me().limits.disappearingS) && me().limits.disappearingS.length ? me().limits.disappearingS : [0, 86400, 604800, 2592000]).map((s) => [s, CS.disLabel(s, t)]), (v) => savePrefs({ privacy: { defaultDisappearingS: Number(v) } })), 'defaultDisappearingS') : null,
 			]));
+			// Messenger 1.25 (Entwurf „Status über WhatsApp“): tell WhatsApp when the person views a contact's status — off by
+			// default, only with read receipts (the note under it)
+			if (f.bridgeStatus && typeof pv.bridgedStatusSeen === 'boolean') {
+				body.appendChild(group(t('chat.set.statusSec'), [
+					row(t('chat.set.bridgedSeen'), t('chat.set.bridgedSeenHint'), toggle(t('chat.set.bridgedSeen'), pv.bridgedStatusSeen === true, (v) => savePrefs({ privacy: { bridgedStatusSeen: v } })), 'bridgedStatusSeen'),
+				], t('chat.set.bridgedSeenNeeds', { receipts: t('chat.prefs.readReceipts') })));
+			}
 			if (f.privacy) {
 				body.appendChild(group(t('chat.set.groups'), [
 					row(t('chat.set.groupAdd'), t('chat.set.groupAddHint'), select(t('chat.set.groupAdd'), pv.groupAdd || 'all', audience(['all', 'family', 'nobody']), (v) => savePrefs({ privacy: { groupAdd: v } })), 'groupAdd'),
@@ -282,7 +289,7 @@
 				body.appendChild(group(t('chat.set.groupsAndMore'), [
 					row(t('chat.set.mentionsOnly'), t('chat.set.mentionsOnlyHint', { name: (me().user && me().user.name ? me().user.name.split(' ')[0] : '') }), toggle(t('chat.set.mentionsOnly'), n.groupsMentionsOnly === true, (v) => savePrefs({ notify: { groupsMentionsOnly: v } })), 'groupsMentionsOnly'),
 					row(t('chat.set.reactions'), t('chat.set.reactionsHint'), toggle(t('chat.set.reactions'), n.reactions !== false, (v) => savePrefs({ notify: { reactions: v } })), 'reactions'),
-					f.status ? row(t('chat.set.statusDigest'), t('chat.set.statusDigestHint'), toggle(t('chat.set.statusDigest'), n.statusDigest === true, (v) => savePrefs({ notify: { statusDigest: v } })), 'statusDigest') : null,
+					f.status ? row(t('chat.set.statusDigest'), f.bridgeStatus ? `${t('chat.set.statusDigestHint')}. ${t('chat.set.statusDigestHintBridged')}` : t('chat.set.statusDigestHint'), toggle(t('chat.set.statusDigest'), n.statusDigest === true, (v) => savePrefs({ notify: { statusDigest: v } })), 'statusDigest') : null,
 					f.events ? row(t('chat.set.eventReminder'), t('chat.set.eventReminderHint'), select(t('chat.set.eventReminder'), Number.isFinite(n.eventReminderMin) ? n.eventReminderMin : 60, [0, 15, 60, 120, 1440].map((x) => [x, t(`chat.reminderMin.${x}`)]), (v) => savePrefs({ notify: { eventReminderMin: Number(v) } })), 'eventReminderMin') : null,
 				], f.status ? t('chat.set.dndHint') : null));
 			}
