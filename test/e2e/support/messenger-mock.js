@@ -843,7 +843,10 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
 
     if (a === 'me') {
       return json(200, {
-        ok: true, user: { id: ME, name: 'Marc', avatarUrl: null, initials: 'MA', colorHex: '#2FBF71' }, prefs: api.features14 ? st14.prefs : { readReceipts: true, typing: true, preview: true },
+        ok: true, user: { id: ME, name: 'Marc', avatarUrl: null, initials: 'MA', colorHex: '#2FBF71' },
+        prefs: api.features14 ? (api.avatarProfile ? { ...st14.prefs, privacy: { ...st14.prefs.privacy, avatarProfile: api.avatarProfile } } : st14.prefs) : { readReceipts: true, typing: true, preview: true },
+        // Messenger 1.22: „Wer sieht dein Bild?“ from the profile (ms.avatarProfile = 'contacts' …)
+        ...(api.avatarProfile ? { avatarInProfile: true } : {}),
         ...(api.features14 ? { integrations: { familie: { lists: !!familie, calendar: !!familie, places: !!familie } } } : {}),
         license: { licensed: true, state: 'active', expiresAt: null },
         features: api.features || { direct: true, groups: true, voice: true, files: true, location: true, reactions: true, edit: true, search: true, disappearing: true, bridges: false, e2e: false },
@@ -1034,6 +1037,8 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     log,
     /** Messenger 1.4.0 routes and fields on (features with any 1.4.0 key). */
     features14: !!(features && ['status', 'polls', 'events', 'actions', 'msg_tools', 'privacy2'].some((k) => features[k] === true)),
+    /** Messenger 1.22: the level of „Wer sieht dein Bild?“ in the profile (null: an older messenger). */
+    avatarProfile: null,
     st14,
     /** A status of someone (Messenger 1.4.0). */
     setStatus(userId, status) { st14.statuses.set(userId, { preset: 'none', text: null, place: null, until: null, eta: null, destLabel: null, updatedAt: iso(Date.now()), ...status }); emit('status.update', { userId }); },

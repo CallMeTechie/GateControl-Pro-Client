@@ -374,12 +374,39 @@
 		const introSeen = (net) => { try { return JSON.parse(root.localStorage.getItem(INTRO_KEY) || '[]').includes(net); } catch (_) { return false; } };
 		const markIntro = (net) => { try { const l = JSON.parse(root.localStorage.getItem(INTRO_KEY) || '[]'); if (!l.includes(net)) root.localStorage.setItem(INTRO_KEY, JSON.stringify(l.concat(net).slice(-20))); } catch (_) { /* storage unavailable */ } };
 
-		/** The menu of the own avatar: „Dein Status“, „Mein Profil“ (portal, /portal#profil). */
+		/**
+		 * The menu of the own avatar: „Dein Status“, „Mein Profil“ (portal, /portal#profil). Messenger 1.22
+		 * (avatarInProfile): above them the own name with „Bild: <Stufe>“ — „Wer sieht dein Bild?“ of the profile —
+		 * and „Mein Profil“ says that it opens the portal.
+		 */
 		function meMenu() {
 			if (typeof o.openPortal !== 'function') { if (status) status.statusDialog(); return; }
+			const m = me();
+			const inProfile = !!(m && m.avatarInProfile === true);
+			const level = inProfile && m.prefs && m.prefs.privacy ? m.prefs.privacy.avatarProfile : null;
+			const head = inProfile ? meHead(m.user || {}, level || 'all') : null;
+			const profileItem = inProfile
+				? el('button', { type: 'button', role: 'menuitem', class: 'cv-menu-item', 'data-item': 'profile', on: { click: () => { closeMenu(); openProfile(); } } }, [
+					icon('user', 15),
+					el('span', { class: 'cv-menu-two' }, [el('span', { text: t('chat.profile.title') }), el('small', { text: t('chat.profile.opensPortal') })]),
+					icon('external', 13),
+				])
+				: ['external', t('chat.profile.title'), () => openProfile(), { id: 'profile' }];
 			popMenu(refs.meBtn, [
+				head,
 				status ? ['user', t('chat.st.yours'), () => status.statusDialog(), { id: 'status' }] : null,
-				['external', t('chat.profile.title'), () => openProfile(), { id: 'profile' }],
+				profileItem,
+			]);
+		}
+		/** The head of the own menu: avatar, name, „Bild: <Stufe>“. */
+		function meHead(u, level) {
+			const known = ['all', 'contacts', 'family', 'self'].includes(level) ? level : 'all';
+			return el('div', { class: 'cv-menu-me', 'data-item': 'me' }, [
+				avatar(CS.personAvatar({ name: u.name, initials: u.initials, colorHex: u.colorHex, avatarUrl: u.avatarUrl }), 30),
+				el('span', { class: 'cv-menu-two' }, [
+					el('b', { text: u.name || '' }),
+					el('small', { 'data-item': 'picture', text: t('chat.profile.picture', { level: t(`chat.profile.level.${known}`) }) }),
+				]),
 			]);
 		}
 		/** „Mein Profil“: the portal on its profile page (older servers open the portal home). */
