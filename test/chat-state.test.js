@@ -362,8 +362,10 @@ describe('Chats page', () => {
       for (const k of ['sub_logged_out', 'qr_lead']) keys.add(`chat.br.${k}_${net}`);
       for (const k of CS.qrSteps(net)) keys.add(k);
       // Messenger 1.23: the pairing code only where the service offers it (Signal: the QR code only)
-      if (net !== 'signal') for (const k of ['code_step1', 'code_step2']) keys.add(`chat.br.${k}_${net}`);
+      if (net === 'whatsapp') for (const k of ['code_step1', 'code_step2']) keys.add(`chat.br.${k}_${net}`);
       else for (const k of ['qr_renews', 'linked']) keys.add(`chat.br.${k}_${net}`);
+      // Messenger 1.24: the texts of a service of its own (Telegram: number, code, password), else the general ones
+      if (net === 'telegram') for (const k of ['flow_qr', 'flow_phone', 'link_sub', 'phone_label', 'phone_hint', 'code_label', 'code_hint', 'code_warn', 'pw_label', 'pw_hint']) keys.add(`chat.br.${k}_${net}`);
       if (net !== 'whatsapp') for (const k of ['recTitle', 'recText', 'recSavedYes', 'recSavedNo']) keys.add(`chat.person.${k}_${net}`);
     }
     for (const k of CS.LINK_FLOWS) keys.add(`chat.br.flow_${k}`);
@@ -848,7 +850,9 @@ describe('chat-state: „Verknüpfte Dienste“ (Messenger 1.13)', () => {
     assert.equal(CS.linkable('whatsapp'), true);
     // Messenger 1.23: Signal
     assert.equal(CS.linkable('signal'), true);
-    assert.equal(CS.linkable('telegram'), false);
+    // Messenger 1.24: Telegram
+    assert.equal(CS.linkable('telegram'), true);
+    assert.equal(CS.linkable('icq'), false);
     assert.equal(CS.linkable('constructor'), false);
   });
 
@@ -984,7 +988,8 @@ describe('chat-state: files, pictures and a new chat by number over a bridge (Me
     assert.deepEqual(list(net({ newChat: { available: false, reason: 'child_new_chat_off', limit: null } })), [], 'the parents switched it off: no row');
     assert.equal(list(net({ newChat: { available: false, reason: 'child_locked', limit: null } }))[0].state, 'locked');
     assert.equal(list(net({ newChat: { available: true, reason: null, limit: { perHour: 10, left: 7, retryAfterS: 0 } } }))[0].limit.perHour, 10);
-    assert.deepEqual(list({ ...net(), id: 'telegram' }), [], 'a service this version cannot link');
+    assert.deepEqual(list({ ...net(), id: 'icq' }), [], 'a service this version cannot link');
+    assert.deepEqual(list({ ...net(), id: 'telegram' }), [], 'Messenger 1.24: no chat by number over Telegram');
     assert.deepEqual(list({ ...net(), id: 'signal' }), [], 'Messenger 1.23: no chat by number over Signal');
     assert.deepEqual(CS.newChatServices({ available: false, networks: [net()] }, me), []);
   });
@@ -1233,7 +1238,7 @@ describe('chat-state – channels, format and links (Messenger 1.20)', () => {
   it('logos instead of „WA“: WhatsApp, GateControl, anything else a speech bubble', () => {
     assert.equal(CS.netGlyph('whatsapp').known, true);
     assert.equal(CS.netGlyph('gatecontrol').known, true);
-    const o = CS.netGlyph('telegram');
+    const o = CS.netGlyph('icq');
     assert.equal(o.known, false);
     assert.equal(o.paths.length, 1);
     assert.equal(CS.netGlyph('__proto__').known, false);
@@ -1392,5 +1397,47 @@ describe('chat-state: Signal (Messenger 1.23, Brücken Stufe 7a)', () => {
     assert.equal(CS.systemText(sys({ event: 'disappearing', by: null, seconds: 28800, network: 'signal' }), c, ctx), 'chat.sys.disOnNet(Signal,chat.dis.hours(8))');
     assert.equal(CS.systemText(sys({ event: 'disappearing', by: null, seconds: 0, network: 'signal' }), c, ctx), 'chat.sys.disOffNet(Signal)');
     assert.equal(CS.systemText(sys({ event: 'disappearing', by: null, seconds: 604800 }), c, ctx), 'chat.sys.disOn(GateControl,[chat.dis.604800])');
+  });
+});
+
+describe('chat-state: Telegram (Messenger 1.24, Brücken Stufe 7b)', () => {
+  const tg = (extra = {}) => ({ id: 'telegram', state: 'running', allowed: true, lock: null, consent: true, outdated: false, logins: [], flows: ['qr', 'phone'], needs: null, ...extra });
+  const tgChat = (bridge = {}, extra = {}) => ({ id: 41, kind: 'direct', title: 'Paketdienst-Bot', members: [{ userId: 7 }], bridge: { network: 'telegram', label: 'Telegram', state: null, closed: false, ...bridge }, ...extra });
+
+  it('name, mark, the paper plane; the QR code preselected, „Mit Telefonnummer“ the second way; three steps', () => {
+    assert.equal(CS.bridgeName('telegram'), 'Telegram');
+    assert.equal(CS.bridgeMark('telegram'), 'TG');
+    assert.deepEqual([CS.netGlyph('telegram').known, CS.netGlyph('telegram').ring], [true, false]);
+    assert.deepEqual(CS.linkFlows(tg()), ['qr', 'phone']);
+    assert.deepEqual(CS.linkFlows(tg({ flows: ['phone', 'qr'] })), ['qr', 'phone'], 'on a computer the QR code comes first');
+    assert.deepEqual(CS.linkFlows({ id: 'whatsapp', flows: ['qr', 'phone'] }), ['phone', 'qr'], 'WhatsApp as before');
+    assert.deepEqual(CS.qrSteps('telegram'), ['chat.br.qr_step1_telegram', 'chat.br.qr_step2_telegram', 'chat.br.qr_step3_telegram']);
+    assert.deepEqual(CS.LINK_NOTES.telegram, ['unofficial', 'e2e']);
+    const own = (k) => (k === 'chat.br.flow_phone_telegram' ? 'Mit Telefonnummer' : k);
+    assert.equal(CS.flowLabel('telegram', 'phone', own), 'Mit Telefonnummer');
+    assert.equal(CS.flowLabel('whatsapp', 'phone', own), 'chat.br.flow_phone');
+  });
+
+  it('„Noch nicht eingerichtet (Admin).“ while the application id is missing — nothing to link, nothing to unlink', () => {
+    const r = CS.linkedRow(tg({ needs: 'app', state: 'stopped' }), ctx);
+    assert.deepEqual([r.state, r.sub, r.pill, r.link, r.unlink, r.again], ['noapp', 'chat.br.sub_noapp', { text: 'chat.br.pill_noapp', tone: 'off' }, false, false, null]);
+    assert.equal(CS.linkedRow(tg(), ctx).link, true);
+  });
+
+  it('chats: „Bot“ behind a bot, „340 Mitglieder“ of a large group (from 200), nothing in GateControl', () => {
+    assert.deepEqual(CS.bridgeExtras(tgChat({ bot: true }), t), { bot: true, members: '' });
+    assert.deepEqual(CS.bridgeExtras(tgChat({ members: 340 }, { kind: 'group', title: 'Wandergruppe Eifel' }), t), { bot: false, members: 'chat.bc.members(340)' });
+    assert.equal(CS.bridgeExtras(tgChat({ members: 120 }, { kind: 'group' }), t).members, '');
+    assert.equal(CS.bridgeExtras(tgChat({ bot: true }, { kind: 'group' }), t).bot, false);
+    assert.deepEqual(CS.bridgeExtras({ id: 1, kind: 'direct', title: 'Lena' }, t), { bot: false, members: '' });
+  });
+
+  it('the channels page: the channels of one service by its chip', () => {
+    const ch = (id, network) => ({ id, kind: 'group', title: `K${id}`, bridge: { network, label: CS.bridgeName(network), channel: true, readOnly: true } });
+    const list = [ch(1, 'whatsapp'), ch(2, 'telegram'), ch(3, 'telegram')];
+    assert.deepEqual(CS.bridgeNetworks(list).map((n) => n.id), ['whatsapp', 'telegram']);
+    assert.deepEqual(CS.channelsOf(list, 'telegram').map((c) => c.id), [2, 3]);
+    assert.equal(CS.channelsOf(list, null).length, 3);
+    assert.equal(CS.channelNetworks(list), 'WhatsApp · Telegram');
   });
 });
