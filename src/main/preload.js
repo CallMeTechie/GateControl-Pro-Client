@@ -38,6 +38,10 @@ api.remoteHost = {
   newCode: () => ipcRenderer.invoke('remote-host:new-code'),
   /** "In Windows einschalten" */
   enableRdp: () => ipcRenderer.invoke('remote-host:enable-rdp'),
+  /** stage 7: "Bildschirm teilen" on / off, and during a session "Beenden" / "Nur ansehen" */
+  setScreen: (on) => ipcRenderer.invoke('remote-host:screen', on === true),
+  screenStop: () => ipcRenderer.invoke('remote-host:screen-stop'),
+  screenViewOnly: () => ipcRenderer.invoke('remote-host:screen-view-only'),
   onState: (cb) => subscribe('remote-host:state', cb),
   onRequest: (cb) => subscribe('remote-host:request', cb),
 };
