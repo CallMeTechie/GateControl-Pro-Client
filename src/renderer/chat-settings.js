@@ -437,7 +437,12 @@
 			if (linked && isOpen() && section === 'linked') linked.reload();
 		}
 
-		return { open, close, isOpen, render, local, LOCAL, reloadLinked };
+		/** Messenger 1.23: a phone sent the linking step here („Im Windows-Client fortsetzen“). */
+		function handoff(h) {
+			if (linked && typeof linked.handoff === 'function') linked.handoff(h);
+		}
+
+		return { open, close, isOpen, render, local, LOCAL, reloadLinked, handoff };
 	}
 
 	root.GCChatSettings = { create, LOCAL, local: {

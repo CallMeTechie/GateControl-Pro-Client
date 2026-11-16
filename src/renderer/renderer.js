@@ -3476,6 +3476,8 @@ chatView = chatApi && window.GCChatView && $('#page-chats')
 			if (!show && currentPage === 'chats' && st && st.state === 'unavailable') navigateTo('status');
 		},
 		onUnread: (n) => renderChatBadge(n),
+		// Messenger 1.23: the phone sent the linking step of Signal here — the chats page comes up
+		showChats: () => navigateTo('chats'),
 		// "Newer version of GateControl" banner (unknown chat features): the update check in Settings › About.
 		checkUpdate: () => { navigateTo('settings'); showSettingsTab('about'); $('#nav-update')?.click(); },
 		// A card's link: Messenger 1.6 notice cards open what a click on their notification

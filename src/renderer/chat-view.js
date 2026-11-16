@@ -160,6 +160,18 @@
 			p.setAttribute('fill-rule', 'evenodd');
 			s.appendChild(p);
 		}
+		// Messenger 1.23: Signal's dashed ring
+		if (g.ring) {
+			const r = document.createElementNS(NS, 'circle');
+			r.setAttribute('cx', '12');
+			r.setAttribute('cy', '12');
+			r.setAttribute('r', '9.6');
+			r.setAttribute('fill', 'none');
+			r.setAttribute('stroke', 'currentColor');
+			r.setAttribute('stroke-width', '1.6');
+			r.setAttribute('stroke-dasharray', '3.2 1.6');
+			s.appendChild(r);
+		}
 		const box = document.createElement('span');
 		box.className = `${cls} is-net-${g.known ? network : 'other'}`;
 		box.setAttribute('data-net', g.known ? network : 'other');
@@ -1269,6 +1281,11 @@
 					el('button', { type: 'button', class: 'cv-bc-more', 'data-act': 'intro', text: t('chat.bc.more'), on: { click: () => { S.bridgeIntro = c.id; renderBars(); } } }),
 				]));
 			}
+			// Messenger 1.23: Signal — the safety numbers stay in the Signal app; a timer of the chat is set there only
+			if (b.network === 'signal') refs.bars.appendChild(el('div', { class: 'cv-bc-strip', 'data-strip': 'signal-safety' }, [icon('lock', 14), el('span', { class: 'cv-bc-tx', text: t('chat.bc.signal_safety') })]));
+			if (Number.isSafeInteger(c.disappearingS) && c.disappearingS > 0) {
+				refs.bars.appendChild(el('div', { class: 'cv-bc-strip', 'data-strip': 'timer' }, [icon('timer', 14), el('span', { class: 'cv-bc-tx', text: t('chat.bc.timer', { time: CS.disLabel(c.disappearingS, t), network }) })]));
+			}
 		}
 
 		/**
@@ -1430,7 +1447,7 @@
 				if (ph && ph.geo) b.appendChild(locationEl({ location: { lat: ph.geo.lat, lon: ph.geo.lon, label: m.text || null } }));
 				else if (ph) {
 					b.appendChild(el('div', { class: `cv-bc-ph${ph.state ? ` is-${ph.state}` : ''}${ph.reason === 'infected' ? ' is-infected' : ''}`, 'data-ph': ph.kind, 'data-state': ph.state || '', 'aria-busy': ph.state === 'loading' ? 'true' : null }, [
-						icon(ph.state === 'failed' && ph.reason === 'infected' ? 'shield' : ph.kind === 'unsupported' ? 'info' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : ph.kind === 'video' ? 'video' : ph.kind === 'location' ? 'pin' : ph.kind === 'file' ? 'file' : 'mic'), 14),
+						icon(ph.state === 'failed' && ph.reason === 'infected' ? 'shield' : ph.kind === 'unsupported' ? 'info' : ph.kind === 'view_once' ? 'eye' : (ph.kind === 'image' || ph.kind === 'sticker' ? 'image' : ph.kind === 'video' ? 'video' : ph.kind === 'location' ? 'pin' : ph.kind === 'file' ? 'file' : 'mic'), 14),
 						el('span', { text: CS.placeholderText(m, c, t) }),
 					]));
 					// Messenger 1.17: a file of the older history — fetched only when asked for
@@ -3850,6 +3867,16 @@
 		api.onState((st) => { S.status = st; applyStatus(); if (st && st.state === 'available') refreshListSoon(); });
 		api.onUnread((n) => { if (S.status) S.status.unread = n; if (typeof o.onUnread === 'function' && S.status && S.status.state === 'available') o.onUnread(n); });
 		api.onNavigate((e) => { if (e && Number.isSafeInteger(e.conversationId)) openChat(e.conversationId); });
+		// Messenger 1.23: the phone sent the linking step of Signal here („Im Windows-Client fortsetzen“) — „Verknüpfte
+		// Dienste“ opens right at the QR code (GET bridges → handoff does the same when the section opens)
+		if (typeof api.onHandoff === 'function') {
+			api.onHandoff((h) => {
+				if (!h || h.target !== 'windows' || !settings || typeof settings.handoff !== 'function' || !f14().linked) return;
+				if (typeof o.showChats === 'function') o.showChats();
+				openSettings('linked');
+				settings.handoff(h);
+			});
+		}
 		// Messenger 1.4.0
 		if (typeof api.onFeed === 'function') api.onFeed((feed) => { if (status && feed) status.set(feed); });
 		if (typeof api.onLists === 'function') api.onLists((lists) => { S.lists = Array.isArray(lists) ? lists : []; renderList(); if (settings && settings.isOpen()) settings.render(); });

@@ -179,7 +179,13 @@ describe('chat-state: times, ticks, timeline', () => {
     assert.equal(CS.mutePatch('until'), null);
     assert.equal(CS.disLabel(0, t), '[chat.dis.off]');
     assert.equal(CS.disLabel(604800, t), '[chat.dis.604800]');
-    assert.equal(CS.disLabel(3600, t), 'chat.dis.seconds(3600)');
+    assert.equal(CS.disLabel(3600, t), 'chat.dis.hours(1)');
+    // Messenger 1.23: a timer of Signal holds any number of seconds — the largest whole unit
+    assert.equal(CS.disLabel(30, t), 'chat.dis.seconds(30)');
+    assert.equal(CS.disLabel(300, t), 'chat.dis.minutes(5)');
+    assert.equal(CS.disLabel(28800, t), 'chat.dis.hours(8)');
+    assert.equal(CS.disLabel(1209600, t), 'chat.dis.weeks(2)');
+    assert.equal(CS.disLabel(90, t), 'chat.dis.seconds(90)');
   });
 });
 
@@ -348,19 +354,24 @@ describe('Chats page', () => {
     // built at runtime
     // Messenger 1.13 / 1.14: linked services and chats over a bridge
     for (const k of ['state_unreachable', 'state_logged_out', 'state_unlinked', 'state_locked', 'state_off', 'closed', 'cannot_send', 'first_1', 'first_2', 'first_3']) keys.add(`chat.bc.${k}`);
-    for (const k of ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported']) keys.add(`chat.bc.ph.${k}`);
+    for (const k of ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported', 'view_once']) keys.add(`chat.bc.ph.${k}`);
     for (const k of ['bridge_error', 'unreachable', 'not_running', 'timeout', 'network_error', 'no_permission', 'too_old', 'unsupported', 'not_handled', 'bridge_unavailable', 'chat_closed']) keys.add(`chat.bc.reason.${k}`);
     for (const k of ['bridge_off', 'consent_required', 'bridge_locked', 'bridge_unsupported', 'bridge_failed', 'bridge_unreachable', 'rate_limited', 'bridge_text_only', 'bridge_unlinked']) keys.add(`chat.error.${k}`);
     for (const [net, notes] of Object.entries(CS.LINK_NOTES)) {
       for (const k of notes) keys.add(`chat.br.note_${net}_${k}`);
-      for (const k of ['sub_logged_out', 'code_step1', 'code_step2', 'qr_lead', 'qr_step1', 'qr_step2']) keys.add(`chat.br.${k}_${net}`);
+      for (const k of ['sub_logged_out', 'qr_lead']) keys.add(`chat.br.${k}_${net}`);
+      for (const k of CS.qrSteps(net)) keys.add(k);
+      // Messenger 1.23: the pairing code only where the service offers it (Signal: the QR code only)
+      if (net !== 'signal') for (const k of ['code_step1', 'code_step2']) keys.add(`chat.br.${k}_${net}`);
+      else for (const k of ['qr_renews', 'linked']) keys.add(`chat.br.${k}_${net}`);
+      if (net !== 'whatsapp') for (const k of ['recTitle', 'recText', 'recSavedYes', 'recSavedNo']) keys.add(`chat.person.${k}_${net}`);
     }
     for (const k of CS.LINK_FLOWS) keys.add(`chat.br.flow_${k}`);
     for (const k of ['text', 'image', 'voice', 'file', 'location', 'system']) keys.add(`chat.kind.${k}`);
     for (const k of ['pending', 'failed', 'sent', 'delivered', 'read']) keys.add(`chat.status.${k}`);
     for (const k of ['direct', 'group']) keys.add(`chat.new.${k}`);
     for (const k of ['not_installed', 'unsupported', 'hidden', 'forbidden']) keys.add(`chat.unavailable.${k}`);
-    for (const k of ['off', '86400', '604800', '2592000']) keys.add(`chat.dis.${k}`);
+    for (const k of ['off', '86400', '604800', '2592000', 'seconds', 'minutes', 'hours', 'days', 'weeks']) keys.add(`chat.dis.${k}`);
     for (const k of ['denied', 'unavailable', 'timeout']) keys.add(`chat.loc.${k}`);
     // Messenger 1.4.0
     for (const k of ['poll', 'event', 'arrival', 'action']) keys.add(`chat.kind.${k}`);
@@ -835,7 +846,9 @@ describe('chat-state: „Verknüpfte Dienste“ (Messenger 1.13)', () => {
     assert.equal(CS.linkDate('nope', 'de'), '');
     assert.equal(CS.linkDate('2026-11-02T10:00:00.000Z', 'en'), '02/11/2026');
     assert.equal(CS.linkable('whatsapp'), true);
-    assert.equal(CS.linkable('signal'), false);
+    // Messenger 1.23: Signal
+    assert.equal(CS.linkable('signal'), true);
+    assert.equal(CS.linkable('telegram'), false);
     assert.equal(CS.linkable('constructor'), false);
   });
 
@@ -971,7 +984,8 @@ describe('chat-state: files, pictures and a new chat by number over a bridge (Me
     assert.deepEqual(list(net({ newChat: { available: false, reason: 'child_new_chat_off', limit: null } })), [], 'the parents switched it off: no row');
     assert.equal(list(net({ newChat: { available: false, reason: 'child_locked', limit: null } }))[0].state, 'locked');
     assert.equal(list(net({ newChat: { available: true, reason: null, limit: { perHour: 10, left: 7, retryAfterS: 0 } } }))[0].limit.perHour, 10);
-    assert.deepEqual(list({ ...net(), id: 'signal' }), [], 'a service this version cannot link');
+    assert.deepEqual(list({ ...net(), id: 'telegram' }), [], 'a service this version cannot link');
+    assert.deepEqual(list({ ...net(), id: 'signal' }), [], 'Messenger 1.23: no chat by number over Signal');
     assert.deepEqual(CS.newChatServices({ available: false, networks: [net()] }, me), []);
   });
 
@@ -1335,5 +1349,48 @@ describe('chat-state: persons (Messenger 1.21, Chats v2 Teil B)', () => {
     assert.equal(CS.canMergeByHand(wa, { features: {} }), false);
     const f = CS.filterCandidates({ accounts: [{ userId: 8, name: 'Anna' }, { userId: 9, name: 'Lena' }], chats: [{ conversationId: 3, title: 'Lenas Handy' }] }, 'len');
     assert.deepEqual([f.accounts.map((x) => x.userId), f.chats.map((x) => x.conversationId)], [[9], [3]]);
+  });
+});
+
+describe('chat-state: Signal (Messenger 1.23, Brücken Stufe 7a)', () => {
+  const sg = (extra = {}) => ({ id: 'signal', state: 'running', allowed: true, lock: null, consent: true, outdated: false, logins: [], flows: ['qr'], history: { maxDays: 30, phoneConfirms: true }, ...extra });
+  const sgChat = (extra = {}) => ({ id: 31, kind: 'direct', title: 'Kim Muster', members: [{ userId: 7 }], bridge: { network: 'signal', label: 'Signal', state: null, closed: false }, ...extra });
+
+  it('name, mark, logo with its ring; the ways in (QR code only), the steps beside the code', () => {
+    assert.equal(CS.bridgeName('signal'), 'Signal');
+    assert.equal(CS.bridgeMark('signal'), 'SG');
+    const g = CS.netGlyph('signal');
+    assert.equal(g.known, true);
+    assert.equal(g.ring, true);
+    assert.equal(CS.netGlyph('whatsapp').ring, false);
+    assert.deepEqual(CS.linkFlows(sg()), ['qr']);
+    assert.deepEqual(CS.linkFlows({ id: 'whatsapp' }), ['phone', 'qr'], 'an older plugin names no flows');
+    assert.deepEqual(CS.linkFlows(sg({ flows: ['sms'] })), ['phone', 'qr']);
+    assert.deepEqual(CS.qrSteps('signal'), ['chat.br.qr_step1_signal', 'chat.br.qr_step2_signal', 'chat.br.qr_step3_signal']);
+    assert.deepEqual(CS.qrSteps('whatsapp'), ['chat.br.qr_step1_whatsapp', 'chat.br.qr_step2_whatsapp']);
+    assert.deepEqual(CS.LINK_NOTES.signal, ['unofficial', 'phone', 'e2e', 'safety']);
+  });
+
+  it('the history: „Verlauf: 30 Tage“ behind the linked row, „nur beim Verknüpfen“ under „Älteren Verlauf laden“', () => {
+    const linked = sg({ logins: [{ id: 'aci', name: '', state: 'connected', since: '2026-11-16T08:00:00.000Z' }] });
+    const h = { available: true, days: 30, default: 30, options: [0, 30, -1], pending: 0 };
+    assert.equal(CS.linkedRow(linked, { ...ctx, history: h }).sub, 'chat.br.sub_linked_since(16.11.2026) · chat.br.hist_line(30)');
+    assert.equal(CS.linkedRow(linked, { ...ctx, history: { ...h, pending: 40 } }).sub, 'chat.br.sub_linked_since(16.11.2026) · chat.br.hist_line_pending(30)');
+    assert.equal(CS.linkedRow(linked, { ...ctx, history: { ...h, days: 0 } }).sub, 'chat.br.sub_linked_since(16.11.2026)');
+    assert.equal(CS.linkedRow(linked, ctx).sub, 'chat.br.sub_linked_since(16.11.2026)', 'no history row: nothing said');
+    assert.match(CS.historyRow(h, t, [sg()]).sub, /chat\.br\.hist_once\(Signal,30\)$/);
+    assert.doesNotMatch(CS.historyRow(h, t, [{ id: 'whatsapp' }]).sub, /hist_once/);
+    assert.doesNotMatch(CS.historyRow({ ...h, available: false }, t, [sg()]).sub, /hist_once/);
+  });
+
+  it('chats: a view-once message, a timer changed in Signal', () => {
+    const c = sgChat();
+    const ph = { id: 5, kind: 'text', senderId: null, text: '', bridge: { placeholder: { kind: 'view_once' } } };
+    assert.equal(CS.placeholderOf(ph).kind, 'view_once');
+    assert.equal(CS.placeholderText(ph, c, t), 'chat.bc.ph.view_once(Signal)');
+    const sys = (system) => ({ kind: 'system', system });
+    assert.equal(CS.systemText(sys({ event: 'disappearing', by: null, seconds: 28800, network: 'signal' }), c, ctx), 'chat.sys.disOnNet(Signal,chat.dis.hours(8))');
+    assert.equal(CS.systemText(sys({ event: 'disappearing', by: null, seconds: 0, network: 'signal' }), c, ctx), 'chat.sys.disOffNet(Signal)');
+    assert.equal(CS.systemText(sys({ event: 'disappearing', by: null, seconds: 604800 }), c, ctx), 'chat.sys.disOn(GateControl,[chat.dis.604800])');
   });
 });
