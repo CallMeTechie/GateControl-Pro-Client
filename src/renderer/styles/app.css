@@ -262,6 +262,8 @@ select.inp { padding-right: 8px; }
 .side-sessions { display: flex; flex-direction: column; gap: 6px; }
 .side-session { height: auto; padding: 8px 12px; align-items: flex-start; }
 .side-session .dot { margin-top: 6px; background: var(--acc); }
+/* Fernzugriff stage 3: an SSH session that is recorded (the red dot of the terminal window) */
+.side-session .dot.dot-rec { background: #E5484D; }
 .side-session-text { display: flex; flex-direction: column; min-width: 0; }
 .side-session-name { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-session-sub { font-size: 12px; }
@@ -634,3 +636,6 @@ body:not([data-conn="connected"]) .show-connected { display: none !important; }
 /* Fernzugriff stage 7: the hint of Windows Home, the running session of "Bildschirm teilen" (indented like a sub row) */
 .rh-home-ic { color: var(--warn); display: inline-flex; flex: none; }
 .set-row.ss-session { padding-left: 20px; }
+
+/* Fernzugriff stage 3: the name of a new tmux session (red while it is not valid) */
+.inp.invalid { border-color: var(--err); box-shadow: 0 0 0 3px var(--err-bg); }
