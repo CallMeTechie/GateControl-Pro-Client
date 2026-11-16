@@ -33,6 +33,7 @@ let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, 
 let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, connectSteps, waitForHandshake, explorerShell, userPath, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, updateToast;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let setupRemoteHost; // ./remote-host.js (loaded with the other services)
+let setupTerminal; // ./terminal.js — Fernzugriff stage 3, the SSH terminal window with tabs
 let setupScreenBar; // ./screen-bar.js — Fernzugriff stage 7, the bar at the top while "Bildschirm teilen" runs
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
@@ -80,6 +81,7 @@ try {
   // Fernzugriff stage 2: the switch registers this PC with the plugin (./remote-host.js)
   ({ setupRemoteHost } = require('./remote-host'));
   ({ setupScreenBar } = require('./screen-bar'));
+  ({ setupTerminal } = require('./terminal'));
 
   writeCrashLog('IMPORT', 'Loading pro services...');
   ApiClientPro = require('../services/api-client-pro');
@@ -332,6 +334,7 @@ let wgService = null;
 let killSwitchSvc = null;
 let rdpAllowSvc = null;
 let remoteHost = null; // Fernzugriff: this PC as a host (./remote-host.js)
+let terminal = null; // Fernzugriff stage 3: the SSH terminal window (./terminal.js)
 let apiClient = null;
 let connectionMonitor = null;
 let updater = null;
@@ -1386,6 +1389,22 @@ function initializeServices() {
     remoteHost = null;
   }
 
+  // stage 3: the SSH devices of „Fernzugriff“ in their own terminal window (core RemoteTerm, xterm.js in the app)
+  try {
+    const core = require('@gatecontrol/client-core');
+    terminal = setupTerminal && core.RemoteTerm ? setupTerminal({
+      core, apiClient, log, store, t, BrowserWindow, ipcMain, clipboard,
+      preload: path.join(__dirname, 'terminal-preload.js'),
+      html: path.join(__dirname, '..', 'renderer', 'terminal.html'),
+      getMainWindow: () => mainWindow,
+      showMain: () => { showWindow(); mainWindow?.webContents.send('navigate', 'rdp'); },
+      getTheme: () => resolvedAppTheme(),
+    }) : null;
+  } catch (err) {
+    log.warn('SSH terminal not available:', err.message);
+    terminal = null;
+  }
+
   rdpManager = new RdpManager({
     apiClient,
     log,
@@ -1646,6 +1665,8 @@ function registerIpcHandlers() {
     driveOnDemand,
     // remote-host:* (Pro, ./ipc-pro.js — Fernzugriff, this PC as a host)
     remoteHost,
+    // remote-term:* (Pro, ./ipc-pro.js — Fernzugriff, the SSH terminal)
+    terminal,
     // Result of a bundle the admin requested (the button shows its own toast).
     onSupportResult: (res) => {
       if (!res || res.cancelled) return;
@@ -1941,6 +1962,8 @@ app.on('before-quit', (e) => {
   driveOnDemand?.stop().catch(() => {});
   // Fernzugriff: a running "Bildschirm teilen" ends (input stops, bye), the bar and the capture window go.
   try { remoteHost?.stop(); } catch (err) { log.warn('Remote host stop failed:', err.message); }
+  // the SSH sessions say bye (their tmux keeps running on the devices), the terminal window goes
+  try { terminal?.stop(); } catch (err) { log.warn('SSH terminal stop failed:', err.message); }
   // Vault: forget the keys, stop timers, release Strg+Alt+P.
   vaultQuick?.stop();
   vault?.lock('quit');

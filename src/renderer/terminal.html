@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'">
+	<title>GateControl – Terminal</title>
+	<link rel="stylesheet" href="vendor/xterm/xterm.css">
+	<link rel="stylesheet" href="styles/terminal.css">
+</head>
+<body>
+	<!-- Fernzugriff stage 3: one window for all SSH sessions, a tab each (xterm.js 5.5.0 from the app package) -->
+	<div class="tw">
+		<div class="tabs" id="tabs" role="tablist">
+			<div class="tab-list" id="tab-list"></div>
+			<button class="tab-add" id="tab-add" type="button" aria-label="+">+</button>
+		</div>
+		<div class="bar">
+			<span class="rec" id="bar-rec" hidden><span class="rec-dot"></span><span id="bar-rec-text"></span></span>
+			<span class="bar-name" id="bar-name"></span>
+			<span class="bar-meta" id="bar-meta"></span>
+			<span class="grow"></span>
+			<span class="font-ctl">
+				<button class="tbtn" id="font-minus" type="button">−</button>
+				<span class="font-val" id="font-val"></span>
+				<button class="tbtn" id="font-plus" type="button">+</button>
+			</span>
+			<button class="tbtn" id="btn-copy" type="button"></button>
+			<button class="tbtn" id="btn-paste" type="button"></button>
+			<button class="tbtn tbtn-danger" id="btn-disconnect" type="button"></button>
+		</div>
+		<div class="stage" id="stage">
+			<div class="hint" id="font-hint" hidden></div>
+			<div class="banner" id="tmux-banner" hidden></div>
+		</div>
+		<div class="status" id="statusbar">
+			<span class="st-dot" id="st-dot"></span>
+			<span id="st-state"></span>
+			<span class="st-sep">·</span>
+			<span>xterm-256color</span>
+			<span class="grow"></span>
+			<span id="st-count"></span>
+		</div>
+	</div>
+
+	<div class="menu" id="ctx-menu" role="menu" hidden>
+		<button type="button" role="menuitem" data-act="copy"><span data-t="copy"></span><kbd>Strg+Umschalt+C</kbd></button>
+		<button type="button" role="menuitem" data-act="paste"><span data-t="paste"></span><kbd>Strg+Umschalt+V</kbd></button>
+		<button type="button" role="menuitem" data-act="selectAll"><span data-t="selectAll"></span><kbd>Strg+Umschalt+A</kbd></button>
+		<hr>
+		<button type="button" role="menuitem" data-act="bigger"><span data-t="fontBigger"></span><kbd>Strg++</kbd></button>
+		<button type="button" role="menuitem" data-act="smaller"><span data-t="fontSmaller"></span><kbd>Strg+−</kbd></button>
+		<hr>
+		<button type="button" role="menuitem" data-act="reconnect"><span data-t="reconnect"></span></button>
+		<button type="button" role="menuitem" data-act="disconnect" class="danger"><span data-t="disconnect"></span></button>
+	</div>
+
+	<div class="scrim" id="dlg" hidden>
+		<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+			<div class="dlg-label" id="dlg-label"></div>
+			<h2 id="dlg-title"></h2>
+			<div id="dlg-body"></div>
+			<div class="dlg-actions" id="dlg-actions"></div>
+		</div>
+	</div>
+
+	<script src="vendor/xterm/xterm.js"></script>
+	<script src="vendor/xterm/addon-fit.js"></script>
+	<script src="terminal-state.js"></script>
+	<script src="terminal.js"></script>
+</body>
+</html>

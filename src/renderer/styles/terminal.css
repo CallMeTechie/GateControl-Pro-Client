@@ -1,0 +1,97 @@
+/* GateControl – Fernzugriff stage 3: the SSH terminal window (terminal.html). Tabs, bar and dialogs follow the
+   app's theme (tokens as in app.css); the terminal's surface stays dark in both (design question 5). */
+@font-face { font-family: 'Instrument Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/instrument-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Instrument Sans'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/instrument-sans-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/jetbrains-mono-latin-500-normal.woff2') format('woff2'); }
+
+:root {
+	--bg: #0D1015; --panel: #161B22; --panel2: #1C222B; --line: #262D38; --line2: #353E4B; --text: #E6EAF0; --muted: #A6AFBC; --faint: #8C96A5;
+	--acc: #3DDC97; --acc-on: #03261A; --warn: #F5B544; --err: #FF8080; --err-bg: rgba(255, 128, 128, .12); --info: #79B8FF;
+	--shadow: 0 24px 60px rgba(0, 0, 0, .55); --scrim: rgba(5, 7, 10, .62); --term: #0b0e13;
+	--font-ui: 'Instrument Sans', system-ui, sans-serif; --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+	color-scheme: dark;
+}
+[data-theme="light"] {
+	--bg: #F3F5F8; --panel: #FFFFFF; --panel2: #F4F6F9; --line: #DCE2EA; --line2: #C4CCD8; --text: #0F1720; --muted: #465262; --faint: #566274;
+	--acc: #0B8A5C; --acc-on: #FFFFFF; --warn: #9A5B00; --err: #B42323; --err-bg: rgba(201, 42, 42, .09); --info: #1A56C4;
+	--shadow: 0 24px 60px rgba(15, 23, 32, .20); --scrim: rgba(15, 23, 32, .35);
+	color-scheme: light;
+}
+
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font: 400 13px var(--font-ui); }
+.tw { display: flex; flex-direction: column; height: 100%; }
+.grow { flex: 1; }
+[hidden] { display: none !important; }
+
+.tabs { display: flex; align-items: flex-end; gap: 4px; padding: 6px 8px 0; background: var(--panel2); border-bottom: 1px solid var(--line); }
+.tab-list { display: flex; gap: 4px; overflow-x: auto; min-width: 0; }
+.tab { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 12px; border: 1px solid transparent; border-bottom: 0;
+	border-radius: 9px 9px 0 0; background: transparent; color: var(--muted); font: 600 12.5px var(--font-ui); cursor: pointer; white-space: nowrap; }
+.tab.on { background: var(--panel); color: var(--text); border-color: var(--line); }
+.tname { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.tclose { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: 5px; color: var(--faint); }
+.tclose:hover { background: var(--line); color: var(--text); }
+.tab-add { height: 28px; width: 28px; margin-bottom: 2px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: 600 16px var(--font-ui); cursor: pointer; }
+.tab-add:hover { background: var(--line); color: var(--text); }
+.tdot, .st-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.t-ok { background: var(--acc); } .t-warn { background: var(--warn); } .t-err { background: var(--err); } .t-off { background: var(--faint); }
+
+.rec-dot { width: 9px; height: 9px; border-radius: 50%; background: #E5484D; flex: none; animation: rec 1.6s ease-in-out infinite; }
+@keyframes rec { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
+.rec { display: inline-flex; align-items: center; gap: 6px; color: var(--err); font-weight: 600; }
+
+.bar { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px 0 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.bar-name { font-weight: 600; }
+.bar-meta { color: var(--muted); font: 400 12px var(--font-mono); }
+.font-ctl { display: inline-flex; align-items: center; gap: 4px; }
+.font-val { min-width: 44px; text-align: center; font: 500 12px var(--font-mono); color: var(--muted); }
+.tbtn { height: 28px; padding: 0 10px; border: 1px solid var(--line2); border-radius: 7px; background: transparent; color: var(--text); font: 600 12px var(--font-ui); cursor: pointer; }
+.tbtn:hover { background: var(--panel2); }
+.tbtn-danger { color: var(--err); }
+
+.stage { position: relative; flex: 1; min-height: 0; background: var(--term); }
+.term { position: absolute; inset: 6px 4px 4px 10px; }
+.hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 4; padding: 6px 12px; border-radius: 9px;
+	background: rgba(0, 0, 0, .8); color: #fff; font: 500 12px var(--font-mono); }
+.banner { position: absolute; top: 8px; left: 12px; right: 12px; z-index: 3; padding: 8px 12px; border-radius: 10px; background: rgba(245, 181, 68, .16);
+	color: #F5B544; font-size: 12.5px; }
+.ov { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .62); }
+.ov-hint { background: transparent; color: #B8C0CC; font: 400 13px var(--font-mono); pointer-events: none; }
+.ov-card { max-width: 440px; margin: 20px; padding: 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.ov-card strong { display: block; font-size: 15px; margin-bottom: 6px; }
+.ov-card p { margin: 0 0 12px; color: var(--muted); line-height: 1.45; }
+.ov-actions, .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.btn { height: 32px; padding: 0 14px; border: 1px solid var(--line2); border-radius: 8px; background: transparent; color: var(--text); font: 600 12.5px var(--font-ui); cursor: pointer; }
+.btn:hover { background: var(--panel2); }
+.btn-pri { background: var(--acc); color: var(--acc-on); border-color: var(--acc); }
+.btn-pri:hover { background: var(--acc); filter: brightness(1.05); }
+.btn-danger { background: var(--err); color: #fff; border-color: var(--err); }
+.btn-xs { height: 24px; padding: 0 8px; font-size: 11.5px; }
+
+.status { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 12px; background: var(--panel2); border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.st-sep { color: var(--faint); }
+
+.menu { position: fixed; z-index: 20; min-width: 240px; padding: 6px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.menu button { display: flex; width: 100%; justify-content: space-between; gap: 20px; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent;
+	color: var(--text); font: 400 13px var(--font-ui); cursor: pointer; text-align: left; }
+.menu button:hover { background: var(--panel2); }
+.menu button.danger { color: var(--err); }
+.menu kbd { color: var(--faint); font: 400 11.5px var(--font-mono); }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 4px; }
+
+.scrim { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: var(--scrim); }
+.dialog { width: min(520px, calc(100% - 40px)); padding: 22px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.dialog h2 { margin: 2px 0 10px; font-size: 18px; }
+.dialog p { margin: 0 0 12px; line-height: 1.5; color: var(--muted); }
+.dlg-label { color: var(--faint); font: 600 11px var(--font-ui); text-transform: uppercase; letter-spacing: .04em; }
+.fp { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line); user-select: text; }
+.fp-alg { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
+.fp-val { font: 500 17px/1.6 var(--font-mono); word-spacing: 4px; color: var(--text); }
+.cmd { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.cmd code { flex: 1; font: 400 12px var(--font-mono); color: var(--text); user-select: text; }
+.muted { color: var(--muted); }
+.paste-pre { margin: 0 0 12px; padding: 10px; max-height: 90px; overflow: hidden; border-radius: 9px; background: var(--term); color: #E6EAF0; font: 400 12px var(--font-mono); white-space: pre; }
+.chk { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px; color: var(--muted); cursor: pointer; }

@@ -31,11 +31,26 @@ const { driveOnDemandChannels } = require('./drive-ondemand');
  *   only its 8-character short form is handed to the renderer
  * @param {object} [ctx.driveOnDemand] - ./drive-ondemand.js (drive-ondemand:* channels)
  * @param {object} [ctx.remoteHost] - ./remote-host.js (remote-host:* channels, Fernzugriff)
+ * @param {object} [ctx.terminal] - ./terminal.js (remote-term:* channels, the SSH terminal)
  * @returns {string[]} registered channels
  */
 const REMOTE_HOST_CHANNELS = ['remote-host:status', 'remote-host:share', 'remote-host:decide', 'remote-host:new-code', 'remote-host:enable-rdp',
   // stage 7: "Bildschirm teilen"
   'remote-host:screen', 'remote-host:screen-stop', 'remote-host:screen-view-only'];
+
+const REMOTE_TERM_CHANNELS = ['remote-term:devices', 'remote-term:tmux', 'remote-term:open', 'remote-term:list', 'remote-term:focus'];
+
+/** The remote-term:* channels (stage 3, the SSH terminal); without the service none of the devices and no session. */
+function remoteTermChannels(term) {
+  const off = {
+    'remote-term:devices': () => ({ devices: [], sshRight: false }),
+    'remote-term:tmux': () => ({ error: 'unavailable' }),
+    'remote-term:open': () => ({ error: 'unavailable' }),
+    'remote-term:list': () => [],
+    'remote-term:focus': () => false,
+  };
+  return Object.fromEntries(REMOTE_TERM_CHANNELS.map((c) => [c, term && term.channels && term.channels[c] ? term.channels[c] : off[c]]));
+}
 
 /** The remote-host:* channels; without the service each answers "off". */
 function remoteHostChannels(rh) {
@@ -126,9 +141,12 @@ function registerProIpc(ipcMain, ctx) {
     // ── Fernzugriff: this PC as a host (./remote-host.js) ──
     // Always registered (the preload bridge knows them); without the service an answer of "off".
     ...remoteHostChannels(ctx.remoteHost || null),
+
+    // ── Fernzugriff: the SSH terminal (./terminal.js) ──
+    ...remoteTermChannels(ctx.terminal || null),
   };
 
   return registerBaseHandlers(ipcMain, { ...ctx, getUpdater, overrides });
 }
 
-module.exports = { registerProIpc, REMOTE_HOST_CHANNELS };
+module.exports = { registerProIpc, REMOTE_HOST_CHANNELS, REMOTE_TERM_CHANNELS };

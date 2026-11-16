@@ -47,6 +47,23 @@ api.remoteHost = {
 };
 
 // ══════════════════════════════════════════════════════
+//  PRO: Fernzugriff – SSH terminal (page „Fernzugriff“, ./terminal.js)
+// ══════════════════════════════════════════════════════
+
+api.remoteTerm = {
+  /** → { devices: [ssh devices], sshRight }; throws { code } (e.g. not_found without the plugin) */
+  devices: () => ipcRenderer.invoke('remote-term:devices'),
+  /** → { sessions, hidden, tmux, hostKey } */
+  tmux: (deviceId) => ipcRenderer.invoke('remote-term:tmux', deviceId),
+  /** { deviceId, deviceName, tmux: { attach } | { create } | null, recording, record } → opens the terminal window */
+  open: (o) => ipcRenderer.invoke('remote-term:open', o),
+  list: () => ipcRenderer.invoke('remote-term:list'),
+  /** Brings the terminal window to the front (with id: that tab). */
+  focus: (id) => ipcRenderer.invoke('remote-term:focus', id),
+  onSessions: (cb) => subscribe('remote-term:sessions', cb),
+};
+
+// ══════════════════════════════════════════════════════
 //  PRO: RDP Channels
 // ══════════════════════════════════════════════════════
 
