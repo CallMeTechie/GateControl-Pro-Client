@@ -553,6 +553,11 @@
 								<div class="grow"><div class="set-row-title" data-i18n="killswitch.label">Kill-Switch</div><div class="set-row-desc" data-i18n="killswitch.desc">Blockiert Traffic ohne VPN</div></div>
 								<button class="sw" id="killswitch-toggle" type="button" role="switch" aria-checked="false" data-i18n-aria-label="killswitch.label" aria-label="Kill-Switch"><span></span></button>
 							</div>
+							<!-- Fernzugriff stage 7: Windows Home has no Remote Desktop — "Bildschirm teilen" instead -->
+							<div class="set-row" id="rh-home-row" hidden>
+								<span class="rh-home-ic" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg></span>
+								<div class="grow"><div class="set-row-title" data-i18n="screenShare.homeTitle">Windows Home kann keinen Remote Desktop anbieten</div><div class="set-row-desc" data-i18n="screenShare.homeDesc">Nutze „Bildschirm teilen“. Das geht mit jeder Windows-Ausgabe und meldet niemanden ab.</div></div>
+							</div>
 							<div class="set-row" id="rdp-allow-row">
 								<div class="grow"><div class="set-row-title" data-i18n="rdpAllow.label">Remote Desktop erlauben</div><div class="set-row-desc" data-i18n="rdpAllow.desc">RDP-Zugriff (Port 3389) über VPN freigeben</div></div>
 								<button class="sw" id="rdp-allow-toggle" type="button" role="switch" aria-checked="false" data-i18n-aria-label="rdpAllow.label" aria-label="Remote Desktop erlauben"><span></span></button>
@@ -578,6 +583,16 @@
 								<div class="set-row" id="rh-warn-row" hidden>
 									<div class="grow"><div class="set-row-desc" id="rh-warn"></div></div>
 								</div>
+							</div>
+							<!-- Fernzugriff stage 7: "Bildschirm teilen" (plugin gatecontrol-remote 1.5) — also on Windows Home -->
+							<div class="set-row" id="ss-row" hidden>
+								<div class="grow"><div class="set-row-title" data-i18n="screenShare.label">Bildschirm teilen</div><div class="set-row-desc" id="ss-desc" data-i18n="screenShare.desc">Für Hilfe: Jemand sieht deinen Bildschirm und darf ihn nach deiner Bestätigung steuern</div></div>
+								<button class="sw" id="ss-toggle" type="button" role="switch" aria-checked="false" data-i18n-aria-label="screenShare.label" aria-label="Bildschirm teilen"><span></span></button>
+							</div>
+							<div class="set-row ss-session" id="ss-session-row" hidden>
+								<div class="grow"><div class="set-row-title" id="ss-session-title" aria-live="polite"></div><div class="set-row-desc" id="ss-session-desc"></div></div>
+								<button class="btn btn-sec" id="ss-view-only" type="button" data-i18n="screenShare.viewOnly" hidden>Nur ansehen</button>
+								<button class="btn btn-sec" id="ss-stop" type="button" data-i18n="screenShare.stop">Beenden</button>
 							</div>
 						</section>
 					</div>

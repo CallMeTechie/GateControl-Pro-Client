@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self';">
+	<title>GateControl</title>
+	<link rel="stylesheet" href="styles/screen-bar.css">
+</head>
+<body>
+	<!-- Fernzugriff stage 7: who watches or controls this PC, with "Nur ansehen" and "Beenden" -->
+	<div class="sb" id="sb" role="status" aria-live="polite">
+		<svg class="sb-ic" id="sb-hand" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8a8 8 0 0 0 16 0v-2a2 2 0 0 0-4 0"/></svg>
+		<svg class="sb-ic" id="sb-eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+		<span class="sb-text" id="sb-text"></span>
+		<span class="sb-time" id="sb-time"></span>
+		<button class="sb-btn sb-btn-ghost" id="sb-view-only" type="button" hidden></button>
+		<button class="sb-btn" id="sb-stop" type="button"></button>
+	</div>
+	<script src="screen-bar.js"></script>
+</body>
+</html>

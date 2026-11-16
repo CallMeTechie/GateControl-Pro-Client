@@ -33,6 +33,7 @@ let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, 
 let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, connectSteps, waitForHandshake, explorerShell, userPath, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, updateToast;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let setupRemoteHost; // ./remote-host.js (loaded with the other services)
+let setupScreenBar; // ./screen-bar.js — Fernzugriff stage 7, the bar at the top while "Bildschirm teilen" runs
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
 let createUpdateInstaller, installErrorText;
@@ -78,6 +79,7 @@ try {
   RdpAllowSvc = require('@gatecontrol/client-core/src/services/rdp-allow');
   // Fernzugriff stage 2: the switch registers this PC with the plugin (./remote-host.js)
   ({ setupRemoteHost } = require('./remote-host'));
+  ({ setupScreenBar } = require('./screen-bar'));
 
   writeCrashLog('IMPORT', 'Loading pro services...');
   ApiClientPro = require('../services/api-client-pro');
@@ -201,8 +203,12 @@ if (!gotLock) {
 // pages, http(s) links in the system browser, no new windows, no <webview>
 // (core utils/window-guard). Links of the renderer go through
 // shell:open-external and are not affected.
+// Fernzugriff stage 7: the hidden capture window of "Bildschirm teilen" is the core's own page
+function coreScreenShareRoot() {
+  try { return path.dirname(require.resolve('@gatecontrol/client-core/src/screen-share/capture.html')); } catch { return null; }
+}
 installWindowGuard(app, {
-  appRoots: [path.join(__dirname, '..', 'renderer')],
+  appRoots: [path.join(__dirname, '..', 'renderer'), coreScreenShareRoot()].filter(Boolean),
   getShell: () => shell,
   log,
 });
@@ -300,6 +306,14 @@ const proSchema = {
     type: 'object',
     properties: {
       enabled: { type: 'boolean', default: false },
+    },
+    default: {},
+  },
+  // Fernzugriff stage 7: the switch "Bildschirm teilen" (./remote-host.js)
+  remote: {
+    type: 'object',
+    properties: {
+      screenShare: { type: 'boolean', default: false },
     },
     default: {},
   },
@@ -1355,9 +1369,17 @@ function initializeServices() {
   rdpAllowSvc = new RdpAllowSvc(log, { edition: 'pro' });
   try {
     const core = require('@gatecontrol/client-core');
+    // stage 7: "Bildschirm teilen" — the capture window, SendInput and the bar at the top (not in e2e runs)
+    const { desktopCapturer, session } = require('electron');
+    const screenBar = setupScreenBar && !e2e ? setupScreenBar({
+      BrowserWindow, screen, ipcMain, t, log,
+      preload: path.join(__dirname, 'screen-bar-preload.js'),
+      html: path.join(__dirname, '..', 'renderer', 'screen-bar.html'),
+    }) : null;
     remoteHost = setupRemoteHost && core.RemoteHost ? setupRemoteHost({
       core, apiClient, log, store, notificationCenter: notifications?.notificationCenter, rdpAllow: rdpAllowSvc, configPath: WG_CONFIG_FILE,
       getMainWindow: () => mainWindow, showWindow, appVersion: require('../../package.json').version,
+      electron: e2e ? null : { BrowserWindow, desktopCapturer, screen, session, powerMonitor }, bar: screenBar,
     }) : null;
   } catch (err) {
     log.warn('Remote host not available:', err.message);
@@ -1917,6 +1939,8 @@ app.on('before-quit', (e) => {
   driveSync?.stop();
   // gc-drive-sync.exe beenden (endet sonst mit dem Prozess über --parent-pid).
   driveOnDemand?.stop().catch(() => {});
+  // Fernzugriff: a running "Bildschirm teilen" ends (input stops, bye), the bar and the capture window go.
+  try { remoteHost?.stop(); } catch (err) { log.warn('Remote host stop failed:', err.message); }
   // Vault: forget the keys, stop timers, release Strg+Alt+P.
   vaultQuick?.stop();
   vault?.lock('quit');

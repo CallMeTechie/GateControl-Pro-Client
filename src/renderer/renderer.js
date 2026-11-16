@@ -645,13 +645,17 @@ bindSwitch(el.killswitchToggle, setKillSwitch);
 bindSwitch(el.rdpAllowToggle, (enabled) => {
 	state.rdpAllow = enabled;
 	rdpAllow.toggle(enabled);
-	$('#rh-panel').hidden = !enabled || !remoteHostApi;
+	// stage 7: the panel (code, "Ohne Code") stays while "Bildschirm teilen" is on
+	$('#rh-panel').hidden = !remoteHostApi || !(enabled || (rhState && rhState.screen && rhState.screen.enabled));
 });
 
 // ══════════════════════════════════════════════════════════
 //  FERNZUGRIFF: THIS PC AS A HOST (plugin gatecontrol-remote 1.1)
 //  The switch above registers the PC; code, "Ohne Code für Berechtigte"
 //  and the question of an incoming request.
+//  Stage 7 (plugin 1.5): the second switch "Bildschirm teilen" (also on
+//  Windows Home), the running session with "Nur ansehen" / "Beenden"; the
+//  bar at the top of the screen is a window of its own (main/screen-bar.js).
 // ══════════════════════════════════════════════════════════
 const remoteHostApi = window.gatecontrol.remoteHost || null;
 let rhState = null;
@@ -663,19 +667,31 @@ function rhTime(iso) {
 	return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+let ssLast = null; // the last session of "Bildschirm teilen" (its end shows a toast once)
+
 function renderRemoteHost(s) {
 	if (!s) return;
 	rhState = s;
+	const scr = s.screen || {};
+	const shareOn = !!scr.enabled;
+	// stage 7: Windows Home — the hint instead of Remote Desktop; "Bildschirm teilen" when the core has it
+	const home = s.rdpAvailable === false;
+	$('#rh-home-row').hidden = !(home && scr.supported);
+	$('#rdp-allow-row').hidden = home && scr.supported && !s.enabled;
+	$('#ss-row').hidden = !scr.supported;
+	setSwitch($('#ss-toggle'), shareOn);
+	$('#ss-desc').textContent = shareOn && scr.status === 'unavailable' ? t('screenShare.unavailable') : t('screenShare.desc');
+	renderScreenSession(scr.session);
 	const panel = $('#rh-panel');
-	panel.hidden = !s.enabled;
-	if (!s.enabled) return;
+	panel.hidden = !(s.enabled || shareOn);
+	if (panel.hidden) return;
 	let text;
-	if (s.status === 'ready') text = t(s.shareMode === 'open' && s.allowOpen ? 'remoteHost.status.readyOpen' : 'remoteHost.status.ready');
+	if (s.status === 'ready') text = t(!s.enabled ? 'screenShare.statusReady' : (s.shareMode === 'open' && s.allowOpen ? 'remoteHost.status.readyOpen' : 'remoteHost.status.ready'));
 	else if (s.status === 'error') text = t('remoteHost.status.error', { code: s.error || '?' });
 	else text = t('remoteHost.status.' + s.status);
 	if (s.sessions > 0) text += ' ' + t('remoteHost.status.session', { count: s.sessions });
 	$('#rh-status').textContent = text;
-	$('#rh-enable-rdp').hidden = s.status !== 'rdp_off';
+	$('#rh-enable-rdp').hidden = !(s.enabled && s.status === 'rdp_off');
 	const registered = s.status === 'ready' || s.status === 'rdp_off';
 	$('#rh-code-row').hidden = !registered;
 	$('#rh-code').textContent = s.code || '–';
@@ -683,9 +699,31 @@ function renderRemoteHost(s) {
 	$('#rh-open-row').hidden = !registered;
 	setSwitch($('#rh-open-toggle'), s.shareMode === 'open' && s.allowOpen);
 	$('#rh-open-toggle').disabled = !s.allowOpen;
-	$('#rh-open-desc').textContent = s.allowOpen ? t('remoteHost.openDesc') : t('remoteHost.openLocked');
-	$('#rh-warn-row').hidden = !(registered && s.builtInOpen === true);
+	$('#rh-open-desc').textContent = s.allowOpen ? t('remoteHost.openDesc') + (shareOn ? ' ' + t('screenShare.openNote') : '') : t('remoteHost.openLocked');
+	$('#rh-warn-row').hidden = !(s.enabled && registered && s.builtInOpen === true);
 	$('#rh-warn').textContent = t('remoteHost.builtInOpen');
+}
+
+/** Stage 7: the running session of "Bildschirm teilen" — who, how, since when; "Nur ansehen" and "Beenden". */
+function renderScreenSession(sess) {
+	const running = !!(sess && sess.state !== 'ended');
+	$('#ss-session-row').hidden = !running;
+	if (running) {
+		const name = sess.viewer || t('remoteHost.requestSomebody');
+		const control = sess.mode === 'control';
+		$('#ss-session-title').textContent = sess.state === 'live' ? t('screenShare.connected', { name }) : (sess.state === 'waiting' ? t('screenShare.waiting', { name }) : t('screenShare.connecting'));
+		const parts = [t(control ? 'screenShare.modeControl' : 'screenShare.modeView')];
+		if (sess.since) parts.push(t('screenShare.since', { time: rhTime(new Date(sess.since).toISOString()) }));
+		parts.push(t('screenShare.notRecorded'));
+		if (sess.paused) parts.push(t('screenShare.barPaused'));
+		$('#ss-session-desc').textContent = parts.join(' · ');
+		$('#ss-view-only').hidden = !control;
+	} else if (sess && ssLast && ssLast.state !== 'ended' && sess.requestId === ssLast.requestId) {
+		// the end, once: a new code is on its way
+		if (sess.reason === 'failed') showToast(t('screenShare.failed'), 'error');
+		else showToast(t('screenShare.ended'), 'success');
+	}
+	ssLast = sess || null;
 }
 
 function closeRequestDialog() {
@@ -699,9 +737,11 @@ function showRequestDialog(r) {
 	if (!r) { closeRequestDialog(); return; }
 	rhRequest = r;
 	const name = (r.from && r.from.name) || t('remoteHost.requestSomebody');
-	$('#rh-req-title').textContent = t('remoteHost.requestTitle', { name });
-	const app = r.via === 'app';
-	$('#rh-req-desc').textContent = t(app ? 'remoteHost.requestControlApp' : (r.mode === 'view' ? 'remoteHost.requestView' : 'remoteHost.requestControl'));
+	// stage 7: a request for the screen — "… möchte deinen Bildschirm sehen (und steuern)"
+	const screenKind = r.kind === 'screen';
+	$('#rh-req-title').textContent = screenKind ? t(r.mode === 'view' ? 'screenShare.requestView' : 'screenShare.requestControl', { name }) : t('remoteHost.requestTitle', { name });
+	const app = r.via === 'app' && !screenKind;
+	$('#rh-req-desc').textContent = screenKind ? t('screenShare.requestDesc') : t(app ? 'remoteHost.requestControlApp' : (r.mode === 'view' ? 'remoteHost.requestView' : 'remoteHost.requestControl'));
 	// "Nur ansehen" only in the browser (an app session cannot only watch); a view request needs no "steuern"
 	$('#rh-req-view').hidden = app;
 	$('#rh-req-allow').hidden = !app && r.mode === 'view';
@@ -741,6 +781,15 @@ if (remoteHostApi) {
 	$('#rh-req-deny').addEventListener('click', () => answerRequest('deny'));
 	$('#rh-req-view').addEventListener('click', () => answerRequest('allow', 'view'));
 	$('#rh-req-allow').addEventListener('click', () => answerRequest('allow', rhRequest && rhRequest.mode === 'view' ? 'view' : 'control'));
+	// stage 7: "Bildschirm teilen"
+	bindSwitch($('#ss-toggle'), async (on) => {
+		try { renderRemoteHost(await remoteHostApi.setScreen(on)); } catch (err) {
+			showToast(t('screenShare.switchFailed', { error: (err && err.message) || '' }), 'error');
+			renderRemoteHost(rhState);
+		}
+	});
+	$('#ss-stop').addEventListener('click', async () => { renderRemoteHost(await remoteHostApi.screenStop()); });
+	$('#ss-view-only').addEventListener('click', async () => { renderRemoteHost(await remoteHostApi.screenViewOnly()); });
 }
 
 // ══════════════════════════════════════════════════════════

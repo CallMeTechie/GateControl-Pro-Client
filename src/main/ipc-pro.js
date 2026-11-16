@@ -33,7 +33,9 @@ const { driveOnDemandChannels } = require('./drive-ondemand');
  * @param {object} [ctx.remoteHost] - ./remote-host.js (remote-host:* channels, Fernzugriff)
  * @returns {string[]} registered channels
  */
-const REMOTE_HOST_CHANNELS = ['remote-host:status', 'remote-host:share', 'remote-host:decide', 'remote-host:new-code', 'remote-host:enable-rdp'];
+const REMOTE_HOST_CHANNELS = ['remote-host:status', 'remote-host:share', 'remote-host:decide', 'remote-host:new-code', 'remote-host:enable-rdp',
+  // stage 7: "Bildschirm teilen"
+  'remote-host:screen', 'remote-host:screen-stop', 'remote-host:screen-view-only'];
 
 /** The remote-host:* channels; without the service each answers "off". */
 function remoteHostChannels(rh) {

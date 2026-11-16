@@ -4832,5 +4832,35 @@
       "error": "Anmelden bei Fernzugriff fehlgeschlagen ({{ code }}).",
       "session": "Gerade verbunden: {{ count }} Sitzung(en)."
     }
+  },
+  "screenShare": {
+    "label": "Bildschirm teilen",
+    "desc": "Für Hilfe: Jemand sieht deinen Bildschirm und darf ihn nach deiner Bestätigung steuern",
+    "unavailable": "Der Server kann „Bildschirm teilen“ noch nicht (Fernzugriff 1.5 und ein neueres GateControl nötig).",
+    "homeTitle": "Windows Home kann keinen Remote Desktop anbieten",
+    "homeDesc": "Nutze „Bildschirm teilen“. Das geht mit jeder Windows-Ausgabe und meldet niemanden ab.",
+    "statusReady": "Angemeldet bei Fernzugriff für „Bildschirm teilen“. Zugriff nur mit dem Code unten und deiner Bestätigung.",
+    "openNote": "Beim Bildschirm fragt der PC trotzdem jedes Mal.",
+    "connected": "{{ name }} ist verbunden",
+    "waiting": "Warte auf {{ name }} …",
+    "connecting": "Bildschirm teilen startet …",
+    "modeControl": "Ansehen und steuern",
+    "modeView": "Nur ansehen",
+    "since": "seit {{ time }}",
+    "notRecorded": "nicht aufgezeichnet",
+    "viewOnly": "Nur ansehen",
+    "stop": "Beenden",
+    "barView": "{{ name }} sieht deinen Bildschirm",
+    "barControl": "{{ name }} steuert deinen Bildschirm",
+    "barWaiting": "Bildschirm teilen – warte auf {{ name }}",
+    "barConnecting": "Bildschirm teilen startet …",
+    "barPaused": "angehalten (Windows-Abfrage oder Sperrbildschirm)",
+    "barLabel": "Fernzugriff: Bildschirm wird geteilt",
+    "requestView": "{{ name }} möchte deinen Bildschirm sehen",
+    "requestControl": "{{ name }} möchte deinen Bildschirm sehen und steuern",
+    "requestDesc": "Bildschirm teilen – im Browser. Solange jemand verbunden ist, siehst du oben am Bildschirm eine Leiste mit „Beenden“.",
+    "ended": "Sitzung beendet. Neuer Code bereit.",
+    "failed": "Bildschirm teilen hat nicht geklappt. Neuer Code bereit.",
+    "switchFailed": "„Bildschirm teilen“ ließ sich nicht umschalten: {{ error }}"
   }
 }

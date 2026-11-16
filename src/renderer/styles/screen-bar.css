@@ -1,0 +1,20 @@
+/* GateControl – Fernzugriff stage 7: the bar at the top while "Bildschirm teilen" runs (screen-bar.html).
+   Red like the phone's bar (draft „Lena Vogt steuert deinen Bildschirm · 03:41 · Beenden“), the app's font. */
+@font-face { font-family: 'Instrument Sans'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/instrument-sans-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Instrument Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/instrument-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/jetbrains-mono-latin-500-normal.woff2') format('woff2'); }
+
+html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; height: 100%; user-select: none; -webkit-user-select: none; }
+body { display: flex; align-items: center; justify-content: center; font: 600 13px 'Instrument Sans', system-ui, sans-serif; }
+.sb { display: inline-flex; align-items: center; gap: 10px; max-width: calc(100% - 8px); height: 36px; padding: 0 6px 0 14px; border-radius: 10px;
+	background: #B9471A; color: #FFFFFF; box-shadow: 0 6px 20px rgba(0, 0, 0, .35); box-sizing: border-box; }
+.sb.sb-control { background: #C2410C; }
+.sb-ic { flex: none; }
+.sb-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sb-time { font: 500 12px 'JetBrains Mono', ui-monospace, Consolas, monospace; opacity: .85; flex: none; }
+.sb-btn { flex: none; height: 26px; padding: 0 12px; border: 0; border-radius: 7px; font: 700 12px 'Instrument Sans', system-ui, sans-serif; cursor: pointer;
+	background: rgba(255, 255, 255, .22); color: #FFFFFF; }
+.sb-btn:hover { background: rgba(255, 255, 255, .32); }
+.sb-btn:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 1px; }
+.sb-btn-ghost { background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .55); }
+.sb-btn:disabled { opacity: .6; cursor: default; }

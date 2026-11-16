@@ -4832,5 +4832,35 @@
       "error": "Registering with Remote access failed ({{ code }}).",
       "session": "Connected now: {{ count }} session(s)."
     }
+  },
+  "screenShare": {
+    "label": "Share screen",
+    "desc": "For help: someone sees your screen and may control it after you confirm",
+    "unavailable": "The server cannot do “Share screen” yet (Remote access 1.5 and a newer GateControl needed).",
+    "homeTitle": "Windows Home cannot offer Remote Desktop",
+    "homeDesc": "Use “Share screen”. It works with every Windows edition and signs nobody off.",
+    "statusReady": "Registered with Remote access for “Share screen”. Access only with the code below and your confirmation.",
+    "openNote": "For the screen the PC asks every time all the same.",
+    "connected": "{{ name }} is connected",
+    "waiting": "Waiting for {{ name }} …",
+    "connecting": "Share screen is starting …",
+    "modeControl": "View and control",
+    "modeView": "View only",
+    "since": "since {{ time }}",
+    "notRecorded": "not recorded",
+    "viewOnly": "View only",
+    "stop": "Stop",
+    "barView": "{{ name }} is viewing your screen",
+    "barControl": "{{ name }} is controlling your screen",
+    "barWaiting": "Share screen – waiting for {{ name }}",
+    "barConnecting": "Share screen is starting …",
+    "barPaused": "paused (Windows prompt or lock screen)",
+    "barLabel": "Remote access: the screen is shared",
+    "requestView": "{{ name }} wants to see your screen",
+    "requestControl": "{{ name }} wants to see and control your screen",
+    "requestDesc": "Share screen – in the browser. While someone is connected you see a bar at the top of the screen with “Stop”.",
+    "ended": "Session ended. New code ready.",
+    "failed": "Share screen did not work. New code ready.",
+    "switchFailed": "“Share screen” could not be switched: {{ error }}"
   }
 }

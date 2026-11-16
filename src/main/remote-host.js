@@ -14,6 +14,12 @@
  *
  * Renderer channels: remote-host:status / :share / :decide / :new-code / :enable-rdp;
  * events remote-host:state (status()) and remote-host:request (the question, or null).
+ *
+ * Stage 7 (plugin 1.5): the second switch "Bildschirm teilen" (also on Windows Home) — core ScreenShare sends this
+ * PC's picture through GateControl's relay and, after "Ansehen und steuern" here, takes the helper's mouse and keyboard
+ * (ScreenInput, SendInput). While a session runs, a bar at the top of the shared display (./screen-bar.js) says who
+ * watches or controls, with "Nur ansehen" and "Beenden". Channels remote-host:screen (on/off), :screen-stop,
+ * :screen-view-only; the switch is kept in the store (remote.screenShare).
  */
 
 /**
@@ -29,13 +35,19 @@
  * @param {Function} [o.showWindow]
  * @param {string} [o.appVersion]
  * @param {object} [o.host] - a RemoteHost (tests)
+ * @param {object} [o.electron] - { BrowserWindow, desktopCapturer, screen, session, powerMonitor } for "Bildschirm teilen"
+ * @param {object} [o.bar] - the bar at the top (./screen-bar.js setupScreenBar), or null
  */
-function setupRemoteHost({ core, apiClient, log, store, notificationCenter = null, rdpAllow, configPath, getMainWindow, showWindow = () => {}, appVersion = null, host = null }) {
+function setupRemoteHost({ core, apiClient, log, store, notificationCenter = null, rdpAllow, configPath, getMainWindow, showWindow = () => {}, appVersion = null, host = null,
+  electron = null, bar = null }) {
+  const api = host ? null : new core.RemoteHostApi({ apiClient, log });
+  const screenShare = host ? null : createScreenShare({ core, api, apiClient, electron, log, appVersion });
   const rh = host || new core.RemoteHost({
-    api: new core.RemoteHostApi({ apiClient, log }),
+    api,
     firewall: new core.RdpSessionFirewall({ log }),
     info: new core.WindowsRdpInfo({ log }),
     notificationCenter,
+    screenShare,
     log,
     appVersion,
   });
@@ -63,6 +75,10 @@ function setupRemoteHost({ core, apiClient, log, store, notificationCenter = nul
     if (s.enabled && s.status === 'unavailable') useLegacy(true);
     else if (s.enabled && s.status !== 'starting' && s.status !== 'offline') useLegacy(false);
     send('remote-host:state', { ...s, legacy });
+    // stage 7: the bar at the top follows the session of "Bildschirm teilen"
+    if (bar) {
+      try { bar.update(s.screen ? s.screen.session : null); } catch (err) { log.warn('Screen bar failed:', err.message); }
+    }
   });
   rh.on('request', (r) => {
     send('remote-host:request', r);
@@ -86,10 +102,18 @@ function setupRemoteHost({ core, apiClient, log, store, notificationCenter = nul
     return status();
   }
 
-  /** App start: clean up the session rules, register when the switch is on. */
+  /** Stage 7: "Bildschirm teilen" on / off (kept for the next start). */
+  async function setScreen(on) {
+    store.set('remote.screenShare', on === true);
+    await rh.setScreen(on === true);
+    return status();
+  }
+
+  /** App start: clean up the session rules, register when a switch is on. */
   async function start() {
     const wanted = store.get('tunnel.rdpAllow', false) === true;
-    const s = await rh.start(wanted);
+    const screenWanted = store.get('remote.screenShare', false) === true;
+    const s = await rh.start(wanted, screenWanted);
     if (wanted && s.status === 'unavailable') {
       legacy = true;
       await rdpAllow.reconcile({ wanted: true, configPath }).catch((err) => log.warn('RDP allow reconcile failed:', err.message));
@@ -106,14 +130,42 @@ function setupRemoteHost({ core, apiClient, log, store, notificationCenter = nul
     'remote-host:status': () => status(),
     'remote-host:share': async (_, mode) => { await rh.setShareMode(mode === 'open' ? 'open' : 'code'); return status(); },
     'remote-host:decide': async (_, requestId, decision, mode) => {
-      await rh.decide(String(requestId || ''), decision === 'allow' ? 'allow' : 'deny', mode === 'view' ? 'view' : 'control');
+      // control only when the person chose it now ("Ansehen und steuern"); anything else is view
+      await rh.decide(String(requestId || ''), decision === 'allow' ? 'allow' : 'deny', mode === 'control' ? 'control' : 'view');
       return status();
     },
     'remote-host:new-code': async () => { await rh.newCode(); return status(); },
     'remote-host:enable-rdp': async () => { await rh.enableRdpInWindows(); return status(); },
+    'remote-host:screen': async (_, on) => setScreen(on === true),
+    'remote-host:screen-stop': () => { rh.screenStop(); return status(); },
+    'remote-host:screen-view-only': () => { rh.screenViewOnly(); return status(); },
   };
 
-  return { host: rh, toggle, start, status, channels, stop: () => rh.stop() };
+  // the bar's buttons act at once (input stops before anything goes over the network)
+  if (bar) {
+    bar.onStop(() => rh.screenStop());
+    bar.onViewOnly(() => rh.screenViewOnly());
+  }
+
+  return { host: rh, toggle, start, status, channels, setScreen, stop: () => { rh.stop(); if (bar) bar.destroy(); if (screenShare) screenShare.capture.destroy(); } };
 }
 
-module.exports = { setupRemoteHost };
+/**
+ * Stage 7: the core parts of "Bildschirm teilen" — capture (a hidden window), SendInput (koffi), the sender of
+ * gc-screen.v1. null without Electron or a core that does not have them (the switch is then not offered).
+ */
+function createScreenShare({ core, api, apiClient, electron, log, appVersion }) {
+  if (!electron || !core.ScreenShare || !core.ScreenCapture || !core.ScreenInput) return null;
+  let locked = false;
+  try {
+    if (electron.powerMonitor) {
+      electron.powerMonitor.on('lock-screen', () => { locked = true; });
+      electron.powerMonitor.on('unlock-screen', () => { locked = false; });
+    }
+  } catch { /* no lock events */ }
+  const capture = new core.ScreenCapture({ electron, log });
+  const input = new core.ScreenInput({ backend: core.ScreenInput.createWin32Backend(), isLocked: () => locked, log });
+  return new core.ScreenShare({ api, capture, input, serverUrl: () => (apiClient && apiClient.serverUrl) || '', appVersion, log });
+}
+
+module.exports = { setupRemoteHost, createScreenShare };

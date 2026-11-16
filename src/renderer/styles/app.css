@@ -631,3 +631,6 @@ body:not([data-conn="connected"]) .show-connected { display: none !important; }
 
 /* Fernzugriff: the code of this PC (Settings › Sicherheit) */
 .rh-code { font-size: 26px; font-weight: 700; letter-spacing: .12em; font-variant-numeric: tabular-nums; margin: 4px 0; }
+/* Fernzugriff stage 7: the hint of Windows Home, the running session of "Bildschirm teilen" (indented like a sub row) */
+.rh-home-ic { color: var(--warn); display: inline-flex; flex: none; }
+.set-row.ss-session { padding-left: 20px; }
