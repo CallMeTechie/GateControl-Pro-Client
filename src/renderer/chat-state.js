@@ -909,8 +909,8 @@
 	}
 
 	/**
-	 * „Bild · grill.jpg – folgt; in WhatsApp ansehen“, 1.15: „… – wird geladen …“ / „… – zu groß für deinen Server – in
-	 * WhatsApp ansehen“ / „… – gesperrt – Schadsoftware gefunden“; „Nachricht dieser Art …“; null without placeholder.
+	 * „Bild · grill.jpg – folgt; in WhatsApp ansehen“, 1.15: „… – wird geladen …“ / „… – zu groß, öffne es in WhatsApp“
+	 * (1.24) / „… – gesperrt – Schadsoftware gefunden“; „Nachricht dieser Art …“; null without placeholder.
 	 */
 	function placeholderText(m, c0, t) {
 		const c = isPerson(c0) ? msgConv(c0, m) : c0;
