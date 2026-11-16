@@ -90,6 +90,7 @@ const { createVault } = require('./vault-mock');
 const { createDrive } = require('./drive-mock');
 const { createMail } = require('./mail-mock');
 const { createGateDrop } = require('./gatedrop-mock');
+const { createTerm } = require('./term-mock');
 const { createSignin } = require('./signin-mock');
 const { createDoor } = require('./door-mock');
 const { createNotes } = require('./notes-mock');
@@ -162,6 +163,7 @@ async function startMockServer() {
   let drive = null; // support/drive-mock.js, null = no Drive plugin
   let mail = null; // support/mail-mock.js, null = no Mail plugin
   let gatedrop = null; // support/gatedrop-mock.js, null = no GateDrop plugin
+  let term = null; // support/term-mock.js, null = no SSH terminal of „Fernzugriff“
   let signin = null; // support/signin-mock.js, null = server before company sign-in (404)
   let door = null; // support/door-mock.js, null = no Tür & Kamera plugin
   let notes = null; // support/notes-mock.js, null = no Notizen & Aufgaben plugin
@@ -308,6 +310,9 @@ async function startMockServer() {
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
 
+      // „Fernzugriff“ stage 3: the plugin's SSH devices and the core's term-token (support/term-mock.js).
+      if (term && term.handle({ method: req.method, url, raw }, res)) return undefined;
+
       // DNS protection of the VPN devices: the plugin's app API (status, pause, resume).
       if (dns && dns.handle({ method: req.method, route, raw, query: Object.fromEntries(url.searchParams) }, json)) return undefined;
 
@@ -439,6 +444,11 @@ async function startMockServer() {
     });
   });
 
+  // the WebSocket of the SSH terminal (only with setTerm())
+  server.on('upgrade', (req, socket, head) => {
+    if (!term || !term.upgrade(req, socket, head)) socket.destroy();
+  });
+
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
 
@@ -503,6 +513,11 @@ async function startMockServer() {
       gatedrop = await createGateDrop(opts);
       return gatedrop;
     },
+    /** Enables the SSH terminal of „Fernzugriff“ (support/term-mock.js, the core's test server on its own port); returns it. */
+    async setTerm() {
+      term = await createTerm();
+      return term;
+    },
     /** Enables the Vault plugin (support/vault-mock.js, the core's fake server); returns its state. */
     setVault(opts = {}) {
       vault = createVault(opts);
@@ -542,6 +557,7 @@ async function startMockServer() {
       if (mail) mail.close().catch(() => {});
       if (notes) notes.close().catch(() => {});
       if (gatedrop) gatedrop.close().catch(() => {});
+      if (term) term.close().catch(() => {});
       for (const res of streams) res.end();
       streams.clear();
       server.closeAllConnections?.();
