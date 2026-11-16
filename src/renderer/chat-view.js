@@ -272,6 +272,7 @@
 			chans: [],
 			chanSum: null,
 			chanView: false,
+			chanNet: null, // Messenger 1.24: the service chosen by the chips of the channels page (null: all)
 			// Messenger 1.21 (chat_people): the open suggestions („… ist vielleicht …“), the source chip of the open person
 			sugg: [],
 			way: null,
@@ -770,10 +771,18 @@
 			clear(refs.rows);
 			const nets = CS.channelNetworks(S.chans);
 			refs.rows.appendChild(el('div', { class: 'cv-chan-head' }, [
-				iconBtn('back', t('chat.common.back'), () => { S.chanView = false; S.q = ''; refs.q.value = ''; renderList(); }, 'cv-ib-flat'),
+				iconBtn('back', t('chat.common.back'), () => { S.chanView = false; S.chanNet = null; S.q = ''; refs.q.value = ''; renderList(); }, 'cv-ib-flat'),
 				el('span', { class: 'cv-chan-ht' }, [el('b', { text: t('chat.ch.title') }), nets ? el('small', { text: nets }) : null]),
 			]));
-			const list = CS.filterChannels(S.chans, S.q, c);
+			// Messenger 1.24: one chip per service once channels of two services are there (Alle · WhatsApp · Telegram)
+			const services = CS.bridgeNetworks(S.chans);
+			if (S.chanNet && !services.some((n) => n.id === S.chanNet)) S.chanNet = null;
+			if (services.length > 1) {
+				refs.rows.appendChild(el('div', { class: 'cv-chips cv-chan-chips', role: 'group', 'aria-label': t('chat.ch.filter') }, [[null, t('chat.filter.all')], ...services.map((n) => [n.id, n.label])].map(([id, label]) => el('button', {
+					type: 'button', class: 'cv-chip-btn', 'data-net': id || 'all', 'aria-pressed': S.chanNet === id ? 'true' : 'false', on: { click: () => { S.chanNet = id; renderList(); } },
+				}, [id ? netLogo(id, { size: 9, cls: 'cv-chip-net' }) : null, el('span', { text: label })]))));
+			}
+			const list = CS.filterChannels(CS.channelsOf(S.chans, S.chanNet), S.q, c);
 			for (const cv of list) refs.rows.appendChild(rowEl(cv, c));
 			if (list.length && !S.q) refs.rows.appendChild(el('p', { class: 'cv-chan-hint', text: t('chat.ch.pageHint') }));
 			refs.listEmpty.hidden = list.length > 0;
@@ -875,6 +884,9 @@
 			const on = S.cur === c.id;
 			const time = CS.listTime(c.lastMessage ? c.lastMessage.createdAt : (c.updatedAt || c.createdAt), cx);
 			const name = CS.title(c, t);
+			// Messenger 1.24: „Bot“ behind the name, „340 Mitglieder · …“ before the preview of a large group
+			const ex = CS.bridgeExtras(c, t);
+			const pvText = ex.members && !pv.typing ? `${ex.members} · ${pv.text}` : pv.text;
 			const b = el('button', { type: 'button', class: `cv-row${pinned ? ' is-list-pinned' : ''}${on ? ' is-on' : ''}${c.unread ? ' is-unread' : ''}`, role: 'listitem', 'aria-current': on ? 'true' : 'false', 'data-id': String(c.id), on: { click: () => openChat(c.id) } }, [
 				rowAvatar(c),
 				el('span', { class: 'cv-row-tx' }, [
@@ -884,18 +896,19 @@
 						CS.isPerson(c) ? wayLogos(c, 9) : null,
 						// Messenger 1.6: a notice channel (GateControl's notifications of one source, read only)
 						CS.isNotice(c) ? el('span', { class: 'cv-chip cv-row-tag', text: t('chat.notice.tag') }) : null,
+						ex.bot ? el('span', { class: 'cv-chip cv-row-tag', 'data-tag': 'bot', text: t('chat.bc.bot') }) : null,
 						pinned ? el('span', { class: 'cv-row-pin' }, [icon('pin', 12)]) : null,
 						c.muted ? el('span', { class: 'cv-row-muted', title: t('chat.mute.always') }, [icon('bellOff', 12)]) : null,
 						el('span', { class: 'cv-row-time', text: time }),
 					]),
 					el('span', { class: 'cv-row-bottom' }, [
-						el('span', { class: `cv-row-pv${pv.typing ? ' is-typing' : ''}`, text: pv.text }),
+						el('span', { class: `cv-row-pv${pv.typing ? ' is-typing' : ''}`, text: pvText }),
 						c.outbox ? el('span', { class: 'cv-row-out', title: t('chat.outbox.waiting') }, [icon('clock', 12)]) : null,
 						c.unread ? el('span', { class: `cv-badge${c.muted ? ' is-muted' : ''}`, text: String(c.unread) }) : null,
 					]),
 				]),
 			]);
-			b.setAttribute('aria-label', `${name}${c.unread ? `, ${c.unread}` : ''}: ${pv.text}`);
+			b.setAttribute('aria-label', `${name}${ex.bot ? ` (${t('chat.bc.bot')})` : ''}${c.unread ? `, ${c.unread}` : ''}: ${pvText}`);
 			return b;
 		}
 

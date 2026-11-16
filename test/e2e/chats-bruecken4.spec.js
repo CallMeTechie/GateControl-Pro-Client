@@ -153,7 +153,7 @@ test.describe('chats – files, pictures and a new chat by number over a bridge 
     const ph = cv.locator('.cv-bc-ph');
     await expect(ph.nth(0)).toHaveText('Bild · grill.jpg – wird geladen …');
     await expect(ph.nth(0)).toHaveAttribute('data-state', 'loading');
-    await expect(ph.nth(1)).toHaveText('Video · urlaub.mp4 – zu groß für deinen Server – in WhatsApp ansehen');
+    await expect(ph.nth(1)).toHaveText('Video · urlaub.mp4 – zu groß, öffne es in WhatsApp');
     await expect(ph.nth(2)).toHaveText('Datei · rechnung.exe – gesperrt – Schadsoftware gefunden');
     await expect(cv.locator('.cv-loc b')).toHaveText('Grillplatz am See');
     await expect(cv.locator('.cv-loc-map')).toBeVisible();
