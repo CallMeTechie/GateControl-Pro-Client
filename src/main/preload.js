@@ -25,6 +25,24 @@ api.getDeviceId = () => ipcRenderer.invoke('app:device-id');
 api.dns.checkSystem = () => ipcRenderer.invoke('dns:check-system');
 
 // ══════════════════════════════════════════════════════
+//  PRO: Fernzugriff – this PC as a host (Settings › Sicherheit)
+// ══════════════════════════════════════════════════════
+
+api.remoteHost = {
+  /** { enabled, status, code, codeExpiresAt, shareMode, allowOpen, request, sessions, builtInOpen, legacy } */
+  status: () => ipcRenderer.invoke('remote-host:status'),
+  /** "Ohne Code für Berechtigte": 'open' | 'code' */
+  setShareMode: (mode) => ipcRenderer.invoke('remote-host:share', mode),
+  /** answer of an incoming request: decision 'allow' | 'deny', mode 'view' | 'control' */
+  decide: (requestId, decision, mode) => ipcRenderer.invoke('remote-host:decide', requestId, decision, mode),
+  newCode: () => ipcRenderer.invoke('remote-host:new-code'),
+  /** "In Windows einschalten" */
+  enableRdp: () => ipcRenderer.invoke('remote-host:enable-rdp'),
+  onState: (cb) => subscribe('remote-host:state', cb),
+  onRequest: (cb) => subscribe('remote-host:request', cb),
+};
+
+// ══════════════════════════════════════════════════════
 //  PRO: RDP Channels
 // ══════════════════════════════════════════════════════
 

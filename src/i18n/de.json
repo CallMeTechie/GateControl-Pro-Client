@@ -4797,5 +4797,40 @@
     },
     "readOnlyList": "Du kannst diese Liste ansehen, aber nicht ändern.",
     "readOnlyTask": "In dieser Liste darfst du nur lesen."
+  },
+  "remoteHost": {
+    "enableRdp": "In Windows einschalten",
+    "codeTitle": "Code für den Zugriff",
+    "codeHint": "Gilt einmal, bis {{ time }}. Nach jeder Sitzung gibt es einen neuen.",
+    "codeNone": "Kein Code – „Neuer Code“ holt einen.",
+    "newCode": "Neuer Code",
+    "openLabel": "Ohne Code für Berechtigte",
+    "openDesc": "Personen, denen du den PC freigegeben hast, verbinden sich ohne Code und ohne Nachfrage.",
+    "openLocked": "Ein Administrator hat „Ohne Code“ für diesen PC gesperrt.",
+    "builtInOpen": "Achtung: Die Windows-Regel „Remote Desktop“ ist aktiv und lässt 3389 aus allen Netzwerken zu. Schalte sie in der Windows-Firewall aus, damit nur die Sitzungen von Fernzugriff durchkommen.",
+    "requestLabel": "Fernzugriff",
+    "requestTitle": "{{ name }} möchte sich verbinden",
+    "requestSomebody": "Jemand",
+    "requestControl": "Ansehen und steuern – im Browser.",
+    "requestControlApp": "Remote Desktop aus der GateControl-App.",
+    "requestView": "Nur ansehen – im Browser.",
+    "requestTimer": "{{ seconds }} s",
+    "deny": "Ablehnen",
+    "allowView": "Nur ansehen",
+    "allowControl": "Ansehen und steuern",
+    "allow": "Erlauben",
+    "decideFailed": "Die Antwort kam nicht an: {{ error }}",
+    "status": {
+      "starting": "PC wird bei Fernzugriff angemeldet …",
+      "ready": "Angemeldet bei Fernzugriff. Zugriff nur mit dem Code unten und deiner Bestätigung.",
+      "readyOpen": "Angemeldet bei Fernzugriff. Berechtigte verbinden sich ohne Code.",
+      "rdp_off": "Remote Desktop ist in Windows ausgeschaltet.",
+      "home": "Windows Home kann keinen Remote Desktop anbieten. Nutze „Bildschirm teilen“.",
+      "no_right": "Du darfst keine eigenen Geräte freigeben. Das Recht setzt ein Administrator.",
+      "unavailable": "Der Server hat Fernzugriff 1.1 nicht: Port 3389 ist wie bisher für das ganze VPN offen.",
+      "offline": "Server nicht erreichbar – neuer Versuch in einer Minute.",
+      "error": "Anmelden bei Fernzugriff fehlgeschlagen ({{ code }}).",
+      "session": "Gerade verbunden: {{ count }} Sitzung(en)."
+    }
   }
 }

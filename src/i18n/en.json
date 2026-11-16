@@ -4797,5 +4797,40 @@
     },
     "readOnlyList": "You can look at this list but not change it.",
     "readOnlyTask": "You may only read in this list."
+  },
+  "remoteHost": {
+    "enableRdp": "Switch on in Windows",
+    "codeTitle": "Code for access",
+    "codeHint": "Works once, until {{ time }}. There is a new one after every session.",
+    "codeNone": "No code – “New code” gets one.",
+    "newCode": "New code",
+    "openLabel": "Without a code for permitted people",
+    "openDesc": "People you shared the PC with connect without a code and without a question.",
+    "openLocked": "An administrator locked “without a code” for this PC.",
+    "builtInOpen": "Note: the Windows rule “Remote Desktop” is active and lets 3389 in from every network. Switch it off in the Windows Firewall so that only the sessions of Remote access get through.",
+    "requestLabel": "Remote access",
+    "requestTitle": "{{ name }} wants to connect",
+    "requestSomebody": "Somebody",
+    "requestControl": "View and control – in the browser.",
+    "requestControlApp": "Remote Desktop from the GateControl app.",
+    "requestView": "View only – in the browser.",
+    "requestTimer": "{{ seconds }} s",
+    "deny": "Decline",
+    "allowView": "View only",
+    "allowControl": "View and control",
+    "allow": "Allow",
+    "decideFailed": "The answer did not arrive: {{ error }}",
+    "status": {
+      "starting": "Registering the PC with Remote access …",
+      "ready": "Registered with Remote access. Access only with the code below and your confirmation.",
+      "readyOpen": "Registered with Remote access. Permitted people connect without a code.",
+      "rdp_off": "Remote Desktop is switched off in Windows.",
+      "home": "Windows Home cannot offer Remote Desktop. Use “Share screen”.",
+      "no_right": "You may not share own devices. An administrator sets the right.",
+      "unavailable": "The server does not have Remote access 1.1: port 3389 stays open for the whole VPN as before.",
+      "offline": "Server not reachable – trying again in a minute.",
+      "error": "Registering with Remote access failed ({{ code }}).",
+      "session": "Connected now: {{ count }} session(s)."
+    }
   }
 }

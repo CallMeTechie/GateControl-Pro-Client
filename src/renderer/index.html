@@ -557,6 +557,28 @@
 								<div class="grow"><div class="set-row-title" data-i18n="rdpAllow.label">Remote Desktop erlauben</div><div class="set-row-desc" data-i18n="rdpAllow.desc">RDP-Zugriff (Port 3389) über VPN freigeben</div></div>
 								<button class="sw" id="rdp-allow-toggle" type="button" role="switch" aria-checked="false" data-i18n-aria-label="rdpAllow.label" aria-label="Remote Desktop erlauben"><span></span></button>
 							</div>
+							<!-- Fernzugriff: this PC as a host (plugin gatecontrol-remote 1.1) -->
+							<div id="rh-panel" hidden>
+								<div class="set-row">
+									<div class="grow"><div class="set-row-desc" id="rh-status" aria-live="polite"></div></div>
+									<button class="btn btn-sec" id="rh-enable-rdp" type="button" data-i18n="remoteHost.enableRdp" hidden>In Windows einschalten</button>
+								</div>
+								<div class="set-row" id="rh-code-row" hidden>
+									<div class="grow">
+										<div class="set-row-title" data-i18n="remoteHost.codeTitle">Code für den Zugriff</div>
+										<div class="rh-code" id="rh-code" aria-live="polite"></div>
+										<div class="set-row-desc" id="rh-code-hint"></div>
+									</div>
+									<button class="btn btn-sec" id="rh-new-code" type="button" data-i18n="remoteHost.newCode">Neuer Code</button>
+								</div>
+								<div class="set-row" id="rh-open-row" hidden>
+									<div class="grow"><div class="set-row-title" data-i18n="remoteHost.openLabel">Ohne Code für Berechtigte</div><div class="set-row-desc" id="rh-open-desc" data-i18n="remoteHost.openDesc">Personen, denen du den PC freigegeben hast, verbinden sich ohne Code und ohne Nachfrage.</div></div>
+									<button class="sw" id="rh-open-toggle" type="button" role="switch" aria-checked="false" data-i18n-aria-label="remoteHost.openLabel" aria-label="Ohne Code für Berechtigte"><span></span></button>
+								</div>
+								<div class="set-row" id="rh-warn-row" hidden>
+									<div class="grow"><div class="set-row-desc" id="rh-warn"></div></div>
+								</div>
+							</div>
 						</section>
 					</div>
 
@@ -825,6 +847,22 @@
 					</div>
 				</div>
 			</section>
+
+			<!-- ═════════ FERNZUGRIFF: INCOMING REQUEST ═════════ -->
+			<div class="scrim" id="rh-request-dialog" hidden>
+				<div class="card dialog" role="alertdialog" aria-modal="true" aria-labelledby="rh-req-title" aria-describedby="rh-req-desc">
+					<div class="dlg-head">
+						<div class="grow" style="min-width:0"><div class="lbl" data-i18n="remoteHost.requestLabel">Fernzugriff</div><h2 class="disp dlg-title" id="rh-req-title"></h2></div>
+						<span class="chip c-warn" id="rh-req-timer"></span>
+					</div>
+					<div class="dlg-status" id="rh-req-desc"></div>
+					<div class="dlg-actions">
+						<button class="btn btn-ghost" id="rh-req-deny" type="button" data-i18n="remoteHost.deny">Ablehnen</button>
+						<button class="btn btn-sec" id="rh-req-view" type="button" data-i18n="remoteHost.allowView">Nur ansehen</button>
+						<button class="btn btn-pri" id="rh-req-allow" type="button" data-i18n="remoteHost.allowControl">Ansehen und steuern</button>
+					</div>
+				</div>
+			</div>
 
 			<!-- ═════════ RDP DIALOG ═════════ -->
 			<div class="scrim" id="rdp-dialog" hidden>

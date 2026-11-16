@@ -645,7 +645,103 @@ bindSwitch(el.killswitchToggle, setKillSwitch);
 bindSwitch(el.rdpAllowToggle, (enabled) => {
 	state.rdpAllow = enabled;
 	rdpAllow.toggle(enabled);
+	$('#rh-panel').hidden = !enabled || !remoteHostApi;
 });
+
+// ══════════════════════════════════════════════════════════
+//  FERNZUGRIFF: THIS PC AS A HOST (plugin gatecontrol-remote 1.1)
+//  The switch above registers the PC; code, "Ohne Code für Berechtigte"
+//  and the question of an incoming request.
+// ══════════════════════════════════════════════════════════
+const remoteHostApi = window.gatecontrol.remoteHost || null;
+let rhState = null;
+let rhRequest = null;
+let rhTimer = null;
+
+function rhTime(iso) {
+	const d = new Date(iso);
+	return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function renderRemoteHost(s) {
+	if (!s) return;
+	rhState = s;
+	const panel = $('#rh-panel');
+	panel.hidden = !s.enabled;
+	if (!s.enabled) return;
+	let text;
+	if (s.status === 'ready') text = t(s.shareMode === 'open' && s.allowOpen ? 'remoteHost.status.readyOpen' : 'remoteHost.status.ready');
+	else if (s.status === 'error') text = t('remoteHost.status.error', { code: s.error || '?' });
+	else text = t('remoteHost.status.' + s.status);
+	if (s.sessions > 0) text += ' ' + t('remoteHost.status.session', { count: s.sessions });
+	$('#rh-status').textContent = text;
+	$('#rh-enable-rdp').hidden = s.status !== 'rdp_off';
+	const registered = s.status === 'ready' || s.status === 'rdp_off';
+	$('#rh-code-row').hidden = !registered;
+	$('#rh-code').textContent = s.code || '–';
+	$('#rh-code-hint').textContent = s.code ? t('remoteHost.codeHint', { time: rhTime(s.codeExpiresAt) }) : t('remoteHost.codeNone');
+	$('#rh-open-row').hidden = !registered;
+	setSwitch($('#rh-open-toggle'), s.shareMode === 'open' && s.allowOpen);
+	$('#rh-open-toggle').disabled = !s.allowOpen;
+	$('#rh-open-desc').textContent = s.allowOpen ? t('remoteHost.openDesc') : t('remoteHost.openLocked');
+	$('#rh-warn-row').hidden = !(registered && s.builtInOpen === true);
+	$('#rh-warn').textContent = t('remoteHost.builtInOpen');
+}
+
+function closeRequestDialog() {
+	clearInterval(rhTimer);
+	rhTimer = null;
+	rhRequest = null;
+	$('#rh-request-dialog').hidden = true;
+}
+
+function showRequestDialog(r) {
+	if (!r) { closeRequestDialog(); return; }
+	rhRequest = r;
+	const name = (r.from && r.from.name) || t('remoteHost.requestSomebody');
+	$('#rh-req-title').textContent = t('remoteHost.requestTitle', { name });
+	const app = r.via === 'app';
+	$('#rh-req-desc').textContent = t(app ? 'remoteHost.requestControlApp' : (r.mode === 'view' ? 'remoteHost.requestView' : 'remoteHost.requestControl'));
+	// "Nur ansehen" only in the browser (an app session cannot only watch); a view request needs no "steuern"
+	$('#rh-req-view').hidden = app;
+	$('#rh-req-allow').hidden = !app && r.mode === 'view';
+	$('#rh-req-allow').textContent = t(app ? 'remoteHost.allow' : 'remoteHost.allowControl');
+	const tick = () => {
+		const left = Math.max(0, Math.round((Date.parse(r.expiresAt) - Date.now()) / 1000));
+		$('#rh-req-timer').textContent = t('remoteHost.requestTimer', { seconds: left });
+		if (left <= 0) closeRequestDialog();
+	};
+	clearInterval(rhTimer);
+	rhTimer = setInterval(tick, 1000);
+	tick();
+	$('#rh-request-dialog').hidden = false;
+	$('#rh-req-deny').focus();
+}
+
+async function answerRequest(decision, mode) {
+	const r = rhRequest;
+	if (!r) return;
+	closeRequestDialog();
+	try {
+		renderRemoteHost(await remoteHostApi.decide(r.requestId, decision, mode));
+	} catch (err) {
+		showToast(t('remoteHost.decideFailed', { error: (err && err.message) || '' }), 'error');
+	}
+}
+
+if (remoteHostApi) {
+	remoteHostApi.onState(renderRemoteHost);
+	remoteHostApi.onRequest(showRequestDialog);
+	remoteHostApi.status().then((s) => { renderRemoteHost(s); if (s && s.request) showRequestDialog(s.request); }).catch(() => {});
+	$('#rh-new-code').addEventListener('click', async () => { renderRemoteHost(await remoteHostApi.newCode()); });
+	$('#rh-enable-rdp').addEventListener('click', async () => { renderRemoteHost(await remoteHostApi.enableRdp()); });
+	bindSwitch($('#rh-open-toggle'), async (on) => {
+		try { renderRemoteHost(await remoteHostApi.setShareMode(on ? 'open' : 'code')); } catch { renderRemoteHost(rhState); }
+	});
+	$('#rh-req-deny').addEventListener('click', () => answerRequest('deny'));
+	$('#rh-req-view').addEventListener('click', () => answerRequest('allow', 'view'));
+	$('#rh-req-allow').addEventListener('click', () => answerRequest('allow', rhRequest && rhRequest.mode === 'view' ? 'view' : 'control'));
+}
 
 // ══════════════════════════════════════════════════════════
 //  BANDWIDTH GRAPH (SVG)

@@ -32,6 +32,7 @@ writeCrashLog('STARTUP', 'Process starting...');
 let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut, protocol;
 let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, connectSteps, waitForHandshake, explorerShell, userPath, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, updateToast;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
+let setupRemoteHost; // ./remote-host.js (loaded with the other services)
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
 let createUpdateInstaller, installErrorText;
@@ -75,6 +76,8 @@ try {
   ({ validateWgConfig } = require('@gatecontrol/client-core'));
   KillSwitch = require('@gatecontrol/client-core/src/services/killswitch');
   RdpAllowSvc = require('@gatecontrol/client-core/src/services/rdp-allow');
+  // Fernzugriff stage 2: the switch registers this PC with the plugin (./remote-host.js)
+  ({ setupRemoteHost } = require('./remote-host'));
 
   writeCrashLog('IMPORT', 'Loading pro services...');
   ApiClientPro = require('../services/api-client-pro');
@@ -314,6 +317,7 @@ let tray = null;
 let wgService = null;
 let killSwitchSvc = null;
 let rdpAllowSvc = null;
+let remoteHost = null; // Fernzugriff: this PC as a host (./remote-host.js)
 let apiClient = null;
 let connectionMonitor = null;
 let updater = null;
@@ -972,11 +976,13 @@ async function toggleKillSwitch(enabled) {
 }
 
 async function toggleRdpAllow(enabled) {
-  store.set('tunnel.rdpAllow', enabled);
-  if (enabled) {
-    await rdpAllowSvc.enable(WG_CONFIG_FILE);
+  if (remoteHost) {
+    // registers the PC with "Fernzugriff" (3389 per session); without the plugin the old way
+    await remoteHost.toggle(enabled);
   } else {
-    await rdpAllowSvc.disable();
+    store.set('tunnel.rdpAllow', enabled);
+    if (enabled) await rdpAllowSvc.enable(WG_CONFIG_FILE);
+    else await rdpAllowSvc.disable();
   }
   broadcastState(tunnelState.connected ? 'connected' : 'disconnected');
 }
@@ -1347,6 +1353,16 @@ function initializeServices() {
   wgService = new WireGuardService(log, { resourcesPath: RESOURCES_PATH });
   killSwitchSvc = new KillSwitch(log, { edition: 'pro' });
   rdpAllowSvc = new RdpAllowSvc(log, { edition: 'pro' });
+  try {
+    const core = require('@gatecontrol/client-core');
+    remoteHost = setupRemoteHost && core.RemoteHost ? setupRemoteHost({
+      core, apiClient, log, store, notificationCenter: notifications?.notificationCenter, rdpAllow: rdpAllowSvc, configPath: WG_CONFIG_FILE,
+      getMainWindow: () => mainWindow, showWindow, appVersion: require('../../package.json').version,
+    }) : null;
+  } catch (err) {
+    log.warn('Remote host not available:', err.message);
+    remoteHost = null;
+  }
 
   rdpManager = new RdpManager({
     apiClient,
@@ -1606,6 +1622,8 @@ function registerIpcHandlers() {
     gatedropExplorer: gatedrop?.explorer,
     // drive-ondemand:* (Pro, ./ipc-pro.js)
     driveOnDemand,
+    // remote-host:* (Pro, ./ipc-pro.js — Fernzugriff, this PC as a host)
+    remoteHost,
     // Result of a bundle the admin requested (the button shows its own toast).
     onSupportResult: (res) => {
       if (!res || res.cancelled) return;
@@ -1654,9 +1672,14 @@ app.on('ready', () => {
   // Regel GateControl_RDP_Allow_In_3389 entfernt der Core nur, wenn die
   // Community-Edition weder installiert ist noch laeuft.
   const rdpWanted = store.get('tunnel.rdpAllow', false);
-  rdpAllowSvc.reconcile({ wanted: rdpWanted, configPath: WG_CONFIG_FILE })
-    .then((active) => { if (rdpWanted && !active) store.set('tunnel.rdpAllow', false); })
-    .catch(err => log.warn('RDP allow reconcile failed:', err.message));
+  if (remoteHost) {
+    // Fernzugriff: session rules cleaned up, the PC registered again; the old rule only without the plugin
+    remoteHost.start().catch((err) => log.warn('Remote host start failed:', err.message));
+  } else {
+    rdpAllowSvc.reconcile({ wanted: rdpWanted, configPath: WG_CONFIG_FILE })
+      .then((active) => { if (rdpWanted && !active) store.set('tunnel.rdpAllow', false); })
+      .catch(err => log.warn('RDP allow reconcile failed:', err.message));
+  }
   // Last known client policy first (works offline), then ask the server.
   applyClientPolicy({ startup: true }).catch((err) => log.warn('Client policy apply failed:', err.message));
   clientPolicy.start();
