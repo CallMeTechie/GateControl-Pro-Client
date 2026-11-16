@@ -38,6 +38,14 @@
  * of the phone app (live event bridge.handoff, GET bridges → handoff with
  * target windows): the section opens right at the QR code, once per handoff.
  *
+ * Messenger 1.24 (Brücken Stufe 7b, GateControl with gc.bridges version 11):
+ * Telegram — „Noch nicht eingerichtet (Admin).“ while an administrator has
+ * not entered the application id (networks[].needs 'app', no link); else the
+ * QR code preselected, „Mit Telefonnummer“ the second tab: the number, the
+ * code from the Telegram app, the password of the two-step verification (also
+ * after the QR code). A wrong code or password is asked again (step.retry).
+ * Code and password live only in their field until they are sent, once.
+ *
  * Different from the phone apps: no "open WhatsApp" button (the phone is
  * another device), "Code kopieren" instead. Leaving the section or the
  * settings page drops a login that was not finished; up to three waiting
@@ -64,7 +72,7 @@
 		let loading = false;
 		let loadError = null;
 		// what shows: { name: 'overview' } | { name: 'notes', net, saving } |
-		// { name: 'link', net, flow, phase: 'starting' | 'phone' | 'code' | 'qr' | 'failed', … }
+		// { name: 'link', net, flow, phase: 'starting' | 'phone' | 'secret' | 'code' | 'qr' | 'failed', … }
 		let view = { name: 'overview' };
 		let run = null;           // the link in progress: { net, process, stopped, timer }
 		let copied = null;        // the code put on the clipboard (cleared again when it is still there)
@@ -122,7 +130,7 @@
 
 		function begin(id) {
 			const n = network(id);
-			if (!n || !n.allowed) return;
+			if (!n || !n.allowed || n.needs) return;
 			// Messenger 1.23: the first way the service offers (Signal: the QR code only)
 			if (n.consent) link(id, CS.linkFlows(n)[0]);
 			else { view = { name: 'notes', net: id, saving: false }; paint(); }
@@ -184,6 +192,11 @@
 			} else if (step.type === 'phone') {
 				mine.waitingOn = null;
 				view = { ...view, phase: 'phone', stepId: step.id, fieldId: step.fieldId, sending: false, error: null, draft: '' };
+				paint();
+			} else if (step.type === 'secret') {
+				// Messenger 1.24 (Telegram): the code from the Telegram app, the password of the two-step verification
+				mine.waitingOn = null;
+				view = { ...view, phase: 'secret', kind: step.kind === 'password' ? 'password' : 'code', stepId: step.id, fieldId: step.fieldId, retry: step.retry === true, sending: false, draft: '' };
 				paint();
 			} else if (step.type === 'code' || step.type === 'qr') {
 				// WhatsApp renews the QR code a few times: each one is a new step
@@ -295,6 +308,21 @@
 				return;
 			}
 			v.draft = '';
+			if (!r || r.ok === false) { failed(mine, r); return; }
+			onStep(mine, r.login);
+		}
+
+		/** Messenger 1.24: the code or the password goes to the bridge once — the field is emptied whatever comes back. */
+		async function submitSecret(raw) {
+			const v = view;
+			const mine = run;
+			const value = String(raw || '');
+			if (v.name !== 'link' || v.phase !== 'secret' || v.sending || !mine || !value.trim()) return;
+			v.sending = true;
+			v.draft = '';
+			paint();
+			const r = await call(api.bridgeStep(mine.net, mine.process, v.stepId, { secret: v.kind === 'code' ? value.trim() : value, fieldId: v.fieldId }));
+			if (mine.stopped || view !== v) return;
 			if (!r || r.ok === false) { failed(mine, r); return; }
 			onStep(mine, r.login);
 		}
@@ -491,7 +519,8 @@
 			const flows = CS.linkFlows(network(v.net));
 			if (flows.length < 2) return null;
 			return el('div', { class: 'cv-chips cv-br-tabs', role: 'tablist', 'aria-label': t('chat.br.flows') }, flows.map((f) => el('button', {
-				type: 'button', role: 'tab', class: 'cv-chip-btn', 'data-flow': f, 'aria-pressed': f === v.flow ? 'true' : 'false', 'aria-selected': f === v.flow ? 'true' : 'false', text: t(`chat.br.flow_${f}`),
+				type: 'button', role: 'tab', class: 'cv-chip-btn', 'data-flow': f, 'aria-pressed': f === v.flow ? 'true' : 'false', 'aria-selected': f === v.flow ? 'true' : 'false',
+				text: CS.flowLabel(v.net, f, t),
 				on: { click: () => { if (f !== v.flow) link(v.net, f); } },
 			})));
 		}
@@ -520,11 +549,40 @@
 			return s;
 		}
 
+		/** A text of a service of its own (`<key>_<net>`), else the general one. */
+		const own = (key, net, vars) => (t(`${key}_${net}`) !== `${key}_${net}` ? t(`${key}_${net}`, vars) : t(key, vars));
+
+		/** Messenger 1.24: the step for Telegram's code or password (a wrong one: said above the field). */
+		function secretView(v) {
+			const pw = v.kind === 'password';
+			const input = el('input', { type: pw ? 'password' : 'text', class: 'inp cv-br-phone cv-br-secret', id: 'cv-br-secret', autocomplete: pw ? 'current-password' : 'one-time-code', inputmode: pw ? null : 'numeric', spellcheck: 'false', maxlength: '256' });
+			input.value = v.draft || '';
+			input.disabled = !!v.sending;
+			// kept for a redraw of the page only — never stored, gone once it was sent or the page left
+			input.addEventListener('input', () => { v.draft = input.value; });
+			input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitSecret(input.value); } });
+			const go = el('button', { type: 'button', class: 'btn btn-pri', 'data-act': pw ? 'sign-in' : 'next', text: t(pw ? 'chat.br.pw_send' : 'chat.br.next_step'), disabled: v.sending ? true : null, on: { click: () => submitSecret(input.value) } });
+			const other = !pw && v.flow === 'phone' ? el('button', { type: 'button', class: 'btn btn-sec', 'data-act': 'other-number', text: t('chat.br.other_number'), disabled: v.sending ? true : null, on: { click: () => link(v.net, 'phone') } }) : el('span');
+			const out = [
+				v.retry ? el('p', { class: 'cv-br-err', role: 'alert', text: t(pw ? 'chat.br.pw_wrong' : 'chat.br.code_wrong') }) : null,
+				// the texts of the service (only Telegram asks for a code or a password today)
+				el('label', { class: 'cv-field cv-br-field', for: 'cv-br-secret' }, [el('span', { text: t(`chat.br.${pw ? 'pw' : 'code'}_label_${v.net}`) }), input]),
+				el('p', { class: 'cv-note', text: t(`chat.br.${pw ? 'pw' : 'code'}_hint_${v.net}`) }),
+			];
+			if (!pw && t(`chat.br.code_warn_${v.net}`) !== `chat.br.code_warn_${v.net}`) out.push(note('lock', t(`chat.br.code_warn_${v.net}`)));
+			out.push(el('div', { class: 'cv-br-bar' }, [other, go]));
+			setTimeout(() => { if (input.isConnected && !input.disabled) input.focus(); }, 30);
+			return out;
+		}
+
 		function linkView() {
 			const v = view;
-			const out = [head(t('chat.br.link_title', { name: name(v.net) })), tabs(v)];
+			const sub = t(`chat.br.link_sub_${v.net}`);
+			const out = [head(t('chat.br.link_title', { name: name(v.net) })), sub !== `chat.br.link_sub_${v.net}` ? el('p', { class: 'cv-dim cv-br-sub', text: sub }) : null, tabs(v)];
 			if (v.phase === 'starting') {
 				out.push(el('p', { class: 'cv-dim', text: t('chat.loading') }));
+			} else if (v.phase === 'secret') {
+				out.push(...secretView(v));
 			} else if (v.phase === 'phone') {
 				const input = el('input', { type: 'tel', class: 'inp cv-br-phone', id: 'cv-br-phone', inputmode: 'tel', autocomplete: 'off', spellcheck: 'false', maxlength: '40', placeholder: t('chat.br.phone_placeholder') });
 				input.value = v.draft || '';
@@ -534,9 +592,9 @@
 				const go = el('button', { type: 'button', class: 'btn btn-pri', 'data-act': 'code', text: t('chat.br.get_code'), disabled: v.sending ? true : null, on: { click: () => submitPhone(input.value) } });
 				input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitPhone(input.value); } });
 				out.push(
-					el('label', { class: 'cv-field cv-br-field', for: 'cv-br-phone' }, [el('span', { text: t('chat.br.phone_label', { name: name(v.net) }) }), input]),
+					el('label', { class: 'cv-field cv-br-field', for: 'cv-br-phone' }, [el('span', { text: own('chat.br.phone_label', v.net, { name: name(v.net) }) }), input]),
 					v.error ? el('p', { class: 'cv-br-err', role: 'alert', text: t(v.error === 'invalid' ? 'chat.br.phone_invalid' : 'chat.br.phone_refused') }) : null,
-					el('p', { class: 'cv-note', text: t('chat.br.phone_hint') }),
+					el('p', { class: 'cv-note', text: own('chat.br.phone_hint', v.net) }),
 					el('div', { class: 'cv-br-bar' }, [el('span'), go]),
 				);
 				setTimeout(() => { if (input.isConnected && !input.disabled) input.focus(); }, 30);

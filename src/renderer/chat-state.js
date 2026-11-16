@@ -806,9 +806,9 @@
 
 	// ── Messenger 1.14: chats over a bridge (another messenger, today WhatsApp) ──
 
-	// Messenger 1.23: Signal
-	const BRIDGE_NAMES = { whatsapp: 'WhatsApp', signal: 'Signal' };
-	const BRIDGE_MARKS = { whatsapp: 'WA', signal: 'SG' };
+	// Messenger 1.23: Signal; 1.24: Telegram
+	const BRIDGE_NAMES = { whatsapp: 'WhatsApp', signal: 'Signal', telegram: 'Telegram' };
+	const BRIDGE_MARKS = { whatsapp: 'WA', signal: 'SG', telegram: 'TG' };
 	const BRIDGE_STATES = ['unreachable', 'logged_out', 'unlinked', 'locked', 'off'];
 	// Messenger 1.23: view_once — a picture or video of Signal to be seen once (opened only there)
 	const PLACEHOLDER_KINDS = ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported', 'view_once'];
@@ -1201,6 +1201,8 @@
 		gatecontrol: ['M12 2.5l7.5 2.8v5.9c0 4.8-3.2 8.6-7.5 10.3-4.3-1.7-7.5-5.5-7.5-10.3V5.3z'],
 		// Messenger 1.23: Signal — a speech bubble in a dashed ring (NET_RINGS), like the portal's
 		signal: ['M12 5.6a6.4 6.4 0 0 0-5.5 9.7l-.8 3 3.1-.7A6.4 6.4 0 1 0 12 5.6z'],
+		// Messenger 1.24: Telegram — the paper plane, like the portal's
+		telegram: ['M3.4 11.3l15.9-6.2c.8-.3 1.4.2 1.2 1.3l-2.7 12.7c-.2.9-.7 1.1-1.5.7l-4.1-3-2 1.9c-.2.2-.4.4-.8.4l.3-4.2 7.7-7c.3-.3-.1-.4-.5-.2l-9.5 6-4.1-1.3c-.9-.3-.9-.9.2-1.3z'],
 	};
 	const NET_RINGS = new Set(['signal']);
 	const NET_OTHER = ['M4 5h16v11H9l-5 4z'];
@@ -1455,14 +1457,37 @@
 	// ── Messenger 1.13: „Verknüpfte Dienste“ ──
 
 	// Messenger 1.23: Signal — a linked device, by QR code only (`networks[].flows`), three steps beside the code
-	const LINK_NOTES = { whatsapp: ['unofficial', 'ban', 'phone', 'e2e'], signal: ['unofficial', 'phone', 'e2e', 'safety'] };
+	// Messenger 1.24: Telegram — the QR code preselected on a computer, the number (code, password) the second way
+	const LINK_NOTES = { whatsapp: ['unofficial', 'ban', 'phone', 'e2e'], signal: ['unofficial', 'phone', 'e2e', 'safety'], telegram: ['unofficial', 'e2e'] };
 	const LINK_FLOWS = ['phone', 'qr'];
-	const LINK_QR_STEPS = { whatsapp: 2, signal: 3 };
+	const LINK_FLOWS_OF = { telegram: ['qr', 'phone'] };
+	const LINK_QR_STEPS = { whatsapp: 2, signal: 3, telegram: 3 };
 
-	/** The ways in a service offers (GET bridges → networks[].flows; an older plugin names none: both). */
+	/** The ways in a service offers (GET bridges → networks[].flows; an older plugin names none: both), the first preselected. */
 	function linkFlows(n) {
-		const f = n && Array.isArray(n.flows) ? LINK_FLOWS.filter((x) => n.flows.includes(x)) : [];
-		return f.length ? f : LINK_FLOWS.slice();
+		const order = (n && LINK_FLOWS_OF[str(n.id)]) || LINK_FLOWS;
+		const f = n && Array.isArray(n.flows) ? order.filter((x) => n.flows.includes(x)) : [];
+		return f.length ? f : order.slice();
+	}
+
+	/** Messenger 1.24: the name of a way of a service („Mit Telefonnummer“ for Telegram, else „Mit Code“ / „QR-Code“). */
+	function flowLabel(id, flow, t) {
+		const own = `chat.br.flow_${flow}_${str(id)}`;
+		return t(own) !== own ? t(own) : t(`chat.br.flow_${flow}`);
+	}
+
+	/** Messenger 1.24: the tag „Bot“ and the members of a large group („340 Mitglieder“) of a chat over a bridge. */
+	function bridgeExtras(c, t) {
+		const b = bridgeOf(c);
+		if (!b) return { bot: false, members: '' };
+		const n = Number.isSafeInteger(b.members) && b.members >= 200 ? b.members : 0;
+		return { bot: b.bot === true && c.kind === 'direct', members: n ? t('chat.bc.members', { n }) : '' };
+	}
+
+	/** Messenger 1.24: the channels of one service (`net` null: all) — the chips of the channels page. */
+	function channelsOf(list, net) {
+		const items = Array.isArray(list) ? list : [];
+		return net ? items.filter((c) => { const b = bridgeOf(c); return !!b && b.network === net; }) : items;
 	}
 
 	/** The steps beside the QR code of a service: chat.br.qr_step1_<net> … */
@@ -1500,13 +1525,20 @@
 
 	/**
 	 * A service in the overview → { state, sub, pill: { text, tone }, link, unlink, again: null | { hint, link, forget } }.
-	 * state: unreachable | starting | linked | logged_out | error | locked | none (like the portal's page).
+	 * state: unreachable | starting | linked | logged_out | error | locked | none | noapp (1.24: Telegram not set up yet).
 	 */
 	function linkedRow(n, ctx) {
 		const t = ctx.t;
 		const l = mainLogin(n);
 		const name = bridgeName(n.id);
 		const out = { id: n.id, name, mark: bridgeMark(n.id), login: l, state: 'none', sub: '', pill: null, link: false, unlink: false, again: null, phone: null };
+		// Messenger 1.24: Telegram is not set up on the server yet — an administrator enters the application id first
+		if (n.needs === 'app') {
+			out.state = 'noapp';
+			out.sub = t('chat.br.sub_noapp');
+			out.pill = { text: t('chat.br.pill_noapp'), tone: 'off' };
+			return out;
+		}
 		if (n.state === 'unreachable' || n.state === 'starting' || n.state === 'failed') {
 			out.state = n.state === 'starting' ? 'starting' : 'unreachable';
 			out.sub = t(n.state === 'starting' ? 'chat.br.sub_starting' : 'chat.br.sub_unreachable');
@@ -2111,7 +2143,7 @@
 		bridgeOutKind, bridgeTakesFiles, bridgeMediaRefusal, bridgeImageType, voiceMime, mediaTypeText,
 		NEW_CHAT_CC, newChatNumber, formatNumber, newChatServices, newChatState, newChatErrorState,
 		CONTACTS_NET, CONTACTS_FIRST, phoneKindText, contactPhonesSub, firstName, contactsShown, contactsService, contactChatError, startedLine,
-		LINK_NOTES, LINK_FLOWS, LINK_QR_STEPS, linkFlows, qrSteps, historyLine, linkable, mainLogin, linkDate, linkedRow, isOutdated, phoneWarning, historyRow, historyLabel, isBridgePush, HISTORY_DAYS, linkErrorText, codeChars, qrPath,
+		LINK_NOTES, LINK_FLOWS, LINK_QR_STEPS, linkFlows, flowLabel, bridgeExtras, channelsOf, qrSteps, historyLine, linkable, mainLogin, linkDate, linkedRow, isOutdated, phoneWarning, historyRow, historyLabel, isBridgePush, HISTORY_DAYS, linkErrorText, codeChars, qrPath,
 		storyDurations,
 		ownStoryStats,
 		ownStoryLine,
