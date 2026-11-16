@@ -109,11 +109,16 @@
 		return out.toUpperCase() || '?';
 	}
 
+	// Messenger 1.23: a timer of another messenger (Signal) may hold any number of seconds — the largest whole unit
+	const DIS_UNITS = [['weeks', 604800], ['days', 86400], ['hours', 3600], ['minutes', 60]];
+
 	function disLabel(s, t) {
 		if (!s) return t('chat.dis.off');
 		const key = `chat.dis.${s}`;
 		const v = t(key);
-		return v !== key ? v : t('chat.dis.seconds', { n: s });
+		if (v !== key) return v;
+		const u = Number.isSafeInteger(s) && s > 0 ? DIS_UNITS.find(([, n]) => s % n === 0) : null;
+		return u ? t(`chat.dis.${u[0]}`, { n: s / u[1] }) : t('chat.dis.seconds', { n: s });
 	}
 
 	/** Text of a system message (`kind: system`), like the portal. */
@@ -130,7 +135,13 @@
 			case 'member_left': return t('chat.sys.left', { name: nameOf(c, s.userId, ctx) });
 			case 'title': return t('chat.sys.title', { name: who, title: s.title || '' });
 			case 'avatar': return t('chat.sys.avatar', { name: who });
-			case 'disappearing': return s.seconds ? t('chat.sys.disOn', { name: who, time: disLabel(s.seconds, t) }) : t('chat.sys.disOff', { name: who });
+			// Messenger 1.23: changed in the other messenger (Signal) — `network`, nobody of GateControl did it
+			case 'disappearing':
+				if (by === null && s.network) {
+					const network = bridgeName(s.network);
+					return s.seconds ? t('chat.sys.disOnNet', { network, time: disLabel(s.seconds, t) }) : t('chat.sys.disOffNet', { network });
+				}
+				return s.seconds ? t('chat.sys.disOn', { name: who, time: disLabel(s.seconds, t) }) : t('chat.sys.disOff', { name: who });
 			// Messenger 1.1.0: the plugin handed its managed group over.
 			case 'released': return t('chat.sys.released');
 			// Messenger 1.4.0
@@ -795,10 +806,12 @@
 
 	// ── Messenger 1.14: chats over a bridge (another messenger, today WhatsApp) ──
 
-	const BRIDGE_NAMES = { whatsapp: 'WhatsApp' };
-	const BRIDGE_MARKS = { whatsapp: 'WA' };
+	// Messenger 1.23: Signal
+	const BRIDGE_NAMES = { whatsapp: 'WhatsApp', signal: 'Signal' };
+	const BRIDGE_MARKS = { whatsapp: 'WA', signal: 'SG' };
 	const BRIDGE_STATES = ['unreachable', 'logged_out', 'unlinked', 'locked', 'off'];
-	const PLACEHOLDER_KINDS = ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported'];
+	// Messenger 1.23: view_once — a picture or video of Signal to be seen once (opened only there)
+	const PLACEHOLDER_KINDS = ['image', 'video', 'audio', 'voice', 'file', 'sticker', 'location', 'unsupported', 'view_once'];
 	const FAIL_REASONS = ['bridge_error', 'unreachable', 'not_running', 'timeout', 'network_error', 'no_permission', 'too_old', 'unsupported', 'not_handled', 'bridge_unavailable', 'chat_closed'];
 
 	/** `bridge` of a conversation ({ network, label, state, closed, supports }) or null inside GateControl. */
@@ -905,6 +918,7 @@
 		if (!p) return null;
 		const network = bridgeLabel(c) || bridgeName(str(m.via).replace(/^bridge:/, ''));
 		if (p.kind === 'unsupported') return t('chat.bc.ph.unsupported', { network });
+		if (p.kind === 'view_once') return t('chat.bc.ph.view_once', { network });
 		// a location of the bridge: shown on the map (its label is the message's text)
 		if (p.geo) return t('chat.bc.ph.location');
 		const what = [t(`chat.bc.ph.${p.kind}`), p.name].filter(Boolean).join(' · ');
@@ -1185,13 +1199,16 @@
 	const NET_GLYPHS = {
 		whatsapp: ['M12 2.6a9.3 9.3 0 0 0-8 14l-1.3 4.8 4.9-1.3A9.3 9.3 0 1 0 12 2.6zm0 1.7a7.6 7.6 0 1 1-3.9 14.1l-.3-.2-2.9.8.8-2.8-.2-.3A7.6 7.6 0 0 1 12 4.3z', 'M9.2 7.6c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.4 0 .6l-.5.7c-.1.2-.2.3 0 .6.6 1 1.4 1.8 2.5 2.4.3.1.4.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.4.4.1.3 0 1-.3 1.4-.4.5-1.3 1-2 1-1 .1-2.3-.4-4-1.6-1.5-1.2-2.5-2.6-2.9-3.6-.4-1-.2-2 .5-2.8z'],
 		gatecontrol: ['M12 2.5l7.5 2.8v5.9c0 4.8-3.2 8.6-7.5 10.3-4.3-1.7-7.5-5.5-7.5-10.3V5.3z'],
+		// Messenger 1.23: Signal — a speech bubble in a dashed ring (NET_RINGS), like the portal's
+		signal: ['M12 5.6a6.4 6.4 0 0 0-5.5 9.7l-.8 3 3.1-.7A6.4 6.4 0 1 0 12 5.6z'],
 	};
+	const NET_RINGS = new Set(['signal']);
 	const NET_OTHER = ['M4 5h16v11H9l-5 4z'];
 
-	/** The logo of a network → { known, paths } (paths of a 24×24 glyph). */
+	/** The logo of a network → { known, paths, ring } (paths of a 24×24 glyph; ring: a dashed circle around it). */
 	function netGlyph(network) {
 		const known = Object.prototype.hasOwnProperty.call(NET_GLYPHS, str(network));
-		return { known, paths: known ? NET_GLYPHS[str(network)] : NET_OTHER };
+		return { known, paths: known ? NET_GLYPHS[str(network)] : NET_OTHER, ring: known && NET_RINGS.has(str(network)) };
 	}
 
 	// ── Messenger 1.15: files over a bridge ──
@@ -1299,13 +1316,16 @@
 	 * parents switched new chats off for the child (`newChat.reason: child_new_chat_off`). → [{ id, name, mark, state }]
 	 * with `state` the dialog's first state: input | loggedout | unlinked | unreach | locked | off.
 	 */
+	const NEW_CHAT_NETS = ['whatsapp'];
+
 	function newChatServices(bridges, me) {
 		if (!hasFeature(me, 'bridge_new_chat')) return [];
 		const b = bridges && typeof bridges === 'object' ? bridges : {};
 		if (b.available === false) return [];
 		const out = [];
 		for (const n of Array.isArray(b.networks) ? b.networks : []) {
-			if (!n || !linkable(n.id)) continue;
+			// Messenger 1.23: a chat by number only where this version has the dialog for it (WhatsApp; not Signal)
+			if (!n || !linkable(n.id) || !NEW_CHAT_NETS.includes(n.id)) continue;
 			const nc = n.newChat && typeof n.newChat === 'object' ? n.newChat : null;
 			if (nc && nc.reason === 'child_new_chat_off') continue;
 			const logins = Array.isArray(n.logins) ? n.logins : [];
@@ -1434,8 +1454,32 @@
 
 	// ── Messenger 1.13: „Verknüpfte Dienste“ ──
 
-	const LINK_NOTES = { whatsapp: ['unofficial', 'ban', 'phone', 'e2e'] };
+	// Messenger 1.23: Signal — a linked device, by QR code only (`networks[].flows`), three steps beside the code
+	const LINK_NOTES = { whatsapp: ['unofficial', 'ban', 'phone', 'e2e'], signal: ['unofficial', 'phone', 'e2e', 'safety'] };
 	const LINK_FLOWS = ['phone', 'qr'];
+	const LINK_QR_STEPS = { whatsapp: 2, signal: 3 };
+
+	/** The ways in a service offers (GET bridges → networks[].flows; an older plugin names none: both). */
+	function linkFlows(n) {
+		const f = n && Array.isArray(n.flows) ? LINK_FLOWS.filter((x) => n.flows.includes(x)) : [];
+		return f.length ? f : LINK_FLOWS.slice();
+	}
+
+	/** The steps beside the QR code of a service: chat.br.qr_step1_<net> … */
+	function qrSteps(id) {
+		const n = LINK_QR_STEPS[str(id)] || 2;
+		return Array.from({ length: n }, (_, i) => `chat.br.qr_step${i + 1}_${str(id)}`);
+	}
+
+	/**
+	 * Messenger 1.23: the history of a service that brings it only at the link (Signal, `history.phoneConfirms`):
+	 * „· Verlauf: 30 Tage, wird nachts geladen“ behind a linked row (only when the person wants history).
+	 */
+	function historyLine(n, h, t) {
+		const max = n && n.history && Number.isSafeInteger(n.history.maxDays) ? n.history.maxDays : null;
+		if (!max || !h || h.available !== true || h.days === 0) return '';
+		return t(Number.isSafeInteger(h.pending) && h.pending > 0 ? 'chat.br.hist_line_pending' : 'chat.br.hist_line', { n: max });
+	}
 	const LOGIN_ORDER = ['connected', 'connecting', 'error', 'logged_out', 'unknown'];
 
 	/** The services this version can link (it has their notes and steps); others are not offered. */
@@ -1470,7 +1514,7 @@
 		} else if (l && (l.state === 'connected' || l.state === 'connecting')) {
 			out.state = 'linked';
 			const date = linkDate(l.since, ctx.locale);
-			out.sub = [date ? t('chat.br.sub_linked_since', { date }) : t('chat.br.sub_linked'), l.name].filter(Boolean).join(' · ');
+			out.sub = [date ? t('chat.br.sub_linked_since', { date }) : t('chat.br.sub_linked'), l.name, historyLine(n, ctx.history, t)].filter(Boolean).join(' · ');
 			out.pill = isOutdated(n) ? { text: t('chat.br.pill_outdated'), tone: 'warn' } : { text: t('chat.br.pill_linked'), tone: 'ok' };
 			out.unlink = true;
 		} else if (l && l.state === 'logged_out') {
@@ -1534,7 +1578,7 @@
 	 * available, value, options: [{ value, label }] }. Switched off by the administrator: no choice, „Auf diesem Server
 	 * abgeschaltet“; `pending` adds „· N kommen heute Nacht“.
 	 */
-	function historyRow(h, t) {
+	function historyRow(h, t, nets) {
 		if (!h || typeof h !== 'object') return null;
 		const days = HISTORY_DAYS.includes(h.days) ? h.days : 30;
 		const opts = (Array.isArray(h.options) ? h.options : HISTORY_DAYS).filter((d) => HISTORY_DAYS.includes(d));
@@ -1542,6 +1586,9 @@
 		const available = h.available === true;
 		let sub = available ? t('chat.br.hist_sub', { choice: historyLabel(days, t) }) : t('chat.br.hist_admin_off');
 		if (available && Number.isSafeInteger(h.pending) && h.pending > 0) sub += ` · ${t('chat.br.hist_pending', { n: h.pending })}`;
+		// Messenger 1.23: a service that brings its history only at the link (Signal) — later there is nothing more
+		const once = (Array.isArray(nets) ? nets : []).find((n) => n && n.history && n.history.phoneConfirms === true);
+		if (once && available) sub += ` ${t('chat.br.hist_once', { name: bridgeName(once.id), n: once.history.maxDays || 30 })}`;
 		return { title: t('chat.br.hist_title'), sub, available, value: days, options: available ? list.map((d) => ({ value: d, label: historyLabel(d, t) })) : [] };
 	}
 
@@ -2064,7 +2111,7 @@
 		bridgeOutKind, bridgeTakesFiles, bridgeMediaRefusal, bridgeImageType, voiceMime, mediaTypeText,
 		NEW_CHAT_CC, newChatNumber, formatNumber, newChatServices, newChatState, newChatErrorState,
 		CONTACTS_NET, CONTACTS_FIRST, phoneKindText, contactPhonesSub, firstName, contactsShown, contactsService, contactChatError, startedLine,
-		LINK_NOTES, LINK_FLOWS, linkable, mainLogin, linkDate, linkedRow, isOutdated, phoneWarning, historyRow, historyLabel, isBridgePush, HISTORY_DAYS, linkErrorText, codeChars, qrPath,
+		LINK_NOTES, LINK_FLOWS, LINK_QR_STEPS, linkFlows, qrSteps, historyLine, linkable, mainLogin, linkDate, linkedRow, isOutdated, phoneWarning, historyRow, historyLabel, isBridgePush, HISTORY_DAYS, linkErrorText, codeChars, qrPath,
 		storyDurations,
 		ownStoryStats,
 		ownStoryLine,

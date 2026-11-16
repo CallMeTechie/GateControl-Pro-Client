@@ -628,9 +628,12 @@
 .cv-net-mark.is-sm { width: 15px; height: 15px; }
 .cv-net-mark svg, .cv-br-mark svg, .cv-ncc-svc svg, .cv-chip-net svg { display: block; }
 .is-net-whatsapp.cv-net-mark, .is-net-whatsapp.cv-ncc-svc { background: #1F8F5A; color: #fff; }
+/* Messenger 1.23: Signal white on its blue */
+.is-net-signal.cv-net-mark, .is-net-signal.cv-ncc-svc { background: #3A76F0; color: #fff; }
 .is-net-gatecontrol.cv-net-mark, .is-net-gatecontrol.cv-ncc-svc { background: var(--acc); color: var(--acc-on); }
 .cv-chip-net { display: inline-flex; flex-shrink: 0; color: var(--muted); }
 .cv-chip-net.is-net-whatsapp { color: #1F8F5A; }
+.cv-chip-net.is-net-signal { color: #3A76F0; }
 .cv-chip-net.is-net-gatecontrol { color: var(--acc-t); }
 .cv-info .cv-net-mark, .cv-head .cv-net-mark { box-shadow: 0 0 0 2px var(--panel); }
 /* bars under the header: the state of the link, the line "läuft über …", the explanation of the first visit */
@@ -665,6 +668,10 @@
 .cv-br-row, .cv-br-again { flex-wrap: wrap; }
 .cv-br-mark { flex-shrink: 0; width: 34px; height: 34px; box-sizing: border-box; border-radius: 10px; border: 1px solid var(--line2); background: var(--panel2); color: var(--muted); display: inline-flex; align-items: center; justify-content: center; }
 .cv-br-mark.is-net-whatsapp { color: #1F8F5A; }
+.cv-br-mark.is-net-signal { color: #3A76F0; }
+/* Messenger 1.23: „Signal ist verknüpft …“ after the note about the phone's history question */
+.cv-br-ok { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--text); }
+.cv-br-ok > svg { color: var(--acc-t); }
 .cv-br-row .cv-pref-tx, .cv-br-again .cv-pref-tx { flex: 1 1 220px; min-width: 0; }
 .cv-br-act { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
 .cv-br-again { padding-left: 58px; }
@@ -849,6 +856,7 @@
 .cv-way { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; flex-shrink: 0; border-radius: 50%; background: var(--line2); color: var(--text); vertical-align: middle; }
 .cv-way svg { display: block; }
 .cv-way.is-net-whatsapp { background: #1F8F5A; color: #fff; }
+.cv-way.is-net-signal { background: #3A76F0; color: #fff; }
 .cv-way.is-net-gatecontrol { background: var(--acc); color: var(--acc-on); }
 .cv-msg-way { width: 13px; height: 13px; }
 .cv-head-ways { display: inline-flex; align-items: center; gap: 5px; }

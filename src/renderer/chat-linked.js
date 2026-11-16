@@ -27,6 +27,17 @@
  * lassen → PUT bridges/recognition). Answered before (here or in „Mein
  * Profil“): the overview at once.
  *
+ * Messenger 1.23 (Brücken Stufe 7a, GateControl with gc.bridges version 10):
+ * Signal — a linked device, by QR code only (networks[].flows: no tabs then;
+ * the code renews itself every 45 s, the page draws each new one). After the
+ * scan the phone asks whether it hands the history over (history.
+ * phoneConfirms): „Signal fragt jetzt auf deinem Handy …“, with „Du hast „Die
+ * letzten 30 Tage“ gewählt …“ when the person wants history, then the
+ * question „Erkennen“ of that service (networks[].recognition, PUT
+ * bridges/recognition { allowed, network }). „Im Windows-Client fortsetzen“
+ * of the phone app (live event bridge.handoff, GET bridges → handoff with
+ * target windows): the section opens right at the QR code, once per handoff.
+ *
  * Different from the phone apps: no "open WhatsApp" button (the phone is
  * another device), "Code kopieren" instead. Leaving the section or the
  * settings page drops a login that was not finished; up to three waiting
@@ -59,8 +70,12 @@
 		let copied = null;        // the code put on the clipboard (cleared again when it is still there)
 		let copyTimer = null;
 		let histSaving = false;   // PUT bridges/history in flight
+		let handoffSeen = null;   // Messenger 1.23: the handoff opened last („<network> <expiresAt>“), never twice
+		let pendingHandoff = null; // … and one that came while the section was not drawn
 
 		const name = (id) => CS.bridgeName(id);
+		// Messenger 1.23: the texts of the question „Erkennen“ of a further service end in _<network>
+		const sfx = (net) => (net === 'whatsapp' ? '' : `_${net}`);
 		const network = (id) => (info && Array.isArray(info.networks) ? info.networks.find((n) => n.id === id) : null) || null;
 		const call = (p) => p.catch((e) => ({ ok: false, code: 'failed', error: e && e.message }));
 		const pill = (p) => (p ? el('span', { class: `cv-chip cv-br-pill is-${p.tone}`, text: p.text }) : null);
@@ -74,7 +89,23 @@
 			const r = await call(api.bridges());
 			loading = false;
 			if (r && r.ok !== false && r.bridges) { info = r.bridges; loadError = null; } else loadError = r || { code: 'failed' };
+			if (takeHandoff(pendingHandoff || (info && info.handoff))) return;
 			paint();
+		}
+
+		/**
+		 * Messenger 1.23: a phone sent the linking step of a service here („Im Windows-Client fortsetzen“) — straight to
+		 * the QR code (the notes first when they were not confirmed yet), once per handoff. → true when it opened.
+		 */
+		function takeHandoff(h) {
+			pendingHandoff = null;
+			if (!h || h.target !== 'windows' || view.name !== 'overview' || run) return false;
+			const key = `${h.network} ${h.expiresAt || ''}`;
+			const n = network(h.network);
+			if (handoffSeen === key || !n || !CS.linkable(n.id) || !n.allowed || n.state !== 'running') return false;
+			handoffSeen = key;
+			begin(n.id);
+			return true;
 		}
 
 		// ── The link itself ─────────────────────────────────
@@ -92,7 +123,8 @@
 		function begin(id) {
 			const n = network(id);
 			if (!n || !n.allowed) return;
-			if (n.consent) link(id, 'phone');
+			// Messenger 1.23: the first way the service offers (Signal: the QR code only)
+			if (n.consent) link(id, CS.linkFlows(n)[0]);
 			else { view = { name: 'notes', net: id, saving: false }; paint(); }
 		}
 
@@ -106,7 +138,7 @@
 			if (!r || r.ok === false) { v.saving = false; refused(r); return; }
 			const n = network(v.net);
 			if (n) n.consent = true;
-			link(v.net, 'phone');
+			link(v.net, CS.linkFlows(n)[0]);
 		}
 
 		async function link(id, flow) {
@@ -139,9 +171,14 @@
 			} else if (step.type === 'complete') {
 				run = null;
 				mine.stopped = true;
-				toast(t('chat.br.linked', { name: name(mine.net) }), 'success');
-				view = { name: 'overview' };
-				load().then(() => askRecognition(mine.net));
+				const own = `chat.br.linked_${mine.net}`;
+				toast(t(own) !== own ? t(own) : t('chat.br.linked', { name: name(mine.net) }), 'success');
+				// Messenger 1.23: the phone asks now whether it hands the history over (Signal) — said first
+				const n = network(mine.net);
+				const confirms = !!(n && n.history && n.history.phoneConfirms);
+				view = confirms ? { name: 'after', net: mine.net, history: info ? info.history : null, maxDays: (n.history && n.history.maxDays) || 30 } : { name: 'overview' };
+				if (confirms) paint();
+				load().then(() => { if (!confirms) askRecognition(mine.net); });
 				// the chats of this service may arrive now
 				if (typeof kit.refreshList === 'function') kit.refreshList({ server: true });
 			} else if (step.type === 'phone') {
@@ -159,13 +196,47 @@
 			}
 		}
 
-		/** Messenger 1.21: after a link of WhatsApp, once — may others recognise the person by it? */
+		/**
+		 * Messenger 1.21: after a link of WhatsApp, once — may others recognise the person by it? 1.23: per service
+		 * (networks[].recognition; an older server: WhatsApp's only), a service without its texts is not asked.
+		 */
 		function askRecognition(net) {
-			const rec = info && info.recognition;
-			if (net !== 'whatsapp' || !rec || !rec.available || rec.asked || typeof api.bridgeRecognition !== 'function') return;
+			const n = network(net);
+			const rec = (n && n.recognition) || (net === 'whatsapp' && info ? info.recognition : null);
+			if (!rec || !rec.available || rec.asked || typeof api.bridgeRecognition !== 'function') return;
+			if (net !== 'whatsapp' && t(`chat.person.recTitle_${net}`) === `chat.person.recTitle_${net}`) return;
 			if (view.name !== 'overview') return;
 			view = { name: 'recognition', net, saving: false };
 			paint();
+		}
+
+		/** Messenger 1.23: the history note after the scan was read — then the question „Erkennen“. */
+		function afterDone() {
+			const v = view;
+			if (v.name !== 'after') return;
+			view = { name: 'overview' };
+			paint();
+			askRecognition(v.net);
+		}
+
+		function afterView() {
+			const v = view;
+			const h = v.history;
+			const out = [
+				head(t('chat.br.link_title', { name: name(v.net) })),
+				note('info', t('chat.br.phone_history', { name: name(v.net) })),
+			];
+			if (h && h.available && h.days !== 0) {
+				out.push(el('div', { class: 'cv-set-card' }, [el('div', { class: 'cv-pref', 'data-pref': 'phone-history' }, [
+					el('span', { class: 'cv-pref-tx' }, [el('b', { text: t('chat.br.phone_history_chosen', { n: v.maxDays }) }), el('small', { text: t('chat.br.phone_history_take', { name: name(v.net), n: v.maxDays }) })]),
+				])]));
+			}
+			const own = `chat.br.linked_${v.net}`;
+			out.push(
+				el('p', { class: 'cv-br-ok', role: 'status' }, [icon('check', 14), el('span', { text: t(own) !== own ? t(own) : t('chat.br.linked', { name: name(v.net) }) })]),
+				el('div', { class: 'cv-br-bar' }, [el('span', { class: 'cv-grow' }), el('button', { type: 'button', class: 'btn btn-pri', 'data-act': 'after-ok', text: t('chat.br.next'), on: { click: () => afterDone() } })]),
+			);
+			return out;
 		}
 
 		async function answerRecognition(allowed) {
@@ -173,10 +244,10 @@
 			if (v.name !== 'recognition' || v.saving) return;
 			v.saving = true;
 			paint();
-			const r = await call(api.bridgeRecognition(allowed));
+			const r = await call(v.net === 'whatsapp' ? api.bridgeRecognition(allowed) : api.bridgeRecognition(allowed, v.net));
 			if (view !== v) return;
 			if (!r || r.ok === false) { v.saving = false; paint(); toast(CS.errorText(r, t), 'error'); return; }
-			toast(t(allowed ? 'chat.person.recSavedYes' : 'chat.person.recSavedNo'), 'success');
+			toast(t(`${allowed ? 'chat.person.recSavedYes' : 'chat.person.recSavedNo'}${sfx(v.net)}`), 'success');
 			view = { name: 'overview' };
 			load();
 		}
@@ -186,8 +257,8 @@
 			const no = el('button', { type: 'button', class: 'btn btn-sec', 'data-act': 'rec-no', text: t('chat.person.recNo'), disabled: v.saving ? true : null, on: { click: () => answerRecognition(false) } });
 			const yes = el('button', { type: 'button', class: 'btn btn-pri', 'data-act': 'rec-yes', text: t('chat.person.recYes'), disabled: v.saving ? true : null, on: { click: () => answerRecognition(true) } });
 			return [
-				el('div', { class: 'cv-br-head cv-br-rec-head' }, [typeof netLogo === 'function' ? netLogo(v.net, { size: 18, cls: 'cv-br-mark' }) : null, el('b', { text: t('chat.person.recTitle') })]),
-				el('p', { class: 'cv-br-lead', text: t('chat.person.recText') }),
+				el('div', { class: 'cv-br-head cv-br-rec-head' }, [typeof netLogo === 'function' ? netLogo(v.net, { size: 18, cls: 'cv-br-mark' }) : null, el('b', { text: t(`chat.person.recTitle${sfx(v.net)}`) })]),
+				el('p', { class: 'cv-br-lead', text: t(`chat.person.recText${sfx(v.net)}`) }),
 				note('lock', t('chat.person.recNote')),
 				el('div', { class: 'cv-br-bar cv-br-rec' }, [el('span', { class: 'cv-grow' }), no, yes]),
 			];
@@ -318,7 +389,8 @@
 		function paint() {
 			if (!host || !host.isConnected) return;
 			clear(host);
-			const nodes = view.name === 'notes' ? notesView() : (view.name === 'link' ? linkView() : (view.name === 'recognition' ? recognitionView() : overview()));
+			const views = { notes: notesView, link: linkView, recognition: recognitionView, after: afterView };
+			const nodes = (views[view.name] || overview)();
 			for (const n of nodes) if (n) host.appendChild(n);
 		}
 
@@ -345,7 +417,7 @@
 			if (outdated.length) out.push(note('info', t('chat.br.outdated_banner', { name: name(outdated[0].id) }), 'cv-br-warn'));
 			const card = el('div', { class: 'cv-set-card cv-br-list' });
 			for (const n of nets) {
-				const r = CS.linkedRow(n, cx);
+				const r = CS.linkedRow(n, { ...cx, history: info.history });
 				card.appendChild(el('div', { class: 'cv-pref cv-br-row', 'data-net': n.id, 'data-state': r.state }, [
 					// Messenger 1.20: the messenger's logo instead of „WA“
 					typeof netLogo === 'function' ? netLogo(n.id, { size: 18, cls: 'cv-br-mark' }) : el('span', { class: 'cv-br-mark', 'aria-hidden': 'true', text: r.mark }),
@@ -370,7 +442,7 @@
 			}
 			out.push(el('div', { class: 'cv-set-group' }, [card]));
 			// Messenger 1.17: older messages — what comes over at the next link
-			const h = CS.historyRow(info.history, t);
+			const h = CS.historyRow(info.history, t, nets);
 			if (h) {
 				let pick = null;
 				if (h.available) {
@@ -415,7 +487,10 @@
 		}
 
 		function tabs(v) {
-			return el('div', { class: 'cv-chips cv-br-tabs', role: 'tablist', 'aria-label': t('chat.br.flows') }, CS.LINK_FLOWS.map((f) => el('button', {
+			// Messenger 1.23: a service with one way only (Signal: the QR code) shows no tabs
+			const flows = CS.linkFlows(network(v.net));
+			if (flows.length < 2) return null;
+			return el('div', { class: 'cv-chips cv-br-tabs', role: 'tablist', 'aria-label': t('chat.br.flows') }, flows.map((f) => el('button', {
 				type: 'button', role: 'tab', class: 'cv-chip-btn', 'data-flow': f, 'aria-pressed': f === v.flow ? 'true' : 'false', 'aria-selected': f === v.flow ? 'true' : 'false', text: t(`chat.br.flow_${f}`),
 				on: { click: () => { if (f !== v.flow) link(v.net, f); } },
 			})));
@@ -479,7 +554,9 @@
 				out.push(
 					el('p', { class: 'cv-br-lead', text: t(`chat.br.qr_lead_${v.net}`) }),
 					el('div', { class: 'cv-br-qrbox' }, [qrSvg(v.matrix)]),
-					steps([`chat.br.qr_step1_${v.net}`, `chat.br.qr_step2_${v.net}`]),
+					steps(CS.qrSteps(v.net)),
+					// Messenger 1.23: Signal renews its code every 45 s by itself
+					t(`chat.br.qr_renews_${v.net}`) !== `chat.br.qr_renews_${v.net}` ? el('p', { class: 'cv-note', 'data-note': 'renews', text: t(`chat.br.qr_renews_${v.net}`) }) : null,
 					waiting(),
 				);
 			} else {
@@ -507,6 +584,15 @@
 				clearCopied();
 				host = null;
 				view = { name: 'overview' };
+			},
+			/**
+			 * Messenger 1.23: a phone sent the linking step here („Im Windows-Client fortsetzen“, live event) — the QR code
+			 * at once when the section shows the overview, else when it is drawn next; `target: null`: it is over.
+			 */
+			handoff(h) {
+				if (!h || h.target !== 'windows') { pendingHandoff = null; return; }
+				pendingHandoff = h;
+				if (host && host.isConnected && view.name === 'overview' && !loading) load();
 			},
 			/** Messenger 1.17: a push of „Verknüpfte Dienste“ came — the overview asks again (nothing else is touched). */
 			reload() {
