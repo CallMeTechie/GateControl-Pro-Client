@@ -13,6 +13,9 @@ const {
 	window: win, rdp, onNavigate, locale, policy: clientPolicy, notify: notifyApi, chat: chatApi, school: schoolApi, familie: familieApi, dnsProtect: dnsProtectApi, print: printApi, gatedrop: gatedropApi, vault: vaultApi, drive: driveApi,
 	signin: signinApi, mail: mailApi, cameras: camerasApi, notes: notesApi,
 } = window.gatecontrol;
+// Fernzugriff stage 3: the SSH devices and their terminal window (main ./terminal.js)
+const remoteTermApi = window.gatecontrol.remoteTerm || null;
+const RTS = window.GCRemoteTermState;
 const { t } = window.gatecontrol.i18n;
 
 // ── Helpers ─────────────────────────────────────────────
@@ -63,6 +66,7 @@ function parseTags(tags) {
 
 // Static SVG icon constants (safe string literals, no user data)
 const SVG_ICONS = {
+	terminal: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m6 9 3 3-3 3M12 15h5"/></svg>',
 	monitor: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
 	play: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>',
 	wol: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
@@ -218,6 +222,16 @@ let rdpSessions = [];
 let rdpFilter = 'all';
 let selectedRdpId = null;
 let currentRdpRoute = null; // route being viewed/connected
+// stage 3: SSH devices of the plugin „Fernzugriff“ (selected as 'ssh:<id>'), their tmux lists, the running terminals
+let sshDevices = [];
+let sshRight = true;
+const sshLocked = new Set();
+const sshTmux = new Map(); // id → { loading } | { list } | { error }
+const sshPick = new Map(); // id → chosen option key
+const sshNewName = new Map();
+const sshRecord = new Map();
+let sshOpenError = null;
+let termSessions = [];
 let currentPortalUrl = null; // pushed from main on connect/disconnect
 let currentPage = 'status';
 let chatView = null; // chat-view.js instance (CHATS section below)
@@ -1017,8 +1031,18 @@ async function loadRdpServices() {
 	} catch {
 		rdpServices = [];
 	}
+	await loadSshDevices();
 	await loadRdpSessions();
 	renderRdp();
+}
+
+async function loadSshDevices() {
+	if (!remoteTermApi) return;
+	const r = await remoteTermApi.devices().catch(() => null);
+	// an older server or plugin without SSH in the app: no SSH devices (the page stays as before)
+	sshDevices = r && Array.isArray(r.devices) ? r.devices : [];
+	sshRight = !r || r.sshRight !== false;
+	termSessions = await remoteTermApi.list().catch(() => []) || [];
 }
 
 async function loadRdpSessions() {
@@ -1055,9 +1079,22 @@ function filteredRdp() {
 	});
 }
 
+function filteredSsh() {
+	const filterText = ($('#rdp-filter-input').value || '').toLowerCase();
+	return sshDevices.filter((d) => {
+		if (filterText && ![d.name, d.description || '', ...(d.tags || [])].join(' ').toLowerCase().includes(filterText)) return false;
+		if (rdpFilter === 'online' && !d.online) return false;
+		if (rdpFilter === 'offline' && d.online) return false;
+		return true;
+	});
+}
+
+const sshKey = (d) => 'ssh:' + d.id;
+const selectedSsh = () => sshDevices.find((d) => sshKey(d) === String(selectedRdpId)) || null;
+
 function updateRdpBadge() {
 	const badge = $('#rdp-badge');
-	const onlineCount = rdpServices.filter((s) => s.status?.online).length;
+	const onlineCount = rdpServices.filter((s) => s.status?.online).length + sshDevices.filter((d) => d.online).length;
 	badge.textContent = String(onlineCount);
 	badge.setAttribute('aria-label', `${onlineCount} online`);
 	badge.hidden = onlineCount === 0;
@@ -1068,20 +1105,23 @@ function renderRdp() {
 	const list = $('#rdp-list');
 	list.textContent = '';
 	const filtered = filteredRdp();
-	const onlineCount = rdpServices.filter((s) => s.status?.online).length;
-	$('#rdp-count').textContent = t('ui.rdp.summary', { total: rdpServices.length, online: onlineCount });
+	const ssh = filteredSsh();
+	const onlineCount = rdpServices.filter((s) => s.status?.online).length + sshDevices.filter((d) => d.online).length;
+	$('#rdp-count').textContent = t('ui.rdp.summary', { total: rdpServices.length + sshDevices.length, online: onlineCount });
 
 	// Empty states
-	const noHosts = rdpServices.length === 0;
-	$('#rdp-list-empty').hidden = filtered.length > 0;
+	const noHosts = rdpServices.length === 0 && sshDevices.length === 0;
+	$('#rdp-list-empty').hidden = filtered.length + ssh.length > 0;
 	$('#rdp-list-empty-title').textContent = t(noHosts ? 'ui.rdp.noHosts' : 'ui.rdp.empty');
 	$('#rdp-list-empty-hint').textContent = t(noHosts ? 'ui.rdp.noHostsHint' : 'ui.rdp.emptyHint');
 	$('#rdp-reset-filter').hidden = noHosts;
 
-	if (selectedRdpId !== null && !rdpServices.some((s) => String(s.id) === String(selectedRdpId))) selectedRdpId = null;
+	if (selectedRdpId !== null && !rdpServices.some((s) => String(s.id) === String(selectedRdpId)) && !selectedSsh()) selectedRdpId = null;
 	if (selectedRdpId === null && filtered.length > 0) selectedRdpId = filtered[0].id;
+	if (selectedRdpId === null && ssh.length > 0) selectedRdpId = sshKey(ssh[0]);
 
 	filtered.forEach((svc) => list.appendChild(createRdpRow(svc)));
+	ssh.forEach((d) => list.appendChild(createSshRow(d)));
 	renderRdpDetail();
 }
 
@@ -1113,6 +1153,206 @@ function createRdpRow(svc) {
 	return row;
 }
 
+// ── Fernzugriff stage 3: SSH devices (design section 1: the terminal glyph, the marks SSH and tmux) ──
+
+const sshSessionFor = (d) => termSessions.find((x) => x.deviceId === d.id && ['connecting', 'hostkey', 'ready', 'reconnecting'].includes(x.state));
+
+function sshStatus(d) {
+	if (d.maintenance) return { label: t('rdp.statusMaintenance'), chip: 'c-warn', dot: 'dot-maint' };
+	if (d.online) return { label: t('rdp.statusOnline'), chip: 'c-ok', dot: 'dot-online' };
+	return { label: t('rdp.statusOffline'), chip: '', dot: 'dot-offline' };
+}
+
+function createSshRow(d) {
+	const st = sshStatus(d);
+	const selected = sshKey(d) === String(selectedRdpId);
+	const row = h('button', `row${selected ? ' sel' : ''}`);
+	row.type = 'button';
+	row.dataset.ssh = String(d.id);
+	if (selected) row.setAttribute('aria-current', 'true');
+	row.addEventListener('click', () => {
+		selectedRdpId = sshKey(d);
+		renderRdp();
+	});
+	const icon = h('span', 'host-icon');
+	setStaticIcon(icon, 'terminal'); // SAFE: static SVG
+	icon.appendChild(h('span', `dot ${st.dot}`));
+	row.appendChild(icon);
+	const text = h('span', 'host-text');
+	const nameLine = h('span', 'host-name-line');
+	nameLine.appendChild(h('span', 'host-name', d.name));
+	if (sshLocked.has(d.id)) nameLine.appendChild(h('span', 'chip c-err chip-sm', t('remoteTerm.locked')));
+	else if (!d.native) nameLine.appendChild(h('span', 'chip chip-sm', t('remoteTerm.browserOnly')));
+	else if (sshSessionFor(d)) nameLine.appendChild(h('span', 'chip c-ok chip-sm', t('remoteTerm.sessionRunning')));
+	else nameLine.appendChild(h('span', 'chip c-info chip-sm', t('remoteTerm.ssh')));
+	text.appendChild(nameLine);
+	text.appendChild(h('span', 'host-addr', d.description || (d.tags || []).join(' · ') || t('remoteTerm.ssh')));
+	row.appendChild(text);
+	row.appendChild(h('span', `chip ${st.chip}`, st.label));
+	return row;
+}
+
+async function loadSshTmux(d) {
+	if (!remoteTermApi || !d.tmux || sshLocked.has(d.id)) return;
+	sshTmux.set(d.id, { loading: true });
+	renderRdpDetail();
+	const r = await remoteTermApi.tmux(d.id).catch(() => ({ error: 'failed' }));
+	if (r && r.error === 'host_key_mismatch') sshLocked.add(d.id);
+	sshTmux.set(d.id, r && r.error ? { error: r.error } : { list: r });
+	if (selectedSsh() && selectedSsh().id === d.id) renderRdp();
+}
+
+function sshNote(cls, title, text) {
+	const note = h('div', `note ${cls}`);
+	note.appendChild(h('strong', null, title));
+	note.appendChild(document.createTextNode(' ' + text));
+	return note;
+}
+
+function renderSshDetail(detail, d) {
+	const st = sshStatus(d);
+	const head = h('div', 'rdp-detail-head');
+	const titleBlock = h('div', 'grow');
+	titleBlock.style.minWidth = '0';
+	const titleLine = h('div', 'rdp-detail-title');
+	titleLine.appendChild(h('h2', 'disp rdp-detail-name', d.name));
+	titleLine.appendChild(h('span', `chip ${st.chip}`, st.label));
+	titleLine.appendChild(h('span', 'chip c-info', t('remoteTerm.ssh')));
+	if (d.native && d.tmux) titleLine.appendChild(h('span', 'chip', t('remoteTerm.tmux')));
+	if (sshLocked.has(d.id)) titleLine.appendChild(h('span', 'chip c-err', t('remoteTerm.locked')));
+	titleBlock.appendChild(titleLine);
+	if (d.description) {
+		const desc = h('p', 'mono muted', d.description);
+		desc.style.marginTop = '4px';
+		titleBlock.appendChild(desc);
+	}
+	head.appendChild(titleBlock);
+	detail.appendChild(head);
+
+	if (!d.native) {
+		detail.appendChild(h('div', 'note note-neutral', t('remoteTerm.browserHint')));
+		const b = iconButton('btn btn-sec', 'external', t('remoteTerm.openBrowser'));
+		b.style.alignSelf = 'flex-start';
+		b.addEventListener('click', () => portal.open({ next: '/portal#plg-gatecontrol-remote' }));
+		detail.appendChild(b);
+		return;
+	}
+	if (!sshRight) { detail.appendChild(h('div', 'note note-neutral', t('remoteTerm.noRight'))); return; }
+	if (d.tmux && !sshTmux.has(d.id) && !sshLocked.has(d.id)) { loadSshTmux(d); return; }
+
+	const c = RTS.choices(d, sshTmux.get(d.id), sshLocked.has(d.id));
+	if (c.kind === 'locked') {
+		detail.appendChild(sshNote('note-err', t('remoteTerm.lockedTitle'), t('remoteTerm.lockedText', { name: d.name })));
+		return;
+	}
+	if (c.notice === 'first') detail.appendChild(sshNote('note-info', t('remoteTerm.firstTitle'), t('remoteTerm.firstText')));
+	if (c.notice === 'missing') detail.appendChild(sshNote('note-warn', t('remoteTerm.noTmuxTitle'), t('remoteTerm.noTmuxText')));
+	if (c.notice === 'error') detail.appendChild(h('div', 'note note-neutral', t('remoteTerm.listError', { code: sshTmux.get(d.id).error })));
+
+	const card = h('section', 'card');
+	card.style.cssText = 'padding:16px;display:flex;flex-direction:column;gap:10px';
+	const cardHead = h('div', 'rdp-detail-title');
+	cardHead.appendChild(h('h3', 'h-sec grow', t('remoteTerm.sessionsTitle')));
+	if (d.tmux) {
+		const refresh = h('button', 'btn btn-ghost btn-xs', t('remoteTerm.refresh'));
+		refresh.type = 'button';
+		refresh.addEventListener('click', () => loadSshTmux(d));
+		cardHead.appendChild(refresh);
+	}
+	card.appendChild(cardHead);
+	if (c.kind === 'loading') {
+		card.appendChild(h('p', 'muted', t('remoteTerm.loading')));
+		detail.appendChild(card);
+		return;
+	}
+	if (!sshPick.has(d.id) || !c.options.some((o) => o.key === sshPick.get(d.id))) sshPick.set(d.id, RTS.initialPick(c));
+	const pick = sshPick.get(d.id);
+	for (const o of c.options) {
+		const btn = h('button', `opt${pick === o.key ? ' sel' : ''}`);
+		btn.type = 'button';
+		btn.dataset.opt = o.key;
+		btn.setAttribute('aria-pressed', String(pick === o.key));
+		btn.appendChild(h('span', 'radio'));
+		const txt = h('span');
+		const title = h('span', 'opt-title');
+		let desc = '';
+		if (o.key.startsWith('resume:')) {
+			title.textContent = t('remoteTerm.resume', { name: o.name });
+			if (o.attached > 0) title.appendChild(h('span', 'chip c-info chip-sm', t('remoteTerm.attached')));
+			const m = RTS.minutesAgo(o.activity);
+			desc = [t('remoteTerm.windows', { n: o.windows }), o.attached > 0 ? t('remoteTerm.attachedHint') : m == null ? '' : m === 0 ? t('remoteTerm.activeNow') : t('remoteTerm.activeAgo', { m })].filter(Boolean).join(' · ');
+		} else if (o.key === 'default') {
+			title.textContent = t('remoteTerm.defaultSession');
+			desc = t('remoteTerm.defaultHint', { tmux: o.tmux });
+		} else if (o.key === 'new') {
+			title.textContent = t('remoteTerm.newSession');
+			desc = t('remoteTerm.newHint');
+		} else {
+			title.textContent = t('remoteTerm.plain');
+			desc = t('remoteTerm.plainHint');
+		}
+		txt.appendChild(title);
+		txt.appendChild(h('span', 'opt-desc', desc));
+		btn.appendChild(txt);
+		btn.addEventListener('click', () => { sshPick.set(d.id, o.key); renderRdpDetail(); });
+		card.appendChild(btn);
+		if (o.key === 'new' && pick === 'new') {
+			if (!sshNewName.has(d.id)) sshNewName.set(d.id, o.suggestion);
+			const inp = h('input', 'inp mono');
+			inp.id = 'ssh-new-name';
+			inp.maxLength = 32;
+			inp.value = sshNewName.get(d.id);
+			inp.setAttribute('aria-label', t('remoteTerm.newSession'));
+			inp.classList.toggle('invalid', !RTS.validName(inp.value));
+			inp.addEventListener('input', () => {
+				sshNewName.set(d.id, inp.value);
+				inp.classList.toggle('invalid', !RTS.validName(inp.value));
+				const go = $('#ssh-connect');
+				if (go) go.disabled = !RTS.validName(inp.value);
+			});
+			card.appendChild(inp);
+		}
+	}
+	if (c.hidden > 0) card.appendChild(h('p', 'muted', t('remoteTerm.hidden', { n: c.hidden })));
+	if (d.recording === 'optional') {
+		const row = h('div', 'set-row');
+		const lab = h('div', 'grow');
+		lab.appendChild(h('div', 'set-row-title', t('remoteTerm.record')));
+		lab.appendChild(h('div', 'set-row-desc', t('remoteTerm.recordHint')));
+		row.appendChild(lab);
+		const sw = h('button', 'sw');
+		sw.type = 'button';
+		sw.id = 'ssh-record';
+		sw.setAttribute('role', 'switch');
+		sw.setAttribute('aria-label', t('remoteTerm.record'));
+		sw.appendChild(h('span'));
+		setSwitch(sw, sshRecord.get(d.id) === true);
+		bindSwitch(sw, (on) => sshRecord.set(d.id, on));
+		row.appendChild(sw);
+		card.appendChild(row);
+	}
+	detail.appendChild(card);
+
+	if (sshOpenError && sshOpenError.id === d.id) detail.appendChild(h('div', 'note note-err', t('remoteTerm.openError', { code: sshOpenError.code })));
+	const go = iconButton('btn btn-pri', 'play', t(RTS.buttonKey(c, pick)));
+	go.id = 'ssh-connect';
+	go.style.alignSelf = 'flex-start';
+	go.disabled = pick === 'new' && !RTS.validName(sshNewName.get(d.id));
+	go.addEventListener('click', async () => {
+		const params = RTS.openParams(d, pick, sshNewName.get(d.id), sshRecord.get(d.id) === true);
+		if (!params) return;
+		go.disabled = true;
+		sshOpenError = null;
+		const r = await remoteTermApi.open(params).catch(() => ({ error: 'failed' }));
+		if (r && r.error) {
+			if (r.error === 'host_key_mismatch') sshLocked.add(d.id);
+			sshOpenError = { id: d.id, code: r.error };
+		}
+		renderRdp();
+	});
+	detail.appendChild(go);
+}
+
 function infoCard(label, value, opts = {}) {
 	const card = h('div', 'card info-card');
 	card.appendChild(h('div', 'lbl', label));
@@ -1128,8 +1368,14 @@ const wolSentIds = new Set();
 function renderRdpDetail() {
 	const detail = $('#rdp-detail');
 	detail.textContent = '';
+	const dev = selectedSsh();
+	if (dev) {
+		$('#rdp-detail-empty').hidden = true;
+		renderSshDetail(detail, dev);
+		return;
+	}
 	const svc = rdpServices.find((s) => String(s.id) === String(selectedRdpId));
-	$('#rdp-detail-empty').hidden = !!svc || rdpServices.length === 0;
+	$('#rdp-detail-empty').hidden = !!svc || (rdpServices.length === 0 && sshDevices.length === 0);
 	if (!svc) return;
 
 	const st = rdpStatus(svc);
@@ -1229,7 +1475,21 @@ function renderSessions() {
 	const side = $('#side-sessions');
 	const sideList = $('#side-sessions-list');
 	sideList.textContent = '';
-	side.hidden = rdpSessions.length === 0;
+	const sshLive = termSessions.filter((x) => ['connecting', 'hostkey', 'ready', 'reconnecting'].includes(x.state));
+	side.hidden = rdpSessions.length === 0 && sshLive.length === 0;
+	// stage 3: the SSH sessions of the terminal window — a click brings that tab to the front
+	sshLive.forEach((x) => {
+		const btn = h('button', 'nav side-session');
+		btn.type = 'button';
+		btn.dataset.term = x.id;
+		btn.appendChild(h('span', x.recording ? 'dot dot-rec' : 'dot'));
+		const text = h('span', 'side-session-text');
+		text.appendChild(h('span', 'side-session-name', x.deviceName));
+		text.appendChild(h('span', 'side-session-sub', x.tmux ? `SSH · tmux: ${x.tmux}` : 'SSH'));
+		btn.appendChild(text);
+		btn.addEventListener('click', () => remoteTermApi && remoteTermApi.focus(x.id));
+		sideList.appendChild(btn);
+	});
 	rdpSessions.forEach((s) => {
 		const btn = h('button', 'nav side-session');
 		btn.type = 'button';
@@ -1264,6 +1524,14 @@ function renderSessions() {
 		});
 		row.appendChild(endBtn);
 		list.appendChild(row);
+	});
+}
+
+if (remoteTermApi) {
+	remoteTermApi.onSessions((list) => {
+		termSessions = Array.isArray(list) ? list : [];
+		renderSessions();
+		if (currentPage === 'rdp') renderRdp();
 	});
 }
 
