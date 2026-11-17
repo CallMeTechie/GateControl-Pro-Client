@@ -897,6 +897,18 @@
 .cv-wrow-tx { display: flex; flex-direction: column; min-width: 0; flex: 1; font-size: 14px; }
 .cv-wrow-tx small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv-ways-sec > .btn { margin-top: 6px; align-self: flex-start; }
+/* Messenger 1.27: „Nachrichten senden über“, GateControl's logo in the plus menu, the line of a place message */
+.cv-reply-sec { gap: 8px; }
+.cv-rp-opt { align-items: flex-start; }
+.cv-rp-opt input { margin-top: 1px; }
+.cv-rp-opt .cv-way { margin-top: 2px; }
+.cv-rp-tx { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.cv-rp-tx b { font-weight: 600; }
+.cv-rp-tx small { color: var(--muted); font-size: 12px; }
+.cv-wayhint.is-fallback svg { color: var(--warn); }
+.cv-menu-item .cv-menu-gc { width: 14px; height: 14px; margin-left: 8px; }
+.cv-menu-gcnote { border-top: 1px solid var(--line); margin-top: 4px; }
+.cv-pmline { display: inline-flex; align-items: center; gap: 3px; margin-right: 4px; }
 .cv-br-rec-head { gap: 10px; }
 
 /* Messenger 1.25: WhatsApp status updates in the status strip — the service's logo on the ring, the viewer's line

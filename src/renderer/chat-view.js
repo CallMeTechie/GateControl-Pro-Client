@@ -462,7 +462,8 @@
 				if (it instanceof Node) { menu.appendChild(it); return; }
 				if (it.section) { menu.appendChild(el('div', { class: 'cv-menu-sec', text: it.section })); return; }
 				const [ic, label, fn, opts = {}] = it;
-				menu.appendChild(el('button', { type: 'button', role: 'menuitem', class: `cv-menu-item${opts.danger ? ' is-danger' : ''}`, disabled: opts.disabled ? true : null, 'data-item': opts.id || null, on: { click: () => { closeMenu(); fn(); } } }, [typeof ic === 'string' ? icon(ic, 15) : ic, el('span', { text: label })]));
+				// Messenger 1.27: `mark` — a small logo at the end (GateControl's: this item goes over GateControl)
+				menu.appendChild(el('button', { type: 'button', role: 'menuitem', class: `cv-menu-item${opts.danger ? ' is-danger' : ''}${opts.mark ? ' has-mark' : ''}`, disabled: opts.disabled ? true : null, 'data-item': opts.id || null, on: { click: () => { closeMenu(); fn(); } } }, [typeof ic === 'string' ? icon(ic, 15) : ic, el('span', { text: label }), opts.mark || null]));
 			};
 			items.forEach(add);
 			const layer = el('div', { class: 'cv-menu-layer', on: { click: (e) => { if (e.target === layer) closeMenu(); }, contextmenu: (e) => { e.preventDefault(); closeMenu(); } } }, [menu]);
@@ -1153,8 +1154,8 @@
 				el('button', { type: 'button', class: 'cv-head-who', 'aria-label': t('chat.info.open'), on: { click: () => toggleInfo() } }, [
 					convAvatar(c, 38),
 					el('span', { class: 'cv-head-tx' }, [el('b', { text: CS.title(c, t) }), sub.person
-						// Messenger 1.21: the logos of the ways and „GateControl · WhatsApp“
-						? el('span', { class: 'cv-head-sub cv-head-ways' }, [wayLogos(c, 10), el('span', { text: sub.text })])
+						// Messenger 1.21: the logos of the ways (1.27: only the logos, „über <Dienst>“ on each)
+						? el('span', { class: 'cv-head-sub cv-head-ways', role: 'img', 'aria-label': sub.text, title: sub.text }, [wayLogos(c, 10)])
 						: el('span', { class: `cv-head-sub${sub.typing ? ' is-typing' : ''}`, text: sub.text })]),
 				]),
 				el('span', { class: 'cv-grow' }),
@@ -1492,11 +1493,14 @@
 				// Messenger 1.20: the format of the text (`marks`) and clickable addresses — in every chat
 				else if (m.text && m.kind !== 'location' && !(ph && ph.geo) && !(rb && (m.kind === 'card' || !CS.isShownKind(m)))) b.appendChild(richTextEl(m.text, m.marks));
 			}
+			const pmLine = CS.placeMessageLine(m, t);
 			const meta = el('div', { class: 'cv-meta' }, [
 				m.expiresAt ? el('span', { class: 'cv-exp', title: t('chat.msg.expires', { time: CS.when(m.expiresAt, cx.locale) }) }, [icon('timer', 11)]) : null,
 				m.editedAt && !m.deleted ? el('span', { text: t('chat.msg.edited') }) : null,
 				// Messenger 1.21: the way of a message in a person's shared history
 				person && CS.wayOf(m) ? netLogo(CS.wayOf(m), { size: 9, label: t('chat.person.via', { network: CS.wayLabel(CS.wayOf(m)) }), cls: 'cv-way cv-msg-way' }) : null,
+				// Messenger 1.27: sent by a place message — „Ortsnachricht · Zuhause“ (only the sender sees it)
+				pmLine ? el('span', { class: 'cv-pmline' }, [icon('pin', 11), el('span', { text: pmLine })]) : null,
 				el('span', { text: CS.hm(m.createdAt, cx.locale) }),
 				mine ? ticks(it.status) : null,
 			]);
@@ -2345,9 +2349,11 @@
 			// messages when the chat names them (`bridge.supports`), the mic only for a type the service takes
 			const bridged = !!CS.bridgeOf(c);
 			const bridgeFiles = bridged && CS.bridgeTakesFiles(c);
-			// Messenger 1.21: „Nachricht über WhatsApp“ / „Nachricht über GateControl“ — and over a bridge the line above
+			// Messenger 1.21: „Nachricht über WhatsApp“ / „Nachricht über GateControl“ (1.27: no line above the composer any
+			// more — only when „Immer <Netz>“ cannot send right now and GateControl took over)
 			const placeholder = rw ? t('chat.person.placeholder', { way: CS.wayLabel(rw.way, rw.label) }) : (bridged ? t('chat.bc.placeholder', { network: CS.bridgeLabel(c) }) : t('chat.placeholder'));
-			if (rw && rw.bridge && !S.edit) refs.composer.appendChild(el('div', { class: 'cv-wayhint', 'data-way': rw.way }, [icon('info', 13), el('span', { text: t('chat.person.waHint', { network: CS.wayLabel(rw.way, rw.label) }) })]));
+			const fb = CS.replyFallback(entry);
+			if (fb && !S.edit) refs.composer.appendChild(el('div', { class: 'cv-wayhint is-fallback', 'data-way': 'gatecontrol' }, [icon('info', 13), el('span', { text: t('chat.person.replyFallback', { network: fb }) })]));
 			if (bridged && S.rec && !recordingSupported(c)) stopRec(false);
 			if (S.reply || S.edit) {
 				const m = S.reply || S.edit;
@@ -2387,10 +2393,12 @@
 				if (files.length) { e.preventDefault(); files.forEach((f) => attach(f)); }
 			});
 			const features = (cx.me && cx.me.features) || {};
+			// Messenger 1.27: what the plus menu offers — everything the entry can get over any of its ways
+			const plus = CS.plusMenu(entry, { ...features, location: typeof api.mapTile === 'function' ? features.location : false });
 			refs.composer.appendChild(el('div', { class: `cv-row-compose${bridged ? ' is-bridged' : ''}` }, [
-				bridged ? (bridgeFiles && features.files !== false ? iconBtn('attach', t('chat.attach'), () => { refs.file.value = ''; refs.file.click(); }, 'cv-attach-btn') : null) : attachButton(c, features),
+				attachButton(entry, plus),
 				// with the attach menu (Messenger 1.4.0) "Standort senden" is in there
-				!bridged && features.location !== false && typeof api.mapTile === 'function' && !attachMenuOn() ? iconBtn('pin', t('chat.loc.button'), () => locationDialog(), 'cv-loc-btn') : null,
+				plus.location && !attachMenuOn(entry, plus) ? iconBtn('pin', t('chat.loc.button'), () => locationDialog(), 'cv-loc-btn') : null,
 				refs.input,
 				features.voice !== false && recordingSupported(c) ? iconBtn('mic', t('chat.recStart'), () => startRec()) : null,
 				el('button', { type: 'button', class: 'cv-ib cv-ib-pri', 'aria-label': t('chat.send'), title: t('chat.send'), on: { click: () => submit() } }, [icon('send', 16, '2.2')]),
@@ -2409,25 +2417,34 @@
 		 * Ereignis and "Aus deinem Zuhause" (GET actions without the ones
 		 * switched off in Einstellungen › Haus-Aktionen).
 		 */
-		const attachMenuOn = () => { const f = f14(); return !!rich && (f.polls || f.events || f.actions); };
+		// Messenger 1.27: GateControl's own kinds only where the entry has a GateControl way (`plus.gc`)
+		const attachMenuOn = (entry, plus) => { const f = f14(); return !!rich && !!(plus && plus.gc) && (f.polls || f.events || f.actions); };
 
-		function attachButton(c, features) {
+		function attachButton(entry, plus) {
 			const pick = () => { refs.file.value = ''; refs.file.click(); };
-			if (!attachMenuOn()) return features.files !== false ? iconBtn('attach', t('chat.attach'), pick) : null;
-			return iconBtn('attach', t('chat.attach'), (e) => attachMenu(c, features, e.currentTarget), 'cv-attach-btn');
+			if (!attachMenuOn(entry, plus)) return plus.files ? iconBtn('attach', t('chat.attach'), pick, plus.mark ? 'cv-attach-btn' : '') : null;
+			return iconBtn('attach', t('chat.attach'), (e) => attachMenu(entry, plus, e.currentTarget), 'cv-attach-btn');
 		}
 
-		function attachMenu(c, features, anchor) {
+		/**
+		 * Messenger 1.27: everything the entry can get over any way. Files follow the way of the text, a location too when
+		 * its bridge sends one; GateControl's own kinds go to the GateControl way (the core sends them there) and carry
+		 * GateControl's small logo while the text goes over a bridge.
+		 */
+		function attachMenu(c, plus, anchor) {
 			const f = f14();
+			const gcMark = () => (plus.mark ? netLogo('gatecontrol', { size: 9, label: t('chat.person.viaGc'), cls: 'cv-way cv-menu-gc' }) : null);
+			const tw = CS.isPerson(c) ? CS.sendConv(c) : c;
 			const items = [
-				features.files !== false ? ['image', t('chat.attachMenu.file'), () => { refs.file.value = ''; refs.file.click(); }, { id: 'file' }] : null,
-				features.location !== false && typeof api.mapTile === 'function' ? ['pin', t('chat.loc.button'), () => locationDialog(), { id: 'location' }] : null,
-				f.polls ? ['chart', t('chat.attachMenu.poll'), () => rich.pollDialog(c), { id: 'poll' }] : null,
-				f.events ? ['calendar', t('chat.attachMenu.event'), () => rich.eventDialog(c), { id: 'event' }] : null,
+				plus.files ? ['image', t('chat.attachMenu.file'), () => { refs.file.value = ''; refs.file.click(); }, { id: 'file' }] : null,
+				plus.location ? ['pin', t('chat.loc.button'), () => locationDialog(), { id: 'location', mark: plus.location === 'gc' ? gcMark() : null }] : null,
+				f.polls ? ['chart', t('chat.attachMenu.poll'), () => rich.pollDialog(c), { id: 'poll', mark: gcMark() }] : null,
+				f.events ? ['calendar', t('chat.attachMenu.event'), () => rich.eventDialog(c), { id: 'event', mark: gcMark() }] : null,
 			].filter(Boolean);
 			if (f.actions) items.push({ section: t('chat.attachMenu.home') });
 			const pm = popMenu(anchor, items);
-			if (!f.actions) return;
+			const note = () => (plus.mark ? pm.add(el('div', { class: 'cv-menu-note cv-menu-gcnote', text: t('chat.attachMenu.gcNote', { network: CS.bridgeLabel(tw) }) })) : null);
+			if (!f.actions) { note(); return; }
 			const wait = el('div', { class: 'cv-menu-note', text: t('chat.loading') });
 			pm.add(wait);
 			api.actions().then((r) => {
@@ -2436,9 +2453,10 @@
 				const list = r && r.ok !== false ? CS.shownActions(r.actions, hidden) : [];
 				if (!r || r.ok === false) pm.add(el('div', { class: 'cv-menu-note', text: CS.errorText(r, t) }));
 				else if (!list.length) pm.add(el('div', { class: 'cv-menu-note', text: t('chat.attachMenu.noActions') }));
-				for (const a of list) pm.add([rich.serverIcon(a.icon, 15), a.label || a.id, () => rich.actionDialog(c, a), { id: `action:${a.id}` }]);
+				for (const a of list) pm.add([rich.serverIcon(a.icon, 15), a.label || a.id, () => rich.actionDialog(c, a), { id: `action:${a.id}`, mark: gcMark() }]);
 				pm.add(['gear', t('chat.attachMenu.manage'), () => openSettings('actions'), { id: 'manage' }]);
-			}).catch(() => { wait.textContent = t('chat.error.failed'); });
+				note();
+			}).catch(() => { wait.textContent = t('chat.error.failed'); note(); });
 		}
 
 		async function setBlocked(c, blocked) {
@@ -2823,7 +2841,9 @@
 				]));
 			}
 			refs.info.appendChild(top);
-			// Messenger 1.21: the ways of a person („Trennen“), or „Mit Person zusammenführen …“ in a chat with one person
+			// Messenger 1.27: „Nachrichten senden über“ (only the ways the person has), then (1.21) the ways of a person
+			// („Trennen“), or „Mit Person zusammenführen …“ in a chat with one person
+			if (person && CS.hasReplyPref(c) && typeof api.setReplyPref === 'function') refs.info.appendChild(replySection(c));
 			if (person) refs.info.appendChild(waysSection(c));
 			else if (CS.canMergeByHand(c, cx.me) && typeof api.personCandidates === 'function') {
 				refs.info.appendChild(el('div', { class: 'cv-info-sec cv-merge-sec' }, [el('button', { type: 'button', class: 'btn btn-sec btn-sm', 'data-act': 'merge-person', on: { click: () => pickDialog(c) } }, [icon('plus', 13), t('chat.person.addWay')])]));
@@ -3171,6 +3191,33 @@
 			}
 			sec.appendChild(el('p', { class: 'cv-note', text: t('chat.person.splitNote') }));
 			if (typeof api.personCandidates === 'function') sec.appendChild(el('button', { type: 'button', class: 'btn btn-sec btn-sm', 'data-act': 'merge-person', on: { click: () => pickDialog(c) } }, [icon('plus', 13), t('chat.person.addWay')]));
+			return sec;
+		}
+
+		/**
+		 * Messenger 1.27: „Nachrichten senden über“ — Automatisch (· gerade <Weg>), Immer GateControl, Immer <Netz> →
+		 * PUT persons/:id { replyPref }. An answer to a message still goes back over that message's way.
+		 */
+		function replySection(c) {
+			const group = `cv-rp-${Math.random().toString(36).slice(2, 8)}`;
+			const pref = CS.replyPref(c);
+			const sec = el('div', { class: 'cv-info-sec cv-reply-sec', role: 'radiogroup', 'aria-label': t('chat.person.replyTitle') }, [el('div', { class: 'cv-sec', text: t('chat.person.replyTitle') })]);
+			for (const o of CS.replyChoices(c, t)) {
+				const r = el('input', { type: 'radio', name: group, value: o.value, checked: o.value === pref, 'data-act': 'reply-pref' });
+				r.addEventListener('change', async () => {
+					if (!r.checked) return;
+					const res = await api.setReplyPref(c.id, o.value).catch((e) => ({ ok: false, error: e && e.message }));
+					if (!res || res.ok === false) toast(CS.errorText(res, t), 'error');
+					await refreshList();
+					if (S.cur === c.id) renderComposer(false);
+				});
+				sec.appendChild(el('label', { class: 'cv-pn-opt cv-rp-opt', 'data-pref': o.value }, [
+					r,
+					o.way ? netLogo(o.way, { size: 9, cls: 'cv-way' }) : null,
+					el('span', { class: 'cv-rp-tx' }, [el('b', { text: o.label }), o.sub ? el('small', { text: o.sub }) : null]),
+				]));
+			}
+			sec.appendChild(el('p', { class: 'cv-note', text: t('chat.person.replyNote') }));
 			return sec;
 		}
 
