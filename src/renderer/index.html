@@ -879,6 +879,21 @@
 				</div>
 			</div>
 
+			<!-- ═════════ SSH: tmux-Sitzung / Fenster beenden (Fernzugriff 1.8) ═════════ -->
+			<div class="scrim" id="ssh-kill-dialog" hidden>
+				<div class="card dialog ssh-kill-box" role="alertdialog" aria-modal="true" aria-labelledby="ssh-kill-title" aria-describedby="ssh-kill-body">
+					<div class="dlg-head">
+						<div class="grow" style="min-width:0"><div class="lbl" id="ssh-kill-label"></div><h2 class="disp dlg-title" id="ssh-kill-title"></h2></div>
+					</div>
+					<div class="dlg-status mono" id="ssh-kill-sub"></div>
+					<div class="ssh-kill-body" id="ssh-kill-body"></div>
+					<div class="dlg-actions">
+						<button class="btn btn-ghost" id="ssh-kill-cancel" type="button" data-i18n="remoteTerm.killCancel">Abbrechen</button>
+						<button class="btn btn-danger" id="ssh-kill-ok" type="button"></button>
+					</div>
+				</div>
+			</div>
+
 			<!-- ═════════ RDP DIALOG ═════════ -->
 			<div class="scrim" id="rdp-dialog" hidden>
 				<div class="card dialog" role="dialog" aria-modal="true" aria-labelledby="rdp-dialog-title">

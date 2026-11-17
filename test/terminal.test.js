@@ -29,6 +29,8 @@ function fakeTerm() {
     rt.sessions.set(s.id, s);
     return s;
   };
+  rt.tmuxKill = async (id, o) => { rt.calls.push(['tmuxKill', id, o]); if (o.session === '$9') throw Object.assign(new Error('x'), { code: 'tmux_gone' }); return { killed: o.window ? 'window' : 'session', sessions: [], kill: true }; };
+  rt.tmuxKillDetached = async (id, ids) => { rt.calls.push(['tmuxKillDetached', id, ids]); return { killed: ids, skipped: [], sessions: [], kill: true }; };
   rt.input = (id, d) => { rt.calls.push(['input', id, d]); return true; };
   rt.resize = (...a) => rt.calls.push(['resize', ...a]);
   rt.trust = (...a) => rt.calls.push(['trust', ...a]);
@@ -154,6 +156,25 @@ test('closing the window with running sessions asks first; bad input; errors as 
   assert.equal((await term.channels['remote-term:devices']()).devices.length, 1);
 });
 
+test('ending tmux sessions and windows: only numbers from the renderer, errors as codes', async () => {
+  const { rt, term } = setup();
+  const kill = term.channels['remote-term:tmux-kill'];
+  const all = term.channels['remote-term:tmux-kill-detached'];
+  assert.equal((await kill({}, 2, { session: '$2' })).killed, 'session');
+  assert.equal((await kill({}, '2', { session: '$2', window: '@4' })).killed, 'window');
+  assert.deepEqual(rt.calls.filter(([c]) => c === 'tmuxKill'), [['tmuxKill', 2, { session: '$2' }], ['tmuxKill', 2, { session: '$2', window: '@4' }]]);
+  assert.deepEqual(await kill({}, 2, { session: '$9' }), { error: 'tmux_gone' });
+  for (const bad of [{ session: 'tmux' }, { session: '$2', window: 2 }, { session: '$2', window: '@x' }, null, { session: '$2 x' }]) {
+    assert.deepEqual(await kill({}, 2, bad), { error: 'invalid' }, JSON.stringify(bad));
+  }
+  assert.deepEqual(await kill({}, 0, { session: '$2' }), { error: 'invalid' });
+  assert.deepEqual((await all({}, 2, ['$2', '$3'])).killed, ['$2', '$3']);
+  assert.deepEqual(await all({}, 2, []), { error: 'invalid' });
+  assert.deepEqual(await all({}, 2, ['$2', 'tmux']), { error: 'invalid' });
+  assert.deepEqual(await all({}, 2, Array.from({ length: 51 }, (_, i) => `$${i}`)), { error: 'invalid' });
+  assert.equal(rt.calls.filter(([c]) => c === 'tmuxKillDetached').length, 1);
+});
+
 test('every text of the window exists in German and English', () => {
   for (const lang of ['de', 'en']) {
     const d = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', `${lang}.json`), 'utf8'));
@@ -236,4 +257,65 @@ test('details of an SSH device: choices, preselection, the button, what is opene
   assert.deepEqual(RTS.choices({ ...dev, tmux: null }, null).options.map((o) => o.key), ['plain']);
   assert.equal(RTS.choices(dev, { loading: true }).kind, 'loading');
   assert.equal(RTS.minutesAgo(Date.now() - 120000), 2);
+});
+
+test('ending tmux (Fernzugriff 1.8): what can be ended, the questions, the outcome', () => {
+  const win = (id, index, name, command, active = false) => ({ id, index, name, command, active, panes: 1 });
+  const list = {
+    kill: true, tmux: 'tmux', hostKey: 'pinned', hidden: 1,
+    sessions: [
+      { id: '$2', name: 'tmux', windows: 3, attached: 0, activity: 2, windowList: [win('@2', 0, 'bash', 'bash'), win('@3', 1, 'logs', 'journalctl', true), win('@4', 2, 'htop', 'htop')] },
+      { id: '$1', name: 'build', windows: 1, attached: 1, activity: 1, windowList: [win('@1', 0, 'make', 'make', true)] },
+    ],
+    others: [{ id: '$3', name: 'kims build', windows: 1, attached: 0, activity: 0, windowList: [win('@5', 0, 'rsync', null, true)] }],
+  };
+  // an older plugin: nothing to end, the dialog as before
+  assert.deepEqual(RTS.killable({ sessions: list.sessions, hidden: 1 }), { kill: false, sessions: [], others: [], detached: [], showAll: false });
+  const k = RTS.killable(list);
+  assert.deepEqual(k.detached.map((x) => x.id), ['$2', '$3']);
+  assert.equal(k.showAll, true);
+  assert.equal(RTS.killable({ ...list, others: [] }).showAll, false, 'from two detached sessions on');
+
+  // T2: a session; attached -> the red warning and „Trotzdem beenden“
+  const s2 = RTS.killDialog('session', list, { session: '$2' });
+  assert.deepEqual(s2.title, ['remoteTerm.killSessionTitle', { name: 'tmux' }]);
+  assert.deepEqual(s2.lines, [['remoteTerm.killSessionText', {}]]);
+  assert.equal(s2.warn, null);
+  assert.deepEqual(s2.ok, ['remoteTerm.killSessionOk', {}]);
+  assert.deepEqual(s2.request, { session: '$2' });
+  assert.deepEqual(s2.sub, ['remoteTerm.killSessionSub', { n: 3, cmds: 'bash, journalctl, htop' }]);
+  const s1 = RTS.killDialog('session', list, { session: '$1' });
+  assert.deepEqual(s1.warn.text, ['remoteTerm.killAttachedText', { n: 1 }]);
+  assert.deepEqual(s1.ok, ['remoteTerm.killAnyway', {}]);
+  assert.equal(RTS.killDialog('session', list, { session: '$3' }).request.session, '$3', 'one that cannot be resumed can be ended');
+  assert.equal(RTS.killDialog('session', list, { session: '$7' }), null);
+
+  // T3: a window; the last one ends the session
+  const w = RTS.killDialog('window', list, { session: '$2', window: '@4' });
+  assert.deepEqual(w.title, ['remoteTerm.killWindowTitle', { name: 'htop' }]);
+  assert.deepEqual(w.sub, ['remoteTerm.killWindowSub', { session: 'tmux', index: 2 }]);
+  assert.deepEqual(w.lines, [['remoteTerm.killWindowText', { cmd: 'htop' }], ['remoteTerm.killWindowOthers', { n: 2 }]]);
+  assert.deepEqual(w.request, { session: '$2', window: '@4' });
+  const last = RTS.killDialog('window', list, { session: '$3', window: '@5' });
+  assert.deepEqual(last.lines, [['remoteTerm.killWindowTextPlain', {}], ['remoteTerm.killLastWindow', {}]]);
+  assert.equal(last.last, true);
+  assert.ok(RTS.killDialog('window', list, { session: '$1', window: '@1' }).warn, 'the last window of an attached session warns');
+  assert.equal(RTS.killDialog('window', list, { session: '$2', window: '@9' }), null);
+
+  // T4: all detached ones, the attached one named as kept
+  const all = RTS.killDialog('detached', list, null);
+  assert.deepEqual(all.title, ['remoteTerm.killDetachedTitle', { n: 2 }]);
+  assert.deepEqual(all.items.map((x) => [x.id, x.name, x.cmds]), [['$2', 'tmux', 'bash, journalctl, htop'], ['$3', 'kims build', 'rsync']]);
+  assert.deepEqual(all.lines[1], ['remoteTerm.killDetachedKeeps', { names: '„build“' }]);
+  assert.deepEqual(all.ok, ['remoteTerm.killDetachedOk', { n: 2 }]);
+  assert.deepEqual(RTS.detachedOk(1), ['remoteTerm.killDetachedOkOne', {}]);
+  assert.equal(RTS.killDialog('detached', { ...list, others: [] }, null), null);
+
+  // the outcome: tmux_gone / tmux_changed quietly reload, other codes are errors
+  assert.deepEqual(RTS.killOutcome({ error: 'tmux_gone' }), { reload: true });
+  assert.deepEqual(RTS.killOutcome({ error: 'tmux_changed' }), { reload: true });
+  assert.deepEqual(RTS.killOutcome({ error: 'auth_failed' }), { error: 'auth_failed' });
+  assert.deepEqual(RTS.killOutcome(null), { error: 'failed' });
+  const ok = RTS.killOutcome({ killed: ['$2'], skipped: [{ id: '$3', reason: 'attached' }, { id: '$4', reason: 'tmux_gone' }], kill: true, sessions: [] });
+  assert.deepEqual(ok, { list: { kill: true, sessions: [] }, skippedAttached: 1 });
 });

@@ -231,6 +231,10 @@ const sshPick = new Map(); // id → chosen option key
 const sshNewName = new Map();
 const sshRecord = new Map();
 let sshOpenError = null;
+// Fernzugriff 1.8: ending tmux sessions and windows (only with kill: true from the plugin)
+const sshExpanded = new Map(); // id → Set of opened session ids ($n)
+let sshKillNote = null; // { id, cls, text } under the list after ending
+let sshKill = null; // the open question: { d, dlg, ticked, busy }
 let termSessions = [];
 let currentPortalUrl = null; // pushed from main on connect/disconnect
 let currentPage = 'status';
@@ -1195,6 +1199,7 @@ function createSshRow(d) {
 async function loadSshTmux(d) {
 	if (!remoteTermApi || !d.tmux || sshLocked.has(d.id)) return;
 	sshTmux.set(d.id, { loading: true });
+	sshKillNote = null;
 	renderRdpDetail();
 	const r = await remoteTermApi.tmux(d.id).catch(() => ({ error: 'failed' }));
 	if (r && r.error === 'host_key_mismatch') sshLocked.add(d.id);
@@ -1267,7 +1272,14 @@ function renderSshDetail(detail, d) {
 	}
 	if (!sshPick.has(d.id) || !c.options.some((o) => o.key === sshPick.get(d.id))) sshPick.set(d.id, RTS.initialPick(c));
 	const pick = sshPick.get(d.id);
+	const k = RTS.killable((sshTmux.get(d.id) || {}).list);
+	let othersShown = false;
 	for (const o of c.options) {
+		// the sessions that cannot be resumed (only with kill): after the resumable ones, to be ended
+		if (k.kill && !othersShown && !o.key.startsWith('resume:')) {
+			othersShown = true;
+			for (const x of k.others) card.appendChild(sshSessionBox(d, x, null));
+		}
 		const btn = h('button', `opt${pick === o.key ? ' sel' : ''}`);
 		btn.type = 'button';
 		btn.dataset.opt = o.key;
@@ -1295,7 +1307,8 @@ function renderSshDetail(detail, d) {
 		txt.appendChild(h('span', 'opt-desc', desc));
 		btn.appendChild(txt);
 		btn.addEventListener('click', () => { sshPick.set(d.id, o.key); renderRdpDetail(); });
-		card.appendChild(btn);
+		const sess = k.kill && o.key.startsWith('resume:') ? k.sessions.find((x) => x.name === o.name) : null;
+		card.appendChild(sess ? sshSessionBox(d, sess, btn) : btn);
 		if (o.key === 'new' && pick === 'new') {
 			if (!sshNewName.has(d.id)) sshNewName.set(d.id, o.suggestion);
 			const inp = h('input', 'inp mono');
@@ -1313,7 +1326,16 @@ function renderSshDetail(detail, d) {
 			card.appendChild(inp);
 		}
 	}
-	if (c.hidden > 0) card.appendChild(h('p', 'muted', t('remoteTerm.hidden', { n: c.hidden })));
+	if (k.kill && !othersShown) for (const x of k.others) card.appendChild(sshSessionBox(d, x, null));
+	if (k.showAll) {
+		const all = h('button', 'btn btn-ghost btn-xs ssh-kill-all', t('remoteTerm.killAll', { n: k.detached.length }));
+		all.type = 'button';
+		all.id = 'ssh-kill-all';
+		all.addEventListener('click', () => openSshKill(d, 'detached', null));
+		card.appendChild(all);
+	}
+	if (c.hidden > 0 && !k.kill) card.appendChild(h('p', 'muted', t('remoteTerm.hidden', { n: c.hidden })));
+	if (sshKillNote && sshKillNote.id === d.id) card.appendChild(h('div', `note ${sshKillNote.cls}`, sshKillNote.text));
 	if (d.recording === 'optional') {
 		const row = h('div', 'set-row');
 		const lab = h('div', 'grow');
@@ -1351,6 +1373,162 @@ function renderSshDetail(detail, d) {
 		renderRdp();
 	});
 	detail.appendChild(go);
+}
+
+// ── Fernzugriff 1.8: tmux sessions and windows to end (design section 8, T1–T4) ──
+
+/** A session with „Beenden“ and its windows to open (T1); main is its choice, null for one that cannot be resumed. */
+function sshSessionBox(d, x, main) {
+	const box = h('div', 'ssh-sess');
+	box.dataset.tmuxSession = x.id;
+	const head = h('div', 'ssh-sess-head');
+	if (!main) {
+		main = h('div', 'opt ssh-sess-static');
+		const txt = h('span');
+		txt.appendChild(h('span', 'opt-title', x.name));
+		const m = RTS.minutesAgo(x.activity);
+		const desc = [t('remoteTerm.windows', { n: x.windows }), x.attached > 0 ? t('remoteTerm.attachedHint') : m == null ? '' : m === 0 ? t('remoteTerm.activeNow') : t('remoteTerm.activeAgo', { m }), t('remoteTerm.notResumable')];
+		txt.appendChild(h('span', 'opt-desc', desc.filter(Boolean).join(' · ')));
+		main.appendChild(txt);
+	}
+	head.appendChild(main);
+	const acts = h('div', 'ssh-sess-acts');
+	const kill = h('button', 'btn btn-danger btn-xs', t('remoteTerm.killEnd'));
+	kill.type = 'button';
+	kill.dataset.kill = 'session';
+	kill.addEventListener('click', () => openSshKill(d, 'session', { session: x.id }));
+	acts.appendChild(kill);
+	const wins = Array.isArray(x.windowList) ? x.windowList : [];
+	const open = !!(sshExpanded.get(d.id) && sshExpanded.get(d.id).has(x.id));
+	if (wins.length) {
+		const tog = h('button', 'btn btn-ghost btn-xs ssh-sess-toggle', open ? '▾' : '▸');
+		tog.type = 'button';
+		tog.dataset.toggle = x.id;
+		tog.setAttribute('aria-expanded', String(open));
+		tog.setAttribute('aria-label', t(open ? 'remoteTerm.hideWindows' : 'remoteTerm.showWindows'));
+		tog.title = tog.getAttribute('aria-label');
+		tog.addEventListener('click', () => {
+			const set = sshExpanded.get(d.id) || new Set();
+			if (set.has(x.id)) set.delete(x.id); else set.add(x.id);
+			sshExpanded.set(d.id, set);
+			renderRdpDetail();
+		});
+		acts.appendChild(tog);
+	}
+	head.appendChild(acts);
+	box.appendChild(head);
+	if (open && wins.length) {
+		const ul = h('ul', 'ssh-wins');
+		for (const w of wins) {
+			const li = h('li', 'ssh-win');
+			li.dataset.window = w.id;
+			li.appendChild(h('span', 'mono ssh-win-idx', String(w.index)));
+			li.appendChild(h('span', 'ssh-win-name', w.name));
+			if (w.active) li.appendChild(h('span', 'chip c-ok chip-sm', t('remoteTerm.windowActive')));
+			li.appendChild(h('span', 'mono muted ssh-win-cmd grow', w.command || ''));
+			const close = h('button', 'btn btn-ghost btn-xs', t('remoteTerm.closeWindow'));
+			close.type = 'button';
+			close.dataset.kill = 'window';
+			close.addEventListener('click', () => openSshKill(d, 'window', { session: x.id, window: w.id }));
+			li.appendChild(close);
+			ul.appendChild(li);
+		}
+		box.appendChild(ul);
+	}
+	return box;
+}
+
+/** The question before ending (T2 session, T3 window, T4 all detached ones), always asked. */
+function openSshKill(d, kind, ref) {
+	const dlg = RTS.killDialog(kind, (sshTmux.get(d.id) || {}).list, ref);
+	if (!dlg) { loadSshTmux(d); return; }
+	const tt = (pair) => t(pair[0], pair[1]);
+	sshKill = { d, dlg, ticked: new Set(dlg.items ? dlg.items.map((x) => x.id) : []), busy: false };
+	$('#ssh-kill-label').textContent = d.name;
+	$('#ssh-kill-title').textContent = tt(dlg.title);
+	$('#ssh-kill-sub').textContent = dlg.sub ? tt(dlg.sub) : '';
+	$('#ssh-kill-sub').hidden = !dlg.sub;
+	const body = $('#ssh-kill-body');
+	body.textContent = '';
+	for (const l of dlg.lines) body.appendChild(h('p', null, tt(l)));
+	if (dlg.warn) {
+		const warn = h('div', 'note note-err');
+		warn.id = 'ssh-kill-warn';
+		warn.appendChild(h('strong', null, tt(dlg.warn.title)));
+		warn.appendChild(document.createTextNode(' ' + tt(dlg.warn.text)));
+		body.appendChild(warn);
+	}
+	const ok = $('#ssh-kill-ok');
+	const okText = () => {
+		const pair = dlg.kind === 'detached' ? RTS.detachedOk(sshKill.ticked.size) : dlg.ok;
+		ok.textContent = tt(pair);
+		ok.disabled = sshKill.busy || (dlg.kind === 'detached' && sshKill.ticked.size === 0);
+	};
+	if (dlg.items) {
+		const list = h('div', 'ssh-kill-list');
+		for (const it of dlg.items) {
+			const row = h('label', 'ssh-kill-item');
+			const cb = h('input');
+			cb.type = 'checkbox';
+			cb.checked = true;
+			cb.value = it.id;
+			cb.addEventListener('change', () => {
+				if (cb.checked) sshKill.ticked.add(it.id); else sshKill.ticked.delete(it.id);
+				okText();
+			});
+			row.appendChild(cb);
+			const txt = h('span', 'grow');
+			txt.appendChild(h('span', 'opt-title', it.name));
+			const m = RTS.minutesAgo(it.activity);
+			txt.appendChild(h('span', 'opt-desc', [t('remoteTerm.windows', { n: it.windows }), it.cmds, m == null ? '' : m === 0 ? t('remoteTerm.activeNow') : t('remoteTerm.activeAgo', { m })].filter(Boolean).join(' · ')));
+			row.appendChild(txt);
+			list.appendChild(row);
+		}
+		body.appendChild(list);
+	}
+	okText();
+	sshKill.okText = okText;
+	$('#ssh-kill-dialog').hidden = false;
+	$('#ssh-kill-cancel').focus();
+}
+
+function closeSshKill() {
+	if (sshKill && sshKill.busy) return;
+	sshKill = null;
+	$('#ssh-kill-dialog').hidden = true;
+}
+
+async function runSshKill() {
+	const k = sshKill;
+	if (!k || k.busy || !remoteTermApi) return;
+	const { d, dlg } = k;
+	if (dlg.kind === 'detached' && !k.ticked.size) return;
+	k.busy = true;
+	k.okText();
+	const r = await (dlg.kind === 'detached'
+		? remoteTermApi.tmuxKillDetached(d.id, dlg.items.map((x) => x.id).filter((id) => k.ticked.has(id)))
+		: remoteTermApi.tmuxKill(d.id, dlg.request)).catch(() => ({ error: 'failed' }));
+	k.busy = false;
+	closeSshKill();
+	const out = RTS.killOutcome(r);
+	sshKillNote = null;
+	// gone or changed meanwhile: quietly the current list, nothing in red
+	if (out.reload) { loadSshTmux(d); return; }
+	if (out.error) {
+		if (out.error === 'host_key_mismatch') sshLocked.add(d.id);
+		sshKillNote = { id: d.id, cls: 'note-err', text: t('remoteTerm.killError', { code: out.error }) };
+	} else {
+		sshTmux.set(d.id, { list: out.list });
+		if (out.skippedAttached) sshKillNote = { id: d.id, cls: 'note-neutral', text: t('remoteTerm.killSkipped', { n: out.skippedAttached }) };
+	}
+	if (selectedSsh() && selectedSsh().id === d.id) renderRdp();
+}
+
+if ($('#ssh-kill-dialog')) {
+	$('#ssh-kill-cancel').addEventListener('click', closeSshKill);
+	$('#ssh-kill-ok').addEventListener('click', runSshKill);
+	$('#ssh-kill-dialog').addEventListener('mousedown', (e) => { if (e.target === $('#ssh-kill-dialog')) closeSshKill(); });
+	document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#ssh-kill-dialog').hidden) closeSshKill(); });
 }
 
 function infoCard(label, value, opts = {}) {

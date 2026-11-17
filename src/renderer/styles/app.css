@@ -524,6 +524,27 @@ body:not([data-conn="connected"]) .show-connected { display: none !important; }
 .policy-banner { margin: 0 0 16px; padding: 10px 14px; border: 1px solid var(--line2); border-radius: 10px; background: var(--panel2); font-size: 13px; color: var(--muted); }
 .opt.policy-locked, .opt:disabled { opacity: .45; cursor: not-allowed; }
 
+/* Fernzugriff 1.8: tmux sessions with their windows, to end (SSH details) */
+.ssh-sess { border: 1px solid var(--line2); border-radius: 14px; background: var(--panel); }
+.ssh-sess:hover, .ssh-sess:has(.opt.sel) { border-color: var(--acc); }
+.ssh-sess-head { display: flex; align-items: center; gap: 8px; padding-right: 12px; }
+.ssh-sess-head > .opt { flex: 1; min-width: 0; border: 0; background: transparent; }
+.ssh-sess-static { cursor: default; }
+.ssh-sess-acts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.ssh-sess-toggle { width: 30px; padding: 0; justify-content: center; }
+.ssh-wins { list-style: none; margin: 0; padding: 0 12px 12px 48px; display: flex; flex-direction: column; gap: 2px; }
+.ssh-win { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 2px 4px 2px 10px; border-radius: 8px; font-size: 13px; }
+.ssh-win:hover { background: var(--panel2); }
+.ssh-win-idx { width: 18px; color: var(--muted); }
+.ssh-win-name { font-weight: 600; overflow-wrap: anywhere; }
+.ssh-win-cmd { font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssh-kill-all { align-self: flex-start; color: var(--err); }
+.ssh-kill-box { display: flex; flex-direction: column; gap: 14px; }
+.ssh-kill-body { display: flex; flex-direction: column; gap: 10px; font-size: 14px; overflow-wrap: anywhere; }
+.ssh-kill-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; }
+.ssh-kill-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line2); cursor: pointer; }
+.ssh-kill-item input { margin-top: 3px; accent-color: var(--err); }
+
 /* ── Notifications: "Mitteilungen" (inbox) ─────────────── */
 .count-alert { background: var(--warn); color: var(--bg); }
 .inbox-head { display: flex; align-items: flex-start; gap: 12px; }

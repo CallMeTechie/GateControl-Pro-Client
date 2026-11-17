@@ -38,13 +38,16 @@ const REMOTE_HOST_CHANNELS = ['remote-host:status', 'remote-host:share', 'remote
   // stage 7: "Bildschirm teilen"
   'remote-host:screen', 'remote-host:screen-stop', 'remote-host:screen-view-only'];
 
-const REMOTE_TERM_CHANNELS = ['remote-term:devices', 'remote-term:tmux', 'remote-term:open', 'remote-term:list', 'remote-term:focus'];
+const REMOTE_TERM_CHANNELS = ['remote-term:devices', 'remote-term:tmux', 'remote-term:tmux-kill', 'remote-term:tmux-kill-detached',
+  'remote-term:open', 'remote-term:list', 'remote-term:focus'];
 
 /** The remote-term:* channels (stage 3, the SSH terminal); without the service none of the devices and no session. */
 function remoteTermChannels(term) {
   const off = {
     'remote-term:devices': () => ({ devices: [], sshRight: false }),
     'remote-term:tmux': () => ({ error: 'unavailable' }),
+    'remote-term:tmux-kill': () => ({ error: 'unavailable' }),
+    'remote-term:tmux-kill-detached': () => ({ error: 'unavailable' }),
     'remote-term:open': () => ({ error: 'unavailable' }),
     'remote-term:list': () => [],
     'remote-term:focus': () => false,
