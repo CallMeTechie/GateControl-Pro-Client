@@ -1370,6 +1370,85 @@ describe('chat-state: persons (Messenger 1.21, Chats v2 Teil B)', () => {
   });
 });
 
+describe('chat-state: Versandweg, Plus-Menü, Standort über Brücken (Messenger 1.27)', () => {
+  const WA = { network: 'whatsapp', label: 'WhatsApp', state: 'ok', supports: ['text', 'reply', 'image', 'file', 'location'] };
+  const SIG = { network: 'signal', label: 'Signal', state: 'ok', supports: ['text', 'reply', 'image', 'file'] };
+  const kim = (over = {}, bridge = WA) => ({
+    id: 40, kind: 'direct', title: 'Kim Muster', bridge: null, peer: { userId: 8, name: 'Kim Muster' }, can: { send: true }, me: { lastReadId: 0 },
+    person: {
+      id: 3, name: 'Kim Muster', conversationId: 40, replyPref: 'auto',
+      ways: [
+        { way: 'gatecontrol', label: 'GateControl', conversationId: 40, title: 'Kim Muster', bridge: null, can: { send: true } },
+        { way: bridge.network, label: bridge.label, conversationId: 41, title: 'Kim M.', bridge, can: { send: true } },
+      ],
+      reply: { way: bridge.network, label: bridge.label, conversationId: 41 },
+      ...over,
+    },
+  });
+
+  it('the choices of „Nachrichten senden über“: Automatisch · gerade <Weg>, Immer GateControl, Immer <Netz>', () => {
+    const c = kim();
+    assert.equal(CS.hasReplyPref(c), true);
+    assert.equal(CS.hasReplyPref({ ...c, person: { ...c.person, replyPref: undefined } }), false, 'a server before 1.27');
+    assert.equal(CS.replyPref(c), 'auto');
+    assert.deepEqual(CS.replyChoices(c, t), [
+      { value: 'auto', way: null, label: 'chat.person.replyAuto', sub: 'chat.person.replyAutoSub(Kim Muster,WhatsApp)' },
+      { value: 'gatecontrol', way: 'gatecontrol', label: 'chat.person.replyAlways(GateControl)', sub: 'chat.person.replyGcSub' },
+      { value: 'whatsapp', way: 'whatsapp', label: 'chat.person.replyAlways(WhatsApp)', sub: 'chat.person.replyNetSub(WhatsApp)' },
+    ]);
+    const fixed = kim({ replyPref: 'gatecontrol', reply: { way: 'gatecontrol', label: 'GateControl', conversationId: 40 } });
+    assert.equal(CS.replyChoices(fixed, t)[0].sub, 'chat.person.replyAutoSubPlain(Kim Muster)');
+    assert.equal(CS.replyPref({ ...c, person: { ...c.person, replyPref: '<b>' } }), 'auto');
+    // without a GateControl way „Immer <Netz>“ has nothing to fall back to
+    const two = { ...c, person: { ...c.person, ways: [c.person.ways[1], { way: 'signal', label: 'Signal', conversationId: 42, bridge: SIG, can: { send: true } }] } };
+    assert.equal(CS.gcWayOf(two), null);
+    assert.equal(CS.replyChoices(two, t)[1].sub, null);
+    assert.deepEqual(CS.replyChoices({ id: 1, kind: 'direct' }, t), []);
+  });
+
+  it('„Immer WhatsApp“, but WhatsApp is not connected: the line under the composer names it', () => {
+    assert.equal(CS.replyFallback(kim()), null);
+    const fb = kim({ replyPref: 'whatsapp', reply: { way: 'gatecontrol', label: 'GateControl', conversationId: 40, fallback: true } });
+    assert.equal(CS.replyFallback(fb), 'WhatsApp');
+    assert.equal(CS.replyFallback(kim({ replyPref: 'auto', reply: { way: 'gatecontrol', conversationId: 40, fallback: true } })), null);
+  });
+
+  it('the plus menu: everything the person can get, GateControl’s own kinds with its logo', () => {
+    // text over WhatsApp (sends a location): files and location over WhatsApp, polls & co. with the logo
+    assert.deepEqual(CS.plusMenu(kim(), {}), { files: true, location: 'text', gc: true, mark: true });
+    // text over Signal: the location goes to GateControl (with the logo)
+    assert.deepEqual(CS.plusMenu(kim({}, SIG), {}), { files: true, location: 'gc', gc: true, mark: true });
+    // text over GateControl: as always, no logos
+    const g = kim({ reply: { way: 'gatecontrol', label: 'GateControl', conversationId: 40 } });
+    assert.deepEqual(CS.plusMenu(g, {}), { files: true, location: 'text', gc: true, mark: false });
+    // a chat over a bridge alone: no GateControl kinds; a location only where the bridge sends one
+    const wa = { id: 41, kind: 'direct', title: 'Kim M.', bridge: WA, can: { send: true } };
+    assert.deepEqual(CS.plusMenu(wa, {}), { files: true, location: 'text', gc: false, mark: true });
+    assert.deepEqual(CS.plusMenu({ ...wa, bridge: SIG }, {}), { files: true, location: null, gc: false, mark: true });
+    assert.equal(CS.bridgeTakesLocation(wa), true);
+    assert.equal(CS.bridgeTakesLocation({ ...wa, bridge: SIG }), false);
+    // a person without a GateControl way over Signal: no location, no GateControl kinds
+    const c = kim({}, SIG);
+    const noGc = { ...c, person: { ...c.person, ways: [c.person.ways[1]] } };
+    assert.deepEqual(CS.plusMenu(noGc, {}), { files: true, location: null, gc: false, mark: true });
+    // the server's switches
+    assert.equal(CS.plusMenu(kim(), { location: false }).location, null);
+    assert.equal(CS.plusMenu(kim(), { files: false }).files, false);
+    assert.deepEqual(CS.plusMenu(direct(), {}), { files: true, location: 'text', gc: true, mark: false });
+  });
+
+  it('„Ortsnachricht · <Ort>“ only at an own message; an incoming location of a bridge is a location', () => {
+    assert.equal(CS.placeMessageLine(msg(1, { mine: true, placeMessage: { name: 'Zuhause', trigger: 'enter' } }), t), 'chat.msg.placeMessage(Zuhause)');
+    assert.equal(CS.placeMessageLine(msg(1, { mine: false, placeMessage: { name: 'Zuhause' } }), t), null);
+    assert.equal(CS.placeMessageLine(msg(1, { mine: true, placeMessage: null }), t), null);
+    assert.equal(CS.placeMessageLine(msg(1, { mine: true, deleted: true, placeMessage: { name: 'Zuhause' } }), t), null);
+    assert.equal(CS.placeMessageLine(msg(1, { mine: true, placeMessage: { name: '  ' } }), t), null);
+    const loc = msg(5, { kind: 'location', text: null, location: { lat: 51.31, lon: 7.41, label: 'Schwimmbad Nord' }, bridge: { sender: { contactId: 7, name: 'Kim Muster' }, placeholder: null } });
+    assert.equal(CS.isShownKind(loc), true);
+    assert.equal(CS.placeholderOf(loc), null);
+  });
+});
+
 describe('chat-state: Signal (Messenger 1.23, Brücken Stufe 7a)', () => {
   const sg = (extra = {}) => ({ id: 'signal', state: 'running', allowed: true, lock: null, consent: true, outdated: false, logins: [], flows: ['qr'], history: { maxDays: 30, phoneConfirms: true }, ...extra });
   const sgChat = (extra = {}) => ({ id: 31, kind: 'direct', title: 'Kim Muster', members: [{ userId: 7 }], bridge: { network: 'signal', label: 'Signal', state: null, closed: false }, ...extra });

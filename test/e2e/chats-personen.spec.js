@@ -2,7 +2,7 @@
 
 const { test, expect } = require('./support/fixtures');
 const { setupWithApiKey } = require('./support/ui');
-const { FEATURES_V2A, FEATURES_V2B } = require('./support/messenger-mock');
+const { FEATURES_V2A, FEATURES_V2B, FEATURES_V127 } = require('./support/messenger-mock');
 
 // Messenger 1.21 (Chats v2, Teil B): persons — the chat with Anna's GateControl account and her WhatsApp chat
 // („Schatzimausi 💕“) as ONE entry: the logos of the ways behind the name, found by every name, the shared history by
@@ -91,7 +91,9 @@ test.describe('chats – persons (Messenger 1.21)', () => {
     await shots(page, 'person-liste');
 
     await row.click();
-    await expect(cv.locator('.cv-head .cv-head-sub')).toHaveText('GateControl · WhatsApp');
+    // 1.27: under the name only the logos of the ways („GateControl · WhatsApp“ is their label)
+    await expect(cv.locator('.cv-head .cv-head-sub')).toHaveAttribute('aria-label', 'GateControl · WhatsApp');
+    await expect(cv.locator('.cv-head .cv-head-sub')).toHaveText('');
     await expect(cv.locator('.cv-head .cv-head-ways .cv-way')).toHaveCount(2);
     const ids = () => cv.locator('.cv-msgs .cv-msg').evaluateAll((l) => l.map((n) => Number(n.getAttribute('data-id'))));
     await expect.poll(ids).toEqual([g1.id, w1.id, g2.id, w2.id]);
@@ -112,14 +114,15 @@ test.describe('chats – persons (Messenger 1.21)', () => {
     await expect.poll(() => ms.people21.reads.at(-1)).toEqual({ personId: pid, upTo: w2.id });
   });
 
-  test('sending without a choice of way: „Nachricht über WhatsApp“ and its line, then back to GateControl', async ({ launchApp, mock }) => {
+  test('sending without a choice of way: „Nachricht über WhatsApp“ (no line above the composer), then back to GateControl', async ({ launchApp, mock }) => {
     const { ms, gc, wa } = setup(mock);
     const { page } = await openChats(launchApp, mock);
     const cv = page.locator('#page-chats');
     await cv.locator(`.cv-row[data-id="${gc}"]`).click();
     const input = cv.locator('.cv-input');
     await expect(input).toHaveAttribute('placeholder', 'Nachricht über WhatsApp');
-    await expect(cv.locator('.cv-wayhint')).toHaveText('Geht über WhatsApp. Die Verschlüsselung von WhatsApp endet an der Brücke neben deinem Server.');
+    // 1.27: the placeholder names the way — no line about WhatsApp's encryption above the composer
+    await expect(cv.locator('.cv-wayhint')).toHaveCount(0);
     await expect(cv.locator('.cv-select-way, .cv-way-pick')).toHaveCount(0);
     await shots(page, 'person-senden');
     await input.fill('Bin gleich da');
@@ -127,7 +130,7 @@ test.describe('chats – persons (Messenger 1.21)', () => {
     await expect.poll(() => ms.messages(wa).some((m) => m.text === 'Bin gleich da')).toBe(true);
     expect(ms.messages(gc).some((m) => m.text === 'Bin gleich da')).toBe(false);
     expect(ms.log.calls.some((c) => c.method === 'POST' && /^persons\/\d+\/messages$/.test(c.route))).toBe(true);
-    // Anna writes inside GateControl: the next answer goes there, the line goes
+    // Anna writes inside GateControl: the next answer goes there
     ms.receive(gc, { text: 'Ich warte am Eingang.' });
     await expect(input).toHaveAttribute('placeholder', 'Nachricht über GateControl');
     await expect(cv.locator('.cv-wayhint')).toHaveCount(0);
@@ -164,7 +167,9 @@ test.describe('chats – persons (Messenger 1.21)', () => {
     await expect(cv.locator('.cv-sugg')).toHaveCount(0);
     const head = cv.locator('.cv-head .cv-head-tx b');
     await expect(head).toHaveText('Schatzimausi 💕');
-    await expect(cv.locator('.cv-head .cv-head-sub')).toHaveText('GateControl · WhatsApp');
+    // 1.27: under the name only the logos of the ways („GateControl · WhatsApp“ is their label)
+    await expect(cv.locator('.cv-head .cv-head-sub')).toHaveAttribute('aria-label', 'GateControl · WhatsApp');
+    await expect(cv.locator('.cv-head .cv-head-sub')).toHaveText('');
     await expect(cv.locator(`.cv-row[data-id="${wa}"]`)).toHaveCount(0);
   });
 
@@ -234,5 +239,77 @@ test.describe('chats – persons (Messenger 1.21)', () => {
     await expect.poll(() => ms.people21.recognition).toEqual({ asked: true, allowed: true });
     await expect(set.locator('.cv-br-row[data-net="whatsapp"]')).toHaveAttribute('data-state', 'linked');
     await expect(set.locator('.cv-br-rec-head')).toHaveCount(0);
+  });
+});
+
+test.describe('chats – Versandweg, Plus-Menü (Messenger 1.27)', () => {
+  test('„Nachrichten senden über“: Automatisch · gerade WhatsApp, „Immer GateControl“ → PUT persons/:id, the placeholder follows', async ({ launchApp, mock }) => {
+    const { ms, gc, pid } = setup(mock, { features: FEATURES_V127 });
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    await cv.locator(`.cv-row[data-id="${gc}"]`).click();
+    const input = cv.locator('.cv-input');
+    await expect(input).toHaveAttribute('placeholder', 'Nachricht über WhatsApp');
+    await cv.locator('.cv-head-who').click();
+    const sec = cv.locator('.cv-info .cv-reply-sec');
+    await expect(sec.locator('.cv-sec')).toHaveText('Nachrichten senden über');
+    await expect(sec.locator('.cv-rp-opt b')).toHaveText(['Automatisch', 'Immer GateControl', 'Immer WhatsApp']);
+    await expect(sec.locator('.cv-rp-opt[data-pref="auto"] small')).toHaveText('Weg der letzten Nachricht von Anna · gerade WhatsApp');
+    await expect(sec.locator('.cv-rp-opt[data-pref="whatsapp"] small')).toHaveText('Ist WhatsApp nicht verbunden, geht es über GateControl');
+    await expect(sec.locator('.cv-rp-opt[data-pref="auto"] input')).toBeChecked();
+    await expect(sec.locator('.cv-note')).toHaveText('Antwortest du auf eine Nachricht, geht die Antwort weiter über deren Weg.');
+    await shots(page, 'person-versandweg');
+    await sec.locator('.cv-rp-opt[data-pref="gatecontrol"] input').check();
+    await expect.poll(() => ms.people21.replyPrefs.at(-1)).toEqual({ personId: pid, method: 'PUT', replyPref: 'gatecontrol' });
+    await expect(input).toHaveAttribute('placeholder', 'Nachricht über GateControl');
+    await input.fill('Mach ich.');
+    await input.press('Enter');
+    await expect.poll(() => ms.messages(gc).some((m) => m.text === 'Mach ich.')).toBe(true);
+  });
+
+  test('„Immer WhatsApp“ while WhatsApp is signed out: the line „WhatsApp nicht verbunden …“, the text goes over GateControl', async ({ launchApp, mock }) => {
+    mock.setPush({ topics: [], items: [] });
+    const ms = mock.setMessenger({ features: FEATURES_V127 });
+    ms.bridge.networks[0].logins = [LINKED_LOGIN];
+    ms.bridge.networks[0].consent = '2026-11-01T10:00:00.000Z';
+    const gc = ms.addConv({ kind: 'direct', members: [7, 8] });
+    const wa = ms.addBridgeConv({ title: 'Schatzimausi 💕', state: 'logged_out' });
+    ms.at(ms.addBridgeMsg(wa, { text: 'Bis gleich 💕', contact: SCHATZ }), T0);
+    const pid = ms.addPerson({ convIds: [gc, wa], userId: 8 });
+    ms.persons.get(pid).replyPref = 'whatsapp';
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    await cv.locator(`.cv-row[data-id="${gc}"]`).click();
+    await expect(cv.locator('.cv-input')).toHaveAttribute('placeholder', 'Nachricht über GateControl');
+    await expect(cv.locator('.cv-wayhint.is-fallback')).toHaveText('WhatsApp nicht verbunden – die Nachricht geht über GateControl.');
+    await shots(page, 'person-fallback');
+  });
+
+  test('the plus menu over WhatsApp: everything, GateControl’s own kinds with its logo', async ({ launchApp, mock }) => {
+    const { gc } = setup(mock, { features: FEATURES_V127 });
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    await cv.locator(`.cv-row[data-id="${gc}"]`).click();
+    await expect(cv.locator('.cv-input')).toHaveAttribute('placeholder', 'Nachricht über WhatsApp');
+    await cv.locator('.cv-attach-btn').click();
+    const menu = cv.locator('.cv-menu');
+    // WhatsApp takes no files here (the mock's bridge without media) and no location: the location goes over GateControl
+    await expect(menu.locator('.cv-menu-item[data-item="file"]')).toHaveCount(0);
+    for (const id of ['location', 'poll', 'event']) await expect(menu.locator(`.cv-menu-item[data-item="${id}"] .cv-menu-gc`)).toHaveAttribute('aria-label', 'Geht über GateControl');
+    await expect(menu.locator('.cv-menu-gcnote')).toHaveText('Mit Logo: geht über GateControl, auch wenn dein Text gerade über WhatsApp geht.');
+    await shots(page, 'person-plusmenue');
+  });
+
+  test('a location the bridge sends: in the menu without the logo', async ({ launchApp, mock }) => {
+    const { ms, gc } = setup(mock, { features: FEATURES_V127 });
+    ms.bridge.location = true;
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    await cv.locator(`.cv-row[data-id="${gc}"]`).click();
+    await cv.locator('.cv-attach-btn').click();
+    const menu = cv.locator('.cv-menu');
+    await expect(menu.locator('.cv-menu-item[data-item="location"]')).toBeVisible();
+    await expect(menu.locator('.cv-menu-item[data-item="location"] .cv-menu-gc')).toHaveCount(0);
+    await expect(menu.locator('.cv-menu-item[data-item="poll"] .cv-menu-gc')).toHaveCount(1);
   });
 });

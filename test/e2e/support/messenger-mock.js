@@ -26,6 +26,9 @@
  * Messenger 1.21 (FEATURES_V2B, `chat_people`): persons — addPerson({ convIds, userId, nameFrom }); with ?people=1 the
  * list folds the ways (`person`, `folded`), persons/… routes (messages by time with `way`, send over the way of the
  * newest incoming message, read, search, patch, archive, merge, split), `suggestions`, `recognition` (GET bridges).
+ *
+ * Messenger 1.27 (FEATURES_V127, `placeMessages`): `person.replyPref`, PUT persons/:id { replyPref } (people21.replyPrefs),
+ * `reply.fallback` when the chosen way cannot send; `bridge.location` names `location` in `supports`.
  */
 
 const crypto = require('crypto');
@@ -54,6 +57,8 @@ const FEATURES_STAGE4C = Object.freeze({ ...FEATURES_STAGE5, bridge_contacts: tr
 const FEATURES_V2A = Object.freeze({ ...FEATURES_STAGE4C, bridge_channels: true });
 // Messenger 1.21 (Chats v2, Teil B): persons — one entry per human over several ways
 const FEATURES_V2B = Object.freeze({ ...FEATURES_V2A, chat_people: true });
+// Messenger 1.27: „Nachrichten senden über“ per person, the plus menu with everything, place messages
+const FEATURES_V127 = Object.freeze({ ...FEATURES_V2B, placeMessages: true });
 const WA_MEDIA_TYPES = Object.freeze({ image: ['image/jpeg', 'image/png', 'image/webp'], video: ['video/mp4'], voice: ['audio/ogg', 'audio/mp4', 'audio/aac', 'audio/mpeg'], file: null });
 
 function createMessenger({ emit = () => {}, features = null, familie = false } = {}) {
@@ -88,6 +93,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     sendFails: null,          // a reason: the bridge does not take the next message (stored as not sent)
     // 1.15: files cross (supports + mediaTypes); the new chat by number (features.bridge_new_chat)
     media: false,
+    location: false,          // 1.27 (gc.bridges 14): the bridge sends a location (`supports` names it)
     scanPending: 0,           // so many sends of a file are refused with 423 scan_pending first
     numbers: new Map(),       // '+49…' → name of the numbers "at WhatsApp"
     lookups: 0,
@@ -126,7 +132,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   // recognised by the own WhatsApp (null: GateControl has no such call); log.persons: what was asked of persons/…
   const persons = new Map();
   let nextPerson = 1;
-  const people21 = { suggestions: [], answers: [], recognition: null, merges: [], splits: [], reads: [], names: [] };
+  const people21 = { suggestions: [], answers: [], recognition: null, merges: [], splits: [], reads: [], names: [], replyPrefs: [] };
 
   const person = (id) => {
     const u = users.find((x) => x.id === id);
@@ -445,7 +451,7 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
         bridge: {
           network: c.bridge.network, label: 'WhatsApp', state: c.bridge.state, closed: !!c.bridge.closed,
           ...(chanWord() ? { channel: !!c.bridge.channel, readOnly: !!c.bridge.readOnly, ...(c.bridge.channel ? { reactions: c.bridge.reactions } : {}) } : {}),
-          supports: ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing', ...(bridge.media ? ['image', 'video', 'voice', 'file'] : [])],
+          supports: ['text', 'reply', 'reaction', 'edit', 'delete', 'read', 'typing', ...(bridge.media ? ['image', 'video', 'voice', 'file'] : []), ...(bridge.location ? ['location'] : [])],
           ...(bridge.media ? { mediaTypes: WA_MEDIA_TYPES } : {}),
         },
         avatarMediaId: c.avatarMediaId || null,
@@ -485,6 +491,14 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     }
     let pick = best ? best.c : lead;
     if (pick.bridge && gc && !(pick.bridge.state === 'ok' && !pick.bridge.closed)) pick = gc;
+    // 1.27: a fixed way while it can send, else GateControl with `fallback`
+    let fallback = false;
+    const pref = p.replyPref || 'auto';
+    const want = pref !== 'auto' ? cs.find((c) => wayName(c) === pref) : null;
+    if (want) {
+      if (!want.bridge || (want.bridge.state === 'ok' && !want.bridge.closed)) pick = want;
+      else if (gc && gc !== want) { pick = gc; fallback = true; }
+    }
     const ways = views.slice().sort((x, y) => (x.bridge ? 1 : 0) - (y.bridge ? 1 : 0) || x.id - y.id).map((v) => ({
       way: v.bridge ? v.bridge.network : 'gatecontrol', label: v.bridge ? v.bridge.label : 'GateControl', conversationId: v.id, title: v.title,
       avatarUrl: v.avatarUrl || null, avatarMediaId: v.avatarMediaId || null, unread: v.unread, muted: v.muted, archived: !!v.archived,
@@ -500,7 +514,8 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       updatedAt: iso(Math.max(...cs.map((c) => c.updatedAt))),
       person: {
         id: p.id, name, nameFrom: src ? src.id : (acc ? 'account' : null), userId: p.userId, conversationId: lead.id, names, ways,
-        reply: { way: wayName(pick), label: pick.bridge ? 'WhatsApp' : 'GateControl', conversationId: pick.id }, createdAt: iso(p.createdAt),
+        reply: { way: wayName(pick), label: pick.bridge ? 'WhatsApp' : 'GateControl', conversationId: pick.id, ...(fallback ? { fallback: true } : {}) }, createdAt: iso(p.createdAt),
+        ...(features && features.placeMessages === true ? { replyPref: pref } : {}),
       },
     };
   }
@@ -557,7 +572,15 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
     const all = p.ways.map((id) => convs.get(id));
     const touch = () => { for (const x of all) x.updatedAt = Date.now(); };
     if (seg.length === 2 && method === 'GET') return ok(p);
-    if (seg.length === 2 && method === 'PATCH') {
+    if (seg.length === 2 && (method === 'PATCH' || method === 'PUT')) {
+      // 1.27: replyPref — auto | gatecontrol | a network the person has (else bad_request)
+      if (body.replyPref !== undefined) {
+        const v = body.replyPref === null ? 'auto' : body.replyPref;
+        if (typeof v !== 'string' || !/^[a-z]{2,20}$/.test(v)) return json(400, { ok: false, code: 'invalid' }), true;
+        if (v !== 'auto' && !all.some((x) => wayName(x) === v)) return json(400, { ok: false, code: 'bad_request' }), true;
+        p.replyPref = v;
+        people21.replyPrefs.push({ personId: p.id, method, replyPref: v });
+      }
       if (body.name !== undefined) { p.nameFrom = body.name; people21.names.push(body.name); }
       for (const x of all) if (body.notify === 'all' || body.notify === 'none') x.notify = body.notify;
       touch();
@@ -1176,4 +1199,4 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
   return api;
 }
 
-module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141, FEATURES_LINKED, FEATURES_BRIDGED, FEATURES_STAGE4, FEATURES_STAGE5, FEATURES_STAGE4C, FEATURES_V2A, FEATURES_V2B };
+module.exports = { createMessenger, PLUGIN, FEATURES_14, FEATURES_141, FEATURES_LINKED, FEATURES_BRIDGED, FEATURES_STAGE4, FEATURES_STAGE5, FEATURES_STAGE4C, FEATURES_V2A, FEATURES_V2B, FEATURES_V127 };

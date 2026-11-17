@@ -1039,6 +1039,86 @@
 		return wayConv(c, replyWay(c) || ways.find((w) => w && !w.bridge) || ways[0]);
 	}
 
+	// ── Messenger 1.27: „Nachrichten senden über“, the plus menu, a location over a bridge, place messages ──
+
+	const REPLY_AUTO = 'auto';
+
+	/** „Nachrichten senden über“ of a person: 'auto' | 'gatecontrol' | a network ('auto' when unknown). */
+	function replyPref(c) {
+		const v = isPerson(c) ? c.person.replyPref : null;
+		return typeof v === 'string' && (v === REPLY_AUTO || WAY_RE.test(v)) ? v : REPLY_AUTO;
+	}
+
+	/** Does the server know the choice (`person.replyPref` present, Messenger 1.27)? */
+	function hasReplyPref(c) {
+		return isPerson(c) && typeof c.person.replyPref === 'string';
+	}
+
+	/** The person's GateControl way, or null. */
+	function gcWayOf(c) {
+		if (!isPerson(c)) return null;
+		return c.person.ways.find((w) => w && w.way === GC_WAY && !w.bridge) || null;
+	}
+
+	/**
+	 * The choices of „Nachrichten senden über“ → [{ value, way, label, sub }]: Automatisch (· gerade <Weg>), then
+	 * „Immer <Weg>“ for each way the person has (each kind once, GateControl first).
+	 */
+	function replyChoices(c, t) {
+		if (!isPerson(c)) return [];
+		const name = str(c.person.name) || str(c.title);
+		const rw = replyPref(c) === REPLY_AUTO ? replyWay(c) : null;
+		const out = [{ value: REPLY_AUTO, way: null, label: t('chat.person.replyAuto'), sub: rw ? t('chat.person.replyAutoSub', { name, way: wayLabel(rw.way, rw.label) }) : t('chat.person.replyAutoSubPlain', { name }) }];
+		const gc = !!gcWayOf(c);
+		for (const w of personWays(c)) {
+			const sub = w.way === GC_WAY ? t('chat.person.replyGcSub') : (gc ? t('chat.person.replyNetSub', { network: w.label }) : null);
+			out.push({ value: w.way, way: w.way, label: t('chat.person.replyAlways', { way: w.label }), sub });
+		}
+		return out;
+	}
+
+	/** „Immer <Netz>“ cannot send right now and GateControl took over (`person.reply.fallback`) → the network's name, else null. */
+	function replyFallback(c) {
+		if (!isPerson(c) || !c.person.reply || c.person.reply.fallback !== true) return null;
+		const pref = replyPref(c);
+		if (pref === REPLY_AUTO || pref === GC_WAY) return null;
+		const w = c.person.ways.find((x) => x && x.way === pref);
+		return wayLabel(pref, w && w.label);
+	}
+
+	/** Does a chat's bridge send a location (`bridge.supports` names `location`, gc.bridges version 14)? */
+	function bridgeTakesLocation(c) {
+		const b = bridgeOf(c);
+		return !!b && Array.isArray(b.supports) && b.supports.includes('location');
+	}
+
+	/**
+	 * What the plus menu offers for an entry (a chat or a person) → { files, location: 'text' | 'gc' | null, gc, mark }:
+	 * files follow the way of the text; a location goes the way of the text when it carries one, else to the GateControl
+	 * way ('gc'), else not at all; GateControl's own kinds (poll, event, home actions) need a GateControl way (`gc`) —
+	 * `mark`: the text goes over a bridge, so they (and a location to GateControl) carry GateControl's logo.
+	 */
+	function plusMenu(c, features) {
+		const f = features || {};
+		if (!c) return { files: false, location: null, gc: false, mark: false };
+		const tw = isPerson(c) ? sendConv(c) : c;
+		const bridged = !!bridgeOf(tw);
+		const gc = isPerson(c) ? !!gcWayOf(c) : !bridged;
+		let location = null;
+		if (f.location !== false) {
+			if (!bridged || bridgeTakesLocation(tw)) location = 'text';
+			else if (gc) location = 'gc';
+		}
+		return { files: f.files !== false && (!bridged || bridgeTakesFiles(tw)), location, gc, mark: bridged };
+	}
+
+	/** „Ortsnachricht · <Ort>“ at an own message sent by a place message (`placeMessage`, only the sender sees it), else null. */
+	function placeMessageLine(m, t) {
+		const p = m && m.mine && !m.deleted && m.placeMessage && typeof m.placeMessage === 'object' ? m.placeMessage : null;
+		const name = p ? str(p.name).replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+		return name ? t('chat.msg.placeMessage', { name }) : null;
+	}
+
 	/** A message of a person seen in its way (its conversation, else its `way`). */
 	function msgConv(c, m) {
 		if (!isPerson(c)) return c;
@@ -2175,6 +2255,7 @@
 		PRESETS,
 		features14,
 		GC_WAY, isPerson, wayOf, wayLabel, personWays, personSub, replyWay, wayConv, sendConv, msgConv, sourceChips, personNameOptions, personNameValue,
+		replyPref, hasReplyPref, gcWayOf, replyChoices, replyFallback, bridgeTakesLocation, plusMenu, placeMessageLine,
 		mergeNameOptions, mergeRequest, canMergeByHand, filterCandidates,
 		isChannel, channelEntryText, channelNetworks, filterChannels, hasOwnReaction, safeHref, linkify, richText, linkPreview, netGlyph,
 		bridgeOf, bridgeName, bridgeMark, bridgeLabel, bridgeNetworks, bridgeBlock, senderName, quoteName, senderKey, placeholderOf, placeholderText, bridgeFailure,
