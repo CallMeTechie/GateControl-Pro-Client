@@ -53,8 +53,12 @@ api.remoteHost = {
 api.remoteTerm = {
   /** → { devices: [ssh devices], sshRight }; throws { code } (e.g. not_found without the plugin) */
   devices: () => ipcRenderer.invoke('remote-term:devices'),
-  /** → { sessions, hidden, tmux, hostKey } */
+  /** → { sessions, hidden, tmux, hostKey, kill, others } (with kill: ids and windowList, Fernzugriff 1.8) */
   tmux: (deviceId) => ipcRenderer.invoke('remote-term:tmux', deviceId),
+  /** { session: '$n', window?: '@n' } → { killed, …the new list } | { error } (tmux_gone / tmux_changed: reload) */
+  tmuxKill: (deviceId, o) => ipcRenderer.invoke('remote-term:tmux-kill', deviceId, o),
+  /** ['$n', …] → { killed, skipped, …the new list } | { error } */
+  tmuxKillDetached: (deviceId, ids) => ipcRenderer.invoke('remote-term:tmux-kill-detached', deviceId, ids),
   /** { deviceId, deviceName, tmux: { attach } | { create } | null, recording, record } → opens the terminal window */
   open: (o) => ipcRenderer.invoke('remote-term:open', o),
   list: () => ipcRenderer.invoke('remote-term:list'),

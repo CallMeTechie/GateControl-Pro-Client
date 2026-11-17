@@ -13,7 +13,9 @@
  * Before a recorded start (recording 'always', or the switch on) the tab shows the hint first; only „Verstanden,
  * verbinden“ asks the plugin for the ticket with record: true.
  *
- * Main window channels (./ipc-pro.js): remote-term:devices / :tmux / :open / :list / :focus; event remote-term:sessions.
+ * Main window channels (./ipc-pro.js): remote-term:devices / :tmux / :tmux-kill / :tmux-kill-detached / :open / :list /
+ * :focus; event remote-term:sessions. Ending tmux sessions and windows (Fernzugriff 1.8) sends only their numbers
+ * ($n, @n); name and creation time come from core's last list, never from the renderer.
  * Terminal window: term:ready, term:input, term:resize, term:trust, term:reconnect, term:close, term:close-all,
  * term:confirm (the recording hint), term:font, term:ask-paste, term:clip-read, term:clip-write, term:select,
  * term:add; events term:init, term:status, term:data, term:pending, term:closing, term:focus.
@@ -24,6 +26,8 @@ const FONT_MIN = 9;
 const FONT_MAX = 28;
 const FONT_DEFAULT = 14;
 const TMUX_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
+const SESSION_ID_RE = /^\$\d{1,6}$/;
+const WINDOW_ID_RE = /^@\d{1,6}$/;
 const MAX_INPUT = 1024 * 1024;
 const codeOf = (err) => (err && typeof err.code === 'string' && /^[a-z0-9_]{1,40}$/.test(err.code) ? err.code : 'failed');
 
@@ -161,6 +165,26 @@ function setupTerminal({ core, apiClient, log, store, t, BrowserWindow, ipcMain,
       cols: 100, rows: 28 };
   }
 
+  const invalid = () => Object.assign(new Error('invalid'), { code: 'invalid' });
+
+  /** „Beenden“ / „Schließen“ in the details: { session: '$n', window?: '@n' }. */
+  function tmuxKill(deviceId, o) {
+    const id = Number(deviceId);
+    const session = o && o.session;
+    const window = o && o.window != null ? o.window : null;
+    if (!Number.isSafeInteger(id) || id <= 0 || typeof session !== 'string' || !SESSION_ID_RE.test(session)
+      || (window !== null && (typeof window !== 'string' || !WINDOW_ID_RE.test(window)))) throw invalid();
+    return rt.tmuxKill(id, window === null ? { session } : { session, window });
+  }
+
+  /** „Alle getrennten Sitzungen beenden“: the ticked ones (1–50). */
+  function tmuxKillDetached(deviceId, ids) {
+    const id = Number(deviceId);
+    if (!Number.isSafeInteger(id) || id <= 0 || !Array.isArray(ids) || !ids.length || ids.length > 50
+      || !ids.every((x) => typeof x === 'string' && SESSION_ID_RE.test(x))) throw invalid();
+    return rt.tmuxKillDetached(id, [...ids]);
+  }
+
   /** „Verbinden“ in the details: straight on, or the recording hint in a tab of the terminal window first. */
   async function open(o) {
     const p = checkOpen(o);
@@ -233,6 +257,8 @@ function setupTerminal({ core, apiClient, log, store, t, BrowserWindow, ipcMain,
   const channels = {
     'remote-term:devices': safe(() => rt.devices(), { devices: [], sshRight: false }),
     'remote-term:tmux': safe((_e, deviceId) => rt.tmux(Number(deviceId))),
+    'remote-term:tmux-kill': safe((_e, deviceId, o) => tmuxKill(deviceId, o)),
+    'remote-term:tmux-kill-detached': safe((_e, deviceId, ids) => tmuxKillDetached(deviceId, ids)),
     'remote-term:open': safe((_e, o) => open(o || {})),
     'remote-term:list': () => sessions(),
     'remote-term:focus': (_e, id) => { showWindow(typeof id === 'string' ? id : null); return true; },
