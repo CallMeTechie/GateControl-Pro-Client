@@ -415,7 +415,25 @@
 			let familiePlace = ev && ev.place && ev.place.familiePlaceId != null ? ev.place : null;
 			const placeSel = el('select', { class: 'inp cv-select', hidden: true, 'aria-label': t('chat.event.familiePlace') }, [el('option', { value: '', text: t('chat.event.familiePlace') })]);
 			let places = [];
-			if (fam.places) {
+			// Messenger 1.28 (`profilePlaces`): the one place choice — own places of „Meine Orte“ and Familie's, chips plus
+			// „Alle Orte…“ (places-view.js). A profile place goes as a copy { label, lat, lon }, a Familie place as before
+			// with familiePlaceId; the chosen profile place is marked „zuletzt genutzt“. Without the word: as before.
+			const PS = root.GCPlacesState;
+			const pick = PS && root.GCPlacesView && typeof api.pickPlaces === 'function' ? await Promise.resolve(api.pickPlaces()).catch(() => null) : null;
+			let picker = null;
+			let picked = null;
+			if (pick && pick.ok !== false && pick.profile === true) {
+				const mine = kit.places ? await Promise.resolve(kit.places.list()).catch(() => null) : null;
+				const options = PS.mergeOptions(pick.places, mine && mine.ok !== false ? mine.places : []);
+				const cur = ev && ev.place ? ev.place : null;
+				picked = cur ? (cur.familiePlaceId != null ? options.find((x) => x.familie && String(x.id) === String(cur.familiePlaceId))
+					: options.find((x) => x.name === cur.label && x.hasPoint && Number.isFinite(cur.lat) && PS.distanceM(x.lat, x.lon, cur.lat, cur.lon) <= 30)) || null : null;
+				picker = root.GCPlacesView.picker({
+					t, getLocale: () => (kit.getLocale ? kit.getLocale() : 'de'), options, selected: picked, api: kit.places, openExternal: kit.openExternal,
+					onChange: (x) => { picked = x; if (x) place.value = x.name; },
+				});
+				place.addEventListener('input', () => { if (picked && place.value.trim() !== picked.name) { picked = null; picker.set(null); } });
+			} else if (fam.places) {
 				const r = await api.places().catch(() => null);
 				places = r && r.ok !== false && Array.isArray(r.places) ? r.places : [];
 				for (const p of places) placeSel.appendChild(el('option', { value: String(p.id), text: p.name || '' }));
@@ -427,7 +445,19 @@
 				familiePlace = p ? { label: p.name, familiePlaceId: p.id, lat: p.lat, lon: p.lon } : null;
 				if (p) place.value = p.name || '';
 			});
-			place.addEventListener('input', () => { if (familiePlace && place.value !== familiePlace.label) { familiePlace = null; placeSel.value = ''; } });
+			if (!picker) place.addEventListener('input', () => { if (familiePlace && place.value !== familiePlace.label) { familiePlace = null; placeSel.value = ''; } });
+			/** The event's place: the choice (a copy), the place it had, or the text alone. */
+			const placeBody = () => {
+				const text = place.value.trim();
+				if (!text) return null;
+				if (picker) {
+					if (picked && text === picked.name) return PS.eventPlace(picked, text);
+					return ev && ev.place && ev.place.label === text ? ev.place : { label: text };
+				}
+				return familiePlace && familiePlace.label === text ? familiePlace : { label: text };
+			};
+			/** „zuletzt genutzt“ of a profile place the event took. */
+			const markUsed = () => { if (picker && picked && picked.profileId && kit.places && place.value.trim() === picked.name) Promise.resolve(kit.places.markUsed(picked.profileId)).catch(() => {}); };
 			const desc = el('textarea', { class: 'inp cv-textarea', rows: '2', maxlength: '1000', placeholder: t('chat.event.descPh'), 'aria-label': t('chat.event.desc') });
 			desc.value = ev && ev.description ? ev.description : '';
 			const list = el('textarea', { class: 'inp cv-textarea', rows: '3', placeholder: t('chat.event.checklistPh'), 'aria-label': t('chat.event.checklist') });
@@ -447,7 +477,7 @@
 					el('label', { class: 'cv-field' }, [el('span', { text: t('chat.event.ends') }), ends]),
 				]),
 				el('div', { class: 'cv-prefs' }, [allDay.row]),
-				el('div', { class: 'cv-field' }, [el('span', { text: t('chat.event.place') }), el('div', { class: 'cv-row-inline' }, [place, placeSel])]),
+				el('div', { class: 'cv-field' }, [el('span', { text: t('chat.event.place') }), el('div', { class: 'cv-row-inline' }, [place, placeSel]), picker ? picker.el : null]),
 				el('label', { class: 'cv-field' }, [el('span', { text: t('chat.event.desc') }), desc]),
 				el('label', { class: 'cv-field' }, [el('span', { text: t('chat.event.checklist') }), list]),
 				el('div', { class: 'cv-prefs' }, [rsvp.row, guests.row, cal && cal.row, dep && dep.row].filter(Boolean)),
@@ -462,7 +492,7 @@
 				if (e && new Date(e) < new Date(s)) { msg.textContent = t('chat.event.endBeforeStart'); return null; }
 				const out = {
 					title: title.value.trim(), startsAt: s, endsAt: e || null, allDay: allDay.get(),
-					place: place.value.trim() ? (familiePlace && familiePlace.label === place.value.trim() ? familiePlace : { label: place.value.trim() }) : null,
+					place: placeBody(),
 					description: desc.value.trim() || null,
 					checklist: list.value.split('\n').map((x) => x.trim()).filter(Boolean).slice(0, lim.eventChecklistMax || 20),
 					rsvp: rsvp.get(), guests: guests.get(), reminderMin: Number(rem.value),
@@ -482,10 +512,12 @@
 						if (!e.description) delete e.description;
 						const err = await send(c, { kind: 'event', event: e });
 						if (err) { msg.textContent = err; return false; }
+						markUsed();
 						return true;
 					}
 					const r = await api.event(m.id, 'edit', { patch: e }).catch((x) => ({ ok: false, error: x && x.message }));
 					if (!r || r.ok === false) { msg.textContent = CS.errorText(r, t); return false; }
+					markUsed();
 					return true;
 				} },
 			], { wide: true });

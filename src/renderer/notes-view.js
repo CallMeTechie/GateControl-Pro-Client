@@ -134,6 +134,8 @@
 	 * @param {(url: string) => void} o.openExternal - a link of a note in the browser (core checks it)
 	 * @param {(st: object) => void} [o.onStatus] - availability (nav entry)
 	 * @param {(n: number) => void} [o.onCount] - what "Mein Tag" counts (the nav badge)
+	 * @param {object} [o.places] - window.gatecontrol.places: plugin 1.8.0 (`profilePlaces`) loads „Meine Orte“ again on a change
+	 * @param {() => void} [o.openPlaces] - the page „Meine Orte“ of this app; [o.placesShown] whether it is there
 	 * @returns {{ show(), hide(), open(ctx), focusQuick(), refresh(), status(), available(), relabel() }}
 	 */
 	function mount(o) {
@@ -1428,7 +1430,8 @@
 					c.none !== false && cur ? btn(t('notes.place.remove'), () => { d.close(); c.onSave(null, ''); }, 'btn-danger', null, { 'data-act': 'place-none' }) : null,
 					btn(t('notes.cancel'), () => d.close(), 'btn-ghost'),
 					btn(t('notes.save'), () => {
-						const arg = NS.placeChoiceArg(st.sel, st);
+						// plugin 1.8.0: a place of „Meine Orte“ by its reference (profile:<id>)
+						const arg = st.all && st.all.profile ? NS.profileArg(NS.placeChoiceArg(st.sel, st), st.all.places) : NS.placeChoiceArg(st.sel, st);
 						const text = NS.placeChoiceText(st.sel, st, { places: [...(st.all ? st.all.places : []), ...(c.options || [])], family: st.all ? st.all.family : [] }, t) || (cur ? cur.name : '');
 						d.close();
 						c.onSave(arg, text);
@@ -1441,7 +1444,7 @@
 			Promise.all([Promise.resolve(api.places()).catch(() => null), loadMe()]).then(([r]) => {
 				if (!d.box.isConnected) return;
 				if (!ok(r)) { if (r) fail(r); st.all = { places: [], family: [], favs: [] }; draw(); return; }
-				st.all = { places: r.places || [], family: r.family || [], favs: r.favs || [] };
+				st.all = { places: r.places || [], family: r.family || [], favs: r.favs || [], profile: r.profile === true };
 				clear(near);
 				const opts = NS.nearOptions(st.all);
 				for (const x of opts) near.appendChild(el('option', { value: x.value, text: t('notes.place.nearOf', { name: x.label }) }));
@@ -1523,7 +1526,7 @@
 		async function reloadPlaces() {
 			if (!placesOn()) { S.places = null; return; }
 			const r = await Promise.resolve(api.places()).catch(() => null);
-			if (ok(r)) S.places = { places: r.places || [], family: r.family || [], favs: r.favs || [] };
+			if (ok(r)) S.places = { places: r.places || [], family: r.family || [], favs: r.favs || [], profile: r.profile === true, notMoved: r.notMoved || [] };
 			if (S.view.kind === 'sources') renderMain();
 		}
 
@@ -1556,22 +1559,50 @@
 			const all = S.places;
 			const again = () => reloadPlaces();
 			mine.appendChild(el('div', { class: 'nz-set-h' }, [el('b', { class: 'grow', text: t('notes.place.mine') }), all && canWrite() ? btn(t('notes.place.new'), () => placeEditor(null, all, again), 'btn-sec', 'plus', { 'data-act': 'place-new' }) : null]));
+			// plugin 1.8.0 (`profilePlaces`): the places are those of „Meine Orte“ in the profile — the page of this app,
+			// what the move could not take
+			if (all && all.profile) {
+				const page = typeof o.openPlaces === 'function' && (typeof o.placesShown !== 'function' || o.placesShown());
+				mine.appendChild(el('div', { class: 'nz-place-profile', 'data-box': 'profile' }, [
+					el('span', { class: 'hint grow', text: t('notes.place.profileHint') }),
+					page ? btn(t('notes.place.openMine'), () => o.openPlaces(), 'btn-sec', 'place', { 'data-act': 'open-places' }) : null,
+				]));
+				if (all.notMoved && all.notMoved.length) {
+					const n = all.notMoved.length;
+					mine.appendChild(el('div', { class: 'note note-warn', 'data-box': 'not-moved', text: t(`notes.place.notMoved_${n === 1 ? 'one' : 'other'}`, { n, names: all.notMoved.map((x) => x.name).join(', ') }) }));
+				}
+			}
 			if (!all) mine.appendChild(el('p', { class: 'hint', text: t('notes.place.loading') }));
 			else {
 				for (const f of all.family) {
 					mine.appendChild(el('div', { class: 'nz-place-row', 'data-place': `f:${f.familyId}` }, [el('div', { class: 'grow' }, [el('b', { text: f.name }), el('span', { class: 'hint nz-block', text: t('notes.place.family') })]), el('span', { class: 'nz-place-ic', title: t('notes.place.family') }, [icon('home', 16)])]));
 				}
+				const PV = root.GCPlacesView;
 				for (const x of all.places) {
 					const favs = x.favFor || [];
-					const sub = NS.placeSub(x, t);
-					mine.appendChild(el('div', { class: 'nz-place-row', 'data-place': `p:${x.id}` }, [
+					// plugin 1.8.0: the symbol and who sees the place (fields of the profile)
+					const vis = all.profile && x.visibility ? t(`places.visShort.${x.visibility}`) : null;
+					const sub = [NS.placeSub(x, t), vis].filter(Boolean).join(' · ');
+					mine.appendChild(el('div', { class: 'nz-place-row', 'data-place': `p:${x.id}`, 'data-icon': all.profile && x.icon ? x.icon : null }, [
+						all.profile && PV ? PV.badge({ icon: x.icon }, 28) : null,
 						el('div', { class: 'grow' }, [el('b', { text: x.name }), sub ? el('span', { class: 'hint nz-block', text: sub }) : null]),
 						favs.length && canWrite() ? ib('x', t('notes.place.forget', { label: favs.map((f) => f.label).join(', ') }), async () => {
 							for (const f of favs) { const r = await api.setPlaceFav(f.key, null); if (!ok(r)) { fail(r); break; } }
 							again();
 						}, false, { 'data-act': 'place-forget' }) : null,
 						canWrite() ? ib('edit', t('notes.place.edit'), () => placeEditor(x, all, again), false, { 'data-act': 'place-edit' }) : null,
-						canWrite() ? ib('trash', t('notes.delete'), async () => { const r = await api.deletePlace(x.id); if (!ok(r)) fail(r); again(); }, false, { 'data-act': 'place-delete' }) : null,
+						canWrite() ? ib('trash', t('notes.delete'), async () => {
+							// plugin 1.8.0: a place another plugin uses asks first who uses it, then deletes it all the same (force)
+							if (all.profile && PV) {
+								const r = await PV.deleteFlow({ place: x, t, remove: (id, opts) => api.deletePlace(id, opts), errorText: (res) => NS.errText(res, t) });
+								if (typeof r === 'string') toast(r, 'error');
+								if (r === true) again();
+								return;
+							}
+							const r = await api.deletePlace(x.id);
+							if (!ok(r)) fail(r);
+							again();
+						}, false, { 'data-act': 'place-delete' }) : null,
 					]));
 				}
 				if (!all.family.length && !all.places.length) mine.appendChild(el('p', { class: 'hint', text: t('notes.place.mineNone') }));
@@ -2415,6 +2446,15 @@
 				// plugin 1.5.0: the switches of places may have changed on another device — `me.places` says what holds now
 				if (placesOn() && S.shown && c && Array.isArray(c.what) && c.what.includes('places')) loadMe().then(() => soon(0));
 				else soon();
+			});
+		}
+		// „Meine Orte“ changed (here, on another device, by a plugin): plugin 1.8.0 keeps its places in the profile — the
+		// list on „Quellen“ and a task's place are read again
+		if (o.places && typeof o.places.onChanged === 'function') {
+			o.places.onChanged(() => {
+				if (!placesOn() || !(S.me && S.me.places && S.me.places.profile)) return;
+				reloadPlaces();
+				if (S.shown) soon();
 			});
 		}
 		if (typeof api.onVault === 'function') api.onVault((v) => { if (v && v.event === 'approved') soon(); });

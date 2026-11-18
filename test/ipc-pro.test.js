@@ -203,6 +203,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       notes: { on() {}, status: () => ({ state: 'unavailable' }) },
       // … and Kameras im Heimnetz (cameras:* channels; a core before it ignores it)
       cameras: { on() {}, status: () => ({ state: 'unavailable' }) },
+      // … and Meine Orte (places:* channels; a core before it ignores it)
+      places: { on() {}, status: () => ({ state: 'unknown', search: null, family: false, count: 0 }) },
     };
     const registered = registerProIpc(ipcMain, ctx);
     return { handlers, stored, written, calls, registered, apiClient };
@@ -250,6 +252,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       ...(fs.existsSync(path.join(coreDir, 'src', 'ipc', 'print-handlers.js')) ? ['print:status', 'print:overview', 'print:job', 'print:cancel', 'print:pick', 'print:dropped', 'print:drive', 'print:submit', 'print:transfers', 'print:again'] : []),
       // Kameras im Heimnetz (core with services/cameras.js, opt-in via ctx.cameras)
       ...(fs.existsSync(path.join(coreDir, 'src', 'ipc', 'camera-handlers.js')) ? ['cameras:status', 'cameras:check', 'cameras:list', 'cameras:live', 'cameras:clips', 'cameras:still:save'] : []),
+      // Meine Orte (core with services/places.js, opt-in via ctx.places)
+      ...(fs.existsSync(path.join(coreDir, 'src', 'ipc', 'places-handlers.js')) ? ['places:status', 'places:list', 'places:get', 'places:create', 'places:update', 'places:delete', 'places:used', 'places:search', 'places:map:tile', 'places:map:reverse'] : []),
     ]) {
       assert.equal(typeof handlers[ch], 'function', ch);
     }
