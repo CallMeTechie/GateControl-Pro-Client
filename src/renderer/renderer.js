@@ -15,6 +15,8 @@ const {
 } = window.gatecontrol;
 // Fernzugriff stage 3: the SSH devices and their terminal window (main ./terminal.js)
 const remoteTermApi = window.gatecontrol.remoteTerm || null;
+// Meine Orte (GateControl 1.299, Mein Profil › Meine Orte): the profile's places (core PlacesService)
+const placesApi = window.gatecontrol.places || null;
 const RTS = window.GCRemoteTermState;
 const { t } = window.gatecontrol.i18n;
 
@@ -202,6 +204,7 @@ function refreshTexts() {
 	chatView?.relabel();
 	schoolView?.relabel();
 	familieView?.relabel();
+	placesView?.relabel();
 	printView?.relabel();
 	gatedropView?.relabel();
 	vaultView?.relabel();
@@ -241,6 +244,7 @@ let currentPage = 'status';
 let chatView = null; // chat-view.js instance (CHATS section below)
 let schoolView = null; // school-view.js instance (SCHULE section below)
 let familieView = null; // familie-view.js instance (FAMILIE section below)
+let placesView = null; // places-view.js instance (MEINE ORTE section below)
 let printView = null; // print-view.js instance (DRUCKEN section below)
 let gatedropView = null; // gatedrop-view.js instance (GATEDROP section below)
 let vaultView = null; // vault-view.js instance (VAULT section below)
@@ -400,7 +404,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'familie', 'gatedrop', 'mail', 'notizen', 'drive', 'drucken', 'vault', 'kameras', 'inbox', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'familie', 'gatedrop', 'mail', 'notizen', 'drive', 'drucken', 'vault', 'kameras', 'inbox', 'orte', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -440,6 +444,9 @@ function navigateTo(page, opts = {}) {
 	// Familie: the cards load when shown and are asked again while it is open
 	if (page === 'familie' && prev !== 'familie') familieView?.show();
 	else if (prev === 'familie' && page !== 'familie') familieView?.hide();
+	// Meine Orte: the list (and Familie's places) load when shown
+	if (page === 'orte' && prev !== 'orte') placesView?.show();
+	else if (prev === 'orte' && page !== 'orte') placesView?.hide();
 	// Drucken: printers and jobs load when shown; open jobs are followed while the window is visible
 	if (page === 'drucken' && prev !== 'drucken') printView?.show();
 	else if (prev === 'drucken' && page !== 'drucken') printView?.hide();
@@ -3199,6 +3206,7 @@ function shownPages() {
 	return PAGES.filter((p) => (p === 'chats' ? !!chatView && !$('#nav-chats').hidden
 		: p === 'schule' ? !!schoolView && !$('#nav-schule').hidden
 			: p === 'familie' ? !!familieView && !$('#nav-familie').hidden
+			: p === 'orte' ? !!placesView && !$('#nav-orte').hidden
 			: p === 'gatedrop' ? !!gatedropView && !$('#nav-gatedrop').hidden
 				: p === 'drive' ? !!driveView && !$('#nav-drive').hidden
 					: p === 'drucken' ? !!printView && !$('#nav-drucken').hidden
@@ -3256,6 +3264,14 @@ function openSchool(context) {
 	schoolView.open(context || null);
 	navigateTo('schule');
 }
+
+/** Meine Orte (from „Mein Profil“ of Chats, from Notizen): the page, optionally on a place ({ id } | { new: true }). */
+function openPlaces(context) {
+	if (!placesView) return;
+	navigateTo('orte');
+	if (context) placesView.open(context);
+}
+const placesShown = () => !!placesView && !$('#nav-orte').hidden;
 
 /** Familie on a push target ("Internet zu Hause": the child's card), e.g. from a toast click. */
 function openFamilie(context) {
@@ -3665,6 +3681,11 @@ chatView = chatApi && window.GCChatView && $('#page-chats')
 		openRoute: (route, target) => openCardRoute(route, target),
 		// `next`: a portal tab — '/portal#profil' for „Mein Profil“ (user profile; older servers open the portal)
 		openPortal: (next) => (currentPortalUrl ? portal.open(next ? { next } : undefined).catch(() => false) : Promise.resolve(false)),
+		// Meine Orte: the own places for the place of an event (with Messenger 1.28 `profilePlaces`), „Mein Profil › Meine Orte“
+		places: placesApi,
+		openPlaces: () => openPlaces(),
+		placesShown: () => placesShown(),
+		openExternal: (url) => { shell.openExternal(url).catch(() => {}); },
 		// "In Drive speichern" of a picture / voice message / file (Messenger 1.10 with Drive)
 		driveSave,
 	})
@@ -3711,6 +3732,31 @@ familieView = familieApi && window.GCFamilieView && $('#page-familie')
 			const show = !!st && st.state === 'available';
 			$('#nav-familie').hidden = !show;
 			if (!show && currentPage === 'familie' && st && st.state === 'unavailable') navigateTo('status');
+		},
+	})
+	: null;
+
+// ══════════════════════════════════════════════════════════
+//  MEINE ORTE (Mein Profil › Meine Orte, GateControl 1.299)
+//  Data: window.gatecontrol.places (core PlacesService in main); the page is
+//  built by places-view.js (window.GCPlacesView) with places-state.js. The nav
+//  entry is shown while the server knows the profile's places; Familie's
+//  places come from the Messenger (chat.pickPlaces). The push event `places`
+//  loads the page again — Windows watches no place.
+// ══════════════════════════════════════════════════════════
+placesView = placesApi && window.GCPlacesView && $('#page-orte')
+	? window.GCPlacesView.mount({
+		root: $('#page-orte'),
+		api: placesApi,
+		chat: chatApi || null,
+		t,
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		openExternal: (url) => { shell.openExternal(url).catch(() => {}); },
+		onStatus: (st) => {
+			const show = !!st && st.state === 'available';
+			$('#nav-orte').hidden = !show;
+			if (!show && currentPage === 'orte' && st && st.state === 'unsupported') navigateTo('status');
 		},
 	})
 	: null;
@@ -3982,6 +4028,10 @@ notesView = notesApi && window.GCNotesView && $('#page-notizen')
 		},
 		// links of a note: in the default browser (core shell:open-external checks them)
 		openExternal: (url) => { shell.openExternal(url).catch(() => {}); },
+		// plugin 1.8.0 (`profilePlaces`): the places are the profile's — reload on a change, „In „Meine Orte“ öffnen“
+		places: placesApi,
+		openPlaces: () => openPlaces(),
+		placesShown: () => placesShown(),
 		onCount: (n) => renderNotesBadge(n),
 		onStatus: (st) => {
 			const show = !!st && st.state === 'available';

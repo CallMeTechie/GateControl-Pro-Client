@@ -47,6 +47,7 @@ let PrintService;
 let DriveService, DriveSync;
 let MailService;
 let NotesService;
+let PlacesService;
 let CamerasService;
 let DriveStreamService;
 let VaultService, windowsHello, windowsOcr, setupVaultQuick;
@@ -134,6 +135,9 @@ try {
   // Notizen & Aufgaben (plugin gatecontrol-notizen): tasks, notes, Tresor notebooks and the "zu tun" of the other
   // plugins (core services/notes.js); absent in an older core.
   ({ NotesService } = require('@gatecontrol/client-core'));
+  // Meine Orte (GateControl 1.299, Mein Profil › Meine Orte): the person's own places, the source of the place choice
+  // of Chats and Notizen (core services/places.js); absent in an older core. Windows watches no places.
+  ({ PlacesService } = require('@gatecontrol/client-core'));
   // Kameras im Heimnetz (plugin gatecontrol-door 1.6 "Tür & Kamera"): live picture, stills and
   // clips (core services/cameras.js); absent in an older core.
   ({ CamerasService } = require('@gatecontrol/client-core'));
@@ -356,6 +360,7 @@ let gatedrop = null; // GateDrop (./gatedrop.js), one per app lifetime
 let drive = null; // Drive (core DriveService), one per app lifetime
 let mail = null; // Mail (core MailService), one per app lifetime
 let notes = null; // Notizen & Aufgaben (core NotesService), one per app lifetime
+let places = null; // Meine Orte (core PlacesService), one per app lifetime
 let cameras = null; // Kameras im Heimnetz (core CamerasService), one per app lifetime
 let driveStream = null; // Drive 1.21: the large view's gcdrive: (core DriveStreamService)
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
@@ -1236,6 +1241,10 @@ function initializeServices() {
     ocr: windowsOcr && typeof windowsOcr.createWindowsOcr === 'function' ? windowsOcr.createWindowsOcr({ log }) : null,
   }) : null;
 
+  // Meine Orte: the profile's places (GateControl ≥ 1.299); the push event `places` and a reconnect load the pages again.
+  places = PlacesService ? new PlacesService({ apiClient, log, pushClient: notifications?.pushClient, getLang: () => getLocale() }) : null;
+  places?.start();
+
   // Kameras im Heimnetz: shown while the plugin has home cameras the person sees;
   // a camera toast shows its picture (from %TEMP%\gatecontrol-cameras) and opens the page.
   cameras = CamerasService ? new CamerasService({
@@ -1658,6 +1667,8 @@ function registerIpcHandlers() {
     mail,
     // notes:* channels + events, reset on server:setup (core, opt-in)
     notes,
+    // places:* channels + events (Meine Orte), reset on server:setup (core, opt-in)
+    places,
     // cameras:* channels + events, reset on server:setup (core, opt-in)
     cameras,
     gatedropExplorer: gatedrop?.explorer,
@@ -1956,6 +1967,7 @@ app.on('before-quit', (e) => {
   // Mail: a waiting Microsoft sign-in ends, the offline cache is written.
   mail?.stop();
   notes?.stop();
+  places?.stop();
   cameras?.stop();
   driveSync?.stop();
   // gc-drive-sync.exe beenden (endet sonst mit dem Prozess über --parent-pid).

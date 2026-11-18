@@ -29,6 +29,9 @@
  *
  * Messenger 1.27 (FEATURES_V127, `placeMessages`): `person.replyPref`, PUT persons/:id { replyPref } (people21.replyPrefs),
  * `reply.fallback` when the chosen way cannot send; `bridge.location` names `location` in `supports`.
+ *
+ * Messenger 1.28 (`profilePlaces`): GET places — the place choice: the person's own places of „Meine Orte“ and Familie's,
+ * each with `ref`, most used first (`pickPlaces`, made-up places; log.pickPlaces counts the calls).
  */
 
 const crypto = require('crypto');
@@ -61,7 +64,16 @@ const FEATURES_V2B = Object.freeze({ ...FEATURES_V2A, chat_people: true });
 const FEATURES_V127 = Object.freeze({ ...FEATURES_V2B, placeMessages: true });
 const WA_MEDIA_TYPES = Object.freeze({ image: ['image/jpeg', 'image/png', 'image/webp'], video: ['video/mp4'], voice: ['audio/ogg', 'audio/mp4', 'audio/aac', 'audio/mpeg'], file: null });
 
-function createMessenger({ emit = () => {}, features = null, familie = false } = {}) {
+// Messenger 1.28 GET places: own profile places (the core's places-server seed) and Familie's, most used first
+const PICK_PLACES = Object.freeze([
+  { ref: 'profile:12', id: 12, source: 'profile', name: 'Arbeit', icon: 'work', lat: 50.110922, lon: 8.682127, radiusM: 200, address: 'Hafenstraße 4, Musterstadt', visibility: 'self', usageCount: 4, lastUsedAt: '2026-11-17T18:02:00.000Z' },
+  { ref: 'profile:11', id: 11, source: 'profile', name: 'Zuhause', icon: 'home', lat: 50.05, lon: 8.6, radiusM: 150, address: 'Lindenweg 12, Musterstadt', visibility: 'family', usageCount: 2, lastUsedAt: '2026-11-18T07:31:00.000Z' },
+  { ref: 'place:3', id: 3, source: 'familie', name: 'Grundschule', icon: 'school', lat: 50.06, lon: 8.61, radiusM: 150 },
+  { ref: 'profile:13', id: 13, source: 'profile', name: 'Fitnessstudio', icon: 'gym', lat: 50.07, lon: 8.63, radiusM: 100, address: 'Am Markt 7, Musterstadt', visibility: 'self' },
+  { ref: 'profile:14', id: 14, source: 'profile', name: 'Baumarkt', icon: 'shop', lat: 50.09, lon: 8.7, radiusM: 120, address: 'Industriestraße 20, Musterstadt', visibility: 'self' },
+]);
+
+function createMessenger({ emit = () => {}, features = null, familie = false, pickPlaces = null } = {}) {
   const users = [
     { id: 7, name: 'Marc', initials: 'MA', colorHex: '#2FBF71', avatarUrl: null },
     { id: 8, name: 'Anna', initials: 'AN', colorHex: '#F97316', avatarUrl: null },
@@ -747,6 +759,11 @@ function createMessenger({ emit = () => {}, features = null, familie = false } =
       if (b && method === 'DELETE') { st14.reminders = st14.reminders.filter((x) => x.id !== Number(b)); return json(200, { ok: true, deleted: true }), true; }
     }
     if (a === 'actions' && !b) return json(200, { ok: true, actions: st14.actions }), true;
+    if (a === 'places' && !b && method === 'GET') {
+      if (!(features && features.profilePlaces === true)) return json(404, { ok: false, code: 'not_found' }), true;
+      log.pickPlaces = (log.pickPlaces || 0) + 1;
+      return json(200, { ok: true, places: pickPlaces || PICK_PLACES, sources: { profile: true, familie: !!familie } }), true;
+    }
     if (a === 'familie' && b === 'places') return (familie ? json(200, { ok: true, places: [{ id: 'oma', name: 'Oma Gisela', lat: 50.2, lon: 7.2, radiusM: 150 }, { id: 'home', name: 'Zuhause', lat: 50.1, lon: 7.1, radiusM: 150 }] }) : json(409, { ok: false, code: 'unavailable' })), true;
     if (a === 'conversations' && b && ['archive', 'pins', 'export'].includes(c)) {
       const conv = convs.get(Number(b));

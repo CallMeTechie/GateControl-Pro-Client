@@ -336,6 +336,10 @@
 .nz-places-set > p.hint { margin: 8px 0 0; }
 .nz-place-row { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 6px 0; border-top: 1px solid var(--line); }
 .nz-place-row b { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+/* plugin 1.8.0: the places of „Meine Orte“ (profile) — the hint with the page of this app, what did not move */
+.nz-place-profile { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 0 10px; }
+.nz-place-profile .btn { gap: 6px; }
+.nz-places-mine .note { margin: 0 0 8px; }
 .nz-place-ic { display: inline-flex; width: 34px; justify-content: center; color: var(--faint); }
 
 /* ── plugin 1.6.0: whose turn, stars, the family's list ── */

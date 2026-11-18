@@ -30,6 +30,14 @@ Windows VPN client with integrated Remote Desktop (RDP) management.
   "Datei öffnen" opens the file on the Drive page (from the task and from the reminder's fourth button), deleting the
   task says what that means; Drive's "Fristen" and "Details" say "über Notizen & Aufgaben" at such a reminder. A list the
   person only reads has no quick entry, its tasks are shown but not changed
+  — with plugin 1.8.0 (`profilePlaces`) the places are those of "Meine Orte" in the profile: their symbol and who sees
+  them on "Quellen", deleting a place another plugin uses asks first, a task's place goes as `profile:<id>`
+- Meine Orte (GateControl 1.299, Mein Profil › Meine Orte): the list of the own places ("Genutzt von", "kein Standort")
+  and Familie's places to look at, the map with each place's radius, new and changed places (address search on "Suchen"
+  with the attribution — this PC's search while the server's is off —, a click on the map, seven symbols, the radius in
+  steps of 50 m, who sees it), deleting a place in use only on "Trotzdem löschen". The event dialog of Chats (Messenger
+  1.28 `profilePlaces`) chooses its place with three chips and "Alle Orte…". The phone watches the places — the PC only
+  shows and changes them
 
 ## Development
 ```bash

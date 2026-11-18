@@ -56,6 +56,10 @@
  * (while it is licensed) and its routes and media URLs go to the core's fake
  * Notizen server.
  *
+ * Meine Orte (GateControl 1.299): without `await server.setPlaces()` GET …/me/profile/places answers 404 like a
+ * server before „Meine Orte“. With it (support/places-mock.js) the core's fake answers the profile's places and the
+ * address search (…/me/places/search).
+ *
  * GateDrop: without `await server.setGateDrop()` the plugin list has no
  * `gatecontrol-gatedrop`. With it (support/gatedrop-mock.js) the list names
  * it and its routes go to the core's fake GateDrop server.
@@ -94,6 +98,7 @@ const { createTerm } = require('./term-mock');
 const { createSignin } = require('./signin-mock');
 const { createDoor } = require('./door-mock');
 const { createNotes } = require('./notes-mock');
+const { createPlaces } = require('./places-mock');
 
 const API_TOKEN = 'gc_e2e_test_token';
 // 1 × 1 PNG, served for every map tile
@@ -167,6 +172,7 @@ async function startMockServer() {
   let signin = null; // support/signin-mock.js, null = server before company sign-in (404)
   let door = null; // support/door-mock.js, null = no Tür & Kamera plugin
   let notes = null; // support/notes-mock.js, null = no Notizen & Aufgaben plugin
+  let places = null; // support/places-mock.js, null = a server before „Meine Orte“ (404)
   const acks = [];
   const prefs = [];
   let geocode = {
@@ -309,6 +315,12 @@ async function startMockServer() {
         return json(200, { ok: true, token: API_TOKEN, peerId: PEER_ID, config: null });
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
+
+      // Meine Orte (GateControl 1.299): the profile's places and the address search; an older server: 404.
+      if (route.startsWith('me/profile/places') || route.startsWith('me/places/')) {
+        if (places && places.handle(req, res, raw)) return undefined;
+        return json(404, { ok: false, error: 'Not found' });
+      }
 
       // „Fernzugriff“ stage 3: the plugin's SSH devices and the core's term-token (support/term-mock.js).
       if (term && term.handle({ method: req.method, url, raw }, res)) return undefined;
@@ -508,6 +520,11 @@ async function startMockServer() {
       notes = await createNotes(opts);
       return notes;
     },
+    /** „Meine Orte“ of the profile (support/places-mock.js, the core's fake mounted here); returns it ({ srv }). */
+    async setPlaces(opts = {}) {
+      places = await createPlaces(opts);
+      return places;
+    },
     /** Enables the GateDrop plugin (support/gatedrop-mock.js, the core's fake server on its own port); returns it. */
     async setGateDrop(opts = {}) {
       gatedrop = await createGateDrop(opts);
@@ -556,6 +573,7 @@ async function startMockServer() {
       if (drive) drive.close().catch(() => {});
       if (mail) mail.close().catch(() => {});
       if (notes) notes.close().catch(() => {});
+      if (places) places.close().catch(() => {});
       if (gatedrop) gatedrop.close().catch(() => {});
       if (term) term.close().catch(() => {});
       for (const res of streams) res.end();

@@ -388,7 +388,8 @@
 		const markIntro = (net) => { try { const l = JSON.parse(root.localStorage.getItem(INTRO_KEY) || '[]'); if (!l.includes(net)) root.localStorage.setItem(INTRO_KEY, JSON.stringify(l.concat(net).slice(-20))); } catch (_) { /* storage unavailable */ } };
 
 		/**
-		 * The menu of the own avatar: „Dein Status“, „Mein Profil“ (portal, /portal#profil). Messenger 1.22
+		 * The menu of the own avatar: „Dein Status“, „Mein Profil“ (portal, /portal#profil), „Meine Orte“ (this app,
+		 * GateControl 1.299). Messenger 1.22
 		 * (avatarInProfile): above them the own name with „Bild: <Stufe>“ — „Wer sieht dein Bild?“ of the profile —
 		 * and „Mein Profil“ says that it opens the portal.
 		 */
@@ -405,10 +406,15 @@
 					icon('external', 13),
 				])
 				: ['external', t('chat.profile.title'), () => openProfile(), { id: 'profile' }];
+			// Meine Orte (GateControl 1.299): the page of this app, when the server knows the profile's places
+			const placesItem = typeof o.openPlaces === 'function' && (typeof o.placesShown !== 'function' || o.placesShown())
+				? ['pin', t('places.menu'), () => o.openPlaces(), { id: 'places' }]
+				: null;
 			popMenu(refs.meBtn, [
 				head,
 				status ? ['user', t('chat.st.yours'), () => status.statusDialog(), { id: 'status' }] : null,
 				profileItem,
+				placesItem,
 			]);
 		}
 		/** The head of the own menu: avatar, name, „Bild: <Stufe>“. */
@@ -566,6 +572,10 @@
 			notify: o.notify || null,
 			lightboxUrl: (u) => lightboxUrl(u),
 			mapView: (mo) => mapView(mo),
+			// Meine Orte: the profile's places (window.gatecontrol.places) for the place choice of an event
+			places: o.places || null,
+			getLocale: () => o.getLocale(),
+			openExternal: typeof o.openExternal === 'function' ? o.openExternal : null,
 			ctx: () => ctx(),
 			me: () => me(),
 			limits: () => limits(),

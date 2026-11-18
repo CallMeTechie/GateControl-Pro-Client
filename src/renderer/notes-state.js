@@ -277,6 +277,18 @@
 		return { ...base, ...(x.ref ? { ref: x.ref } : {}), name: x.name, ...(x.address ? { address: x.address } : {}), lat: x.lat, lon: x.lon };
 	}
 
+	/**
+	 * plugin 1.8.0 (`profilePlaces`): a place of „Meine Orte“ goes by its reference — { ref: 'profile:<id>' } in place of
+	 * { placeId } (the trigger, key and „merken“ stay). Anything else (a hit, Familie's, an older plugin) as it is.
+	 */
+	function profileArg(arg, places) {
+		if (!arg || arg.placeId == null) return arg;
+		const p = (places || []).find((x) => x && x.id === arg.placeId);
+		if (!p || typeof p.ref !== 'string' || !/^profile:[1-9]\d{0,15}$/.test(p.ref)) return arg;
+		const { placeId, ...rest } = arg;
+		return { ...rest, ref: p.ref };
+	}
+
 	/** The name of what the dialog chose (for a chip, a toast). */
 	function placeChoiceText(sel, o, all, t) {
 		if (!sel) return '';
@@ -710,7 +722,7 @@
 		shopNav, shopList, shopItems, shopWith, shopChoice, shopBelongs, allTickedText, quickAttach,
 		familyInfo, isFamilyList, starsShown, mayStar, starsText, turnText, doneByText, starChoices, turnPatch, turnPeople, quickWords, quickTurn,
 		deadlineBefore, deadlineInfo, listWritable,
-		placeSummary, distText, searchState, nearOptions, nearArg, placeChoiceArg, placeChoiceText, placeSub, placeHint, quickPlace, sourceChip, metaLine, sectionTitle, quickCtx, quickParse, quickChips, quickBody,
+		placeSummary, distText, searchState, nearOptions, nearArg, placeChoiceArg, profileArg, placeChoiceText, placeSub, placeHint, quickPlace, sourceChip, metaLine, sectionTitle, quickCtx, quickParse, quickChips, quickBody,
 		repeatOptions, openTarget, errText, vaultLocked, noteTitle, notebookName, isoDay, formatBytes, importText, groupKey, localInput,
 	};
 })(typeof self !== 'undefined' ? self : this);
