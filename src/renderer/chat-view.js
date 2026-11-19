@@ -2910,7 +2910,20 @@
 			return el('div', { class: 'cv-kv' }, [el('span', { class: 'cv-kv-l' }, [icon(ic, 15), label]), value]);
 		}
 
+		/**
+		 * The info pane is drawn anew on every refresh of the list: the choice of „Nachrichten senden über“ keeps the focus
+		 * (keyboard, „Standard für … ändern …“) instead of losing it to the page.
+		 */
 		function renderInfo() {
+			const a = document.activeElement;
+			const keep = a && refs.info.contains(a) && a.matches('input[data-act="reply-pref"]') ? a.value : null;
+			drawInfo();
+			if (keep === null) return;
+			const n = refs.info.querySelector(`input[data-act="reply-pref"][value="${CSS.escape(keep)}"]`);
+			if (n) n.focus();
+		}
+
+		function drawInfo() {
 			const c = curConv();
 			const open = !!(c && S.infoOpen);
 			refs.info.hidden = !open;

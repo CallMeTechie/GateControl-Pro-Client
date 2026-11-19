@@ -301,7 +301,7 @@ test.describe('chats – Versandweg, Plus-Menü (Messenger 1.27)', () => {
   });
 
   test('„Nur diese Nachricht über …“: the small logo opens the choice, one message over GateControl, the default stays', async ({ launchApp, mock }) => {
-    const { ms, gc, wa, pid } = setup(mock, { features: FEATURES_V127 });
+    const { ms, gc, wa, kim, pid } = setup(mock, { features: FEATURES_V127 });
     const { page } = await openChats(launchApp, mock);
     const cv = page.locator('#page-chats');
     await cv.locator(`.cv-row[data-id="${gc}"]`).click();
@@ -342,7 +342,12 @@ test.describe('chats – Versandweg, Plus-Menü (Messenger 1.27)', () => {
     await btn.click();
     await cv.locator('.cv-menu .cv-menu-item[data-item="way:change"]').click();
     await expect(cv.locator('.cv-info .cv-reply-sec')).toBeVisible();
-    await expect(cv.locator('.cv-info .cv-reply-sec .cv-rp-opt[data-pref="auto"] input')).toBeFocused();
+    const auto = cv.locator('.cv-info .cv-reply-sec .cv-rp-opt[data-pref="auto"] input');
+    await expect(auto).toBeFocused();
+    // the list refreshes (a new message elsewhere draws the info anew): the choice keeps the focus
+    ms.receiveBridge(kim, { text: 'Bin gleich da' });
+    await expect(cv.locator(`.cv-row[data-id="${kim}"] .cv-row-pv`)).toContainText('Bin gleich da');
+    await expect(auto).toBeFocused();
   });
 
   test('without the plus menu „Standort senden“ is a button of its own — with GateControl’s logo when it goes there', async ({ launchApp, mock }) => {
