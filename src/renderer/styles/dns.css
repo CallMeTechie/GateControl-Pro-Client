@@ -24,6 +24,7 @@
 .dnsp-ban { align-items: flex-start; font-size: 13px; line-height: 1.45; }
 .dnsp-ban-ic { flex-shrink: 0; display: inline-flex; padding-top: 1px; }
 .dnsp-ban-ic.t-err { color: var(--err); }
+.dnsp-ban-ic.t-warn { color: var(--warn); }
 .dnsp-ban-ic.t-info { color: var(--info); }
 
 .dnsp-kv { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }

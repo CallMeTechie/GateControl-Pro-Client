@@ -23,7 +23,8 @@ const CARD = '#dns-protect';
 const TOP = '#dns-protect-top';
 const sent = (dns, method, route) => dns.log.filter((r) => r.method === method && r.route === route);
 const refresh = (page) => page.evaluate(() => window.gatecontrol.dnsProtect.refresh());
-const trayDns = async (app) => (await app.trayLabels()).filter((l) => /DNS/.test(l));
+// the entries of DNS-Schutz, with the line "Internet pausiert …" (Familie, plugin 1.1.0)
+const trayDns = async (app) => (await app.trayLabels()).filter((l) => /DNS|^Internet (pausiert|paused)/.test(l));
 /** Labels (and "enabled") of the submenu of "DNS-Schutz unterbrechen". */
 const submenu = (app) => app.app.evaluate(() => {
   const item = globalThis.__gcE2E.trayMenu.items.find((i) => i.submenu && /DNS/.test(i.label));
@@ -109,6 +110,8 @@ test.describe('dns-schutz', () => {
     await card.locator('[data-act="extend"]').click();
     await expect(card.locator('[data-chip="paused"]')).toHaveText(/·(59:\d\d|1:00:00)$/);
     expect(sent(dns, 'POST', 'pause').at(-1).body).toEqual({ extend: 30 });
+    // the note names the whole duration (plugin 1.1.0: `pause.minutes`)
+    await expect(card.locator('[data-note="pause"]')).toHaveText(/für 1 Stunde\.|for 1 hour\./);
     await card.locator('[data-act="extend"]').click();
     await expect(page.locator('#toasts .toast-error')).toContainText('Länger als 60 Minuten ist nicht erlaubt.');
     await expect(card).toHaveAttribute('data-state', 'paused');
@@ -220,6 +223,49 @@ test.describe('dns-schutz', () => {
     await refresh(launched.page);
     await expect(card.locator('.banner-info')).toContainText(/Unterbrechen dürfen hier nur Admins\.|Only admins may pause here\./);
     await expect(card.locator('button')).toHaveCount(0);
+  });
+
+  test('"Internet pausiert" (Familie, plugin 1.1.0): a note until when, no durations, a tray line', async ({ launchApp, mock }) => {
+    const dns = mock.setDns({ internet: Date.now() + 45 * 60000 });
+    const launched = await open(launchApp, mock);
+    const card = launched.page.locator(CARD);
+    await expect(card).toHaveAttribute('data-state', 'active');
+    await expect(card.locator('[data-chip="active"]')).toBeVisible();
+    const banner = card.locator('.banner-warn');
+    await expect(banner).toContainText(/Internet pausiert bis \d\d:\d\d Uhr|Internet paused until \d\d:\d\d/);
+    await expect(banner).toContainText(/Den Schutz zu unterbrechen ändert daran nichts\.|Pausing the protection does not change that\./);
+    await expect(card.locator('button')).toHaveCount(0);
+    await expect(card.locator('[data-kv]')).toHaveCount(3);
+    await expect.poll(() => trayDns(launched)).toEqual([
+      expect.stringMatching(/^(DNS-Schutz: aktiv|DNS protection: active)$/),
+      expect.stringMatching(/^(Internet pausiert bis \d\d:\d\d \(Familie\)|Internet paused until \d\d:\d\d \(Family\))$/),
+    ]);
+
+    // paused before the internet pause began: the pause with its buttons, and the note
+    dns.internet = null;
+    await refresh(launched.page);
+    await card.locator('[data-act="pause-30"]').click();
+    await expect(card).toHaveAttribute('data-state', 'paused');
+    dns.internet = Date.now() + 45 * 60000;
+    await refresh(launched.page);
+    await expect(card.locator('.banner-warn')).toContainText(/Internet pausiert bis|Internet paused until/);
+    await expect(card.locator('[data-act="resume"]')).toBeVisible();
+    await expect.poll(() => trayDns(launched)).toEqual([
+      expect.stringMatching(/^(DNS-Schutz: unterbrochen bis|DNS protection: paused until) \d\d:\d\d$/),
+      expect.stringMatching(/^(Internet pausiert bis|Internet paused until) /),
+      expect.stringMatching(/^(DNS-Schutz wieder einschalten|Switch DNS protection back on)$/),
+    ]);
+    // back on: active, still nothing to pause
+    await card.locator('[data-act="resume"]').click();
+    await expect(card).toHaveAttribute('data-state', 'active');
+    await expect(card.locator('button')).toHaveCount(0);
+
+    // the pause is over (Familie): the durations are back
+    dns.internet = null;
+    await refresh(launched.page);
+    await expect(card.locator('.banner-warn')).toHaveCount(0);
+    await expect(card.locator('[data-act="pause-30"]')).toBeEnabled();
+    await expect.poll(() => trayDns(launched)).toHaveLength(2);
   });
 
   test('a device with its own DNS server: "nicht gefiltert", nothing to pause', async ({ launchApp, mock }) => {

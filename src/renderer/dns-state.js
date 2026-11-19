@@ -5,8 +5,9 @@
  * the DNS filter of the VPN devices (plugin gatecontrol-dns). What the card
  * shows in its states — active, paused with the time left, filter down
  * ("fallback"), not filtered, starting, not reachable —, the counters, the
- * durations the server allows, the note of a pause, the top blocked domains
- * and the text of a failure. The card draws what the server says (`may`) and
+ * durations the server allows, the note of a pause, "Internet pausiert" of
+ * the family plugin (plugin 1.1.0: `internet`), the top blocked domains and
+ * the text of a failure. The card draws what the server says (`may`) and
  * decides nothing itself. Loaded as a plain script before dns-view.js
  * (window.GCDnsState) and required by the node tests (test/dns-state.test.js).
  *
@@ -26,7 +27,7 @@
 	const CHIPS = [5, 30, 60];
 	const LONG = 240;
 	const EXTEND = 30;
-	const BANNER_REASONS = ['profile', 'admins_only'];
+	const BANNER_REASONS = ['profile', 'admins_only', 'internet_paused'];
 	// trouble the app words itself (the answer, if any, is not from the plugin)
 	const OWN_ERRORS = ['network', 'timeout', 'rate_limited'];
 	const MIN = 60000;
@@ -154,10 +155,23 @@
 		const where = t(`dnsProtect.note.${d.device ? 'device' : 'devices'}`);
 		if (!isMs(p.since)) return where;
 		const time = hm(onLocalClock(p.since, snap), locale);
-		const duration = isMs(p.until) && p.until > p.since ? durationText((p.until - p.since) / MIN, t) : null;
+		// the picked duration as the server says it (plugin 1.1.0: `minutes`, with "+30 Min." the whole), else from the times
+		const minutes = p.minutes > 0 ? p.minutes : isMs(p.until) && p.until > p.since ? (p.until - p.since) / MIN : null;
+		const duration = minutes ? durationText(minutes, t) : null;
 		const who = p.byMe ? 'byMe' : p.by ? 'byOther' : 'plain';
 		const params = { time, ...(p.by && !p.byMe ? { name: p.by.name } : {}), ...(duration ? { duration } : {}) };
 		return `${t(`dnsProtect.note.${who}${duration ? '' : 'Open'}`, params)} ${where}`;
+	}
+
+	/**
+	 * "Internet pausiert" (Familie): the protection runs, but only expressly
+	 * allowed sites answer, and pausing the protection does not change that.
+	 * Told by `internet`, not by the reason (a reason of the rights wins there).
+	 */
+	function internetBanner(snap, locale, t) {
+		const i = snap.data.internet;
+		if (!i || !isMs(i.until)) return null;
+		return { tone: 'warn', icon: 'pause', title: t('dnsProtect.banner.internetTitle', { time: hm(onLocalClock(i.until, snap), locale) }), text: t('dnsProtect.banner.internetText') };
 	}
 
 	/**
@@ -205,12 +219,17 @@
 			Object.assign(v, { tone: 'warn', icon: 'shieldPause', sub: pausedSub(snap, locale, t) });
 			v.chip = { text: t('dnsProtect.chip.paused'), tone: 'warn', countdown: left === null ? null : countdown(left) };
 			v.paused = { resume: d.may.resume, extend: d.may.extend, countdown: left === null ? null : countdown(left), note: pauseNote(snap, locale, t) };
+			v.banner = internetBanner(snap, locale, t);
 			return v;
 		}
 		// active
 		Object.assign(v, { tone: 'ok', sub: t('dnsProtect.sub.active') });
 		v.chip = { text: t('dnsProtect.chip.active'), tone: 'ok', countdown: null };
-		if (d.may.pause) {
+		const internet = internetBanner(snap, locale, t);
+		if (internet) {
+			// says itself why there is nothing to pause; the server offers no duration then anyway
+			v.banner = internet;
+		} else if (d.may.pause) {
 			v.pause = {
 				label: t(`dnsProtect.pauseFor.${d.device ? 'device' : 'devices'}`),
 				choices: pauseChoices(d.may, t),
