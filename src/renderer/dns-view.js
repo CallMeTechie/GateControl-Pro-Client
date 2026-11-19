@@ -8,6 +8,8 @@
  *   unless the admin enabled it), or the note why pausing is not allowed;
  * - paused: until when, the time left counting down, "Wieder einschalten"
  *   and "+30 Min." when the server allows them, who paused;
+ * - "Internet pausiert" (family plugin, plugin 1.1.0): a note until when,
+ *   no durations (pausing the protection would not bring the internet back);
  * - filter down ("fallback"): the warning, no buttons;
  * - not filtered / starting / not reachable: one line.
  * Both cards are hidden while the server reports no DNS protection (older
@@ -31,6 +33,7 @@
 		shieldPause: `${SHIELD}|M10 9.5v5M14 9.5v5`,
 		shieldX: `${SHIELD}|m9.5 9.5 5 5M14.5 9.5l-5 5`,
 		shieldOff: `${SHIELD}|m4 4 16 16`,
+		pause: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z|M10 9v6M14 9v6',
 		clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z|M12 7v5l3 2',
 		lock: 'M5 11h14v10H5z|M8 11V7a4 4 0 0 1 8 0v4',
 		warn: 'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z|M12 9v4M12 17h.01',
@@ -159,6 +162,7 @@
 				]))));
 				if (v.counters.note) kids.push(el('p', { class: 'desc dnsp-note', text: v.counters.note }));
 			}
+			if (v.home) kids.push(el('p', { class: 'desc dnsp-note', 'data-note': 'home', text: v.home }));
 			if (v.pause) {
 				kids.push(el('div', { class: 'dnsp-btns', role: 'group', 'aria-label': v.pause.label }, [
 					el('span', { class: 'desc dnsp-lead', text: v.pause.label }),
