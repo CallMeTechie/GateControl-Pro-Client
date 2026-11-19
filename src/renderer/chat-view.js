@@ -276,6 +276,8 @@
 			// Messenger 1.21 (chat_people): the open suggestions („… ist vielleicht …“), the source chip of the open person
 			sugg: [],
 			way: null,
+			// Messenger 1.27: „Nur diese Nachricht über …“ — { id: entry, way } chosen in the composer for the next message
+			once: null,
 		};
 		const ctx = () => ({ t, locale: o.getLocale(), me: S.status && S.status.me, people: S.people });
 		const me = () => (S.status && S.status.me) || null;
@@ -284,6 +286,18 @@
 		// Messenger 1.21: the entry a conversation is shown as (a way of a person → the person)
 		const entryOf = (id) => conv(id) || S.convs.find((c) => CS.isPerson(c) && c.person.ways.some((w) => w.conversationId === id)) || null;
 		const curConv = () => (typeof S.cur === 'number' ? conv(S.cur) : null);
+		/**
+		 * Messenger 1.27, „Nur diese Nachricht über …“: the way chosen in the composer for the next message of `entry`
+		 * → { way, entry } (the entry as if the server had picked that way), else null. Not while answering or editing
+		 * (an answer goes its message's way); a way that cannot send any more drops the choice.
+		 */
+		const onceOf = (entry) => {
+			if (!S.once || !entry || S.once.id !== entry.id || S.reply || S.edit) return null;
+			const e = CS.onceEntry(entry, S.once.way);
+			if (!e) { S.once = null; return null; }
+			return { way: S.once.way, entry: e };
+		};
+		const withOnce = (req, once) => (once ? { ...req, way: once.way } : req);
 
 		// ── Skeleton ─────────────────────────────────────────
 		const refs = {};
@@ -964,6 +978,7 @@
 				closeSearch();
 				S.view = null;
 				S.way = null;
+				S.once = null;
 				// Messenger 1.21: a person's ways are mixed by time — no unread line by id
 				S.unreadFrom.set(id, cc.unread > 0 && cc.me && !CS.isPerson(cc) ? cc.me.lastReadId || 0 : null);
 			}
@@ -2095,10 +2110,12 @@
 				{ label: t('chat.loc.send'), primary: true, onClick: async () => {
 					const loc = CS.locationBody(st.point, label.value, st.accuracy);
 					if (!loc) { setStatus(t('chat.loc.needPoint'), 'warn'); return false; }
-					const req = { conversationId: c.id, kind: 'location', location: loc };
+					const once = onceOf(c);
+					const req = withOnce({ conversationId: c.id, kind: 'location', location: loc }, once);
 					if (S.reply) req.replyTo = S.reply.id;
 					const r = await api.send(req).catch((e) => ({ ok: false, error: e && e.message }));
 					if (r && r.ok === false) { setStatus(CS.errorText(r, t), 'warn'); return false; }
+					if (once && S.once) { S.once = null; renderComposer(false); }
 					saveView(loc);
 					if (S.reply) { S.reply = null; renderComposer(false); }
 					scrollBottom(true);
@@ -2320,8 +2337,11 @@
 
 		/** keepText: rebuild without losing what is typed. */
 		function renderComposer(reset) {
-			const entry = curConv();
-			if (!entry) { refs.composer.hidden = true; return; }
+			const base = curConv();
+			if (!base) { refs.composer.hidden = true; return; }
+			// Messenger 1.27: „Nur diese Nachricht über …“ — the composer of the way chosen for the next message
+			const once = onceOf(base);
+			const entry = once ? once.entry : base;
 			// Messenger 1.21: a person — the composer of the way the server picks (never chosen here); its id stays the entry's
 			const c = CS.sendConv(entry);
 			const rw = CS.replyWay(entry);
@@ -2361,7 +2381,7 @@
 			const bridgeFiles = bridged && CS.bridgeTakesFiles(c);
 			// Messenger 1.21: „Nachricht über WhatsApp“ / „Nachricht über GateControl“ (1.27: no line above the composer any
 			// more — only when „Immer <Netz>“ cannot send right now and GateControl took over)
-			const placeholder = rw ? t('chat.person.placeholder', { way: CS.wayLabel(rw.way, rw.label) }) : (bridged ? t('chat.bc.placeholder', { network: CS.bridgeLabel(c) }) : t('chat.placeholder'));
+			const placeholder = rw ? t(once ? 'chat.person.oncePlaceholder' : 'chat.person.placeholder', { way: CS.wayLabel(rw.way, rw.label) }) : (bridged ? t('chat.bc.placeholder', { network: CS.bridgeLabel(c) }) : t('chat.placeholder'));
 			const fb = CS.replyFallback(entry);
 			if (fb && !S.edit) refs.composer.appendChild(el('div', { class: 'cv-wayhint is-fallback', 'data-way': 'gatecontrol' }, [icon('info', 13), el('span', { text: t('chat.person.replyFallback', { network: fb }) })]));
 			if (bridged && S.rec && !recordingSupported(c)) stopRec(false);
@@ -2408,8 +2428,10 @@
 			refs.composer.appendChild(el('div', { class: `cv-row-compose${bridged ? ' is-bridged' : ''}` }, [
 				attachButton(entry, plus),
 				// with the attach menu (Messenger 1.4.0) "Standort senden" is in there
-				plus.location && !attachMenuOn(entry, plus) ? iconBtn('pin', t('chat.loc.button'), () => locationDialog(), 'cv-loc-btn') : null,
+				plus.location && !attachMenuOn(entry, plus) ? locationButton(plus) : null,
 				refs.input,
+				// an answer goes its message's way: no choice while answering or editing
+				S.reply || S.edit ? null : wayButton(base, rw, !!once),
 				features.voice !== false && recordingSupported(c) ? iconBtn('mic', t('chat.recStart'), () => startRec()) : null,
 				el('button', { type: 'button', class: 'cv-ib cv-ib-pri', 'aria-label': t('chat.send'), title: t('chat.send'), on: { click: () => submit() } }, [icon('send', 16, '2.2')]),
 			]));
@@ -2434,6 +2456,66 @@
 			const pick = () => { refs.file.value = ''; refs.file.click(); };
 			if (!attachMenuOn(entry, plus)) return plus.files ? iconBtn('attach', t('chat.attach'), pick, plus.mark ? 'cv-attach-btn' : '') : null;
 			return iconBtn('attach', t('chat.attach'), (e) => attachMenu(entry, plus, e.currentTarget), 'cv-attach-btn');
+		}
+
+		/**
+		 * Messenger 1.27: „Standort senden“ on its own (no plus menu: no polls, events, home actions) — as in the plus
+		 * menu, with GateControl's small logo when the location goes over GateControl while the text goes over a bridge.
+		 */
+		function locationButton(plus) {
+			const gc = plus.location === 'gc' && plus.mark;
+			const label = gc ? `${t('chat.loc.button')} · ${t('chat.person.viaGc')}` : t('chat.loc.button');
+			const b = iconBtn('pin', label, () => locationDialog(), `cv-loc-btn${gc ? ' has-gc' : ''}`);
+			if (gc) b.appendChild(netLogo('gatecontrol', { size: 8, cls: 'cv-way cv-loc-gc' }));
+			return b;
+		}
+
+		/**
+		 * Messenger 1.27, „Nur diese Nachricht über …“ (Schnellwechsel im Schreibfeld): the small logo of the way the next
+		 * message takes. A click only opens the choice (nothing changes by a stray click); the choice holds for one
+		 * message, „Nachrichten senden über“ stays in the chat info. Only for a person with two ways that can send.
+		 */
+		function wayButton(base, rw, isOnce) {
+			const ways = CS.onceWays(base, t);
+			if (!ways.length || !rw) return null;
+			const label = t('chat.person.onceButton', { way: CS.wayLabel(rw.way, rw.label) });
+			return el('button', { type: 'button', class: `cv-ib cv-ib-flat cv-waybtn${isOnce ? ' is-once' : ''}`, 'aria-label': label, title: label, 'aria-haspopup': 'menu', 'data-way': rw.way, on: { click: (e) => wayMenu(base, ways, e.currentTarget) } }, [
+				netLogo(rw.way, { size: 10, cls: 'cv-way' }),
+				icon('chevron', 12),
+			]);
+		}
+
+		function wayMenu(base, ways, anchor) {
+			const cur = (onceOf(base) || { way: null }).way || (ways.find((w) => w.current) || {}).way || null;
+			const pick = (w) => {
+				closeMenu();
+				// the way the server picks anyway: no choice of its own
+				S.once = w.current ? null : { id: base.id, way: w.way };
+				renderComposer(false);
+				if (refs.input) refs.input.focus();
+			};
+			const items = [el('div', { class: 'cv-menu-sec cv-once-sec', text: t('chat.person.onceTitle') })];
+			for (const w of ways) {
+				items.push(el('button', { type: 'button', role: 'menuitemradio', 'aria-checked': w.way === cur ? 'true' : 'false', class: 'cv-menu-item cv-once-opt', 'data-item': `way:${w.way}`, on: { click: () => pick(w) } }, [
+					netLogo(w.way, { size: 10, cls: 'cv-way' }),
+					el('span', { class: 'cv-rp-tx' }, [el('b', { text: w.label }), w.sub ? el('small', { text: w.sub }) : null]),
+					w.way === cur ? icon('check', 15) : null,
+				]));
+			}
+			items.push(el('div', { class: 'cv-once-sep', role: 'separator' }));
+			const name = (base.person && base.person.name) || base.title || '';
+			items.push(['gear', t('chat.person.onceChange', { name }), () => openReplyPref(), { id: 'way:change' }]);
+			popMenu(anchor, items, { align: 'right' });
+		}
+
+		/** „Standard für … ändern …“: the chat info at „Nachrichten senden über“. */
+		function openReplyPref() {
+			if (!S.infoOpen) toggleInfo();
+			const sec = refs.info && refs.info.querySelector('.cv-reply-sec');
+			if (!sec) return;
+			sec.scrollIntoView({ block: 'nearest' });
+			const on = sec.querySelector('input:checked') || sec.querySelector('input');
+			if (on) on.focus();
 		}
 
 		/**
@@ -2495,15 +2577,23 @@
 				renderComposer(false);
 				return;
 			}
-			const req = { conversationId: c.id, kind: 'text', text };
+			const once = onceOf(c);
+			const req = withOnce({ conversationId: c.id, kind: 'text', text }, once);
 			if (S.reply) req.replyTo = S.reply.id;
+			if (once) S.once = null;
 			refs.input.value = '';
 			grow();
 			S.reply = null;
 			renderComposer(false);
 			api.typing(c.id, true).catch(() => {});
 			const r = await api.send(req).catch((e) => ({ ok: false, error: e && e.message }));
-			if (r && r.ok === false) { toast(CS.errorText(r, t), 'error'); if (refs.input && !refs.input.value) refs.input.value = text; return; }
+			if (r && r.ok === false) {
+				toast(CS.errorText(r, t), 'error');
+				if (refs.input && !refs.input.value) refs.input.value = text;
+				// the way chosen for this message stays chosen (not when it cannot send any more)
+				if (once && r.code !== 'way_unavailable' && S.cur === c.id) { S.once = { id: c.id, way: once.way }; renderComposer(false); }
+				return;
+			}
 			playSound('out');
 			scrollBottom(true);
 		}
@@ -2592,7 +2682,8 @@
 
 		async function attach(file) {
 			// Messenger 1.21: a person — what the way of the answer takes (its id stays the entry's)
-			const c = CS.sendConv(curConv());
+			const once = onceOf(curConv());
+			const c = CS.sendConv(once ? once.entry : curConv());
 			if (!c || CS.composerBlock(c)) return;
 			// Messenger 1.14: no files into a chat over a bridge; 1.15: those it names (`bridge.supports` / `mediaTypes`)
 			const bridged = !!CS.bridgeOf(c);
@@ -2606,7 +2697,7 @@
 				if (no) { toast(CS.mediaTypeText(no, c, t), 'warning'); return; }
 			}
 			const caption = refs.input && refs.input.value.trim() ? refs.input.value.trim() : null;
-			const req = { conversationId: c.id };
+			const req = withOnce({ conversationId: c.id }, once);
 			if (caption) req.text = caption;
 			if (S.reply) req.replyTo = S.reply.id;
 			try {
@@ -2652,6 +2743,7 @@
 				return;
 			}
 			if (caption && refs.input) { refs.input.value = ''; grow(); }
+			if (once && S.once) { S.once = null; renderComposer(false); }
 			if (S.reply) { S.reply = null; renderComposer(false); }
 			scrollBottom(true);
 		}
@@ -2679,7 +2771,8 @@
 		// ── Voice recording (MediaRecorder) ──────────────────
 
 		async function startRec() {
-			const c = CS.sendConv(curConv());
+			const once = onceOf(curConv());
+			const c = CS.sendConv(once ? once.entry : curConv());
 			if (!c || S.rec) return;
 			const lim = limits();
 			const mime = CS.voiceMime(c, (m) => root.MediaRecorder.isTypeSupported(m), lim.types);
@@ -2691,7 +2784,7 @@
 				toast(t('chat.micDenied'), 'error');
 				return;
 			}
-			const rec = { stream, chunks: [], levels: [], started: Date.now(), mime, timer: null, analyser: null, ac: null, conversationId: c.id, replyTo: S.reply ? S.reply.id : null };
+			const rec = { stream, chunks: [], levels: [], started: Date.now(), mime, timer: null, analyser: null, ac: null, conversationId: c.id, replyTo: S.reply ? S.reply.id : null, way: once ? once.way : null };
 			try {
 				rec.recorder = new root.MediaRecorder(stream, { mimeType: mime });
 			} catch (_) {
@@ -2747,8 +2840,10 @@
 				const wf = CS.waveform(rec.levels, Math.min(48, Math.max(8, rec.levels.length)));
 				if (wf.length) req.meta.waveform = wf;
 				if (rec.replyTo) { req.replyTo = rec.replyTo; S.reply = null; }
+				if (rec.way) req.way = rec.way;
 				const r = await api.send(req).catch((e) => ({ ok: false, error: e && e.message }));
 				if (r && r.ok === false) { toast(sendErrorText(r, conv(rec.conversationId)), 'error'); return; }
+				if (rec.way && S.once && S.once.id === rec.conversationId) S.once = null;
 				if (r && r.message && r.message.clientId) S.local.set(r.message.clientId, URL.createObjectURL(blob));
 				if (curConv()) renderComposer(false);
 				scrollBottom(true);

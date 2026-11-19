@@ -908,6 +908,16 @@
 .cv-wayhint.is-fallback svg { color: var(--warn); }
 .cv-menu-item .cv-menu-gc { width: 14px; height: 14px; margin-left: 8px; }
 .cv-menu-gcnote { border-top: 1px solid var(--line); margin-top: 4px; }
+/* Messenger 1.27: „Standort senden“ on its own with GateControl's logo; „Nur diese Nachricht über …“ in the composer */
+.cv-loc-btn.has-gc { position: relative; }
+.cv-loc-btn .cv-loc-gc { position: absolute; right: 4px; bottom: 4px; width: 13px; height: 13px; box-shadow: 0 0 0 2px var(--panel2); }
+.cv-row-compose .cv-waybtn { width: auto; min-width: 42px; padding: 0 8px; gap: 3px; color: var(--muted); }
+.cv-row-compose .cv-waybtn > svg { transform: rotate(90deg); }
+.cv-row-compose .cv-waybtn.is-once { border-color: var(--acc); background: var(--acc-bg); color: var(--acc-t); }
+.cv-once-sec { border-top: 0; margin-top: 0; }
+.cv-once-opt > .cv-way { flex-grow: 0; margin-top: 1px; align-self: flex-start; }
+.cv-once-opt > svg { flex-shrink: 0; color: var(--acc-t); }
+.cv-once-sep { height: 1px; margin: 4px 2px; background: var(--line); }
 .cv-pmline { display: inline-flex; align-items: center; gap: 3px; margin-right: 4px; }
 .cv-br-rec-head { gap: 10px; }
 

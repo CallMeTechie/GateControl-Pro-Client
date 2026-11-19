@@ -300,6 +300,74 @@ test.describe('chats – Versandweg, Plus-Menü (Messenger 1.27)', () => {
     await shots(page, 'person-plusmenue');
   });
 
+  test('„Nur diese Nachricht über …“: the small logo opens the choice, one message over GateControl, the default stays', async ({ launchApp, mock }) => {
+    const { ms, gc, wa, pid } = setup(mock, { features: FEATURES_V127 });
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    await cv.locator(`.cv-row[data-id="${gc}"]`).click();
+    const input = cv.locator('.cv-input');
+    const btn = cv.locator('.cv-waybtn');
+    await expect(input).toHaveAttribute('placeholder', 'Nachricht über WhatsApp');
+    await expect(btn).toHaveAttribute('data-way', 'whatsapp');
+    await expect(btn).toHaveAttribute('aria-label', 'Weg für die nächste Nachricht: WhatsApp – ändern');
+    await expect(btn).not.toHaveClass(/is-once/);
+    // a click only opens the choice: nothing changes yet
+    await btn.click();
+    const menu = cv.locator('.cv-menu');
+    await expect(menu.locator('.cv-once-sec')).toHaveText('Nur diese Nachricht über');
+    await expect(menu.locator('.cv-once-opt b')).toHaveText(['GateControl', 'WhatsApp']);
+    await expect(menu.locator('.cv-once-opt small')).toHaveText(['alle Funktionen', 'Weg der letzten Nachricht']);
+    await expect(menu.locator('.cv-once-opt[data-item="way:whatsapp"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(menu.locator('.cv-menu-item[data-item="way:change"]')).toHaveText('Standard für Anna ändern …');
+    await expect(input).toHaveAttribute('placeholder', 'Nachricht über WhatsApp');
+    await shots(page, 'person-schnellwechsel');
+    await menu.locator('.cv-once-opt[data-item="way:gatecontrol"]').click();
+    await expect(menu).toHaveCount(0);
+    await expect(input).toHaveAttribute('placeholder', 'Nur diese Nachricht über GateControl');
+    await expect(btn).toHaveAttribute('data-way', 'gatecontrol');
+    await expect(btn).toHaveClass(/is-once/);
+    await input.fill('Nur hier.');
+    await input.press('Enter');
+    await expect.poll(() => ms.messages(gc).some((m) => m.text === 'Nur hier.')).toBe(true);
+    expect(ms.messages(wa).some((m) => m.text === 'Nur hier.')).toBe(false);
+    expect(ms.log.calls.some((c) => c.method === 'POST' && c.route === `persons/${pid}/messages`)).toBe(false);
+    // only that one message: the next one goes the usual way again, „Nachrichten senden über“ was not touched
+    await expect(input).toHaveAttribute('placeholder', 'Nachricht über WhatsApp');
+    await expect(btn).not.toHaveClass(/is-once/);
+    expect(ms.people21.replyPrefs).toEqual([]);
+    await input.fill('Wieder über WhatsApp.');
+    await input.press('Enter');
+    await expect.poll(() => ms.messages(wa).some((m) => m.text === 'Wieder über WhatsApp.')).toBe(true);
+    // „Standard für Anna ändern …“ opens the chat info at „Nachrichten senden über“
+    await btn.click();
+    await cv.locator('.cv-menu .cv-menu-item[data-item="way:change"]').click();
+    await expect(cv.locator('.cv-info .cv-reply-sec')).toBeVisible();
+    await expect(cv.locator('.cv-info .cv-reply-sec .cv-rp-opt[data-pref="auto"] input')).toBeFocused();
+  });
+
+  test('without the plus menu „Standort senden“ is a button of its own — with GateControl’s logo when it goes there', async ({ launchApp, mock }) => {
+    const { gc } = setup(mock, { features: { ...FEATURES_V127, polls: false, events: false, actions: false } });
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    await cv.locator(`.cv-row[data-id="${gc}"]`).click();
+    await expect(cv.locator('.cv-input')).toHaveAttribute('placeholder', 'Nachricht über WhatsApp');
+    const loc = cv.locator('.cv-loc-btn');
+    await expect(loc).toHaveAttribute('aria-label', 'Standort senden · Geht über GateControl');
+    await expect(loc.locator('.cv-loc-gc')).toHaveCount(1);
+    await shots(page, 'person-standortknopf');
+  });
+
+  test('without the plus menu, a location the bridge sends: the button without the logo', async ({ launchApp, mock }) => {
+    const { ms, gc } = setup(mock, { features: { ...FEATURES_V127, polls: false, events: false, actions: false } });
+    ms.bridge.location = true;
+    const { page } = await openChats(launchApp, mock);
+    const cv = page.locator('#page-chats');
+    await cv.locator(`.cv-row[data-id="${gc}"]`).click();
+    const loc = cv.locator('.cv-loc-btn');
+    await expect(loc).toHaveAttribute('aria-label', 'Standort senden');
+    await expect(loc.locator('.cv-loc-gc')).toHaveCount(0);
+  });
+
   test('a location the bridge sends: in the menu without the logo', async ({ launchApp, mock }) => {
     const { ms, gc } = setup(mock, { features: FEATURES_V127 });
     ms.bridge.location = true;

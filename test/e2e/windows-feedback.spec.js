@@ -56,7 +56,8 @@ test.describe('Windows-Rückmeldungen', () => {
     // the "Update verfügbar" toast — as Electron reports it when the app's notifications are off in Windows
     await runScheduledUpdateCheck();
     await expect.poll(() => app.evaluate(() => globalThis.__gcE2E.toasts.length)).toBeGreaterThan(0);
-    expect(await app.evaluate(() => globalThis.__gcE2E.failToast('.'))).toBe(true);
+    // exactly the update's toast is refused (not just the newest one, whatever it is)
+    expect(await app.evaluate(() => globalThis.__gcE2E.failToast('99\\.0\\.0'))).toBe(true);
     await expect(page.locator('#toasts .toast-info', { hasText: '99.0.0' })).toHaveCount(1);
     // The updater also checks by itself 10 s after the start and announces the ready update again. As a toast that
     // second notice would replace the first one; while Windows refuses the toasts the app does not show the same
