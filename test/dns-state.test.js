@@ -182,6 +182,18 @@ describe('the card', () => {
     assert.equal(DS.cardView(snap(data()), ctx(), t).banner, null);
   });
 
+  it('a profile shared with the home network (plugin 1.2.0 `profile.home`): one line; otherwise none, as before', () => {
+    const home = { name: 'Kinder', safeSearch: true, home: true };
+    assert.equal(DS.cardView(snap(data({ profile: home })), ctx(), t).home, 'dnsProtect.profile.home(Kinder)');
+    assert.equal(DS.cardView(snap({ ...paused(), profile: home }), ctx(), t).home, 'dnsProtect.profile.home(Kinder)');
+    assert.equal(DS.cardView(snap(data({ profile: { ...home, home: false } })), ctx(), t).home, null);
+    assert.equal(DS.cardView(snap(data()), ctx(), t).home, null);
+    assert.equal(DS.cardView(snap(data({ profile: null })), ctx(), t).home, null);
+    // not where the device is not filtered or the filter is down
+    assert.equal(DS.cardView(snap(data({ state: 'fallback', outage: { since: null }, profile: home })), ctx(), t).home, null);
+    assert.equal(DS.cardView(snap(data({ state: 'unfiltered', profile: home })), ctx(), t).home, null);
+  });
+
   it('paused without an end, and for all devices by an admin', () => {
     const open = DS.cardView(snap(paused({ until: null, openEnd: true }, { extend: false })), ctx(), t);
     assert.equal(open.sub, 'dnsProtect.sub.pausedOpenMe');

@@ -6,7 +6,8 @@
  * shows in its states — active, paused with the time left, filter down
  * ("fallback"), not filtered, starting, not reachable —, the counters, the
  * durations the server allows, the note of a pause, "Internet pausiert" of
- * the family plugin (plugin 1.1.0: `internet`), the top blocked domains and
+ * the family plugin (plugin 1.1.0: `internet`), a profile shared with the
+ * home network (plugin 1.2.0: `profile.home`), the top blocked domains and
  * the text of a failure. The card draws what the server says (`may`) and
  * decides nothing itself. Loaded as a plain script before dns-view.js
  * (window.GCDnsState) and required by the node tests (test/dns-state.test.js).
@@ -180,7 +181,7 @@
 	 *
 	 * @param {object} snap - snapshot of the service
 	 * @param {{ now: number, locale: string, connected?: boolean, busy?: boolean }} ctx
-	 * @returns {null | { state, tone, icon, sub, chip: { text, tone, countdown }, banner, counters, pause, paused, notes, retry }}
+	 * @returns {null | { state, tone, icon, sub, chip: { text, tone, countdown }, banner, counters, home, pause, paused, notes, retry }}
 	 */
 	function cardView(snap, ctx, t) {
 		if (!shown(snap)) return null;
@@ -194,7 +195,7 @@
 		}
 		if (d.state === 'off') return null;
 		if (snap.stale) notes.push(t('dnsProtect.stale'));
-		const v = { state: d.state, tone: 'neutral', icon: 'shield', sub: '', chip: { text: '', tone: 'neutral', countdown: null }, banner: null, counters: counters(d, locale, t), pause: null, paused: null, notes, retry: false };
+		const v = { state: d.state, tone: 'neutral', icon: 'shield', sub: '', chip: { text: '', tone: 'neutral', countdown: null }, banner: null, counters: counters(d, locale, t), home: null, pause: null, paused: null, notes, retry: false };
 
 		if (d.state === 'fallback') {
 			const since = d.outage && isMs(d.outage.since) ? hm(onLocalClock(d.outage.since, snap), locale) : '';
@@ -214,6 +215,8 @@
 			return v;
 		}
 		if (ctx.connected === false) notes.push(t('dnsProtect.disconnected'));
+		// plugin 1.2.0: the profile also holds at home (shared with the home network's DNS filter); else no line, as before
+		if (d.profile && d.profile.home) v.home = t('dnsProtect.profile.home', { name: d.profile.name });
 		if (d.state === 'paused') {
 			const left = remainingMs(snap, now);
 			Object.assign(v, { tone: 'warn', icon: 'shieldPause', sub: pausedSub(snap, locale, t) });

@@ -20,6 +20,8 @@ const coreDir = (() => {
 const HAS_CORE = !!coreDir && fs.existsSync(path.join(coreDir, 'src', 'services', 'dns-protect.js'));
 
 const CARD = '#dns-protect';
+// where a failed change is told
+const PAUSE_ERROR = '#toasts .toast-error';
 const TOP = '#dns-protect-top';
 const sent = (dns, method, route) => dns.log.filter((r) => r.method === method && r.route === route);
 const refresh = (page) => page.evaluate(() => window.gatecontrol.dnsProtect.refresh());
@@ -268,6 +270,17 @@ test.describe('dns-schutz', () => {
     await expect.poll(() => trayDns(launched)).toHaveLength(2);
   });
 
+  test('a profile shared with the home network (plugin 1.2.0): "gilt zu Hause und unterwegs"', async ({ launchApp, mock }) => {
+    const dns = mock.setDns({ profile: { id: 'p1', name: 'Kinder', safeSearch: true, home: true } });
+    const { page } = await open(launchApp, mock);
+    const card = page.locator(CARD);
+    await expect(card.locator('[data-note="home"]')).toHaveText(/^(Profil „Kinder“ · gilt zu Hause und unterwegs|Profile “Kinder” · holds at home and on the road)$/);
+    dns.profile = { id: 'p1', name: 'Kinder', safeSearch: true };
+    await refresh(page);
+    await expect(card).toHaveAttribute('data-state', 'active');
+    await expect(card.locator('[data-note="home"]')).toHaveCount(0);
+  });
+
   test('a device with its own DNS server: "nicht gefiltert", nothing to pause', async ({ launchApp, mock }) => {
     mock.setDns({ device: { peerId: 21, name: 'Annas Laptop', platform: 'windows', state: 'ownDns', ownDns: '1.1.1.1' } });
     const launched = await open(launchApp, mock);
@@ -303,6 +316,30 @@ test.describe('dns-schutz', () => {
     await card.locator('[data-act="pause-5"]').click();
     await expect(page.locator('#toasts .toast-error')).toContainText(/Der Filter-Dienst antwortet gerade nicht|The filter service is not answering right now/);
     await expect(card).toHaveAttribute('data-state', 'active');
+  });
+
+  test('the plugin goes away (the core\'s 404) or answers 404 itself (unknown device)', async ({ launchApp, mock }) => {
+    const dns = mock.setDns();
+    const launched = await open(launchApp, mock);
+    const { page } = launched;
+    const card = page.locator(CARD);
+    await expect(card).toHaveAttribute('data-state', 'active');
+    // the plugin's own 404 with its sentence: the card stays, the sentence is shown, the status asked again
+    dns.fail = { status: 404, code: 'not_found', error: 'Dieses Gerät kennt der DNS-Schutz nicht.' };
+    const asked = sent(dns, 'GET', 'status').length;
+    await card.locator('[data-act="pause-5"]').click();
+    await expect(page.locator(PAUSE_ERROR)).toContainText('Dieses Gerät kennt der DNS-Schutz nicht.');
+    await expect.poll(() => sent(dns, 'GET', 'status').length).toBeGreaterThan(asked);
+    await expect(card).toBeVisible();
+    // the core: plugin not available (server 1.301.0) → no card, no tray entries, permissions asked again
+    dns.fail = { status: 404, code: 'not_found', reason: 'plugin_unavailable' };
+    dns.filter = null;
+    const perms = mock.count('/api/v1/client/permissions');
+    await refresh(page);
+    await expect(card).toBeHidden();
+    await expect(page.locator(TOP)).toBeHidden();
+    await expect.poll(() => trayDns(launched)).toEqual([]);
+    await expect.poll(() => mock.count('/api/v1/client/permissions')).toBeGreaterThan(perms);
   });
 
   test('switched off while the app runs: the card and the tray entries go', async ({ launchApp, mock }) => {

@@ -162,6 +162,7 @@
 				]))));
 				if (v.counters.note) kids.push(el('p', { class: 'desc dnsp-note', text: v.counters.note }));
 			}
+			if (v.home) kids.push(el('p', { class: 'desc dnsp-note', 'data-note': 'home', text: v.home }));
 			if (v.pause) {
 				kids.push(el('div', { class: 'dnsp-btns', role: 'group', 'aria-label': v.pause.label }, [
 					el('span', { class: 'desc dnsp-lead', text: v.pause.label }),
