@@ -1086,6 +1086,40 @@
 		return wayLabel(pref, w && w.label);
 	}
 
+	/**
+	 * „Nur diese Nachricht über …“ (Schnellwechsel im Schreibfeld): the ways of a person that can send right now, each
+	 * kind once (GateControl first) → [{ way, label, conversationId, current, sub }] — offered only from two on and with
+	 * „Nachrichten senden über“ (`replyPref`). `current`: the way the server picks (`person.reply`); `sub` the short line
+	 * („alle Funktionen“, „Weg der letzten Nachricht“ / „dein Standard“ at the way that is used anyway).
+	 */
+	function onceWays(c, t) {
+		if (!hasReplyPref(c)) return [];
+		const rw = replyWay(c);
+		const pref = replyPref(c);
+		const out = [];
+		for (const w of c.person.ways) {
+			const way = w && WAY_RE.test(str(w.way)) ? w.way : null;
+			if (!way || out.some((x) => x.way === way) || (way === GC_WAY && w.bridge) || (w.can && w.can.send === false)) continue;
+			const current = !!rw && rw.conversationId === w.conversationId;
+			const sub = way === GC_WAY ? t('chat.person.onceGcSub') : current ? t(pref === REPLY_AUTO ? 'chat.person.onceLastSub' : 'chat.person.onceStdSub') : null;
+			out.push({ way, label: wayLabel(way, w.label), conversationId: w.conversationId, current, sub });
+		}
+		out.sort((a, b) => (a.way === GC_WAY ? -1 : b.way === GC_WAY ? 1 : 0));
+		return out.length > 1 ? out : [];
+	}
+
+	/**
+	 * The entry as if the server had picked `way` for the next message (its `person.reply` → that way, no fallback line):
+	 * what the composer, the plus menu and the placeholder check while „Nur diese Nachricht über …“ is chosen; null when
+	 * the person has no such way that can send now.
+	 */
+	function onceEntry(c, way) {
+		if (!isPerson(c)) return null;
+		const w = c.person.ways.find((x) => x && x.way === way && !(way === GC_WAY && x.bridge) && !(x.can && x.can.send === false));
+		if (!w) return null;
+		return { ...c, person: { ...c.person, reply: { way: w.way, label: w.label || null, conversationId: w.conversationId } } };
+	}
+
 	/** Does a chat's bridge send a location (`bridge.supports` names `location`, gc.bridges version 14)? */
 	function bridgeTakesLocation(c) {
 		const b = bridgeOf(c);
@@ -2255,7 +2289,7 @@
 		PRESETS,
 		features14,
 		GC_WAY, isPerson, wayOf, wayLabel, personWays, personSub, replyWay, wayConv, sendConv, msgConv, sourceChips, personNameOptions, personNameValue,
-		replyPref, hasReplyPref, gcWayOf, replyChoices, replyFallback, bridgeTakesLocation, plusMenu, placeMessageLine,
+		replyPref, hasReplyPref, gcWayOf, replyChoices, replyFallback, onceWays, onceEntry, bridgeTakesLocation, plusMenu, placeMessageLine,
 		mergeNameOptions, mergeRequest, canMergeByHand, filterCandidates,
 		isChannel, channelEntryText, channelNetworks, filterChannels, hasOwnReaction, safeHref, linkify, richText, linkPreview, netGlyph,
 		bridgeOf, bridgeName, bridgeMark, bridgeLabel, bridgeNetworks, bridgeBlock, senderName, quoteName, senderKey, placeholderOf, placeholderText, bridgeFailure,

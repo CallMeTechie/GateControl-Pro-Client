@@ -1437,6 +1437,33 @@ describe('chat-state: Versandweg, Plus-Menü, Standort über Brücken (Messenger
     assert.deepEqual(CS.plusMenu(direct(), {}), { files: true, location: 'text', gc: true, mark: false });
   });
 
+  it('„Nur diese Nachricht über …“: the ways that can send now, the entry as if the server had picked one', () => {
+    assert.deepEqual(CS.onceWays(kim(), t), [
+      { way: 'gatecontrol', label: 'GateControl', conversationId: 40, current: false, sub: 'chat.person.onceGcSub' },
+      { way: 'whatsapp', label: 'WhatsApp', conversationId: 41, current: true, sub: 'chat.person.onceLastSub' },
+    ]);
+    // „Immer WhatsApp“: the way used anyway is the default
+    assert.equal(CS.onceWays(kim({ replyPref: 'whatsapp' }), t)[1].sub, 'chat.person.onceStdSub');
+    // WhatsApp cannot send right now: one way only, no choice
+    const off = kim();
+    off.person.ways[1].can = { send: false };
+    assert.deepEqual(CS.onceWays(off, t), []);
+    // a server before 1.27, a chat that is no person
+    assert.deepEqual(CS.onceWays({ ...kim(), person: { ...kim().person, replyPref: undefined } }, t), []);
+    assert.deepEqual(CS.onceWays(direct(), t), []);
+    const e = CS.onceEntry(kim(), 'gatecontrol');
+    assert.deepEqual(e.person.reply, { way: 'gatecontrol', label: 'GateControl', conversationId: 40 });
+    assert.equal(CS.replyWay(e).conversationId, 40);
+    assert.equal(CS.sendConv(e).bridge, null);
+    assert.deepEqual(CS.plusMenu(e, {}), { files: true, location: 'text', gc: true, mark: false });
+    assert.equal(kim().person.reply.way, 'whatsapp', 'the entry itself stays as it is');
+    // a fallback line does not belong to the way chosen for one message
+    assert.equal(CS.replyFallback(CS.onceEntry(kim({ replyPref: 'whatsapp', reply: { way: 'gatecontrol', conversationId: 40, fallback: true } }), 'gatecontrol')), null);
+    assert.equal(CS.onceEntry(kim(), 'signal'), null);
+    assert.equal(CS.onceEntry(off, 'whatsapp'), null);
+    assert.equal(CS.onceEntry(direct(), 'gatecontrol'), null);
+  });
+
   it('„Ortsnachricht · <Ort>“ only at an own message; an incoming location of a bridge is a location', () => {
     assert.equal(CS.placeMessageLine(msg(1, { mine: true, placeMessage: { name: 'Zuhause', trigger: 'enter' } }), t), 'chat.msg.placeMessage(Zuhause)');
     assert.equal(CS.placeMessageLine(msg(1, { mine: false, placeMessage: { name: 'Zuhause' } }), t), null);
