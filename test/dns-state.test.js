@@ -150,6 +150,50 @@ describe('the card', () => {
     assert.match(DS.cardView(snap({ ...paused(), device: null }), ctx(), t).paused.note, / dnsProtect\.note\.devices$/);
   });
 
+  it('the picked duration as the server says it (plugin 1.1.0 `minutes`), else from the times', () => {
+    // "+30 Min." on a pause of 30: the whole hour
+    const v = DS.cardView(snap(paused({ until: ms('2026-11-12T14:42:00Z'), minutes: 60 })), ctx(), t);
+    assert.equal(v.paused.note, `dnsProtect.note.byMe(${hm('2026-11-12T13:42:00Z')},dnsProtect.duration.hour) dnsProtect.note.device`);
+    // the server's number wins over the times (rounded on the server)
+    assert.match(DS.cardView(snap(paused({ minutes: 5 })), ctx(), t).paused.note, /dnsProtect\.duration\.minutes\(5\)/);
+    // an older plugin (no `minutes`) or none: from until − since
+    assert.match(DS.cardView(snap(paused({ minutes: null })), ctx(), t).paused.note, /dnsProtect\.duration\.minutes\(30\)/);
+  });
+
+  it('"Internet pausiert" (Familie): a note until when, no durations — the reason of the rights does not hide it', () => {
+    const INTERNET = { until: ms('2026-11-12T14:33:00Z') };
+    const ip = { ...MAY, pause: false, durations: [], reason: 'internet_paused' };
+    const v = DS.cardView(snap(data({ internet: INTERNET, may: ip })), ctx(), t);
+    assert.deepEqual([v.state, v.tone, v.pause], ['active', 'ok', null]);
+    assert.deepEqual(v.banner, { tone: 'warn', icon: 'pause', title: `dnsProtect.banner.internetTitle(${hm('2026-11-12T14:33:00Z')})`, text: 'dnsProtect.banner.internetText' });
+    assert.equal(v.counters.items.length, 3);
+    // pausing not allowed anyway (profile): the internet pause is what matters
+    assert.equal(DS.cardView(snap(data({ internet: INTERNET, may: { ...MAY, pause: false, reason: 'profile' } })), ctx(), t).banner.title, `dnsProtect.banner.internetTitle(${hm('2026-11-12T14:33:00Z')})`);
+    // already paused when it began: the pause with its buttons, and the note
+    const p = DS.cardView(snap({ ...paused(), internet: INTERNET }), ctx(), t);
+    assert.deepEqual([p.state, p.paused.resume, p.banner.icon], ['paused', true, 'pause']);
+    // the reason without `internet` (an answer in between): the reason's sentence
+    const r = DS.cardView(snap(data({ may: ip })), ctx(), t);
+    assert.deepEqual([r.banner.tone, r.banner.text], ['info', 'dnsProtect.banner.internet_paused']);
+    // a clock that is off: the end on this PC's clock
+    const off = DS.cardView(snap(data({ internet: INTERNET, may: ip }), { fetchedAt: NOW + 3600000 }), ctx(), t);
+    assert.equal(off.banner.title, `dnsProtect.banner.internetTitle(${DS.hm(INTERNET.until + 3600000, 'de')})`);
+    // not in the fallback / an older plugin: nothing
+    assert.equal(DS.cardView(snap(data()), ctx(), t).banner, null);
+  });
+
+  it('a profile shared with the home network (plugin 1.2.0 `profile.home`): one line; otherwise none, as before', () => {
+    const home = { name: 'Kinder', safeSearch: true, home: true };
+    assert.equal(DS.cardView(snap(data({ profile: home })), ctx(), t).home, 'dnsProtect.profile.home(Kinder)');
+    assert.equal(DS.cardView(snap({ ...paused(), profile: home }), ctx(), t).home, 'dnsProtect.profile.home(Kinder)');
+    assert.equal(DS.cardView(snap(data({ profile: { ...home, home: false } })), ctx(), t).home, null);
+    assert.equal(DS.cardView(snap(data()), ctx(), t).home, null);
+    assert.equal(DS.cardView(snap(data({ profile: null })), ctx(), t).home, null);
+    // not where the device is not filtered or the filter is down
+    assert.equal(DS.cardView(snap(data({ state: 'fallback', outage: { since: null }, profile: home })), ctx(), t).home, null);
+    assert.equal(DS.cardView(snap(data({ state: 'unfiltered', profile: home })), ctx(), t).home, null);
+  });
+
   it('paused without an end, and for all devices by an admin', () => {
     const open = DS.cardView(snap(paused({ until: null, openEnd: true }, { extend: false })), ctx(), t);
     assert.equal(open.sub, 'dnsProtect.sub.pausedOpenMe');
@@ -288,7 +332,7 @@ describe('the page and main', () => {
     for (const e of ['network', 'timeout', 'unavailable', 'rate_limited', 'failed']) keys.add(`dnsProtect.error.${e}`);
     for (const k of ['byMe', 'byOther', 'plain']) { keys.add(`dnsProtect.note.${k}`); keys.add(`dnsProtect.note.${k}Open`); }
     // the tray entries are built by the core (utils/dns-protect.js)
-    for (const k of ['active', 'pausedUntil', 'paused', 'fallback', 'unfiltered', 'pause', 'resume']) keys.add(`dnsProtect.tray.${k}`);
+    for (const k of ['active', 'pausedUntil', 'paused', 'fallback', 'unfiltered', 'pause', 'resume', 'internetPaused']) keys.add(`dnsProtect.tray.${k}`);
     assert.ok(keys.size > 70, `found ${keys.size} keys`);
     for (const k of keys) {
       assert.equal(typeof get(de, k), 'string', `${k} missing in core de.json`);

@@ -17,9 +17,12 @@
  *     device: { peerId, name, state, ownDns } | null,
  *     counters: { scope, queries, blocked, percent }, top: [...] | null,
  *     me: { userId, name },
+ *     internet: ms | null,   // plugin 1.1.0: "Internet pausiert" (Familie) until then
+ *     profile: { id, name, safeSearch, home? } | null,   // home: plugin 1.2.0
  *   });
  *   dns.log → [{ method, route, body, lang }]
- *   dns.fail = { status, code, error }   // every plugin call is refused like this (null: none)
+ *   dns.fail = { status, code, error, reason }   // every plugin call is refused like this (null: none);
+ *                                                // 404 without error: the core's (reason 'plugin_unavailable' from 1.301.0)
  *
  * Without `mock.setDns()` the permissions answer has no `vpnDns` field at
  * all (a server before 1.264.0). Times come from `dns.now()` (the real clock
@@ -33,10 +36,11 @@ function createDns({
   may = {}, device = { peerId: 21, name: 'Annas Laptop', platform: 'windows', state: 'filtered', ownDns: null },
   counters = { scope: 'device', queries: 2106, blocked: 318, percent: 15.1 },
   top = [{ domain: 'googlesyndication.com', count: 74 }, { domain: 'doubleclick.net', count: 61 }, { domain: 'scorecardresearch.com', count: 38 }],
-  me = { userId: 2, name: 'Anna' }, outageSince = null,
+  me = { userId: 2, name: 'Anna' }, outageSince = null, internet = null,
+  profile = { id: 'p1a2b3c4d', name: 'Standard', safeSearch: false },
 } = {}) {
   const state = {
-    plugin, filter, device, counters, top, me, outageSince,
+    plugin, filter, device, counters, top, me, outageSince, internet, profile,
     may: { durations: [5, 30, 60], maxMinutes: 60, forever: false, reason: null, ...may },
     pause: null, // { scope, until (ms | null), openEnd, since (ms), by }
     log: [], fail: null, clock: null,
@@ -59,7 +63,10 @@ function createDns({
     const now = state.now();
     const unfiltered = !state.device || state.device.state !== 'filtered';
     const st = state.filter === 'fallback' ? 'fallback' : state.filter === 'starting' ? 'starting' : unfiltered ? 'unfiltered' : p ? 'paused' : 'active';
-    const blocked = state.may.reason;
+    // plugin 1.1.0: the internet paused (Familie) — only while the filter runs and the device is filtered
+    const internet = state.filter === 'filtering' && !unfiltered && typeof state.internet === 'number' && state.internet > now ? state.internet : null;
+    // a reason of the rights wins; paused before the internet pause began: the usual buttons
+    const blocked = state.may.reason || (internet && st === 'active' ? 'internet_paused' : null);
     const forAll = !!p && p.scope === 'all';
     const reason = st === 'fallback' ? 'fallback' : st === 'starting' ? 'off' : unfiltered ? (state.device ? 'not_filtered' : 'no_device') : forAll ? 'paused_for_all' : blocked;
     const can = st === 'active' && !blocked;
@@ -67,17 +74,19 @@ function createDns({
       state: st,
       enabled: true,
       device: state.device,
-      profile: { id: 'p1a2b3c4d', name: 'Standard', safeSearch: false },
+      profile: state.profile,
       pause: st === 'paused' ? {
         scope: p.scope, until: p.openEnd ? null : iso(p.until), openEnd: p.openEnd, since: iso(p.since), by: p.by, byMe: !!p.by && p.by.userId === state.me.userId,
         remainingSeconds: p.openEnd ? null : Math.max(0, Math.round((p.until - now) / 1000)),
+        minutes: p.openEnd ? null : Math.max(1, Math.round((p.until - p.since) / MIN)),
       } : null,
+      internet: internet ? { paused: true, until: iso(internet), remainingSeconds: Math.round((internet - now) / 1000) } : null,
       outage: st === 'fallback' ? { since: state.outageSince || iso(now - 17 * MIN) } : null,
       counters: state.counters,
       top: state.top,
       may: {
         pause: can, resume: st === 'paused' && !forAll, extend: st === 'paused' && !forAll && !p.openEnd && !blocked,
-        reason: can ? null : reason || null, durations: state.may.durations, maxMinutes: state.may.maxMinutes, forever: state.may.forever,
+        reason: can ? null : reason || null, durations: blocked === 'internet_paused' ? [] : state.may.durations, maxMinutes: state.may.maxMinutes, forever: state.may.forever && blocked !== 'internet_paused',
       },
       today: [], devices: [], manage: false, log: { enabled: true, visible: true },
       serverTime: iso(now),
@@ -93,6 +102,8 @@ function createDns({
     state.log.push({ method, route: path, body, lang: (query && query.lang) || null });
     const refuse = (status, code, extra = {}) => { json(status, { ok: false, code, error: code, ...extra }); return true; };
     const ok = (data) => { json(200, { ok: true, ...data }); return true; };
+    // a 404 of the core has no plugin sentence (`error`); from server 1.301.0 it says `reason: "plugin_unavailable"`
+    if (state.fail && state.fail.status === 404 && !state.fail.error) { json(404, { ok: false, code: state.fail.code, ...(state.fail.reason ? { reason: state.fail.reason } : {}) }); return true; }
     if (state.fail) return refuse(state.fail.status, state.fail.code, state.fail.error ? { error: state.fail.error } : {});
     if (!state.filter) return refuse(409, 'off');
 
@@ -103,6 +114,7 @@ function createDns({
       if (given.length !== 1) return refuse(400, 'invalid');
       if (state.filter === 'fallback') return refuse(409, 'not_filtering', { error: 'Der Filter ist ausgefallen.' });
       if (state.may.reason) return refuse(403, 'not_allowed', { reason: state.may.reason, error: 'Unterbrechen ist für dich nicht erlaubt.' });
+      if (state.status().internet && !running()) return refuse(403, 'not_allowed', { reason: 'internet_paused', error: 'Das Internet ist pausiert (Familie). Den Schutz zu unterbrechen ändert daran nichts.' });
       const now = state.now();
       const by = { userId: state.me.userId, name: state.me.name };
       if (given[0] === 'forever') {
