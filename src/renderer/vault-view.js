@@ -1695,6 +1695,11 @@
 				});
 				box.appendChild(btn('btn-ghost btn-sm', [icon('plus', 14), el('span', { text: t('vault.addUrl') })], () => { dr.urls.push(''); buildEdit(); }));
 				form.appendChild(el('div', { class: 'field' }, [el('label', { text: t('vault.field.urls') }), box]));
+				// „Passt zu“: the whole domain (default) or only this exact address (several services under one domain)
+				const choice = VS.matchChoice(dr);
+				const match = el('select', { class: 'inp', id: 'vault-edit-match', on: { change: (e) => { VS.setMatch(dr, e.target.value); } } },
+					['domain', 'exact'].map((m) => el('option', { value: m, text: t(`vault.match.${m}`), selected: m === choice ? true : null })));
+				form.appendChild(field('vault-edit-match', t('vault.field.match'), match, [el('span', { class: 'vt-hint', text: t('vault.match.hint') })]));
 				if (dr.apps.length) {
 					const apps = el('div', { class: 'vt-list-edit' });
 					dr.apps.forEach((a, i) => apps.appendChild(el('div', { class: 'field-row' }, [

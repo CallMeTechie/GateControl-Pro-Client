@@ -199,12 +199,66 @@
 			.concat(list.map((v) => ({ id: v.id, label: t('vault.filter.count', { name: names.get(v.id), count: Number(v.count) || 0 }) })));
 	}
 
+	// ── Order by web address („Passt zu“) ────────────────────
+	// The same rules as core utils/vault.js (exactHost, siteOf, hostFit): the exact host before only the domain.
+
+	const SECOND_LEVEL = new Set(['co', 'com', 'org', 'net', 'gov', 'ac', 'edu', 'or', 'ne', 'go']);
+
+	/** "https://WWW.Nas.Example.test.:5001/x" → "www.nas.example.test" (no case, port, trailing dot; "www." stays); null when no host. */
+	function exactHost(url) {
+		if (typeof url !== 'string') return null;
+		let s = url.trim().toLowerCase();
+		if (!s) return null;
+		const i = s.indexOf('://');
+		if (i >= 0) s = s.slice(i + 3);
+		s = s.split('/')[0].split('?')[0].split('#')[0];
+		s = s.slice(s.lastIndexOf('@') + 1).split(':')[0].replace(/\.+$/, '');
+		if (!s || !/^[\p{L}\p{Nd}.-]+$/u.test(s)) return null;
+		return s;
+	}
+
+	/** The registrable domain of a host ("www." left out): "nas.example.test" → "example.test"; an IP stays. */
+	function siteOf(host) {
+		const h = host.startsWith('www.') ? host.slice(4) : host;
+		if (/^[\d.]+$/.test(h)) return h;
+		const parts = h.split('.').filter(Boolean);
+		if (parts.length <= 2) return parts.join('.');
+		const n = parts[parts.length - 1].length === 2 && SECOND_LEVEL.has(parts[parts.length - 2]) ? 3 : 2;
+		return parts.slice(-n).join('.');
+	}
+
+	/** How an entry's web addresses (`urls`) fit a page: 'host' (exactly its host), 'domain' (only its domain) or null. */
+	function hostFit(urls, webAddress) {
+		const page = exactHost(webAddress);
+		if (!page) return null;
+		const want = siteOf(page);
+		let fit = null;
+		for (const u of Array.isArray(urls) ? urls : []) {
+			const x = exactHost(u);
+			if (!x) continue;
+			if (x === page) return 'host';
+			if (siteOf(x) === want) fit = 'domain';
+		}
+		return fit;
+	}
+
+	/** 0 exact host, 1 only the domain, 2 neither — the first key when suggesting by web address. */
+	const fitRank = (urls, webAddress) => ({ host: 0, domain: 1 }[hostFit(urls, webAddress)] ?? 2);
+
+	/** Is the search text a web address ("nas.example.test", "https://nas.example.test/login")? */
+	const looksLikeAddress = (query) => !/\s/.test(str(query).trim()) && str(query).includes('.') && !!exactHost(query);
+
 	// ── Quick search (Strg+Alt+P) ────────────────────────────
 
-	/** Ranked hits: title starts with › a word of the title starts with › title contains › elsewhere; favourites first within. */
+	/**
+	 * Ranked hits: title starts with › a word of the title starts with › title contains › elsewhere; favourites first within.
+	 * When the search text is a web address, entries with exactly its host come first, then those with only its domain
+	 * (the ranking above within each group).
+	 */
 	function quickSearch(entries, query, limit = 8) {
 		const q = fold(query).trim();
 		if (!q) return [];
+		const address = looksLikeAddress(query) ? str(query).trim() : null;
 		const scored = [];
 		for (const e of entries || []) {
 			if (e.trashed || !matches(e, q)) continue;
@@ -213,9 +267,9 @@
 			if (title.startsWith(q)) score = 0;
 			else if (title.split(/[\s\-_.()/]+/).some((w) => w.startsWith(q))) score = 1;
 			else if (title.includes(q)) score = 2;
-			scored.push({ e, score: score * 2 + (e.fav ? 0 : 1) });
+			scored.push({ e, fit: address ? fitRank(e.urls, address) : 0, score: score * 2 + (e.fav ? 0 : 1) });
 		}
-		scored.sort((a, b) => a.score - b.score || str(a.e.title).localeCompare(str(b.e.title), 'de', { sensitivity: 'base' }));
+		scored.sort((a, b) => a.fit - b.fit || a.score - b.score || str(a.e.title).localeCompare(str(b.e.title), 'de', { sensitivity: 'base' }));
 		return scored.slice(0, limit).map((x) => x.e);
 	}
 
@@ -340,16 +394,26 @@
 		return { id: null, vaultId: vaultId || null, type: tp, title: '', fav: false, notes: '', urls: tp === 'login' ? [''] : [], apps: [], fields: {}, custom: [], extra: {} };
 	}
 
-	const KNOWN = new Set(['v', 'type', 'title', 'fav', 'notes', 'urls', 'apps', 'fields', 'custom']);
+	const KNOWN = new Set(['v', 'type', 'title', 'fav', 'notes', 'urls', 'apps', 'fields', 'custom', 'match']);
 
-	/** An entry ({ id, vaultId, data }) → draft (unknown keys kept in `extra`). */
+	/** „Passt zu“ in the form: 'exact' (only this very address) or 'domain' (the default; also any value of a later version). */
+	const matchChoice = (draft) => (draft && draft.match === 'exact' ? 'exact' : 'domain');
+
+	/** The form's choice → draft: 'exact' is kept, the domain removes the key. */
+	function setMatch(draft, choice) {
+		if (choice === 'exact') draft.match = 'exact';
+		else delete draft.match;
+		return draft;
+	}
+
+	/** An entry ({ id, vaultId, data }) → draft (unknown keys kept in `extra`; `match` as it is, also a value of a later version). */
 	function draftFrom(entry) {
 		const d = (entry && entry.data) || {};
 		const extra = {};
 		for (const [k, v] of Object.entries(d)) if (!KNOWN.has(k)) extra[k] = v;
 		const type = TYPES.includes(d.type) ? d.type : 'login';
 		const urls = Array.isArray(d.urls) ? d.urls.map(str) : [];
-		return {
+		const out = {
 			id: entry && entry.id ? entry.id : null,
 			vaultId: entry && entry.vaultId ? entry.vaultId : null,
 			type,
@@ -362,11 +426,15 @@
 			custom: Array.isArray(d.custom) ? d.custom.filter(isObj).map((c) => ({ name: str(c.name), value: str(c.value), secret: c.secret === true })) : [],
 			extra,
 		};
+		if (d.match !== undefined && d.match !== 'domain') out.match = d.match;
+		return out;
 	}
 
 	/**
 	 * Draft → entry JSON v1 for vault:save. Fields of other types stay (a
 	 * changed type keeps what it had), empty values and empty custom rows go.
+	 * `match`: 'exact' is written, the domain (default) is left out, a value of
+	 * a later version stays unchanged.
 	 */
 	function draftToData(draft) {
 		const d = draft || emptyDraft('login');
@@ -383,6 +451,7 @@
 		out.fields = fields;
 		out.custom = (d.custom || []).map((c) => ({ name: str(c.name).trim(), value: str(c.value), secret: c.secret === true }))
 			.filter((c) => c.name !== '' || c.value !== '');
+		if (d.match !== undefined && d.match !== null && d.match !== 'domain') out.match = d.match;
 		return out;
 	}
 
@@ -819,7 +888,8 @@
 		vaultNames, rowSub, matches, filterEntries, sections, filterChips,
 		quickSearch, quickKey, quickCommand, moveSelection, prettyCode,
 		fieldLabel, fieldOn, detailRows, mask, maskedNumber, changedText,
-		emptyDraft, draftFrom, draftToData, draftError, draftChanged, openableUrl,
+		emptyDraft, draftFrom, draftToData, draftError, draftChanged, openableUrl, matchChoice, setMatch,
+		exactHost, hostFit, looksLikeAddress,
 		strengthView, masterCheck, recoveryGroups, recoveryComplete,
 		errorText, helloReasonText, helloView, helloSetting, wifiScanView, wifiBars, wifiSecurityLabel, wifiRowSub, applyWifi,
 		QR_SOURCES, totpQrInfo, looksLikeUser, totpQrBusy, totpQrView, applyTotpQr,

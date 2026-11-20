@@ -90,6 +90,29 @@ describe('quick search keys (Strg+Alt+P window)', () => {
     assert.equal(VS.quickSearch(list, 'spark', 2).length, 2);
     assert.deepEqual(VS.quickSearch([sum({ title: 'Müller GmbH' })], 'mul').map((e) => e.title), ['Müller GmbH'], 'umlauts fold');
   });
+
+  it('a web address as search text: exact host first, then only the domain, the ranking above within each', () => {
+    const list = [
+      sum({ id: 'a'.repeat(20), title: 'Cloud', urls: ['https://cloud.example.test'] }),
+      sum({ id: 'b'.repeat(20), title: 'NAS', urls: ['https://NAS.example.test:5001/'] }),
+      sum({ id: 'c'.repeat(20), title: 'Example', urls: ['https://nas.example.test.'], fav: true }),
+      sum({ id: 'd'.repeat(20), title: 'WWW', urls: ['https://www.nas.example.test'] }),
+      sum({ id: 'e'.repeat(20), title: 'Notiz example', urls: [] }),
+    ];
+    // "example" alone is no address: the title ranking only
+    assert.deepEqual(VS.quickSearch(list, 'example').map((e) => e.title), ['Example', 'Notiz example', 'Cloud', 'NAS', 'WWW']);
+    // the host: exact (fav first, then A–Z) › "www." and other hosts of the domain › the rest
+    assert.deepEqual(VS.quickSearch(list, 'nas.example.test').map((e) => e.title), ['Example', 'NAS', 'WWW']);
+    assert.deepEqual(VS.quickSearch(list, 'example.test').map((e) => e.title), ['Example', 'Cloud', 'NAS', 'WWW']);
+    assert.equal(VS.looksLikeAddress('nas.example.test'), true);
+    assert.equal(VS.looksLikeAddress('https://nas.example.test/login'), true);
+    assert.equal(VS.looksLikeAddress('spark'), false);
+    assert.equal(VS.looksLikeAddress('nas example.test'), false);
+    assert.equal(VS.exactHost('https://WWW.Nas.Example.test.:5001/x'), 'www.nas.example.test');
+    assert.equal(VS.hostFit(['https://cloud.example.test', 'nas.example.test'], 'https://nas.example.test/login'), 'host');
+    assert.equal(VS.hostFit(['https://www.nas.example.test'], 'nas.example.test'), 'domain');
+    assert.equal(VS.hostFit(['https://other.test'], 'nas.example.test'), null);
+  });
 });
 
 describe('list', () => {
@@ -239,6 +262,31 @@ describe('detail and edit draft', () => {
     assert.equal(VS.draftChanged(d, VS.draftFrom(entry)), false, 'empty rows are no change');
     d.fields.password = 'new';
     assert.equal(VS.draftChanged(d, VS.draftFrom(entry)), true);
+  });
+
+  it('„Passt zu“: draft keeps match, writes only "exact", the domain removes the key, a later value stays', () => {
+    const data = { v: 1, type: 'login', title: 'NAS', urls: ['https://nas.example.test'], apps: [], fields: {}, custom: [] };
+    const entry = (extra) => ({ id: 'e'.repeat(20), vaultId: 'v'.repeat(20), data: { ...data, ...extra } });
+    const plain = VS.draftFrom(entry({}));
+    assert.equal(VS.matchChoice(plain), 'domain');
+    assert.equal('match' in VS.draftToData(plain), false);
+    VS.setMatch(plain, 'exact');
+    assert.equal(VS.draftToData(plain).match, 'exact');
+    assert.equal(VS.draftChanged(plain, VS.draftFrom(entry({}))), true);
+
+    const exact = VS.draftFrom(entry({ match: 'exact' }));
+    assert.equal(VS.matchChoice(exact), 'exact');
+    assert.equal(exact.extra.match, undefined, 'match is no unknown key');
+    assert.equal(VS.draftToData(exact).match, 'exact');
+    VS.setMatch(exact, 'domain');
+    assert.equal('match' in VS.draftToData(exact), false, 'back to the domain: the key goes');
+
+    assert.equal('match' in VS.draftToData(VS.draftFrom(entry({ match: 'domain' }))), false);
+    const later = VS.draftFrom(entry({ match: { mode: 'path' } }));
+    assert.equal(VS.matchChoice(later), 'domain');
+    assert.deepEqual(VS.draftToData(later).match, { mode: 'path' }, 'a value of a later version is kept unchanged');
+    assert.equal(VS.draftChanged(later, VS.draftFrom(entry({ match: { mode: 'path' } }))), false);
+    assert.equal('match' in VS.emptyDraft('login'), false);
   });
 
   it('new drafts and what blocks a save', () => {
