@@ -518,6 +518,7 @@
       "totpSecret": "2FA-Schlüssel (otpauth-Link oder Base32)",
       "urls": "Website",
       "url": "Website",
+      "match": "Passt zu",
       "apps": "Programme",
       "app": "Programm (z. B. putty.exe)",
       "notes": "Notiz",
@@ -549,6 +550,11 @@
     "addUrl": "Website hinzufügen",
     "addApp": "Programm hinzufügen",
     "removeUrl": "Entfernen",
+    "match": {
+      "domain": "Ganzer Domain (Standard)",
+      "exact": "Nur genau dieser Adresse",
+      "hint": "Wenn unter derselben Domain mehrere Dienste laufen, schlägt der Vault diesen Eintrag nur auf genau dieser Adresse vor."
+    },
     "totp": {
       "left": "Noch {{ seconds }} s gültig",
       "invalid": "Dieser 2FA-Schlüssel lässt sich nicht lesen."

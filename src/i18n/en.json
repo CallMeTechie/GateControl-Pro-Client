@@ -518,6 +518,7 @@
       "totpSecret": "2FA key (otpauth link or base32)",
       "urls": "Website",
       "url": "Website",
+      "match": "Matches",
       "apps": "Programs",
       "app": "Program (e.g. putty.exe)",
       "notes": "Note",
@@ -549,6 +550,11 @@
     "addUrl": "Add website",
     "addApp": "Add program",
     "removeUrl": "Remove",
+    "match": {
+      "domain": "Whole domain (default)",
+      "exact": "Only this exact address",
+      "hint": "If several services run under the same domain, the vault suggests this entry only on this exact address."
+    },
     "totp": {
       "left": "Valid for {{ seconds }} s",
       "invalid": "This 2FA key cannot be read."
