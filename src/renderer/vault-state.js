@@ -399,6 +399,9 @@
 	/** „Passt zu“ in the form: 'exact' (only this very address) or 'domain' (the default; also any value of a later version). */
 	const matchChoice = (draft) => (draft && draft.match === 'exact' ? 'exact' : 'domain');
 
+	/** The detail shows „Passt zu: Nur genau dieser Adresse“: only for 'exact' with a web address (the default shows nothing). */
+	const matchShown = (data) => !!(data && data.match === 'exact' && Array.isArray(data.urls) && data.urls.some((u) => str(u).trim()));
+
 	/** The form's choice → draft: 'exact' is kept, the domain removes the key. */
 	function setMatch(draft, choice) {
 		if (choice === 'exact') draft.match = 'exact';
@@ -888,7 +891,7 @@
 		vaultNames, rowSub, matches, filterEntries, sections, filterChips,
 		quickSearch, quickKey, quickCommand, moveSelection, prettyCode,
 		fieldLabel, fieldOn, detailRows, mask, maskedNumber, changedText,
-		emptyDraft, draftFrom, draftToData, draftError, draftChanged, openableUrl, matchChoice, setMatch,
+		emptyDraft, draftFrom, draftToData, draftError, draftChanged, openableUrl, matchChoice, matchShown, setMatch,
 		exactHost, hostFit, looksLikeAddress,
 		strengthView, masterCheck, recoveryGroups, recoveryComplete,
 		errorText, helloReasonText, helloView, helloSetting, wifiScanView, wifiBars, wifiSecurityLabel, wifiRowSub, applyWifi,

@@ -289,6 +289,17 @@ describe('detail and edit draft', () => {
     assert.equal('match' in VS.emptyDraft('login'), false);
   });
 
+  it('„Passt zu“ in the detail: only "exact" with a web address, the default and other values show nothing', () => {
+    const data = { v: 1, type: 'login', title: 'NAS', urls: ['https://nas.example.test'], apps: [], fields: {}, custom: [] };
+    assert.equal(VS.matchShown({ ...data, match: 'exact' }), true);
+    assert.equal(VS.matchShown(data), false, 'default: nothing');
+    assert.equal(VS.matchShown({ ...data, match: 'domain' }), false);
+    assert.equal(VS.matchShown({ ...data, match: { mode: 'path' } }), false, 'a later value: nothing');
+    assert.equal(VS.matchShown({ ...data, match: 'exact', urls: [] }), false, 'no web address: nothing');
+    assert.equal(VS.matchShown({ ...data, match: 'exact', urls: ['  '] }), false);
+    assert.equal(VS.matchShown(null), false);
+  });
+
   it('new drafts and what blocks a save', () => {
     const d = VS.emptyDraft('login', 'v'.repeat(20));
     assert.deepEqual(d.urls, ['']);

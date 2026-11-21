@@ -67,6 +67,21 @@ test.describe('vault', () => {
     // the server only ever sees ciphertext
     expect(JSON.stringify([...v.srv.items.values()])).not.toContain('s3cr3t');
 
+    // „Passt zu“: the default shows nothing; „Nur genau dieser Adresse“ shows a row in the detail, back to the domain removes it
+    await expect(page.locator('#vault-detail-match')).toHaveCount(0);
+    await page.locator('#vault-edit').click();
+    await page.locator('#vault-edit-match').selectOption('exact');
+    await page.locator('#vault-edit-save').click();
+    await expect(page.locator('#vault-detail-match')).toHaveText(/^(Nur genau dieser Adresse|Only this exact address)$/);
+    await expect(page.locator('#vault-detail-match').locator('xpath=preceding-sibling::span[1]')).toHaveText(/^(Passt zu|Matches)$/);
+    await page.locator('#vault-edit').click();
+    await expect(page.locator('#vault-edit-match')).toHaveValue('exact');
+    await page.locator('#vault-edit-match').selectOption('domain');
+    await page.locator('#vault-edit-save').click();
+    await expect(page.locator('#vault-edit-save')).toHaveCount(0);
+    await expect(page.locator('#vault-detail [data-copy="password"]')).toBeVisible();
+    await expect(page.locator('#vault-detail-match')).toHaveCount(0);
+
     // masked until revealed; copied through main
     const pw = page.locator('#vault-detail .vt-secret[data-field="password"]');
     await expect(pw).not.toContainText('s3cr3t');
