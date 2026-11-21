@@ -93,7 +93,7 @@
 			day: null,
 			loadedAt: 0,
 		};
-		const photos = new Map();   // `${id}:${etag}` → data: URL | null
+		const photos = new Map();   // `${id}:${etag}` → data: URL | null (none) | Promise (asked, on its way)
 
 		const has = (f) => H.features.includes(f);
 		const showCal = () => H.available && has('calendar') && pins.hasCalendar() && support.calendar !== false;
@@ -143,14 +143,18 @@
 			const box = el('span', { class: 'home-fav-av', 'aria-hidden': 'true', text: f.initials });
 			if (f.photo) {
 				const key = `${f.id}:${f.photoEtag || ''}`;
-				const show = (url) => { clear(box); box.append(el('img', { src: url, alt: '', draggable: 'false' })); };
-				if (photos.get(key)) show(photos.get(key));
-				else if (!photos.has(key) && api.cardPhoto) {
-					photos.set(key, null);
-					call(api.cardPhoto(f.id, f.photoEtag)).then((r) => {
-						if (r && r.ok && /^data:image\/(jpeg|png);base64,/.test(r.url)) { photos.set(key, r.url); show(r.url); }
-					});
+				const show = (url) => { if (url) { clear(box); box.append(el('img', { src: url, alt: '', draggable: 'false' })); } };
+				// still on its way: the tile drawn again meanwhile waits for the same answer (else it kept the initials)
+				if (!photos.has(key) && api.cardPhoto) {
+					photos.set(key, call(api.cardPhoto(f.id, f.photoEtag)).then((r) => {
+						const url = r && r.ok && /^data:image\/(jpeg|png);base64,/.test(r.url) ? r.url : null;
+						photos.set(key, url);
+						return url;
+					}));
 				}
+				const p = photos.get(key);
+				if (typeof p === 'string') show(p);
+				else if (p) p.then(show);
 			}
 			return box;
 		}
