@@ -1402,6 +1402,7 @@
 					openable ? btn('btn-sec btn-xs', t('vault.open'), () => openUrl(u), { title: t('vault.openWebsite') }) : null,
 				]);
 			});
+			if (VS.matchShown(data)) add(t('vault.field.match'), el('span', { class: 'vt-grid-v', id: 'vault-detail-match', 'data-field': 'match', text: t('vault.match.exact') }), []);
 			if ((data.apps || []).length) add(t('vault.field.apps'), el('span', { class: 'vt-grid-v', text: data.apps.join(', ') }), []);
 			(data.custom || []).forEach((c, i) => {
 				const label = c.name || t('vault.custom.unnamed');
