@@ -141,6 +141,29 @@ test.describe('mail – contacts with the GC contact as the master (Mail 1.4.0)'
     await expect(pins.locator('.home-fav')).toHaveCount(1);
   });
 
+  test('a favourite\'s picture that comes slowly still reaches its tile when the start page is drawn again meanwhile', async ({ launchApp, mock }) => {
+    await mock.setMail({ contactsMaster: true });
+    const { app, page } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openContacts(page, app);
+    // the picture is answered only after 2 s (a slow disk or network, as on the Windows runners) — the tile is
+    // drawn again meanwhile (the star's contacts event reloads the favourites 400 ms later)
+    const PIC = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    await app.evaluate(({ ipcMain }, url) => {
+      ipcMain.removeHandler('mail:card:photo');
+      ipcMain.handle('mail:card:photo', async () => { await new Promise((r) => setTimeout(r, 2000)); return { ok: true, mime: 'image/png', url }; });
+    }, PIC);
+    await root.locator('.con-row[data-id="405"]').click();
+    await root.locator('.con-fav-btn').click();
+    await expect(root.locator('.con-fav-btn')).toHaveAttribute('aria-pressed', 'true');
+    await root.locator('.con-pin').click();
+    await expect(root.locator('.con-pin')).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('#nav-status').click();
+    const pins = page.locator('#home-pins');
+    await expect(pins.locator('.home-fav[data-id="405"]')).toBeVisible();
+    await expect(pins.locator('.home-fav[data-id="405"] .home-fav-av img')).toHaveAttribute('src', PIC);
+  });
+
   test('the calendar widget: pinned, today and tomorrow, a click opens the event, live events reload it, × removes it', async ({ launchApp, mock }) => {
     mock.setPush({ topics: [], items: [] });
     const m = await mock.setMail({ contactsMaster: true });
