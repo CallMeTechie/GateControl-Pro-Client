@@ -17,6 +17,8 @@ const {
 const remoteTermApi = window.gatecontrol.remoteTerm || null;
 // Meine Orte (GateControl 1.299, Mein Profil › Meine Orte): the profile's places (core PlacesService)
 const placesApi = window.gatecontrol.places || null;
+// Schnellaktionen der Plugins (core QuickActionsService; absent in an older core): cards on the start page (home-view.js)
+const quickActionsApi = window.gatecontrol.quickActions || null;
 const RTS = window.GCRemoteTermState;
 const { t } = window.gatecontrol.i18n;
 
@@ -3949,11 +3951,13 @@ mailView = mailApi && window.GCMailView && $('#page-mail')
 	})
 	: null;
 // Start page (Mail 1.4.0): favourites pinned as tiles (a click calls, the name opens the contact) and the events of
-// today and tomorrow (home-view.js; hidden with servers before)
-homeView = mailView && window.GCHomeView && $('#home-pins')
+// today and tomorrow (home-view.js; hidden with servers before); the plugins' quick actions pinned as cards (also
+// without Mail; quick-actions-view.js)
+homeView = (mailView || quickActionsApi) && window.GCHomeView && $('#home-pins')
 	? window.GCHomeView.mount({
 		host: $('#home-pins'),
-		api: mailApi,
+		api: mailView ? mailApi : null,
+		quickActions: quickActionsApi,
 		t,
 		getLocale: () => window.gatecontrol.i18n.getLocale(),
 		toast: (msg, type) => showToast(msg, type || 'info'),

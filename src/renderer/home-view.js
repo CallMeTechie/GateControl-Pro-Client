@@ -1,6 +1,6 @@
 /**
- * GateControl -- Start: pinned favourites and the calendar widget (renderer,
- * plugin gatecontrol-mail 1.4.0)
+ * GateControl -- Start: pinned favourites, the calendar widget (renderer,
+ * plugin gatecontrol-mail 1.4.0) and the plugins' quick actions
  *
  * The section "Angeheftet" of the start page ("Übersicht") below the services:
  *  - the calendar widget: the next events of today and tomorrow (GET
@@ -12,12 +12,17 @@
  *    initials, the name and the main number. A click calls the main number
  *    (tel:, like "Anrufen" of a contact); without a number, on the name or with
  *    a right click the contact opens. × loosens the tile.
+ *  - cards of the plugins' quick actions pinned (one per device: values,
+ *    controls, buttons — quick-actions-view.js); "Schnellaktionen" in the head
+ *    pins them. They do not need Mail: without the Mail plugin the section
+ *    shows only them.
  *
  * What is pinned is kept on this PC (localStorage gc.home.pins) by
  * window.GCHomePins, which the contacts ("Auf Start anheften" of a favourite)
- * and the calendar ("Termine auf Start anheften") use as well. Servers before
- * Mail 1.4.0 answer without these paths: the section stays hidden and the
- * calendar offers no pin.
+ * and the calendar ("Termine auf Start anheften") use as well, and the quick
+ * actions' dialog ("Schnellaktionen anheften"). Servers before Mail 1.4.0
+ * answer without these paths: the section stays hidden and the calendar offers
+ * no pin; a server without quick actions shows no button for them.
  *
  * Built by renderer.js through GCHomeView.mount(…); pure logic in mail-state.js
  * (GCMailState: homePins, pinContact, favoriteTiles, upcomingDays). Server text
@@ -27,6 +32,7 @@
 	'use strict';
 
 	const MS = root.GCMailState;
+	const QS = root.GCQuickActionsState;
 	const KEY = 'gc.home.pins';
 	const RELOAD_MS = 5 * 60 * 1000;
 
@@ -64,6 +70,16 @@
 		setCalendar: (on) => save({ ...load(), calendar: on === true }),
 		/** The server has the calendar widget (unknown until it was asked: offered). */
 		calendarSupported: () => support.calendar !== false,
+		/** The quick actions pinned: [{ device, anchor, title, hidden }] (GCMailState.homeActionPins). */
+		actions: () => load().actions,
+		setActions: (list) => save({ ...load(), actions: list }),
+		/** A device pinned (`device`: its group of GCQuickActionsState.group) or loosened (by its key). */
+		pinDevice: (key, device, on) => {
+			const p = load();
+			save({ ...p, actions: on && device && QS ? QS.pinDevice(p.actions, device, true) : p.actions.filter((x) => x.device !== key) });
+		},
+		/** A part of a pinned device's card hidden or shown again. */
+		setHidden: (key, partId, hide) => { if (QS) { const p = load(); save({ ...p, actions: QS.setHidden(p.actions, key, partId, hide) }); } },
 		onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
 	};
 	root.GCHomePins = pins;
@@ -73,7 +89,8 @@
 	/**
 	 * @param {object} o
 	 * @param {HTMLElement} o.host - the section on the start page
-	 * @param {object} o.api - window.gatecontrol.mail
+	 * @param {object|null} o.api - window.gatecontrol.mail (null: no Mail, only the quick actions)
+	 * @param {object|null} [o.quickActions] - window.gatecontrol.quickActions (core QuickActionsService)
 	 * @param {Function} o.t
 	 * @param {() => string} o.getLocale
 	 * @param {(msg: string, type?: string) => void} o.toast
@@ -94,6 +111,9 @@
 			loadedAt: 0,
 		};
 		const photos = new Map();   // `${id}:${etag}` → data: URL | null (none) | Promise (asked, on its way)
+		const qa = o.quickActions && root.GCQuickActionsView && QS ? root.GCQuickActionsView.create({
+			api: o.quickActions, pins, t, getLocale: o.getLocale, toast: o.toast, onChange: () => render(),
+		}) : null;
 
 		const has = (f) => H.features.includes(f);
 		const showCal = () => H.available && has('calendar') && pins.hasCalendar() && support.calendar !== false;
@@ -123,6 +143,7 @@
 		}
 
 		async function refresh() {
+			if (!api) { render(); return; }
 			const st = await call(api.status());
 			H.available = !!(st && st.state === 'available');
 			if (H.available) {
@@ -225,13 +246,23 @@
 		function render() {
 			const host = o.host;
 			if (!host) return;
+			// drawn again: the focus stays on the same control of the same card
+			const act = document.activeElement && host.contains(document.activeElement) ? document.activeElement : null;
+			const focus = act && act.closest('[data-device]') ? [act.closest('[data-device]').getAttribute('data-device'), act.getAttribute('data-fk')] : null;
 			clear(host);
 			const list = tiles();
 			const cal = showCal();
-			host.hidden = !cal && !list.length;
+			const actions = !!qa && qa.available();
+			host.hidden = !cal && !list.length && !actions;
 			if (host.hidden) return;
-			host.append(el('h2', { class: 'h-card', text: t('home.title') }));
-			host.append(el('div', { class: 'home-pins-grid' }, [cal ? calendarCard() : null, ...list.map(tile)]));
+			host.append(el('div', { class: 'home-pins-head' }, [el('h2', { class: 'h-card grow', text: t('home.title') }), qa ? qa.button() : null]));
+			if (qa && qa.hasCards()) host.append(el('p', { class: 'home-pins-sub', text: t('home.qa.sub') }));
+			host.append(el('div', { class: 'home-pins-grid' }, [cal ? calendarCard() : null, ...list.map(tile), ...(qa ? qa.cards() : [])]));
+			if (focus && focus[1]) {
+				const card = [...host.querySelectorAll('[data-device]')].find((n) => n.getAttribute('data-device') === focus[0]);
+				const f = card && [...card.querySelectorAll('[data-fk]')].find((n) => n.getAttribute('data-fk') === focus[1]);
+				if (f && !f.disabled) f.focus();
+			}
 		}
 
 		// ── Keeping it current ───────────────────────────
@@ -241,10 +272,11 @@
 		const soon = (which) => {
 			if (which === 'cal') { clearTimeout(calTimer); calTimer = setTimeout(loadUpcoming, 400); } else { clearTimeout(favTimer); favTimer = setTimeout(loadFavorites, 400); }
 		};
-		if (api.onCalendar) api.onCalendar(() => soon('cal'));
-		if (api.onContacts) api.onContacts((c) => { if (c && c.kind !== 'groups') soon('fav'); });
-		if (api.onState) api.onState(() => refresh());
+		if (api && api.onCalendar) api.onCalendar(() => soon('cal'));
+		if (api && api.onContacts) api.onContacts((c) => { if (c && c.kind !== 'groups') soon('fav'); });
+		if (api && api.onState) api.onState(() => refresh());
 		pins.onChange(() => {
+			if (qa) qa.pinsChanged();
 			if (!H.favorites && load().contacts.length) loadFavorites();
 			if (!H.upcoming && pins.hasCalendar()) loadUpcoming();
 			render();
@@ -257,13 +289,19 @@
 		}, 60 * 1000);
 
 		refresh();
+		if (qa) qa.refresh();
 
 		return {
 			/** The language changed. */
-			relabel: render,
+			relabel() { if (qa) qa.relabel(); render(); },
 			/** The start page is shown again: what may have changed meanwhile. */
-			show() { if (H.available && Date.now() - H.loadedAt > 30 * 1000) { loadUpcoming(); loadFavorites(); } },
-			refresh,
+			show() {
+				if (H.available && Date.now() - H.loadedAt > 30 * 1000) { loadUpcoming(); loadFavorites(); }
+				if (qa) qa.show();
+			},
+			refresh() { if (qa) qa.refresh(); return refresh(); },
+			/** "Schnellaktionen anheften" (null without quick actions). */
+			openQuickActions: qa ? () => qa.openPicker() : null,
 		};
 	}
 

@@ -1356,11 +1356,40 @@
 
 	const PINS_MAX = 12;
 
-	/** The pins of the start page as kept on this PC → { calendar: bool, contacts: [ids ≤ 12] }. */
+	/**
+	 * The pins of the start page as kept on this PC → { calendar: bool, contacts: [ids ≤ 12], actions: [≤ 12] }.
+	 * actions: the plugins' quick actions pinned as cards (quick-actions-view.js), see homeActionPins.
+	 */
 	function homePins(raw) {
 		const o = raw && typeof raw === 'object' ? raw : {};
 		const ids = Array.isArray(o.contacts) ? o.contacts.filter((x) => Number.isSafeInteger(x) && x > 0) : [];
-		return { calendar: o.calendar === true, contacts: [...new Set(ids)].slice(0, PINS_MAX) };
+		return { calendar: o.calendar === true, contacts: [...new Set(ids)].slice(0, PINS_MAX), actions: homeActionPins(o.actions) };
+	}
+
+	const ACTION_PIN_KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*\/[A-Za-z0-9:._@-]{1,65}$/;
+	const PART_ID = /^(?:value|status|timeline|(?:reading|control):[A-Za-z0-9_-]{1,24}|action:[A-Za-z0-9:._-]{1,64})$/;
+
+	/**
+	 * The quick actions pinned → [{ device, anchor, title, hidden }] ≤ 12, unique by device: device the device's key
+	 * (`<plugin>/<device id>` or `<plugin>/@<action id>`), anchor the key of one of its actions (to find it again when
+	 * the plugin changes the device id) or null, title the name last seen (≤ 40, shown while the server cannot be
+	 * asked), hidden the parts the person hid (`value`, `status`, `timeline`, `reading:<id>`, `control:<id>`,
+	 * `action:<id>`; ≤ 40).
+	 */
+	function homeActionPins(raw) {
+		if (!Array.isArray(raw)) return [];
+		const out = [];
+		const seen = new Set();
+		for (const p of raw.slice(0, PINS_MAX * 4)) {
+			if (!p || typeof p !== 'object' || typeof p.device !== 'string' || !ACTION_PIN_KEY.test(p.device) || seen.has(p.device)) continue;
+			seen.add(p.device);
+			const anchor = typeof p.anchor === 'string' && ACTION_PIN_KEY.test(p.anchor) ? p.anchor : null;
+			const title = typeof p.title === 'string' ? p.title.replace(/[\0-\x1f\x7f]/g, ' ').trim().slice(0, 40) : '';
+			const hidden = Array.isArray(p.hidden) ? [...new Set(p.hidden.filter((x) => typeof x === 'string' && PART_ID.test(x)))].slice(0, 40) : [];
+			out.push({ device: p.device, anchor, title, hidden });
+			if (out.length >= PINS_MAX) break;
+		}
+		return out;
 	}
 
 	/** A favourite pinned or loosened → the new pins (a copy; at most 12). */
@@ -1841,6 +1870,7 @@
 		autoMerges,
 		mergeLine,
 		homePins,
+		homeActionPins,
 		pinContact,
 		favoriteTiles,
 		upcomingDays,

@@ -78,14 +78,40 @@ describe('mail-state – contacts with the GC contact as the master', () => {
 
 describe('mail-state – the start page', () => {
   it('the pins of this PC: the calendar, at most 12 favourites', () => {
-    assert.deepEqual(MS.homePins(null), { calendar: false, contacts: [] });
-    assert.deepEqual(MS.homePins({ calendar: 'yes', contacts: [3, 3, -1, 'x', 4.5, 7] }), { calendar: false, contacts: [3, 7] });
+    assert.deepEqual(MS.homePins(null), { calendar: false, contacts: [], actions: [] });
+    assert.deepEqual(MS.homePins({ calendar: 'yes', contacts: [3, 3, -1, 'x', 4.5, 7] }), { calendar: false, contacts: [3, 7], actions: [] });
     let p = MS.homePins({ calendar: true });
     for (let i = 1; i <= 14; i += 1) p = MS.pinContact(p, i, true);
     assert.deepEqual([p.calendar, p.contacts.length, p.contacts[0]], [true, 12, 1]);
     p = MS.pinContact(p, 1, false);
     assert.equal(p.contacts.includes(1), false);
     assert.deepEqual(MS.pinContact({ contacts: [5] }, 5, true).contacts, [5], 'no doubles');
+  });
+
+  it('the quick actions pinned stay when a favourite or the calendar is pinned', () => {
+    const actions = [{ device: 'gatecontrol-smarthome/heat:3', anchor: 'gatecontrol-smarthome/heat:room:3', title: 'Wohnzimmer', hidden: ['timeline'] }];
+    const p = MS.pinContact({ calendar: true, contacts: [], actions }, 7, true);
+    assert.deepEqual(p.actions, actions);
+    assert.deepEqual(MS.homePins({ ...p, calendar: false }).actions, actions);
+  });
+
+  it('homeActionPins: valid keys, unique, at most 12, known part ids', () => {
+    const P = (device, extra = {}) => ({ device, anchor: null, title: 'X', hidden: [], ...extra });
+    assert.deepEqual(MS.homeActionPins(null), []);
+    const list = MS.homeActionPins([
+      P('gatecontrol-smarthome/heat:3', { anchor: 'gatecontrol-smarthome/heat:room:3', title: ' Wohn\nzimmer ', hidden: ['value', 'reading:hum', 'control:sp', 'action:heat:plan:3', 'timeline', 'status', 'bogus', 'reading:a b', 'value'] }),
+      P('gatecontrol-smarthome/heat:3'),
+      P('gatecontrol-smarthome/@heat:away', { anchor: 'nope' }),
+      P('Bad/plugin'),
+      P('no-slash'),
+      { device: 5 },
+      null,
+    ]);
+    assert.deepEqual(list, [
+      { device: 'gatecontrol-smarthome/heat:3', anchor: 'gatecontrol-smarthome/heat:room:3', title: 'Wohn zimmer', hidden: ['value', 'reading:hum', 'control:sp', 'action:heat:plan:3', 'timeline', 'status'] },
+      { device: 'gatecontrol-smarthome/@heat:away', anchor: null, title: 'X', hidden: [] },
+    ]);
+    assert.equal(MS.homeActionPins(Array.from({ length: 20 }, (_, i) => P(`p-x/d${i}`))).length, 12);
   });
 
   it('the tiles: the favourites pinned in the favourites\' order, initials, the main number', () => {

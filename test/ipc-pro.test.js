@@ -187,6 +187,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       familie: { on() {}, status: () => ({ state: 'unavailable' }) },
       // … and DNS-Schutz (dnsprotect:* channels; a core before DNS-Schutz ignores it)
       dnsProtect: { on() {}, snapshot: () => ({ state: 'unavailable' }) },
+      // … and Schnellaktionen (quickactions:* channels; a core before them ignores it)
+      quickActions: { list: async () => ({ ok: true, supported: false, actions: [] }), run: async () => ({ ok: false }), resetForNewServer() {} },
       // … and Drucken (print:* channels; a core before Drucken ignores it)
       print: { on() {}, status: () => ({ state: 'unavailable' }) },
       // … and GateDrop (gatedrop:* channels)
