@@ -68,6 +68,32 @@ describe('quick-actions-state – devices', () => {
   });
 });
 
+describe('quick-actions-state – a toggle carrying the widget without being the power switch', () => {
+  const fan = {
+    plugin: P, pluginName: 'Smart Home', id: 'fan:1', kind: 'toggle', title: 'Lüfter', state: 'off', device: { id: 'fan:1', title: 'Lüfter' },
+    widget: { power: false, status: 'Aus', readings: [], controls: [], timeline: null },
+  };
+  const boost = { plugin: P, pluginName: 'Smart Home', id: 'fan:boost', kind: 'button', title: 'Stoßlüften', device: { id: 'fan:1', title: 'Lüfter' } };
+
+  it('is no power switch but stays a button and a part of the card', () => {
+    const [d] = QS.group([fan, boost]);
+    assert.equal(d.carrier, fan);
+    assert.equal(d.power, null);
+    assert.equal(QS.asButton(d, fan), true);
+    assert.equal(QS.asButton(d, boost), true);
+    assert.deepEqual(QS.parts(d).map((p) => [p.id, p.kind]), [['status', 'status'], ['action:fan:1', 'action'], ['action:fan:boost', 'action']]);
+    assert.equal(QS.shownParts(d, { hidden: [] }).has('action:fan:1'), true);
+    assert.equal(QS.shownParts(d, { hidden: ['action:fan:1'] }).has('action:fan:1'), false, 'it can still be hidden');
+  });
+
+  it('a plain button carrying the widget and the power switch are no buttons', () => {
+    const [heat, , light] = QS.group([carrier, away, plan, lamp]);
+    assert.equal(QS.asButton(heat, carrier), false);
+    assert.equal(QS.asButton(heat, plan), true);
+    assert.equal(QS.asButton(light, lamp), false);
+  });
+});
+
 describe('quick-actions-state – pins', () => {
   const devices = QS.group([carrier, plan, away]);
 
