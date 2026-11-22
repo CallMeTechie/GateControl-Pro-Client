@@ -10,7 +10,8 @@
  * segments, a mark for now, the axis 0 6 12 18 24), the controls (stepper,
  * slider, choice — greyed out and sending nothing while the plugin lists them
  * disabled; a choice without a selection shows none) and the device's other
- * actions as a row of buttons (logic chains too). × loosens the card; the
+ * actions as a row of buttons (logic chains too; not the action carrying the
+ * widget). × loosens the card; the
  * dialog pins devices and hides the parts a card should not show.
  *
  * Data: window.gatecontrol.quickActions (core QuickActionsService in main:
@@ -266,7 +267,8 @@
 				if (w.timeline && shown.has(QS.PART.TIMELINE)) card.append(timeline(w.timeline));
 				for (const c of w.controls) if (shown.has(`control:${c.id}`)) card.append(controlFor(d, c));
 			}
-			const buttons = d.actions.filter((a) => a !== d.power && a !== single && shown.has(`action:${a.id}`));
+			// the action carrying the widget is no button of its own (a hidden entry of it in an old pin does nothing)
+			const buttons = d.actions.filter((a) => a !== d.power && a !== d.carrier && a !== single && shown.has(`action:${a.id}`));
 			if (buttons.length) {
 				const row = el('div', { class: 'qa-acts' }, buttons.map((a) => actionButton(a)));
 				row.style.gridTemplateColumns = `repeat(${QS.buttonsPerRow(buttons.length)}, minmax(0, 1fr))`;
