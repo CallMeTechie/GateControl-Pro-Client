@@ -62,8 +62,8 @@ test.describe('schnellaktionen', () => {
     const dlg = await pin(page, 'heat:3');
     await expect(dlg.locator('.qa-pick-h')).toHaveText(['Smart Home']);
     await expect(dlg.locator('.qa-pick-row')).toHaveCount(5);
-    // the parts of the pinned room (the action carrying the widget is a button like the others, as on Android)
-    await expect(dlg.locator(`.qa-pick-row[data-device="${PLUGIN}/heat:3"] .qa-part`)).toHaveText(['Ist', 'Feuchte', 'Batterie', /Statuszeile|Status line/, /Tagesbalken|Day bar/, 'Soll', 'Preset', 'Arbeitszimmer', 'Zurück zum Plan']);
+    // the parts of the pinned room (the action carrying the widget is the card itself, no button of its own)
+    await expect(dlg.locator(`.qa-pick-row[data-device="${PLUGIN}/heat:3"] .qa-part`)).toHaveText(['Ist', 'Feuchte', 'Batterie', /Statuszeile|Status line/, /Tagesbalken|Day bar/, 'Soll', 'Preset', 'Zurück zum Plan']);
     await dlg.locator('.ml-dlg-foot .btn-pri').click();
     await expect(dlg).toHaveCount(0);
 
@@ -85,7 +85,8 @@ test.describe('schnellaktionen', () => {
     await expect(c.locator('[data-control="sp"] .qa-ctl-v')).toHaveText(/^22[,.]0 °C$/);
     await expect(c.locator('[data-control="preset"] .qa-opt')).toHaveCount(4);
     await expect(c.locator('[data-control="preset"] .qa-opt[aria-checked="true"]')).toHaveCount(0);
-    await expect(c.locator('.qa-act')).toHaveText(['Arbeitszimmer', 'Zurück zum Plan']);
+    await expect(c.locator('.qa-act')).toHaveText(['Zurück zum Plan']);
+    await expect(c.locator('.qa-act[data-action="heat:room:3"]')).toHaveCount(0);
     // kept on this PC
     const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('gc.home.pins')));
     expect(stored.actions).toEqual([{ device: `${PLUGIN}/heat:3`, anchor: `${PLUGIN}/heat:room:3`, title: 'Arbeitszimmer', hidden: [] }]);

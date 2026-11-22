@@ -46,14 +46,25 @@ describe('quick-actions-state – devices', () => {
     assert.equal(d[2].power, lamp, 'a toggle carrying the widget is its power switch');
   });
 
-  it('the parts like Android: the carrier is a button like the others unless it is the power switch', () => {
+  it('the parts like Android: the carrier is no button of its own, a toggle carrying the widget stays the power switch', () => {
     const [heat, , light] = QS.group([carrier, away, plan, lamp]);
-    assert.deepEqual(QS.parts(heat).map((p) => p.id), ['value', 'reading:hum', 'status', 'timeline', 'control:sp', 'action:heat:room:3', 'action:heat:plan:3']);
+    assert.deepEqual(QS.parts(heat).map((p) => p.id), ['value', 'reading:hum', 'status', 'timeline', 'control:sp', 'action:heat:plan:3']);
     assert.deepEqual(QS.parts(light).map((p) => [p.id, p.kind]), [['action:light:1', 'power'], ['control:bri', 'control']]);
     const shown = QS.shownParts(heat, { hidden: ['timeline', 'reading:hum'] });
     assert.equal(shown.has('timeline'), false);
     assert.equal(shown.has('reading:hum'), false);
     assert.equal(shown.has('control:sp'), true);
+    assert.equal(shown.has('action:heat:room:3'), false, 'the carrier is never shown as a button');
+    assert.equal(shown.has('action:heat:plan:3'), true);
+  });
+
+  it('an old pin that hid the carrier keeps working: nothing else hidden, the entry stays as it was', () => {
+    const [heat] = QS.group([carrier, plan]);
+    const pins = [{ device: heat.key, anchor: `${P}/heat:room:3`, title: 'Arbeitszimmer', hidden: ['action:heat:room:3', 'timeline'] }];
+    const shown = QS.shownParts(heat, pins[0]);
+    assert.deepEqual([...shown], ['value', 'reading:hum', 'status', 'control:sp', 'action:heat:plan:3']);
+    assert.equal(QS.syncPins(pins, [heat]), pins, 'unchanged');
+    assert.deepEqual(QS.setHidden(pins, heat.key, 'timeline', false)[0].hidden, ['action:heat:room:3']);
   });
 });
 
