@@ -4160,6 +4160,59 @@
       "open": "{{name}} öffnen",
       "noPhone": "Keine Nummer – öffnet den Kontakt",
       "unpin": "{{name}} vom Start lösen"
+    },
+    "qa": {
+      "sub": "Schnellaktionen der Plugins, auf diesem PC angeheftet (wie Termine und Favoriten).",
+      "open": "Schnellaktionen",
+      "openHint": "Schnellaktionen der Plugins auf Start anheften",
+      "unpin": "„{{name}}“ vom Start lösen",
+      "loading": "Wird geladen …",
+      "gone": "Nicht mehr verfügbar. Das Plugin bietet diese Schnellaktion nicht mehr an.",
+      "unreachable": "Gerade nicht erreichbar.",
+      "offline": "Offline – letzter Stand",
+      "done": "„{{name}}“: erledigt",
+      "inside": "Innen {{value}}",
+      "outside": "Außen {{value}}",
+      "decrease": "{{name}} verringern",
+      "increase": "{{name}} erhöhen",
+      "disabled": "Gerade nicht änderbar",
+      "timeline": "Tagesplan: {{segments}}",
+      "timelineNow": "jetzt {{time}}",
+      "confirm": {
+        "title": "„{{name}}“ ausführen?",
+        "run": "Ausführen",
+        "cancel": "Abbrechen"
+      },
+      "pick": {
+        "title": "Schnellaktionen anheften",
+        "hint": "Was du hier einschaltest, erscheint auf der Startseite als Karte. Hier wird nichts geschaltet. Bis zu {{max}} Karten.",
+        "pin": "„{{name}}“ auf Start anheften",
+        "full": "Schon {{max}} Karten angeheftet. Löse erst eine.",
+        "parts": "Auf der Karte zeigen",
+        "none": "Keine Schnellaktionen verfügbar. Plugins wie Smart Home, Raumklima oder Fahrzeuge bieten sie an.",
+        "unsupported": "Dieser Server bietet noch keine Schnellaktionen (GateControl aktualisieren).",
+        "failed": "Schnellaktionen konnten nicht geladen werden.",
+        "retry": "Erneut versuchen",
+        "done": "Fertig"
+      },
+      "part": {
+        "value": "Wert",
+        "status": "Statuszeile",
+        "timeline": "Tagesbalken",
+        "power": "Schalter „{{name}}“"
+      },
+      "error": {
+        "message": "„{{name}}“: {{message}}",
+        "failed": "„{{name}}“: fehlgeschlagen",
+        "control_disabled": "„{{name}}“: lässt sich gerade nicht ändern",
+        "gone": "„{{name}}“: nicht mehr verfügbar",
+        "no_user": "„{{name}}“: dieses Gerät ist keinem Benutzer zugeordnet",
+        "busy": "„{{name}}“: zu viele Aktionen – kurz warten",
+        "timeout": "„{{name}}“: keine Antwort vom Server",
+        "network": "„{{name}}“: Server nicht erreichbar",
+        "state_unknown": "„{{name}}“: Zustand unbekannt – nichts geschaltet",
+        "not_configured": "„{{name}}“: zuerst die Verbindung zum Server einrichten"
+      }
     }
   },
   "notes": {

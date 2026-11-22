@@ -26,8 +26,8 @@ jobs:
   playwright:
     name: Playwright (electron .)
     runs-on: windows-latest
-    # the suite runs ~15 min with the Drive pages; leave room
-    timeout-minutes: 30
+    # the suite runs ~28 min on windows-latest (276 cases, Nov 2026); leave room
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

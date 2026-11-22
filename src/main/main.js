@@ -48,6 +48,7 @@ let DriveService, DriveSync;
 let MailService;
 let NotesService;
 let PlacesService;
+let QuickActionsService;
 let CamerasService;
 let DriveStreamService;
 let VaultService, windowsHello, windowsOcr, setupVaultQuick;
@@ -138,6 +139,9 @@ try {
   // Meine Orte (GateControl 1.299, Mein Profil › Meine Orte): the person's own places, the source of the place choice
   // of Chats and Notizen (core services/places.js); absent in an older core. Windows watches no places.
   ({ PlacesService } = require('@gatecontrol/client-core'));
+  // Schnellaktionen der Plugins (Licht, Rollläden, Heizung, Ketten …) für „Angeheftet“ auf der Startseite
+  // (core services/quick-actions.js); absent in an older core.
+  ({ QuickActionsService } = require('@gatecontrol/client-core'));
   // Kameras im Heimnetz (plugin gatecontrol-door 1.6 "Tür & Kamera"): live picture, stills and
   // clips (core services/cameras.js); absent in an older core.
   ({ CamerasService } = require('@gatecontrol/client-core'));
@@ -361,6 +365,7 @@ let drive = null; // Drive (core DriveService), one per app lifetime
 let mail = null; // Mail (core MailService), one per app lifetime
 let notes = null; // Notizen & Aufgaben (core NotesService), one per app lifetime
 let places = null; // Meine Orte (core PlacesService), one per app lifetime
+let quickActions = null; // the plugins' quick actions (core QuickActionsService), one per app lifetime
 let cameras = null; // Kameras im Heimnetz (core CamerasService), one per app lifetime
 let driveStream = null; // Drive 1.21: the large view's gcdrive: (core DriveStreamService)
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
@@ -1243,6 +1248,8 @@ function initializeServices() {
 
   // Meine Orte: the profile's places (GateControl ≥ 1.299); the push event `places` and a reconnect load the pages again.
   places = PlacesService ? new PlacesService({ apiClient, log, pushClient: notifications?.pushClient, getLang: () => getLocale() }) : null;
+  // Schnellaktionen: listed and run for the start page's pinned cards, in the app's language
+  quickActions = QuickActionsService ? new QuickActionsService({ apiClient, log, getLocale: () => getLocale() }) : null;
   places?.start();
 
   // Kameras im Heimnetz: shown while the plugin has home cameras the person sees;
@@ -1669,6 +1676,8 @@ function registerIpcHandlers() {
     notes,
     // places:* channels + events (Meine Orte), reset on server:setup (core, opt-in)
     places,
+    // quickactions:* channels (Schnellaktionen der Plugins), reset on server:setup (core, opt-in)
+    quickActions,
     // cameras:* channels + events, reset on server:setup (core, opt-in)
     cameras,
     gatedropExplorer: gatedrop?.explorer,

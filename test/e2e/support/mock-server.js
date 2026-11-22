@@ -73,6 +73,11 @@
  * /nominatim/search, /nominatim/reverse canned addresses (`setGeocode()`)
  * — the app's MapService points there in e2e mode (GC_E2E_MAP_URL).
  *
+ * Schnellaktionen (the plugins' quick actions): without `server.setActions()`
+ * GET /api/v1/client/actions and the runs answer 404 like a server before
+ * quick actions. With it (support/actions-mock.js) the list and the runs answer
+ * from the test's data.
+ *
  * Company sign-in: without `server.setSignin()` /api/v1/client/signin*
  * answers 404 like a server before GateControl 1.201.0. With it,
  * support/signin-mock.js answers (methods, password with optional 2FA,
@@ -99,6 +104,7 @@ const { createSignin } = require('./signin-mock');
 const { createDoor } = require('./door-mock');
 const { createNotes } = require('./notes-mock');
 const { createPlaces } = require('./places-mock');
+const { createActions } = require('./actions-mock');
 
 const API_TOKEN = 'gc_e2e_test_token';
 // 1 × 1 PNG, served for every map tile
@@ -173,6 +179,7 @@ async function startMockServer() {
   let door = null; // support/door-mock.js, null = no Tür & Kamera plugin
   let notes = null; // support/notes-mock.js, null = no Notizen & Aufgaben plugin
   let places = null; // support/places-mock.js, null = a server before „Meine Orte“ (404)
+  let actions = null; // support/actions-mock.js, null = a server before quick actions (404)
   const acks = [];
   const prefs = [];
   let geocode = {
@@ -244,6 +251,18 @@ async function startMockServer() {
 
       if (!url.pathname.startsWith('/api/v1/client/')) return json(404, { ok: false });
       const route = url.pathname.slice('/api/v1/client/'.length);
+
+      if (route === 'actions' || route.startsWith('actions/')) {
+        if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
+        if (!actions) return json(404, { ok: false, error: 'not_found' });
+        if (route === 'actions' && req.method === 'GET') { const r = actions.list(); return json(r.status, r.body); }
+        const m = /^actions\/([^/]+)\/([^/]+)$/.exec(route);
+        if (!m || req.method !== 'POST') return json(404, { ok: false, error: 'not_found' });
+        let body = {};
+        try { body = raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { body = {}; }
+        const r = actions.run(decodeURIComponent(m[1]), decodeURIComponent(m[2]), body);
+        return json(r.status, r.body);
+      }
 
       if (route === 'push' || route.startsWith('push/')) {
         if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
@@ -563,6 +582,11 @@ async function startMockServer() {
       return door;
     },
     pushPrefs: () => prefs.slice(),
+    /** A server with the plugins' quick actions (support/actions-mock.js); returns its state ({ actions, log, onRun }). */
+    setActions(opts = {}) {
+      actions = createActions(opts);
+      return actions.state;
+    },
     /** Enables company sign-in (support/signin-mock.js); returns its state (issued codes, issueHandoff). */
     setSignin(opts = {}) {
       signin = createSignin(opts);

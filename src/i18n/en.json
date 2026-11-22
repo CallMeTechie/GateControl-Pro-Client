@@ -4160,6 +4160,59 @@
       "open": "Open {{name}}",
       "noPhone": "No number – opens the contact",
       "unpin": "Unpin {{name}} from start"
+    },
+    "qa": {
+      "sub": "Quick actions of your plugins, pinned on this PC (like events and favourites).",
+      "open": "Quick actions",
+      "openHint": "Pin quick actions of your plugins to Home",
+      "unpin": "Unpin “{{name}}” from Home",
+      "loading": "Loading …",
+      "gone": "No longer available. The plugin no longer offers this quick action.",
+      "unreachable": "Not reachable right now.",
+      "offline": "Offline – last known state",
+      "done": "“{{name}}”: done",
+      "inside": "Inside {{value}}",
+      "outside": "Outside {{value}}",
+      "decrease": "Decrease {{name}}",
+      "increase": "Increase {{name}}",
+      "disabled": "Can’t be changed right now",
+      "timeline": "Schedule: {{segments}}",
+      "timelineNow": "now {{time}}",
+      "confirm": {
+        "title": "Run “{{name}}”?",
+        "run": "Run",
+        "cancel": "Cancel"
+      },
+      "pick": {
+        "title": "Pin quick actions",
+        "hint": "What you switch on here appears on Home as a card. Nothing is switched here. Up to {{max}} cards.",
+        "pin": "Pin “{{name}}” to Home",
+        "full": "{{max}} cards pinned already. Unpin one first.",
+        "parts": "Show on the card",
+        "none": "No quick actions available. Plugins such as Smart Home, Air conditioning or Vehicles offer them.",
+        "unsupported": "This server does not offer quick actions yet (update GateControl).",
+        "failed": "Quick actions could not be loaded.",
+        "retry": "Try again",
+        "done": "Done"
+      },
+      "part": {
+        "value": "Value",
+        "status": "Status line",
+        "timeline": "Day bar",
+        "power": "Switch “{{name}}”"
+      },
+      "error": {
+        "message": "“{{name}}”: {{message}}",
+        "failed": "“{{name}}”: failed",
+        "control_disabled": "“{{name}}”: can’t be changed right now",
+        "gone": "“{{name}}”: no longer available",
+        "no_user": "“{{name}}”: this device is not linked to a user",
+        "busy": "“{{name}}”: too many actions – wait a moment",
+        "timeout": "“{{name}}”: no answer from the server",
+        "network": "“{{name}}”: server not reachable",
+        "state_unknown": "“{{name}}”: state unknown – nothing switched",
+        "not_configured": "“{{name}}”: set up the connection to the server first"
+      }
     }
   },
   "notes": {
