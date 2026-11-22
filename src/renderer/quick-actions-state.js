@@ -4,7 +4,8 @@
  * Pure helpers for the plugins' quick actions pinned to the start page
  * ("Angeheftet", quick-actions-view.js): the actions of one device grouped
  * into a card (like the Android app: the action that brings the widget — no
- * button of its own —, its power switch, the other actions as buttons), the parts of a card the person
+ * button of its own unless it is a toggle that is not the power switch —, its
+ * power switch, the other actions as buttons), the parts of a card the person
  * can hide, the pins of this PC (gc.home.pins → actions, kept by home-view.js
  * through GCMailState.homePins), numbers as the card shows them, a stepper's
  * grid, the day bar (widget.timeline: segments, the mark for now, the axis
@@ -83,7 +84,7 @@
 
 	/**
 	 * Everything a card of the device can show, in display order → [{ id, kind, label }]; kind power | value |
-	 * reading | status | timeline | control | action (the device's actions but the carrier and its switch). label: the plugin's name for it (null for status, timeline and
+	 * reading | status | timeline | control | action (the actions shown as buttons, see asButton). label: the plugin's name for it (null for status, timeline and
 	 * a nameless value — the app names those).
 	 */
 	function parts(d) {
@@ -95,9 +96,18 @@
 		if (w && w.status) out.push({ id: PART.STATUS, kind: 'status', label: null });
 		if (w && w.timeline) out.push({ id: PART.TIMELINE, kind: 'timeline', label: null });
 		for (const c of (w && w.controls) || []) out.push({ id: `control:${c.id}`, kind: 'control', label: c.label || c.id });
-		// the action carrying the widget is the card itself (its power switch at most), never a button of its own
-		for (const a of d.actions) if (a !== d.power && a !== d.carrier) out.push({ id: `action:${a.id}`, kind: 'action', label: a.title });
+		for (const a of d.actions) if (asButton(d, a)) out.push({ id: `action:${a.id}`, kind: 'action', label: a.title });
 		return out;
+	}
+
+	/**
+	 * Whether an action of the device is a button of its card: not its power switch (that is in the head) and not
+	 * the plain button carrying the widget (that is the card itself). A toggle carrying the widget without being the
+	 * power switch (widget.power false) stays a button, else nothing could switch it.
+	 */
+	function asButton(d, a) {
+		if (!a || a === d.power) return false;
+		return a !== d.carrier || isToggle(a);
 	}
 
 	/** The ids of the parts a pin shows (everything the device has but what the person hid). */
@@ -275,7 +285,7 @@
 	return {
 		BOLT, OUTDOOR, MAX_PINS, PART,
 		actionKey, deviceKey, isToggle, isOn,
-		group, parts, shownParts,
+		group, parts, asButton, shownParts,
 		resolve, isPinned, pinDevice, setHidden, syncPins,
 		formatNumber, valueText, decimals, controlText, snap, isTemperature, readingText,
 		target, needsConfirm, currentLook, displayIcon, optionGlyph, tone, failureText, reloadAfter,

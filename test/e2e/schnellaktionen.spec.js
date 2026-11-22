@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('./support/fixtures');
 const { setupWithApiKey } = require('./support/ui');
-const { actions, PLUGIN } = require('./support/actions-fixtures');
+const { actions, PLUGIN, ICON } = require('./support/actions-fixtures');
 
 // Schnellaktionen der Plugins auf der Startseite („Angeheftet“): the dialog
 // pins a device as a card, the card shows value, valve badge, readings,
@@ -172,6 +172,30 @@ test.describe('schnellaktionen', () => {
     await expect(lamp.locator('[data-control="bri"] .qa-ctl-v')).toHaveText('80 %');
     await lamp.locator('.qa-sw').click();
     await expect.poll(() => runs(qa).at(-1)).toEqual(['light:1', { source: 'app', state: 'off' }]);
+  });
+
+  test('a toggle carrying the widget that is not the power switch stays a button and a part', async ({ launchApp, mock }) => {
+    const fanDev = { id: 'fan:1', title: 'Lüfter', icon: ICON.bulb };
+    const list = [
+      {
+        plugin: PLUGIN, pluginName: 'Smart Home', id: 'fan:1', kind: 'toggle', title: 'Lüfter', state: 'off', device: fanDev,
+        widget: { power: false, status: 'Aus seit 7:10', readings: [], controls: [] },
+      },
+      { plugin: PLUGIN, pluginName: 'Smart Home', id: 'fan:boost', kind: 'button', title: 'Stoßlüften', device: fanDev },
+    ];
+    const { page, qa } = await open(launchApp, mock, { actions: list });
+    const dlg = await pin(page, 'fan:1');
+    await expect(dlg.locator(`.qa-pick-row[data-device="${PLUGIN}/fan:1"] .qa-part`)).toHaveText([/Statuszeile|Status line/, 'Lüfter', 'Stoßlüften']);
+    await page.keyboard.press('Escape');
+    const c = card(page, 'fan:1');
+    // no switch in the head (widget.power false), the toggle is in the row of buttons
+    await expect(c.locator('.qa-sw')).toHaveCount(0);
+    await expect(c.locator('.qa-act')).toHaveText(['Lüfter', 'Stoßlüften']);
+    const fan = c.locator('.qa-act[data-action="fan:1"]');
+    await expect(fan).toHaveAttribute('aria-checked', 'false');
+    await fan.click();
+    await expect.poll(() => runs(qa)).toEqual([['fan:1', { source: 'app', state: 'on' }]]);
+    await expect(c.locator('.qa-act[data-action="fan:1"]')).toHaveAttribute('aria-checked', 'true');
   });
 
   test('parts hidden in the dialog, × loosens the card, gone actions say so', async ({ launchApp, mock }) => {
