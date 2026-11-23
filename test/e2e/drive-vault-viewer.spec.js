@@ -146,6 +146,22 @@ test.describe('drive 1.22: the viewer of vault files', () => {
     await expect.poll(() => video.evaluate((v) => v.readyState), { timeout: 20000 }).toBeGreaterThanOrEqual(1);
     const vurl = await video.getAttribute('src');
 
+    // full screen like the videos of Drive: the button, Esc ends it (the viewer stays), F in and out; protection stays on
+    const fsEl = () => page.evaluate(() => (document.fullscreenElement ? document.fullscreenElement.className : null));
+    await viewer.locator('.dv-vv-full').click();
+    await expect.poll(fsEl).toBe('dv-vv-video');
+    expect(await video.getAttribute('src')).toBe(vurl);
+    await expect.poll(isProtected).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('drive-vault-viewer-fullscreen.png') });
+    await page.keyboard.press('Escape');
+    await expect.poll(fsEl).toBe(null);
+    await expect(viewer).toBeVisible();
+    await viewer.locator('.dv-vv-tools').click();
+    await page.keyboard.press('f');
+    await expect.poll(fsEl).toBe('dv-vv-video');
+    await page.keyboard.press('f');
+    await expect.poll(fsEl).toBe(null);
+
     // nothing in plain text in the temp folder, no other program started
     const temp = await app.evaluate(({ app: a }) => a.getPath('temp'));
     for (const f of filesIn(path.join(temp, 'gatecontrol-drive'))) {

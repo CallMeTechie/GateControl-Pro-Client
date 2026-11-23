@@ -208,7 +208,7 @@
 
 	/**
 	 * A modal dialog: openDialog({ title, host, onClose }) → { box, body, foot, setTitle, close }.
-	 * Esc and a click on the backdrop close it; focus returns to where it was.
+	 * Esc and a click on the backdrop close it (Esc ends a full screen of the dialog first); focus returns to where it was.
 	 */
 	function openDialog({ title, host = document.body, onClose = null, wide = false, closeLabel = 'Close' }) {
 		const before = document.activeElement;
@@ -232,7 +232,12 @@
 		]);
 		const scrim = el('div', { class: 'dv-scrim', on: { mousedown: (e) => { if (e.target === scrim) close(null); } } }, [box]);
 		function onKey(e) {
-			if (e.key === 'Escape') { e.stopPropagation(); close(null); }
+			if (e.key !== 'Escape') return;
+			e.stopPropagation();
+			// a video of the dialog in full screen (lightbox, vault viewer): Esc ends the full screen, the dialog stays
+			const d = box.ownerDocument;
+			if (d.fullscreenElement && box.contains(d.fullscreenElement)) { e.preventDefault(); if (d.exitFullscreen) d.exitFullscreen().catch(() => {}); return; }
+			close(null);
 		}
 		document.addEventListener('keydown', onKey, true);
 		host.appendChild(scrim);

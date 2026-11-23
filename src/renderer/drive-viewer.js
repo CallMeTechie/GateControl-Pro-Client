@@ -10,7 +10,7 @@
  *     from the own server with the Range of the request, so nothing is loaded whole first; play / pause, seek, sound,
  *     full screen; the place it was left (while the app runs); a type the PC cannot play says so ("In anderer App
  *     öffnen"). A file the virus scan holds back never gets an address (the core refuses it too).
- *   - fullscreen(el): the stage in full screen and back.
+ *   - fullscreen(el): the stage in full screen and back (also GCDriveViewer.fullscreen, used by the vault's viewer).
  * Every handle has destroy(): the video stops, its address ends (drive.endStream).
  * Loaded as a plain script after drive-viewer-state.js (window.GCDriveViewer).
  */
@@ -226,14 +226,15 @@
 			};
 		}
 
-		function fullscreen(target) {
-			const d = target.ownerDocument;
-			if (d.fullscreenElement) { if (d.exitFullscreen) d.exitFullscreen().catch(() => {}); return; }
-			if (target.requestFullscreen) target.requestFullscreen().catch(() => {});
-		}
-
 		return { picture, video, fullscreen, canStream };
 	}
 
-	root.GCDriveViewer = { create };
+	/** `target` in full screen, or (already one in full screen) back; also the vault's viewer (drive-vault-viewer.js). */
+	function fullscreen(target) {
+		const d = target.ownerDocument;
+		if (d.fullscreenElement) { if (d.exitFullscreen) d.exitFullscreen().catch(() => {}); return; }
+		if (target.requestFullscreen) target.requestFullscreen().catch(() => {});
+	}
+
+	root.GCDriveViewer = { create, fullscreen };
 })(typeof self !== 'undefined' ? self : this);

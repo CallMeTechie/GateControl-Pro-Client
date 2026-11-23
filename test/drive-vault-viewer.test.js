@@ -74,6 +74,32 @@ describe('drive-vault-viewer (Drive plugin 1.22)', () => {
     delete global.document;
   });
 
+  it('a video full screen like the videos of Drive: the same code, Esc ends it, the vault\'s protection stays', () => {
+    const lib = read('src', 'renderer', 'drive-viewer.js');
+    assert.match(lib, /root\.GCDriveViewer = \{ create, fullscreen \}/, 'drive-viewer.js hands out its fullscreen()');
+    assert.match(viewer, /root\.GCDriveViewer\.fullscreen\(m\)/, 'the vault viewer uses it on its own <video>');
+    assert.match(viewer, /class: 'dv-ib dv-vv-full', title: t\('drive\.viewer\.fullscreen'\)/);
+    assert.match(viewer, /document\.fullscreenElement === m && document\.exitFullscreen/, 'closing (also the lock) ends the full screen');
+    assert.match(viewer, /disablePictureInPicture: true/);
+    assert.match(viewer, /controlsList: 'nodownload noremoteplayback'/);
+    assert.match(view, /d\.fullscreenElement && box\.contains\(d\.fullscreenElement\)\) \{ e\.preventDefault\(\); if \(d\.exitFullscreen\) d\.exitFullscreen\(\)/, 'Esc in a dialog ends its full screen first');
+    assert.match(read('src', 'renderer', 'styles', 'drive.css'), /\.dv-vv-video:fullscreen \{/);
+    for (const l of ['de', 'en']) assert.ok(JSON.parse(read('src', 'i18n', `${l}.json`)).drive.viewer.fullscreen, l);
+
+    // fullscreen(): in, and (one in full screen) out again
+    const calls = [];
+    const doc = { fullscreenElement: null, exitFullscreen: () => { calls.push('exit'); return Promise.resolve(); } };
+    const target = { ownerDocument: doc, requestFullscreen: () => { calls.push('request'); return Promise.resolve(); } };
+    global.self = global;
+    delete require.cache[require.resolve('../src/renderer/drive-viewer.js')];
+    require('../src/renderer/drive-viewer.js');
+    global.GCDriveViewer.fullscreen(target);
+    doc.fullscreenElement = target;
+    global.GCDriveViewer.fullscreen(target);
+    assert.deepEqual(calls, ['request', 'exit']);
+    delete global.GCDriveViewer;
+  });
+
   it('texts in both languages', () => {
     const de = JSON.parse(read('src', 'i18n', 'de.json')).drive.vv;
     const en = JSON.parse(read('src', 'i18n', 'en.json')).drive.vv;

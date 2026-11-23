@@ -887,6 +887,7 @@ button.dov-store { cursor: pointer; }
 .dv-vv-img { display: block; max-width: 100%; max-height: 100%; user-select: none; }
 .dv-vv-img.is-zoomed { max-width: none; max-height: none; margin: auto; }
 .dv-vv-video { width: 100%; max-height: 100%; flex-grow: 1; background: #000; border-radius: 10px; }
+.dv-vv-video:fullscreen { max-height: none; border-radius: 0; }
 .dv-vv-pages { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px; background: var(--panel2); border-radius: 10px; }
 .dv-vv-slot { width: 100%; display: flex; justify-content: center; }
 .dv-vv-page { display: block; max-width: 100%; height: auto; background: #fff; border-radius: 4px; box-shadow: var(--shadow); }

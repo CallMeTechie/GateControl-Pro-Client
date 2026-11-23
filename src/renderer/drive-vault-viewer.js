@@ -5,6 +5,8 @@
  * sound. The main process (core services/drive-vault-view.js) keeps only the ciphertext on the disk and serves the
  * plaintext through gcvault://v/<token>, decrypted chunk by chunk in memory:
  *   * pictures, videos, sound: <img> / <video> / <audio> on that URL — no file, no blob;
+ *     a video goes full screen like the videos of Drive (GCDriveViewer.fullscreen: the button, F; Esc ends it) — the
+ *     same <video> in the same protected window, nothing copied;
  *   * PDF: fetch() of the URL into memory, pdf.js (vendor/pdfjs, Apache-2.0, a module worker of this app — no CDN)
  *     draws the pages on <canvas>; no scripts or forms of the PDF, no network;
  *   * text and Markdown: fetch() as text, shown as text nodes (Markdown: headings, lists, code — never HTML).
@@ -278,7 +280,26 @@
 			m.addEventListener('play', () => { touch(); clearInterval(timer); timer = setInterval(() => { if (!m.paused) touch(); }, 30000); });
 			m.addEventListener('pause', () => { clearInterval(timer); timer = null; });
 			stage.append(m);
-			s.cleanups.push(() => { clearInterval(timer); m.pause(); m.removeAttribute('src'); m.load(); m.remove(); });
+			// a video: full screen like the videos of Drive (drive-viewer.js fullscreen) — the button, F; Esc ends it
+			// (openDialog). The same <video> on the same gcvault: address in the same protected window: nothing copied.
+			let onKey = null;
+			const full = r.kind === 'video' && root.GCDriveViewer && typeof root.GCDriveViewer.fullscreen === 'function'
+				? () => { touch(); root.GCDriveViewer.fullscreen(m); } : null;
+			if (full) {
+				const tools = s.dlg.body.querySelector('.dv-vv-tools');
+				tools.insertBefore(el('button', { type: 'button', class: 'dv-ib dv-vv-full', title: t('drive.viewer.fullscreen'), 'aria-label': t('drive.viewer.fullscreen'), on: { click: full } }, [icon('expand', 16)]), tools.querySelector('.dv-vv-lock'));
+				onKey = (e) => {
+					if (e.target && /^(INPUT|TEXTAREA|SELECT|VIDEO)$/.test(e.target.tagName || '')) return;
+					if (e.key === 'f' || e.key === 'F') { e.preventDefault(); full(); }
+				};
+				document.addEventListener('keydown', onKey);
+			}
+			s.cleanups.push(() => {
+				if (onKey) document.removeEventListener('keydown', onKey);
+				// closed in full screen (the lock, the window hidden): out of it before the video goes
+				if (document.fullscreenElement === m && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+				clearInterval(timer); m.pause(); m.removeAttribute('src'); m.load(); m.remove();
+			});
 		}
 
 		async function bytesOf(s, r, max) {
