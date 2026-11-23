@@ -168,6 +168,72 @@
 		return !!album && !!album.canFrame && features(me).frame;
 	}
 
+	// ── Drive 1.31 'framePhotos': photos for the photo frame (GateControl TV) ──
+
+	/** Can the person share single photos with the photo frame (me.features 'framePhotos')? */
+	function framePhotosOn(me) {
+		return !!(me && Array.isArray(me.features) && me.features.includes('framePhotos'));
+	}
+
+	const isPicture = (p) => !!p && p.kind !== 'video' && !(p.mime && /^video\//.test(String(p.mime)));
+
+	/**
+	 * What the menu offers for the photos `items` (selected, or the one in the large view), `inFrame` the ids known to be
+	 * in the frame: { pictures, add, remove } (ids). Nothing (no pictures) when only videos are selected — then the entries
+	 * are left out. `add` sends every item without the frame (videos too: Drive names them as skipped, not_image).
+	 */
+	function frameChoice(items, inFrame) {
+		const list = (Array.isArray(items) ? items : []).filter((p) => p && Number.isSafeInteger(p.id) && p.id > 0);
+		const has = inFrame instanceof Set ? (id) => inFrame.has(id) : () => false;
+		const pictures = list.filter(isPicture).map((p) => p.id);
+		if (!pictures.length) return { pictures: [], add: [], remove: [] };
+		return {
+			pictures,
+			add: list.filter((p) => !has(p.id)).map((p) => p.id),
+			remove: pictures.filter((id) => has(id)),
+		};
+	}
+
+	/** The ids in the frame after an answer: GET frame/photos?ids= sets those asked, POST / DELETE give all ids. */
+	function frameMerge(inFrame, r, asked) {
+		const out = new Set(inFrame instanceof Set ? inFrame : []);
+		if (!r || !r.ok || !Array.isArray(r.ids)) return out;
+		if (Array.isArray(asked)) {
+			for (const id of asked) out.delete(id);
+			for (const id of r.ids) out.add(id);
+			return out;
+		}
+		return new Set(r.ids);
+	}
+
+	/** Why a photo was left out, as the toast says it (Drive's reasons; an unknown one: "nicht möglich"). */
+	const FRAME_REASONS = ['not_image', 'vault', 'blocked', 'child', 'not_found'];
+
+	/**
+	 * The toast after „Für Fotorahmen freigeben“ / „Aus Fotorahmen entfernen“ → { text, tone }.
+	 * r: the answer of addToFrame / removeFromFrame; the skipped photos with their reason ("2 übersprungen: 1 Video,
+	 * 1 im Tresor"); 403 { field: 'frame' }: this account may not share photos; other errors: errorText.
+	 */
+	function frameToast(r, { remove = false, t, errorText = null } = {}) {
+		if (!r || !r.ok) {
+			if (r && r.status === 403 && (r.field === 'frame' || r.code === 'forbidden')) return { text: t('drive.photos.frame.forbidden'), tone: 'error' };
+			return { text: errorText ? errorText(r) : t('drive.photos.frame.failed'), tone: 'error' };
+		}
+		if (remove) return { text: plural(t, 'drive.photos.frame.removed', r.removed || 0), tone: 'success' };
+		const parts = [plural(t, 'drive.photos.frame.added', r.added || 0)];
+		const skipped = Array.isArray(r.skipped) ? r.skipped : [];
+		if (skipped.length) {
+			const by = new Map();
+			for (const x of skipped) {
+				const k = FRAME_REASONS.includes(x && x.reason) ? x.reason : 'other';
+				by.set(k, (by.get(k) || 0) + 1);
+			}
+			const why = [...FRAME_REASONS, 'other'].filter((k) => by.has(k)).map((k) => plural(t, `drive.photos.frame.why.${k}`, by.get(k)));
+			parts.push(plural(t, 'drive.photos.frame.skipped', skipped.length, { why: why.join(', ') }));
+		}
+		return { text: parts.join(' '), tone: r.added ? 'success' : 'info' };
+	}
+
 	// ── Selection ────────────────────────────────────────
 
 	/** A new selection with `id` added or removed. */
@@ -222,6 +288,7 @@
 		PAGE, features, mediaChoices, mediaOf, durationText,
 		monthKey, monthLabel, monthStart, groupByMonth, mergePage, memoriesView, photoWhen, areaChoices,
 		albumView, editableAlbums, albumAreas, albumNameError, frameSwitch,
+		framePhotosOn, frameChoice, frameMerge, frameToast, FRAME_REASONS,
 		toggle, selectRange, chunks, limiter,
 	};
 });

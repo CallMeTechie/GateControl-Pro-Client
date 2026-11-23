@@ -162,6 +162,8 @@
 		offline: 'M7 3h10v18H7z|M11 18h2|M12 7v6|M9.5 10.5L12 13l2.5-2.5',
 		pin: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z|M12 7a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5',
 		minus: 'M5 12h14',
+		// Drive 1.31: the photo frame (a picture in a frame)
+		frame: 'M3 4h18v16H3z|M6 7h12v10H6z|M6 15l3.5-3.5 3 3 2-2L18 16',
 	};
 	const KIND_ICON = { folder: 'folder', image: 'image', video: 'video', audio: 'audio', pdf: 'pdf', archive: 'archive', vault: 'vault' };
 	const AREA_ICON = { mine: 'user', family: 'users', child: 'child', team: 'team' };

@@ -328,6 +328,8 @@
 .dpv-scan[data-tone="blocked"] { background: var(--err-bg); color: var(--err); }
 .dpv-scan[data-tone="warning"] { background: var(--warn-bg); color: var(--warn); }
 .dpv-scan-reason { margin-top: 10px; }
+/* Drive 1.31: shown by the photo frame */
+.dpv-framed { position: absolute; right: 6px; top: 6px; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .55); color: #fff; pointer-events: none; }
 .dpv-play { position: absolute; right: 6px; bottom: 6px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0, 0, 0, .55); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
 /* Drive 1.25: a video's length next to its play mark; the search's "Fotos" / "Videos" */
 .dpv-play.has-time { width: auto; padding: 0 7px 0 5px; gap: 3px; border-radius: 11px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }

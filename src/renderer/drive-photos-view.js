@@ -13,6 +13,9 @@
  * cover, and the switch "Im Fotorahmen zeigen" for those one may change.
  * Drive 1.14 'photoSearch': a search field above the timeline finds photos by what is on them (the labels the
  * phones recognised, GET photos?q=) with the chips of the hits ("+ Meer") and how many there are.
+ * Drive 1.31 'framePhotos': „Für Fotorahmen freigeben“ / „Aus Fotorahmen entfernen“ in the bar of the selection and in
+ * the large view (only with pictures; GET frame/photos?ids= tells which are shared already), a small mark on the tiles
+ * of the photos the photo frame of the GateControl TV shows, a toast with the photos left out and why.
  * Drive 1.16 'photoPlaces' / 'photoPeople' (drive-places-people-view.js): the switch Zeitachse | Karte | Personen
  * (| Alben), a place, a person and naming; the search finds people and places too, with suggestions while typing
  * (then a search runs on Enter) and the people and places it recognised; the lightbox names the place.
@@ -83,6 +86,8 @@
 			marks: null,
 			// Drive 1.25 'mediaFilter': '' (both) | 'image' | 'video'
 			media: '',
+			// Drive 1.31 'framePhotos': the ids of the photos in the photo frame (as far as known)
+			frame: new Set(),
 		};
 		const previews = new Map();
 		const limit = PS.limiter(6);
@@ -112,6 +117,8 @@
 		const meFeats = () => { const me = o.getMe(); return me && Array.isArray(me.features) ? me.features : []; };
 		// Drive 1.16: places / people (the switch, the map, people, the search by names)
 		const ppOn = () => !!PPS && (meFeats().includes('photoPlaces') || meFeats().includes('photoPeople'));
+		// Drive 1.31: single photos for the photo frame
+		const frameOn = () => PS.framePhotosOn(o.getMe());
 		const canSearch = () => (!!KS() && meFeats().includes('photoSearch')) || ppOn();
 		const qInput = el('input', { type: 'search', class: 'dv-input dpv-q', maxlength: '100', spellcheck: 'false' });
 		const qLabel = el('label', { class: 'dv-search dpv-search' }, [icon('search', 15), qInput]);
@@ -181,6 +188,76 @@
 			P.months = months && months.ok ? months.months : [];
 			P.memories = [];
 			render();
+			loadFrame();
+		}
+
+		// ── Drive 1.31 'framePhotos' ─────────────────────
+		/** All ids in the photo frame (for the marks on the tiles); without the feature nothing is asked. */
+		async function loadFrame() {
+			if (!frameOn() || typeof api.framePhotos !== 'function') return;
+			const r = await Promise.resolve(api.framePhotos()).catch(fail);
+			if (!r || !r.ok) return;
+			P.frame = PS.frameMerge(P.frame, r, null);
+			frameMarks();
+		}
+
+		/** Asks which of `ids` (≤ 500) are in the frame (GET frame/photos?ids=) → true when it answered. */
+		async function askFrame(ids) {
+			const asked = ids.slice(0, 500);
+			if (!asked.length || !frameOn() || typeof api.framePhotos !== 'function') return false;
+			const r = await Promise.resolve(api.framePhotos(asked)).catch(fail);
+			if (!r || !r.ok) return false;
+			P.frame = PS.frameMerge(P.frame, r, asked);
+			frameMarks();
+			return true;
+		}
+
+		let frameTimer = null;
+		/** After the selection changed: which of the pictures selected are shared already (then „Entfernen“). */
+		function checkSelFrame() {
+			clearTimeout(frameTimer);
+			if (!frameOn() || !P.sel.size) return;
+			frameTimer = setTimeout(() => {
+				const ids = PS.frameChoice(selPhotos(), null).pictures;
+				askFrame(ids).then((ok) => { if (ok && P.selecting) renderSel(); });
+			}, 250);
+		}
+
+		/** The marks on the tiles shown, without drawing the page again. */
+		function frameMarks() {
+			for (const b of body.querySelectorAll('.dpv-tile[data-id]')) {
+				const on = P.frame.has(Number(b.getAttribute('data-id')));
+				const mark = b.querySelector('.dpv-framed');
+				if (on && !mark) b.appendChild(frameMark());
+				else if (!on && mark) mark.remove();
+			}
+		}
+
+		function frameMark() {
+			return el('span', { class: 'dpv-framed', title: t('drive.photos.frame.badge'), 'aria-label': t('drive.photos.frame.badge') }, [icon('frame', 12)]);
+		}
+
+		/**
+		 * „Für Fotorahmen freigeben“ / „Aus Fotorahmen entfernen“ for `ids` (in parts of 500) → the answer (summed up);
+		 * the toast says how many and which were left out and why.
+		 */
+		async function setFrame(ids, remove) {
+			const sum = { ok: true, added: 0, removed: 0, skipped: [], ids: null };
+			let bad = null;
+			for (const part of PS.chunks(ids, 500)) {
+				const r = await Promise.resolve(remove ? api.removeFromFrame(part) : api.addToFrame(part)).catch(fail);
+				if (!r || !r.ok) { bad = r || fail(null); break; }
+				sum.added += r.added || 0;
+				sum.removed += r.removed || 0;
+				sum.skipped.push(...(r.skipped || []));
+				sum.ids = r.ids;
+			}
+			if (sum.ids) P.frame = PS.frameMerge(P.frame, sum, null);
+			frameMarks();
+			// a refusal (403: this account may not share photos) or an error says so, else how many and what was left out
+			const msg = PS.frameToast(bad || sum, { remove, t, errorText: err });
+			toast(msg.text, msg.tone);
+			return !bad;
 		}
 
 		let loadingMore = false;
@@ -224,7 +301,7 @@
 			const r = await Promise.resolve(api.album(id, { limit: PS.PAGE })).catch(fail);
 			if (seq !== P.seq) return;
 			P.loading = false;
-			if (r && r.ok) P.album = { album: r.album, items: r.items, next: r.next };
+			if (r && r.ok) { P.album = { album: r.album, items: r.items, next: r.next }; loadFrame(); }
 			else P.error = r;
 			render();
 		}
@@ -305,6 +382,12 @@
 			const f = feats();
 			const items = o.bulk && n ? selPhotos() : [];
 			const acts = o.bulk && n ? o.bulk.actions(items) : null;
+			// Drive 1.31: the photo frame, only with pictures among the photos selected
+			const fc = frameOn() && n ? PS.frameChoice(selPhotos(), P.frame) : null;
+			const frameBtn = (remove) => el('button', {
+				type: 'button', class: 'btn btn-sec btn-sm', 'data-act': remove ? 'frame-remove' : 'frame-add',
+				on: { click: async () => { if (await setFrame(remove ? fc.remove : fc.add, remove)) { clearSel(); keepScroll(render); } } },
+			}, [icon('frame', 14), el('span', { text: t(remove ? 'drive.photos.frame.remove' : 'drive.photos.frame.add') })]);
 			// Drive 1.12: greyed with the reason when not possible
 			const bulkBtn = (key, ic, label, fn, danger) => {
 				const a = acts ? acts[key] : { on: false, why: null };
@@ -317,6 +400,8 @@
 				el('span', { class: 'dpv-sel-n', text: n ? t('drive.photos.selected', { count: n }) : t('drive.photos.selectHint') }),
 				el('span', { class: 'dv-grow' }),
 				!inAlbum && f.albums ? el('button', { type: 'button', class: 'btn btn-pri btn-sm', disabled: !n, on: { click: () => addDialog(Array.from(P.sel)) } }, [icon('plus', 14), el('span', { text: t('drive.photos.addTo') })]) : null,
+				fc && fc.pictures.length && fc.add.length ? frameBtn(false) : null,
+				fc && fc.remove.length ? frameBtn(true) : null,
 				!inAlbum && o.bulk ? bulkBtn('zip', 'down', t('drive.bulk.zip'), () => o.bulk.zip(items)) : null,
 				!inAlbum && o.bulk ? bulkBtn('move', 'move', t('drive.bulk.moveTo'), () => bulkRun(() => o.bulk.move(items, 'move'))) : null,
 				!inAlbum && o.bulk ? bulkBtn('link', 'link', t('drive.bulk.link'), () => o.bulk.link(items)) : null,
@@ -335,6 +420,7 @@
 				P.sel = e.shiftKey && P.last !== null ? PS.selectRange(P.sel, list, P.last, p.id) : PS.toggle(P.sel, p.id);
 				P.last = p.id;
 				keepScroll(render);
+				checkSelFrame();
 				return;
 			}
 			lightbox(list, i);
@@ -355,6 +441,8 @@
 				p.kind === 'video' ? el('span', { class: `dpv-play${PS.durationText(p.durationMs) ? ' has-time' : ''}`, 'aria-hidden': 'true' }, [icon('play', 12), PS.durationText(p.durationMs) ? el('span', { text: PS.durationText(p.durationMs) }) : null]) : null,
 				// Drive 1.19: the host's virus scan (blocked: no picture)
 				scanMark(p),
+				// Drive 1.31: shown by the photo frame
+				frameOn() && P.frame.has(p.id) ? frameMark() : null,
 				P.selecting ? el('span', { class: 'dpv-check', 'aria-hidden': 'true' }, on ? [icon('check', 12, '3')] : []) : null,
 			]);
 			b.setAttribute('aria-label', p.name);
@@ -491,7 +579,7 @@
 				const monthSel = mst ? el('button', {
 					type: 'button', class: 'btn btn-ghost btn-xs dpv-month-sel', 'data-month': g.key, text: t(mst === 'all' ? 'drive.bulk.photos.none' : 'drive.bulk.photos.all'),
 					'aria-label': t(mst === 'all' ? 'drive.bulk.photos.noneLabel' : 'drive.bulk.photos.allLabel', { month: g.label }),
-					on: { click: () => { P.sel = BS.selectMonth(P.sel, g.items, mst !== 'all'); keepScroll(render); } },
+					on: { click: () => { P.sel = BS.selectMonth(P.sel, g.items, mst !== 'all'); keepScroll(render); checkSelFrame(); } },
 				}) : null;
 				body.appendChild(el('section', { class: 'dpv-month', 'data-month': g.key }, [
 					el('div', { class: 'dpv-month-h' }, [el('span', { class: 'dpv-month-name', text: g.label }), el('span', { class: 'dpv-month-n', text: DSPlural('drive.photos.count', g.count) }), monthSel]),
@@ -654,12 +742,31 @@
 				clear(dlg.foot);
 				const me = o.getMe();
 				const c = SCAN ? SCAN.chip(p.scan, t) : null;
+				// Drive 1.31: „Für Fotorahmen freigeben“ / „Aus Fotorahmen entfernen“ for a picture (asked again when shown)
+				const frameBtn = frameOn() && PS.frameChoice([p], null).pictures.length ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dpv-frame-btn' }) : null;
+				if (frameBtn) {
+					const label = () => {
+						const on = P.frame.has(p.id);
+						clear(frameBtn);
+						frameBtn.setAttribute('data-act', on ? 'frame-remove' : 'frame-add');
+						frameBtn.append(icon('frame', 14), el('span', { text: t(on ? 'drive.photos.frame.remove' : 'drive.photos.frame.add') }));
+					};
+					label();
+					frameBtn.addEventListener('click', async () => {
+						frameBtn.disabled = true;
+						await setFrame([p.id], P.frame.has(p.id));
+						frameBtn.disabled = false;
+						if (list[i] === p) label();
+					});
+					askFrame([p.id]).then((ok) => { if (ok && list[i] === p && frameBtn.isConnected) label(); });
+				}
 				if (c) meta.appendChild(el('div', { class: 'scan-reason dpv-scan-reason', 'data-tone': c.tone, role: 'note' }, [icon('shield', 14), el('span', { text: SCAN.reason(p.scan, t) })]));
 				dlg.foot.append(
 					el('span', { class: 'dv-grow' }),
 					p.parentId ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => { dlg.close(null); o.openFolder(p.parentId); } } }, [icon('folder', 14), el('span', { text: t('drive.search.showFolder') })]) : null,
 					me && me.links && me.links.node ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => portal(p.id) } }, [icon('cloud', 14), el('span', { text: t('drive.portal.open') })]) : null,
 					feats().albums ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => addDialog([p.id]) } }, [icon('plus', 14), el('span', { text: t('drive.photos.addTo') })]) : null,
+					frameBtn,
 					!blocked && o.share && o.canShare && o.canShare(p) ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm', on: { click: () => o.share(p) } }, [icon('link', 14), el('span', { text: t('drive.viewer.share') })]) : null,
 					// Drucken (when the app offers it for this picture)
 					!blocked && o.print && o.print.can(p) ? el('button', { type: 'button', class: 'btn btn-ghost btn-sm dpv-print', on: { click: () => o.print.go([p]) } }, [icon('print', 14), el('span', { text: t('print.menu.viewer') })]) : null,

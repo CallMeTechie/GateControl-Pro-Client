@@ -1824,7 +1824,52 @@
         "images": "Fotos",
         "videos": "Videos"
       },
-      "duration": "Länge {{d}}"
+      "duration": "Länge {{d}}",
+      "frame": {
+        "add": "Für Fotorahmen freigeben",
+        "remove": "Aus Fotorahmen entfernen",
+        "badge": "Im Fotorahmen",
+        "added": {
+          "one": "1 Foto für den Fotorahmen freigegeben.",
+          "other": "{{count}} Fotos für den Fotorahmen freigegeben."
+        },
+        "removed": {
+          "one": "1 Foto aus dem Fotorahmen entfernt.",
+          "other": "{{count}} Fotos aus dem Fotorahmen entfernt."
+        },
+        "skipped": {
+          "one": "1 übersprungen: {{why}}.",
+          "other": "{{count}} übersprungen: {{why}}."
+        },
+        "why": {
+          "not_image": {
+            "one": "1 Video",
+            "other": "{{count}} Videos"
+          },
+          "vault": {
+            "one": "1 im Tresor",
+            "other": "{{count}} im Tresor"
+          },
+          "blocked": {
+            "one": "1 vom Virenscan gesperrt",
+            "other": "{{count}} vom Virenscan gesperrt"
+          },
+          "child": {
+            "one": "1 im Ordner eines Kindes",
+            "other": "{{count}} in Ordnern von Kindern"
+          },
+          "not_found": {
+            "one": "1 nicht gefunden",
+            "other": "{{count}} nicht gefunden"
+          },
+          "other": {
+            "one": "1 nicht möglich",
+            "other": "{{count}} nicht möglich"
+          }
+        },
+        "forbidden": "Dieses Konto darf keine Fotos für den Fotorahmen freigeben.",
+        "failed": "Der Fotorahmen konnte nicht geändert werden."
+      }
     },
     "storage": {
       "title": "Speicher",

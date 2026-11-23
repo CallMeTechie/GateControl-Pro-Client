@@ -235,8 +235,11 @@ describe('page wiring (Drive 1.7)', () => {
     for (const k of ['drive.tt.linkedSync', 'drive.tt.linkedBackup', 'drive.tt.linkedSyncH', 'drive.tt.linkedBackupH', 'drive.tt.done', 'drive.tt.undone', 'drive.storage.intro', 'drive.storage.introAll', 'drive.storage.all', 'drive.storage.mine', 'drive.photos.album.frameOnDone', 'drive.photos.album.frameOffDone']) keys.add(k);
     const plurals = ['drive.tt.restore', 'drive.tt.revert', 'drive.tt.trash', 'drive.tt.move', 'drive.tt.restored', 'drive.tt.reverted', 'drive.tt.trashed', 'drive.tt.moved', 'drive.tt.failed',
       'drive.photos.addTitle', 'drive.photos.added', 'drive.photos.yearsAgo', 'drive.photos.count', 'drive.photos.album.removed',
+      // Drive 1.31 'framePhotos' (drive-131-state.test.js)
+      'drive.photos.frame.added', 'drive.photos.frame.removed', 'drive.photos.frame.skipped',
       'drive.tt.lost', 'drive.tt.lostDone', 'drive.storage.keep', 'drive.storage.pruned',
       'drive.storage.files', 'drive.storage.copies', 'drive.storage.dupSelected', 'drive.storage.trashTitle', 'drive.storage.andMore', 'drive.storage.trashFailed'];
+    for (const k of ['not_image', 'vault', 'blocked', 'child', 'not_found', 'other']) plurals.push(`drive.photos.frame.why.${k}`);
     for (const p of plurals) { keys.delete(p); keys.add(`${p}.one`); keys.add(`${p}.other`); }
     assert.ok(keys.size > 120, `only ${keys.size} keys found`);
     for (const k of keys) {
