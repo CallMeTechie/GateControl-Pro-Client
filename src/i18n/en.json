@@ -1824,7 +1824,52 @@
         "images": "Photos",
         "videos": "Videos"
       },
-      "duration": "Length {{d}}"
+      "duration": "Length {{d}}",
+      "frame": {
+        "add": "Share with photo frame",
+        "remove": "Remove from photo frame",
+        "badge": "In the photo frame",
+        "added": {
+          "one": "1 photo shared with the photo frame.",
+          "other": "{{count}} photos shared with the photo frame."
+        },
+        "removed": {
+          "one": "1 photo removed from the photo frame.",
+          "other": "{{count}} photos removed from the photo frame."
+        },
+        "skipped": {
+          "one": "1 skipped: {{why}}.",
+          "other": "{{count}} skipped: {{why}}."
+        },
+        "why": {
+          "not_image": {
+            "one": "1 video",
+            "other": "{{count}} videos"
+          },
+          "vault": {
+            "one": "1 in a vault",
+            "other": "{{count}} in a vault"
+          },
+          "blocked": {
+            "one": "1 blocked by the virus scan",
+            "other": "{{count}} blocked by the virus scan"
+          },
+          "child": {
+            "one": "1 in a child's folder",
+            "other": "{{count}} in children's folders"
+          },
+          "not_found": {
+            "one": "1 not found",
+            "other": "{{count}} not found"
+          },
+          "other": {
+            "one": "1 not possible",
+            "other": "{{count}} not possible"
+          }
+        },
+        "forbidden": "This account may not share photos with the photo frame.",
+        "failed": "The photo frame could not be changed."
+      }
     },
     "storage": {
       "title": "Storage",
