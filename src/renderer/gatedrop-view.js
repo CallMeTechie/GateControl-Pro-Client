@@ -45,6 +45,7 @@
 		check: 'M4 12l5 5L20 6',
 		phone: 'M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z|M11 18h2',
 		pc: 'M3 4h18v12H3z|M8 20h8M12 16v4',
+		tv: 'M4 7h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z|M17 2l-5 5-5-5',
 		nas: 'M4 4h16v6H4z|M4 14h16v6H4z|M8 7h.01M8 17h.01',
 		lock: 'M6 11h12v10H6z|M8 11V7a4 4 0 0 1 8 0v4',
 		users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2|M9 3a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M22 21v-2a4 4 0 0 0-3-3.87|M16 3.13a4 4 0 0 1 0 7.75',
@@ -732,7 +733,7 @@
 			const checked = D.sel.devices.includes(d.id);
 			return el('label', { class: 'gd-dev', for: id }, [
 				el('input', { id, type: 'checkbox', checked, disabled: D.busy, on: { change: () => { D.sel.devices = GS.toggle(D.sel.devices, d.id); updateFoot(); } } }),
-				icon(d.platform === 'windows' ? 'pc' : 'phone', 16),
+				icon(GS.deviceIcon(d), 16),
 				el('b', { text: label }),
 				el('span', { class: `gd-dev-meta${d.online ? ' is-on' : ''}`, text: GS.deviceMeta(d, t) }),
 			]);
