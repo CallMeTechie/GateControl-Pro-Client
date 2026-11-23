@@ -89,6 +89,17 @@ describe('gatedrop-state', () => {
     assert.equal(GS.deviceMeta(off.devices[1], t), 'gatedrop.dialog.offlineLater');
   });
 
+  it('device icons: a TV for GateControl TV (android-tv), a PC for Windows, else a phone', () => {
+    assert.equal(GS.deviceIcon({ platform: 'android-tv' }), 'tv');
+    assert.equal(GS.deviceIcon({ platform: 'windows' }), 'pc');
+    assert.equal(GS.deviceIcon({ platform: 'android' }), 'phone');
+    assert.equal(GS.deviceIcon({ platform: 'unknown' }), 'phone');
+    assert.equal(GS.deviceIcon(null), 'phone');
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'gatedrop-view.js'), 'utf8');
+    assert.match(src, /icon\(GS\.deviceIcon\(d\), 16\)/);
+    assert.match(src, /\btv: 'M/);
+  });
+
   it('the send dialog never disables an offline device', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'gatedrop-view.js'), 'utf8');
     const row = src.slice(src.indexOf("nextId('gd-dev')"), src.indexOf("sectionLabel(t('gatedrop.dialog.people'))"));

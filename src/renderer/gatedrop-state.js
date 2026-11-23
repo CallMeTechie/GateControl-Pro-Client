@@ -174,6 +174,12 @@
 		return parts.join(' · ');
 	}
 
+	/** The icon of a device line: a TV for GateControl TV (GateDrop 1.7.0), a PC for Windows, else a phone. */
+	function deviceIcon(d) {
+		const p = d && d.platform;
+		return p === 'android-tv' ? 'tv' : p === 'windows' ? 'pc' : 'phone';
+	}
+
 	/** Another person's device: "Surface · Marc". */
 	function peopleDeviceLabel(d, t) {
 		const owner = d && d.owner && d.owner.name;
@@ -506,6 +512,7 @@
 		canSend,
 		dialogTargets,
 		deviceMeta,
+		deviceIcon,
 		peopleDeviceLabel,
 		accessView,
 		when,
