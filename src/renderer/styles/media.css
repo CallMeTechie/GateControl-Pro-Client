@@ -13,6 +13,7 @@
 .md-srcview > .md { padding: 0; }
 .md [hidden] { display: none !important; }
 .md button { font: inherit; color: inherit; }
+.md .btn-pri { color: var(--acc-on); }
 /* the pictures stay dark in both themes: their text is white */
 .md .md-pst, .md .md-th, .md-home-th { color: #fff; }
 .md-grow { flex-grow: 1; }
