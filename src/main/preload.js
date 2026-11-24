@@ -4,7 +4,7 @@
  */
 
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
-const { i18n, createBridgeApi, createSubscriber } = require('@gatecontrol/client-core');
+const { i18n, createBridgeApi, createSubscriber, createMediaBridge } = require('@gatecontrol/client-core');
 const { registerTranslations } = i18n;
 
 // Register Pro-specific translations
@@ -144,5 +144,12 @@ api.driveOnDemand = {
   /** Explorer-Kontextmenü: { action: 'share' | 'versions', node, path } (Portal öffnet main selbst). */
   onAction: (cb) => subscribe('drive-ondemand:action', cb),
 };
+
+// ══════════════════════════════════════════════════════
+//  Medien (Jellyfin and the NAS shares, core services/media.js — Pro only)
+//  Page: renderer/media-view.js; posters and video are gcmedia:// addresses.
+// ══════════════════════════════════════════════════════
+
+if (typeof createMediaBridge === 'function') api.media = createMediaBridge(ipcRenderer);
 
 contextBridge.exposeInMainWorld('gatecontrol', api);

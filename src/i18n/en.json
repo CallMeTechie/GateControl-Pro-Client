@@ -5253,5 +5253,270 @@
     "saveQText": "„Save“ adds „{{name}}“ to „My places“, „Only here“ uses the address only in this form.",
     "saveQYes": "Save",
     "onlyHere": "Only here"
+  },
+  "media": {
+    "title": "Media",
+    "loading": "Loading …",
+    "search": "Search all sources",
+    "searchFor": "Results for “{{q}}”",
+    "searchClear": "End search",
+    "tabs": {
+      "overview": "Overview",
+      "movies": "Movies",
+      "series": "Shows",
+      "folders": "Folders",
+      "search": "Search"
+    },
+    "sources": {
+      "button": "Sources",
+      "title": "Sources",
+      "add": "Add source",
+      "back": "Back to Media",
+      "none": "No source set up yet"
+    },
+    "row": {
+      "resume": "Continue watching",
+      "latest": "Recently added",
+      "movies": "Movies",
+      "series": "Shows",
+      "count": "{{count}} titles",
+      "thisWeek": "this week",
+      "all": "Show all",
+      "back": "Back",
+      "more": "More"
+    },
+    "mark": {
+      "nas": "NAS",
+      "new": "NEW"
+    },
+    "at": "from {{time}}",
+    "left": {
+      "min": "{{min}} min left",
+      "hm": "{{time}} left"
+    },
+    "runtime": {
+      "hm": "{{h}} h {{m}} min",
+      "h": "{{h}} h",
+      "m": "{{m}} min"
+    },
+    "episode": "Season {{season}} · Episode {{episode}}",
+    "episodeOnly": "Episode {{episode}}",
+    "seasons": "{{count}} seasons",
+    "seasons1": "1 season",
+    "link": {
+      "home": "At home · straight from the NAS",
+      "away": "Away · {{bw}}",
+      "awayNoBw": "Away · through the tunnel",
+      "checking": "Checking the connection …"
+    },
+    "status": {
+      "home": "Media: at home, direct in the LAN",
+      "away": "Media: away, through the tunnel · {{bw}}",
+      "awayNoBw": "Media: away, through the tunnel"
+    },
+    "sort": {
+      "label": "Sort",
+      "name": "A–Z",
+      "added": "Recently added",
+      "year": "Year"
+    },
+    "filter": {
+      "unplayed": "Unwatched",
+      "genre": "Genre",
+      "allGenres": "All genres"
+    },
+    "detail": {
+      "none": "Pick a title to see it here.",
+      "play": "Play",
+      "resume": "Resume from {{time}}",
+      "restart": "From the start",
+      "played": "Watched",
+      "markPlayed": "Mark as watched",
+      "markUnplayed": "Mark as unwatched",
+      "audio": "Audio",
+      "subtitles": "Subtitles",
+      "quality": "Quality"
+    },
+    "audio": {
+      "converts": "NAS converts to {{target}}",
+      "cannot": "Chromium can't play {{codec}}: NAS converts to {{target}}",
+      "direct": "direct"
+    },
+    "sub": {
+      "off": "Off",
+      "text": "Text ({{codec}})",
+      "picture": "Image ({{codec}})",
+      "forced": "forced",
+      "vtt": "as WebVTT, not converted",
+      "burnIn": "NAS burns it in, then always converted"
+    },
+    "lang": {
+      "unknown": "Unknown"
+    },
+    "chip": {
+      "audioConverted": "on this PC: audio converted",
+      "videoConverted": "on this PC: video converted",
+      "bothConverted": "on this PC: video and audio converted"
+    },
+    "quality": {
+      "auto": "Automatic",
+      "original": "Original",
+      "autoHome": "Automatic · original at home",
+      "autoAway": "Automatic · away {{res}} · {{bw}}",
+      "autoAwayOriginal": "Automatic · original also away",
+      "autoUnknown": "Automatic · by measurement",
+      "originalNote": "Always the original, also away",
+      "fixedNote": "Fixed step, also at home",
+      "alwaysOriginal": "Always original (switched on in Sources)"
+    },
+    "series": {
+      "season": "Season {{n}}",
+      "specials": "Specials",
+      "seasons": "Seasons",
+      "episodes": "Episodes",
+      "play": "Play S{{s}} E{{e}}",
+      "resume": "S{{s}} E{{e}} from {{time}}"
+    },
+    "empty": {
+      "title": "Set up media from the NAS",
+      "text": "Movies and shows from Jellyfin and the shares of your NAS — at home straight from the LAN, away through your own tunnel.",
+      "add": "Add source",
+      "nothing": "Nothing here yet.",
+      "noResults": "No results."
+    },
+    "noJellyfin": {
+      "title": "No Jellyfin signed in",
+      "text": "Overview, movies and shows come from Jellyfin. Sign in under Sources; your NAS shares appear under Folders."
+    },
+    "unsupported": {
+      "title": "Media doesn't work on this PC",
+      "text": "Media needs Windows' encryption for the access data. It isn't available on this PC right now."
+    },
+    "folders": {
+      "title": "Folders of the NAS shares",
+      "text": "Soon the folders of your SMB and WebDAV shares appear here with previews and progress. You can already set up the shares under Sources.",
+      "sources": "To the sources"
+    },
+    "signedOut": "{{name}} is signed out. Sign in again to see movies and shows.",
+    "src": {
+      "jellyfin": "Jellyfin · {{name}}",
+      "share": "NAS share · {{path}}",
+      "signedInAs": "signed in as {{user}}",
+      "device": "this device is called “{{device}}”",
+      "connected": "connected",
+      "signedOutPill": "signed out",
+      "signOut": "Sign out",
+      "signIn": "Sign in again",
+      "edit": "Edit",
+      "remove": "Remove",
+      "smbHomeWebdav": "SMB at home, WebDAV away",
+      "smb": "SMB share",
+      "webdav": "WebDAV",
+      "explorer": "with the Explorer's access"
+    },
+    "original": {
+      "title": "Always original",
+      "text": "Never convert, also away. Formats this PC can't play (e.g. DTS) are still converted by Jellyfin."
+    },
+    "homeCard": {
+      "title": "“Continue watching” on the overview",
+      "text": "Started movies and episodes as a card on the app's overview."
+    },
+    "authorize": {
+      "title": "Sign in a device",
+      "text": "Sign in a TV or another PC with Quick Connect: enter the code the other device shows. GateControl confirms it with your Jellyfin access.",
+      "code": "Quick Connect code",
+      "server": "Jellyfin server",
+      "confirm": "Confirm",
+      "done": "Confirmed. The other device signs in now.",
+      "notFound": "Jellyfin doesn't know this code. Has it expired?",
+      "invalid": "The code has 6 digits."
+    },
+    "home": {
+      "title": "Continue watching",
+      "all": "All in Media"
+    },
+    "dlg": {
+      "title": "Add source",
+      "editTitle": "Edit source",
+      "close": "Close",
+      "cancel": "Cancel",
+      "next": "Next",
+      "back": "Back",
+      "connect": "Connect",
+      "connecting": "Connecting …",
+      "signIn": "Sign in",
+      "kind": {
+        "jellyfin": "Jellyfin",
+        "smb": "SMB share",
+        "webdav": "WebDAV"
+      },
+      "found": "Found in the home network",
+      "searching": "Searching the home network …",
+      "noneFound": "No Jellyfin server found in the home network.",
+      "searchAgain": "Search again",
+      "reached": "reached",
+      "address": "Address",
+      "user": "User",
+      "password": "Password",
+      "userHint": "e.g. media-read",
+      "webdavAddress": "WebDAV address",
+      "hint": {
+        "jellyfin": "e.g. 192.168.1.20 or https://192.168.1.20:8920",
+        "smb": "e.g. \\\\192.168.1.20\\movies – ideally a NAS user with read access only",
+        "webdav": "e.g. https://192.168.1.20:5006/movies"
+      },
+      "qc": "Quick Connect",
+      "userPass": "User & password",
+      "qcCode": "Code",
+      "qcHint": "Confirm it in Jellyfin (Profile › Quick Connect) or in GateControl on another device: Sign in a device.",
+      "qcWaiting": "Waiting for confirmation …",
+      "qcNew": "New code",
+      "passwordOnce": "The password goes to Jellyfin once and isn't stored.",
+      "smbNoteStrong": "Windows signs the share in for GateControl",
+      "smbNote": "(only for this app session, no drive letter). If the Explorer is already connected to the server with another user, Windows refuses (error 1219). GateControl then says so and offers “Use with the Explorer's access”.",
+      "smbIp": "On a PC prefer the IP address over \\\\{{host}}: away, the tunnel doesn't resolve the NAS name.",
+      "encrypted": "Password encrypted by Windows (like Mail and Vault)",
+      "alsoWebdav": "Also set up as WebDAV, for when you're away",
+      "conflict": "The Explorer is already connected to \\\\{{host}} with another user. Windows doesn't allow a second sign-in to the same server (error 1219).",
+      "useExisting": "Use with the Explorer's access",
+      "done": "{{name}} is set up.",
+      "webdavFailed": "The SMB share is set up, WebDAV isn't: {{error}}",
+      "problem": {
+        "address": "Please enter a valid address.",
+        "user": "The user for the password is missing.",
+        "webdav": "Please enter the WebDAV address.",
+        "invalid": "That doesn't work."
+      },
+      "cert": {
+        "title": "Confirm certificate",
+        "text": "The server shows a certificate Windows doesn't trust – on a NAS it is usually self-signed. Check the fingerprint (e.g. in DSM under Security › Certificate) and confirm it once.",
+        "changed": "The certificate isn't the one you confirmed any more. Only confirm the new one if you renewed it yourself.",
+        "address": "Address",
+        "subject": "Issued to",
+        "issuer": "Issued by",
+        "validTo": "Valid until",
+        "fingerprint": "Fingerprint (SHA-256)",
+        "trust": "Trust and continue"
+      }
+    },
+    "error": {
+      "invalid": "That address isn't right.",
+      "offline": "Not reachable. Is the NAS on and in the same network?",
+      "unauthorized": "User or password is wrong.",
+      "not_found": "Not found.",
+      "unsupported": "That isn't supported (SMB only on port 445).",
+      "unsupported_version": "This Jellyfin is too old – GateControl needs 10.9 or newer.",
+      "quick_connect_off": "Quick Connect is off on this server. Sign in with user and password.",
+      "expired": "The code has expired.",
+      "signed_out": "Signed out – please sign in again under Sources.",
+      "no_protect": "Windows can't encrypt here, so no access is stored.",
+      "too_many": "8 sources are set up already.",
+      "smb_conflict": "Windows is already connected to this server under another user (error 1219).",
+      "cert_untrusted": "Windows doesn't trust the server's certificate.",
+      "cert_changed": "The server's certificate has changed.",
+      "no_lan_route": "The way to the NAS in the home network couldn't be set.",
+      "failed": "That didn't work."
+    }
   }
 }

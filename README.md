@@ -38,6 +38,15 @@ Windows VPN client with integrated Remote Desktop (RDP) management.
   steps of 50 m, who sees it), deleting a place in use only on "Trotzdem löschen". The event dialog of Chats (Messenger
   1.28 `profilePlaces`) chooses its place with three chips and "Alle Orte…". The phone watches the places — the PC only
   shows and changes them
+- Medien (films and series from the NAS, core docs/media.md): the entry "Medien" with the overview (the sources, the
+  way — "Zuhause · direkt von der NAS" or "Unterwegs · 18 Mbit/s" —, Weiterschauen, Zuletzt hinzugefügt, Filme,
+  Serien), Filme and Serien as a grid with sorting, "Ungesehen" and the genre and the detail column (sound, subtitles
+  and quality with what this PC plays itself and what Jellyfin converts; seasons and episodes), the search over all
+  sources and Medien › Quellen: Jellyfin (search in the LAN, Quick Connect or name and password, a self-signed
+  certificate confirmed once), SMB through Windows (error 1219 → "Mit dem Explorer-Zugang verwenden") and WebDAV,
+  "Immer Original", "Gerät anmelden" (confirms the Quick Connect code of a TV or another PC) and the card
+  "Weiterschauen" on the overview (can be switched off). The access stays encrypted on this PC (DPAPI); the page only
+  sees gcmedia:// addresses
 
 ## Development
 ```bash
