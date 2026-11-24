@@ -22,6 +22,8 @@ const path = require('path');
 
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const POSTER = fs.readFileSync(path.join(FIXTURES, 'camera-still.jpg'));
+/** The bytes of the bandwidth measurement (Playback/BitrateTest): at most this much, made once. */
+const MEASURE = Buffer.alloc(3000000);
 const TICKS = 10000;
 const MIN = 60 * 1000;
 const DAY = 24 * 60 * MIN;
@@ -161,9 +163,11 @@ async function startJellyfin({ password = 'geheim', quickConnect = true, authori
       if (!authed(req)) return send(res, 401, '');
 
       if (p === '/Playback/BitrateTest') {
-        const size = Math.min(3000000, Number(q.get('size')) || 1000000);
+        // the size asked for, as a whole number within the fixed buffer (never a buffer of the size asked for)
+        const asked = Number.parseInt(String(q.get('size') || ''), 10);
+        const size = Number.isInteger(asked) && asked > 0 ? Math.min(MEASURE.length, asked) : MEASURE.length;
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': size });
-        return res.end(Buffer.alloc(size));
+        return res.end(MEASURE.subarray(0, size));
       }
       if (p === '/Sessions/Logout') { state.loggedOut++; res.writeHead(204); return res.end(); }
       if (p === '/QuickConnect/Authorize' && req.method === 'POST') {
