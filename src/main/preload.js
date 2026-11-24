@@ -152,4 +152,7 @@ api.driveOnDemand = {
 
 if (typeof createMediaBridge === 'function') api.media = createMediaBridge(ipcRenderer);
 
+// The player says whether a film plays: 'playing' | 'paused' | 'stopped' (Windows may sleep a minute after a pause).
+api.mediaAwake = (state) => ipcRenderer.invoke('media-player:awake', state);
+
 contextBridge.exposeInMainWorld('gatecontrol', api);

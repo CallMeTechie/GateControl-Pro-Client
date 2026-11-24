@@ -32,6 +32,7 @@ const { driveOnDemandChannels } = require('./drive-ondemand');
  * @param {object} [ctx.driveOnDemand] - ./drive-ondemand.js (drive-ondemand:* channels)
  * @param {object} [ctx.remoteHost] - ./remote-host.js (remote-host:* channels, Fernzugriff)
  * @param {object} [ctx.terminal] - ./terminal.js (remote-term:* channels, the SSH terminal)
+ * @param {object} [ctx.mediaAwake] - ./media-awake.js (media-player:awake, Medien: no sleep while a film plays)
  * @returns {string[]} registered channels
  */
 const REMOTE_HOST_CHANNELS = ['remote-host:status', 'remote-host:share', 'remote-host:decide', 'remote-host:new-code', 'remote-host:enable-rdp',
@@ -147,6 +148,9 @@ function registerProIpc(ipcMain, ctx) {
 
     // ── Fernzugriff: the SSH terminal (./terminal.js) ──
     ...remoteTermChannels(ctx.terminal || null),
+
+    // ── Medien: no sleep while a film plays (./media-awake.js): 'playing' | 'paused' | 'stopped' ──
+    'media-player:awake': (_, state) => (ctx.mediaAwake ? ctx.mediaAwake.set(typeof state === 'string' ? state : '') : false),
   };
 
   return registerBaseHandlers(ipcMain, { ...ctx, getUpdater, overrides });

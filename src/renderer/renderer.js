@@ -217,6 +217,7 @@ function refreshTexts() {
 	notesView?.relabel();
 	camerasView?.relabel();
 	mediaView?.relabel();
+	mediaPlayer?.relabel();
 	homeView?.relabel();
 	dnsView?.relabel();
 	notifyRoutesView?.render();
@@ -258,6 +259,7 @@ let mailView = null; // mail-view.js instance (MAIL section below)
 let notesView = null; // notes-view.js instance (NOTIZEN & AUFGABEN section below)
 let camerasView = null; // camera-view.js instance (KAMERAS section below)
 let mediaView = null; // media-view.js instance (MEDIEN section below)
+let mediaPlayer = null; // media-player.js instance: the player over the window (MEDIEN section below)
 let dnsView = null; // dns-view.js instance: the card "DNS-Schutz" on the start page (DNS-SCHUTZ section below)
 let homeView = null; // home-view.js instance: pinned favourites and events on the start page (MAIL section below)
 let notifyRoutesView = null; // notify-routes.js in Settings › Benachrichtigungen
@@ -477,6 +479,8 @@ function navigateTo(page, opts = {}) {
 	if (page === 'kameras' && prev !== 'kameras') camerasView?.show();
 	else if (prev === 'kameras' && page !== 'kameras') camerasView?.hide();
 	// Medien: the rows and the way to the NAS while the page is shown; Start: the card "Weiterschauen"
+	// another page asked for (a toast, the tray): the player closes first
+	if (page !== 'medien' && mediaPlayer?.open) mediaPlayer.close();
 	if (page === 'medien' && prev !== 'medien') mediaView?.show();
 	else if (prev === 'medien' && page !== 'medien') mediaView?.hide();
 	if (page === 'status' && prev !== 'status') mediaView?.homeShow();
@@ -3931,6 +3935,19 @@ camerasView = camerasApi && window.GCCameraView && $('#page-kameras')
 //  media-sources-view.js (Quellen). Pro only; the entry shows while the core
 //  has the service; the card "Weiterschauen" sits on the start page.
 // ══════════════════════════════════════════════════════════
+// The player (Stufe 4g): in the app's window over the sidebar, its own controls; Windows stays awake while it plays.
+mediaPlayer = mediaApi && window.GCMediaPlayer
+	? window.GCMediaPlayer.mount({
+		api: mediaApi,
+		t,
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		awake: (state) => (window.gatecontrol.mediaAwake ? window.gatecontrol.mediaAwake(state) : null),
+		quality: () => (mediaView ? mediaView.quality() : 'auto'),
+		setQuality: (q) => (mediaView ? mediaView.setQuality(q) : null),
+		sourceName: (id) => (mediaView ? mediaView.sourceName(id) : ''),
+	})
+	: null;
 mediaView = mediaApi && window.GCMediaView && $('#page-medien')
 	? window.GCMediaView.mount({
 		root: $('#page-medien'),
@@ -3941,6 +3958,7 @@ mediaView = mediaApi && window.GCMediaView && $('#page-medien')
 		statusHost: $('#statusbar'),
 		homeHost: $('#media-home'),
 		openPage: () => navigateTo('medien'),
+		player: mediaPlayer,
 	})
 	: null;
 if (mediaView) $('#nav-medien').hidden = false;

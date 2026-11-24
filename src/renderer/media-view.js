@@ -816,7 +816,7 @@
 				startMs: opts.fromStart ? 0 : (it.played ? 0 : it.positionMs || 0),
 				audioIndex: ch.audio,
 				subtitleIndex: ch.subtitle,
-				next: it.kind === 'episode' && list ? () => MS.episodeAfter(list, it.id) : null,
+				next: it.kind === 'episode' && list ? (cur) => MS.episodeAfter(list, (cur || it).id) : null,
 				onEnd: () => refreshAfterPlay(),
 			});
 		}
@@ -962,7 +962,18 @@
 				if (sources) sources.render();
 			},
 			openSources,
-			/** For the player (4g): the title's choices and what happened after playing. */
+			/** For the player (4g): the quality setting, its change, a source's name, what happened after playing. */
+			quality: () => (S.status && S.status.quality) || 'auto',
+			async setQuality(q) {
+				let r;
+				try { r = await api.setQuality(q); } catch (err) { r = fail(err); }
+				if (r && r.ok && S.status) S.status.quality = r.quality;
+				return r;
+			},
+			sourceName(id) {
+				const s = source(id);
+				return s ? MS.sourceChip(s, t) : '';
+			},
 			refreshAfterPlay,
 			setTab,
 			get state() { return S; },

@@ -180,11 +180,12 @@ test.describe('medien', () => {
     await expect(home.locator('.md-home-th').first()).toContainText('Station Eisvogel');
     await home.locator('.md-home-th').first().click();
     await expect(p).toHaveClass(/active/);
-    // without the player (4g) a click opens the title: the series with its column
-    await expect(p.locator('.md-tabs [data-tab="series"]')).toHaveClass(/on/);
-    await expect(p.locator('.md-det .md-det-h')).toHaveText('Station Eisvogel');
-    await p.locator('.md-tabs [data-tab="overview"]').click();
-    await p.locator('.md-srcbtn').click();
+    // a click plays on at the place (the player of 4g); Esc goes back to the page
+    await expect(page.locator('.mp')).toBeVisible();
+    await expect(page.locator('.mp .mp-title')).toHaveText('Station Eisvogel');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.mp')).toBeHidden();
+    await expect(p.locator('.md-sources')).toBeVisible();
     await p.locator('.md-sw-home .sw').click();
     await expect(p.locator('.md-sw-home .sw')).toHaveAttribute('aria-checked', 'false');
     await page.locator('#nav-status').click();

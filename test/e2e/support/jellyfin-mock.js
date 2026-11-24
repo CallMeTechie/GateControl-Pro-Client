@@ -22,6 +22,13 @@ const path = require('path');
 
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const POSTER = fs.readFileSync(path.join(FIXTURES, 'camera-still.jpg'));
+// The player (Stufe 4g): a film (VP8 + Opus, 24 s), only sound (Opus, as HEVC without the decoder looks), Jellyfin's
+// converted stream as HLS in fMP4 (H.264 + AAC, 12 s in three segments) and a WebVTT subtitle.
+const MOVIE = fs.readFileSync(path.join(FIXTURES, 'media-movie.webm'));
+const AUDIO_ONLY = fs.readFileSync(path.join(FIXTURES, 'media-audio-only.webm'));
+const HLS_DIR = path.join(FIXTURES, 'media-hls');
+const HLS_FILES = new Set(['main.m3u8', 'init.mp4', 'seg0.m4s', 'seg1.m4s', 'seg2.m4s']);
+const VTT = 'WEBVTT\n\n00:00:00.000 --> 00:00:30.000\nFunkstille auf Station 9\n';
 /** The bytes of the bandwidth measurement (Playback/BitrateTest): at most this much, made once. */
 const MEASURE = Buffer.alloc(3000000);
 const TICKS = 10000;
@@ -129,7 +136,41 @@ const pick = (it) => {
 
 async function startJellyfin({ password = 'geheim', quickConnect = true, authorizeCode = '731205' } = {}) {
   const lib = createLibrary();
-  const state = { qcConfirmed: false, quickConnect, authorized: [], loggedOut: 0 };
+  const state = { qcConfirmed: false, quickConnect, authorized: [], loggedOut: 0, plays: new Map(), audioOnly: new Set(), hlsFiles: [], playbackInfo: [] };
+  // Kobaltnacht (HEVC in the library): the first answer plays the file itself — only sound comes (no decoder) —,
+  // asked again Jellyfin converts to HLS (H.264); every other title plays the file itself
+  const playbackInfo = (itemId, body) => {
+    const it = lib.all().find((x) => x.Id === itemId);
+    if (!it) return { ErrorCode: 'NoCompatibleStream' };
+    const n = (state.plays.get(itemId) || 0) + 1;
+    state.plays.set(itemId, n);
+    state.playbackInfo.push({ itemId, body });
+    const src = it.MediaSources[0];
+    const sub = Number.isInteger(body.SubtitleStreamIndex) ? body.SubtitleStreamIndex : -1;
+    const streams = src.MediaStreams.map((x) => (x.Type === 'Subtitle' && x.IsTextSubtitleStream && x.Index === sub
+      ? { ...x, DeliveryMethod: 'External', DeliveryUrl: `/Videos/${itemId}/${src.Id}/Subtitles/${x.Index}/0/Stream.vtt?api_key=e2e-secret` } : { ...x, DeliveryUrl: null, DeliveryMethod: x.Type === 'Subtitle' ? 'Encode' : null }));
+    const kobalt = it === lib.kobalt;
+    if (kobalt && n === 1) state.audioOnly.add(itemId); else state.audioOnly.delete(itemId);
+    const transcode = kobalt && n > 1;
+    return {
+      PlaySessionId: `ps-${itemId.slice(-6)}-${n}`,
+      MediaSources: [{
+        ...src, Container: transcode ? 'mkv' : 'webm', MediaStreams: streams,
+        DefaultAudioStreamIndex: Number.isInteger(body.AudioStreamIndex) ? body.AudioStreamIndex : src.DefaultAudioStreamIndex,
+        SupportsDirectPlay: !transcode, SupportsDirectStream: !transcode, SupportsTranscoding: true,
+        ...(transcode ? { TranscodingUrl: `/videos/${itemId}/master.m3u8?MediaSourceId=${src.Id}&TranscodeReasons=VideoCodecNotSupported,AudioCodecNotSupported&api_key=e2e-secret`, TranscodingSubProtocol: 'hls' } : {}),
+      }],
+    };
+  };
+  const sendRange = (req, res, buf, type) => {
+    const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
+    if (!m) { res.writeHead(200, { 'Content-Type': type, 'Content-Length': buf.length, 'Accept-Ranges': 'bytes' }); return res.end(buf); }
+    const start = m[1] ? Number(m[1]) : 0;
+    const end = m[2] ? Math.min(Number(m[2]), buf.length - 1) : buf.length - 1;
+    if (start >= buf.length || start > end) { res.writeHead(416, { 'Content-Range': `bytes */${buf.length}` }); return res.end(); }
+    res.writeHead(206, { 'Content-Type': type, 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${buf.length}`, 'Accept-Ranges': 'bytes' });
+    return res.end(buf.subarray(start, end + 1));
+  };
   const log = [];
   const reports = [];
 
@@ -185,6 +226,19 @@ async function startJellyfin({ password = 'geheim', quickConnect = true, authori
         if (it.UserData.Played) it.UserData.PlaybackPositionTicks = 0;
         return send(res, 200, { Played: it.UserData.Played });
       }
+      m = /^\/Items\/([0-9a-f]{32})\/PlaybackInfo$/.exec(p);
+      if (m && req.method === 'POST') return send(res, 200, playbackInfo(m[1], body || {}));
+      m = /^\/Videos\/([0-9a-f]{32})\/stream$/.exec(p);
+      if (m) return sendRange(req, res, state.audioOnly.has(m[1]) ? AUDIO_ONLY : MOVIE, 'video/webm');
+      m = /^\/videos\/([0-9a-f]{32})\/master\.m3u8$/.exec(p);
+      if (m) return send(res, 200, '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=200000,RESOLUTION=320x180,CODECS="avc1.42c01e,mp4a.40.2"\nmain.m3u8?MediaSourceId=x&api_key=e2e-secret\n', 'application/vnd.apple.mpegurl');
+      m = /^\/videos\/([0-9a-f]{32})\/([a-z0-9.]+)$/.exec(p);
+      if (m && HLS_FILES.has(m[2])) {
+        state.hlsFiles.push(m[2]);
+        return send(res, 200, fs.readFileSync(path.join(HLS_DIR, m[2])), m[2].endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp4');
+      }
+      m = /^\/Videos\/([0-9a-f]{32})\/[0-9a-f]{32}\/Subtitles\/\d+\/0\/Stream\.vtt$/.exec(p);
+      if (m) return send(res, 200, VTT, 'text/vtt');
       m = /^\/Items\/([0-9a-f]{32})\/Images\/(Primary|Backdrop)$/.exec(p);
       if (m) return send(res, 200, POSTER, 'image/jpeg');
 
