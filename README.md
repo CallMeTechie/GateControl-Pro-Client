@@ -46,7 +46,11 @@ Windows VPN client with integrated Remote Desktop (RDP) management.
   certificate confirmed once), SMB through Windows (error 1219 → "Mit dem Explorer-Zugang verwenden") and WebDAV,
   "Immer Original", "Gerät anmelden" (confirms the Quick Connect code of a TV or another PC) and the card
   "Weiterschauen" on the overview (can be switched off). The access stays encrypted on this PC (DPAPI); the page only
-  sees gcmedia:// addresses
+  sees gcmedia:// addresses. The player plays in the app's window with its own controls (HTML5 video, hls.js from
+  `src/renderer/vendor/hls` for Jellyfin's converted streams): the info line (direct or converted, the measurement away),
+  sound, subtitles (WebVTT) and quality in the side panel, Leertaste / ← → / F / U / T / Esc, full screen,
+  picture-in-picture, the progress at Jellyfin, "Nächste Folge"; Windows stays awake while it plays (free one minute
+  after a pause), HEVC without the Windows decoder is asked for again as H.264
 
 ## Development
 ```bash

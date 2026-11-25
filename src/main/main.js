@@ -29,11 +29,12 @@ process.on('unhandledRejection', (reason) => {
 
 writeCrashLog('STARTUP', 'Process starting...');
 
-let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut, protocol;
+let app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut, protocol, powerSaveBlocker;
 let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPortal, connectSteps, waitForHandshake, explorerShell, userPath, createPortalOpener, recoverKillSwitch, createTrayIcon, updateMenuItems, updateToast;
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let setupRemoteHost; // ./remote-host.js (loaded with the other services)
 let setupTerminal; // ./terminal.js — Fernzugriff stage 3, the SSH terminal window with tabs
+let createMediaAwake; // ./media-awake.js — Medien: no sleep while a film plays
 let setupScreenBar; // ./screen-bar.js — Fernzugriff stage 7, the bar at the top while "Bildschirm teilen" runs
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
@@ -60,7 +61,7 @@ let installWindowGuard, autostartTask, createAutostart;
 
 try {
   writeCrashLog('IMPORT', 'Loading electron...');
-  ({ app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut, protocol } = require('electron'));
+  ({ app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, screen, shell, clipboard, safeStorage, powerMonitor, globalShortcut, protocol, powerSaveBlocker } = require('electron'));
   // Chats "Standort senden": navigator.geolocation from the Windows location
   // service (Electron has no key for Google's network location).
   if (process.platform === 'win32') app.commandLine.appendSwitch('enable-features', 'WinrtGeolocationImplementation');
@@ -85,6 +86,8 @@ try {
   ({ setupRemoteHost } = require('./remote-host'));
   ({ setupScreenBar } = require('./screen-bar'));
   ({ setupTerminal } = require('./terminal'));
+  // Medien: no sleep while a film plays (the player of the page says playing / paused / stopped)
+  ({ createMediaAwake } = require('./media-awake'));
 
   writeCrashLog('IMPORT', 'Loading pro services...');
   ApiClientPro = require('../services/api-client-pro');
@@ -379,6 +382,7 @@ let media = null; // Medien (core MediaService): Jellyfin and the NAS shares, on
 let mediaNetKey = null; // the addresses of this PC's adapters last seen (another Wi-Fi → media.networkChanged())
 let mediaNetTimer = null;
 let mediaTunnelUp = null; // the tunnel state media last heard of
+let mediaAwake = null; // Medien: Windows stays awake while a film plays (./media-awake.js)
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
 let driveSyncTray = '';
 let driveOnDemandLocked = false; // letzter Status von gc-drive-sync: von Drive gestoppt?
@@ -1318,6 +1322,8 @@ function initializeServices() {
       log,
     })
     : null;
+  // the player's "no sleep while playing", released a minute after a pause and when it closes
+  mediaAwake = media && powerSaveBlocker ? createMediaAwake({ powerSaveBlocker, log }) : null;
 
   // "Ordner sichern": folders of this PC backed up / synced with Drive. Runs
   // in the main process (tray), the state of each folder lives in
@@ -1744,6 +1750,8 @@ function registerIpcHandlers() {
     remoteHost,
     // remote-term:* (Pro, ./ipc-pro.js — Fernzugriff, the SSH terminal)
     terminal,
+    // media-player:awake (Pro, ./ipc-pro.js — Medien, no sleep while a film plays)
+    mediaAwake,
     // Result of a bundle the admin requested (the button shows its own toast).
     onSupportResult: (res) => {
       if (!res || res.cancelled) return;
@@ -2056,6 +2064,7 @@ app.on('before-quit', (e) => {
   // Medien: the host routes to the NAS and the SMB connections of this session go.
   if (mediaNetTimer) { clearInterval(mediaNetTimer); mediaNetTimer = null; }
   media?.close().catch((err) => log.warn('Medien close failed:', err.message));
+  mediaAwake?.stop();
 
   // Critical: cleanup all RDP sessions
   if (rdpManager) {
