@@ -50,7 +50,13 @@ Windows VPN client with integrated Remote Desktop (RDP) management.
   `src/renderer/vendor/hls` for Jellyfin's converted streams): the info line (direct or converted, the measurement away),
   sound, subtitles (WebVTT) and quality in the side panel, Leertaste / ← → / F / U / T / Esc, full screen,
   picture-in-picture, the progress at Jellyfin, "Nächste Folge"; Windows stays awake while it plays (free one minute
-  after a pause), HEVC without the Windows decoder is asked for again as H.264
+  after a pause), HEVC without the Windows decoder is asked for again as H.264. The NAS shares (SMB at home, WebDAV
+  away): their films and series (title, year, season and episode from the file names, the picture beside the video) in
+  the rows, the grid and the search with the mark "NAS" — a title Jellyfin has too once, Jellyfin's —, "Weiterschauen"
+  over all sources, and the tab "Ordner" with the folders and files of a share (picture, size, length, "noch 19 Min.";
+  the place of a share's file is kept on this PC). A file plays as it is; what Chromium cannot (DTS / AC3 sound, HEVC
+  without the decoder, avi …) is said before the start, with "In VLC öffnen" (VLC installed: a loopback address, never
+  the access) or "In anderer App öffnen" (SMB) and "Trotzdem abspielen"
 
 ## Development
 ```bash

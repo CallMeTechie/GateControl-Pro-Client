@@ -14,6 +14,10 @@
  * plays (media-player:awake; free one minute after a pause, main/media-awake.js). HEVC without the Windows decoder
  * gives sound without picture (videoWidth 0): the player asks Jellyfin again with H.264, once per title.
  *
+ * A file of a NAS share (Stufe 4h) plays as it is (no converting, no tracks to choose): before it starts the core's
+ * check says what Chromium cannot (DTS / AC3 sound, HEVC without the decoder, avi …) — then the player says so and
+ * offers "In VLC öffnen" (VLC installed) or "In anderer App öffnen" (Windows' app, SMB), and "Trotzdem abspielen".
+ *
  * Built by renderer.js (GCMediaPlayer.mount); pure logic in media-player-state.js and media-state.js; texts
  * media.player.* of the Pro locales. Server text only into textContent; icons from static path data.
  */
@@ -119,6 +123,8 @@
 			error: null,
 			loading: false,
 			awakeAt: 0,
+			ext: null,          // media:external:info (VLC there?), asked once per app run
+			hint: null,         // a share's file waits for "Trotzdem abspielen": { r, startMs }
 		};
 		let hideTimer = null;
 		let countdownTimer = null;
@@ -251,6 +257,7 @@
 			const srcName = it && typeof o.sourceName === 'function' ? o.sourceName(it.sourceId) : '';
 			R.sub.textContent = [tt.sub, srcName].filter(Boolean).join(' · ');
 			const info = P.play ? PS.infoLine(P.play, audioTarget(), t, lang()) : null;
+			if (info && P.play.via) info.text = [info.text, P.play.via === 'webdav' ? 'WebDAV' : 'SMB'].filter(Boolean).join(' · ');
 			R.info.hidden = !info || !info.text;
 			R.info.textContent = info ? info.text : '';
 			R.info.className = `mp-info${info && info.converted ? ' is-conv' : ''}${info && info.way === 'home' ? ' is-home' : ''}`;
@@ -266,6 +273,13 @@
 				el('span', { class: 'mp-opt-tx' }, [el('span', { class: 'mp-opt-t', text: label }), note ? el('span', { class: 'mp-opt-v', text: note }) : null]),
 				on ? icon('check', 16) : null,
 			]);
+			if (isShare()) {
+				const note = P.play ? MS.checkNote(P.play.check, t) : null;
+				R.panel.appendChild(el('h3', { class: 'mp-h', text: t('media.folders.fileTitle') }));
+				R.panel.appendChild(el('div', { class: 'mp-none', text: t('media.folders.originalHint') }));
+				if (note) R.panel.appendChild(el('div', { class: `mp-none mp-check is-${note.level}`, text: note.text }));
+				return;
+			}
 			R.panel.appendChild(el('h3', { class: 'mp-h', text: t('media.detail.audio') }));
 			const aOpts = v ? MS.audioOptions(v, caps, t) : [];
 			if (!aOpts.length) R.panel.appendChild(el('div', { class: 'mp-none', text: t('media.player.noTracks') }));
@@ -355,9 +369,73 @@
 			P.play = r;
 			P.started = false;
 			P.lastReport = NaN;
+			const note = isShare() ? MS.checkNote(r.check, t) : null;
+			if (note && note.external && !P.req.anyway) {
+				P.hint = { r, startMs: startMs || 0 };
+				renderInfo();
+				renderPanel();
+				await showHint(note);
+				return;
+			}
 			attach(r, startMs || 0);
 			renderInfo();
 			renderPanel();
+			renderControls();
+		}
+
+		function isShare() { return !!(P.req && P.req.item && P.req.item.fromShare === true); }
+
+		async function externalInfo() {
+			if (P.ext) return P.ext;
+			try { const r = await api.externalInfo(); P.ext = r && r.ok ? r : { vlc: false, openPath: false }; } catch { P.ext = { vlc: false, openPath: false }; }
+			return P.ext;
+		}
+
+		/** Another app for this file: VLC (loopback, SMB and WebDAV) or Windows' app (SMB) — the player closes. */
+		async function openExternal(app) {
+			const it = P.req && P.req.item;
+			if (!it) return;
+			let r;
+			try { r = await api.shareExternal(it.sourceId, it.id, app, PS.titleOf(it, t).title); } catch (err) { r = fail(err); }
+			if (r && r.ok) {
+				toast(app === 'vlc' ? t('media.check.openedVlc') : t('media.check.openedOther'), 'info');
+				close();
+			} else toast(MS.errorText(r && r.code, t), 'error');
+		}
+
+		/** The buttons of another app, as far as there is one for this file. */
+		async function externalButtons() {
+			const info = await externalInfo();
+			const via = P.play ? P.play.via : null;
+			const app = MS.externalApp(info, via);
+			if (!app) return [el('div', { class: 'mp-hint-no', text: t('media.check.noApp') })];
+			return [el('button', { type: 'button', class: 'btn btn-pri btn-sm mp-ext', 'data-app': app, on: { click: () => openExternal(app) } }, [
+				el('span', { text: app === 'vlc' ? t('media.check.vlc') : t('media.check.other') }),
+			])];
+		}
+
+		/** "Ton DTS: am PC kein Ton" with "In VLC öffnen" / "In anderer App öffnen" and "Trotzdem abspielen". */
+		async function showHint(note) {
+			setCenter(note.text, 'hint');
+			const seq = P.seq;
+			const btns = await externalButtons();
+			if (seq !== P.seq || !P.hint) return;
+			R.center.appendChild(el('div', { class: 'mp-hint-b' }, [
+				...btns,
+				el('button', { type: 'button', class: 'btn btn-sec btn-sm mp-anyway', text: t('media.check.anyway'), on: { click: () => playAnyway() } }),
+				el('button', { type: 'button', class: 'btn btn-ghost btn-sm mp-hint-back', text: t('media.check.back'), on: { click: () => close() } }),
+			]));
+			const first = R.center.querySelector('button');
+			if (first) first.focus();
+		}
+
+		function playAnyway() {
+			const h = P.hint;
+			if (!h) return;
+			P.hint = null;
+			P.req.anyway = true;
+			setCenter(t('media.player.loading'), 'loading');
+			attach(h.r, h.startMs);
 			renderControls();
 		}
 
@@ -408,7 +486,7 @@
 			R.center.className = `mp-center${kind ? ` is-${kind}` : ''}`;
 			if (!text) return;
 			if (kind === 'loading') R.center.appendChild(el('span', { class: 'mp-spin' }));
-			if (kind === 'error') R.center.appendChild(icon('alert', 28));
+			if (kind === 'error' || kind === 'hint') R.center.appendChild(icon('alert', 28));
 			R.center.appendChild(el('span', { class: 'mp-center-tx', text }));
 		}
 
@@ -417,6 +495,10 @@
 			const msg = code === 'stream' || code === 'media' ? t('media.player.streamError') : MS.errorText(code, t);
 			setCenter(msg, 'error');
 			R.center.appendChild(el('button', { type: 'button', class: 'btn btn-sec btn-sm mp-retry', text: t('media.player.retry'), on: { click: () => restartHere() } }));
+			if (isShare() && P.play) {
+				const seq = P.seq;
+				externalButtons().then((btns) => { if (seq === P.seq && P.error) R.center.appendChild(el('div', { class: 'mp-hint-b' }, btns)); });
+			}
 			awake('paused');
 		}
 
@@ -539,7 +621,7 @@
 			const n = nextOf();
 			if (!n) return;
 			clearInterval(countdownTimer);
-			const req = { ...P.req, item: n, detail: null, startMs: n.played ? 0 : n.positionMs || 0, audioIndex: undefined, subtitleIndex: undefined };
+			const req = { ...P.req, item: n, detail: null, startMs: n.played ? 0 : n.positionMs || 0, audioIndex: undefined, subtitleIndex: undefined, anyway: false };
 			play(req);
 		}
 
@@ -654,6 +736,7 @@
 				api.endStream(played.playId).catch(() => {});
 			}
 			P.play = null;
+			P.hint = null;
 			P.seq++;
 			detachSource();
 			if (why !== 'switch') awake('stopped');

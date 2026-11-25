@@ -6,7 +6,11 @@
  * ("Zuhause · direkt von der NAS"), the rows Weiterschauen, Zuletzt hinzugefügt, Filme and Serien (Umschalt + Mausrad
  * or the arrows at the edge); Filme and Serien as a grid with sorting and filters and the detail column on the right
  * (a click selects, a double click or Enter plays, the arrow keys move through the grid; a series shows its seasons
- * and episodes there); the search over all sources; "Ordner" waits for the folders of the shares (4h). The page
+ * and episodes there); the search over all sources. NAS shares (Stufe 4h): their films and series (from the file names)
+ * sit in the rows and grids with the mark "NAS" — a title Jellyfin has too shows once, Jellyfin's —, "Weiterschauen"
+ * runs over all sources, and "Ordner" shows a share's folders and files (picture and title from the name or a picture
+ * beside it, size, length, "noch 19 Min.", at home SMB, away WebDAV; at home the files Chromium cannot play are marked
+ * before, "In VLC öffnen" / "In anderer App öffnen" in the detail and the player). The page
  * "Quellen" with its dialog is media-sources-view.js (window.GCMediaSources), the card "Weiterschauen" of the
  * app's overview is built here as well (homeCard()).
  *
@@ -38,6 +42,9 @@
 		x: 'M18 6L6 18M6 6l12 12',
 		restart: 'M3 12a9 9 0 1 0 3-6.7|M3 4v5h5',
 		plus: 'M12 5v14M5 12h14',
+		music: 'M9 18V5l11-2v13|M6 15a3 3 0 1 0 0 6a3 3 0 1 0 0-6|M17 13a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
+		up: 'M12 19V5M5 12l7-7 7 7',
+		external: 'M14 4h6v6M20 4l-9 9|M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
 	};
 
 	function icon(name, size = 16, stroke = '2', fill = false) {
@@ -117,6 +124,10 @@
 			search: { q: '', items: [], loading: false, seq: 0, error: null },
 			home: { items: [], loaded: false },
 			signedOut: new Set(),
+			shareTitles: new Map(), // `${tab}|${share ids}` → { items, loading, loaded, error }: all films / series of the shares
+			folder: { sourceId: null, dir: '', items: [], via: null, link: null, loading: false, error: null, seq: 0, loaded: false },
+			checks: new Map(),      // `${source}|${item}` → the core's check of a share's file (or { loading })
+			ext: null,              // media:external:info
 		};
 		let rowsSeq = 0;
 		let searchTimer = null;
@@ -303,14 +314,14 @@
 				refs.body.appendChild(emptyCard(t('media.unsupported.title'), t('media.unsupported.text'), null));
 				return;
 			}
-			const { all, ready } = MS.sourcesOf(S.status);
+			const { all, library } = MS.sourcesOf(S.status);
 			if (S.search.q) { renderSearch(); return; }
 			if (S.tab === 'folders') { renderFolders(); return; }
 			if (!all.length) {
 				refs.body.appendChild(emptyCard(t('media.empty.title'), t('media.empty.text'), { label: t('media.empty.add'), click: () => { openSources(); if (sources) sources.add(); } }));
 				return;
 			}
-			if (!ready.length) {
+			if (!library.length) {
 				refs.body.appendChild(emptyCard(t('media.noJellyfin.title'), t('media.noJellyfin.text'), { label: t('media.sources.button'), click: () => openSources() }));
 				return;
 			}
@@ -327,19 +338,182 @@
 			]);
 		}
 
+		// ── Ordner: the folders of a share (4h) ─────────────
+
+		function folderShare() {
+			const { shares } = MS.sourcesOf(S.status);
+			return shares.find((x) => x.id === S.folder.sourceId) || shares[0] || null;
+		}
+
+		async function loadFolder(sourceId, dir) {
+			const seq = ++S.folder.seq;
+			const same = S.folder.sourceId === sourceId && S.folder.dir === dir;
+			S.folder = { ...S.folder, sourceId, dir, items: same ? S.folder.items : [], loading: true, error: null, seq };
+			let r;
+			try { r = await api.shareList(sourceId, dir); } catch (err) { r = fail(err); }
+			if (seq !== S.folder.seq) return;
+			if (r && r.ok) {
+				S.folder = { ...S.folder, items: MS.folderItems(r.items), via: r.via || null, link: r.link || null, loading: false, loaded: true, error: null, dir: r.dir || '' };
+				checkFolder(sourceId);
+			} else S.folder = { ...S.folder, items: [], loading: false, loaded: true, error: (r && r.code) || 'failed' };
+			if (S.shown && S.view === 'library' && S.tab === 'folders' && !S.search.q) renderBody();
+		}
+
+		/** At home the files of the folder are checked before (Chromium's formats); away only when one starts (the tunnel). */
+		async function checkFolder(sourceId) {
+			if (!S.folder.link || S.folder.link.atHome !== true || typeof api.shareCheck !== 'function') return;
+			const seq = S.folder.seq;
+			const todo = S.folder.items.filter((e) => e.kind === 'video' && e.itemId && !S.checks.has(`${sourceId}|${e.itemId}`)).slice(0, 40);
+			let at = 0;
+			const worker = async () => {
+				while (at < todo.length && seq === S.folder.seq) {
+					const e = todo[at++];
+					const k = `${sourceId}|${e.itemId}`;
+					S.checks.set(k, { loading: true });
+					let r;
+					try { r = await api.shareCheck(sourceId, e.itemId); } catch (err) { r = fail(err); }
+					S.checks.set(k, r && r.ok ? r.check : { error: (r && r.code) || 'failed' });
+					if (seq === S.folder.seq) renderFolderNote(e);
+				}
+			};
+			await Promise.all([worker(), worker()]);
+		}
+
+		function renderFolderNote(e) {
+			if (!refs.folderList) return;
+			const row = [...refs.folderList.querySelectorAll('.md-fr')].find((x) => x.getAttribute('data-path') === e.path);
+			const box = row ? row.querySelector('.md-fr-note') : null;
+			if (!box) return;
+			const note = MS.checkNote(S.checks.get(`${S.folder.sourceId}|${e.itemId}`), t);
+			box.hidden = !note || note.level === 'ok' || note.level === 'unknown';
+			box.textContent = note ? note.text : '';
+			box.className = `md-fr-note is-${note ? note.level : 'unknown'}`;
+		}
+
+		function openFolder(dir) {
+			const share = folderShare();
+			if (!share) return;
+			loadFolder(share.id, dir);
+			renderBody();
+		}
+
+		/** A file of the folder as a title for the detail and the player (its id f:<path>, the progress of this PC). */
+		function folderTitle(share, e) {
+			const p = e.progress || null;
+			const ep = Number.isInteger(e.season) && Number.isInteger(e.episode);
+			return {
+				id: e.itemId, sourceId: share.id, kind: ep ? 'episode' : 'movie', name: e.title || MS.baseName(e.name), seriesName: ep ? e.seriesName : null,
+				season: e.season ?? null, episode: e.episode ?? null, year: e.year || null, runtimeMs: p && p.durationMs > 0 ? p.durationMs : null,
+				positionMs: p && !p.played ? p.positionMs || 0 : 0, played: !!(p && p.played), fromShare: true, poster: e.poster || null, backdrop: null,
+			};
+		}
+
 		function renderFolders() {
-			refs.body.appendChild(el('div', { class: 'md-empty md-folders' }, [
-				el('span', { class: 'md-empty-ic' }, [icon('folder', 26, '1.6')]),
-				el('h2', { class: 'md-empty-h', text: t('media.folders.title') }),
-				el('p', { class: 'md-empty-tx', text: t('media.folders.text') }),
-				el('button', { type: 'button', class: 'btn btn-sec', text: t('media.folders.sources'), on: { click: () => openSources() } }),
+			const { shares } = MS.sourcesOf(S.status);
+			if (!shares.length) {
+				refs.body.appendChild(el('div', { class: 'md-empty md-folders' }, [
+					el('span', { class: 'md-empty-ic' }, [icon('folder', 26, '1.6')]),
+					el('h2', { class: 'md-empty-h', text: t('media.folders.title') }),
+					el('p', { class: 'md-empty-tx', text: t('media.folders.text') }),
+					el('button', { type: 'button', class: 'btn btn-sec', text: t('media.folders.sources'), on: { click: () => openSources() } }),
+				]));
+				return;
+			}
+			const share = folderShare();
+			if (S.folder.sourceId !== share.id || (!S.folder.loaded && !S.folder.loading)) { loadFolder(share.id, S.folder.sourceId === share.id ? S.folder.dir : ''); }
+			const f = S.folder;
+			const wrap = el('div', { class: 'md-fv' });
+			// the shares (more than one: chips), the path, the way
+			if (shares.length > 1) {
+				const chips = el('div', { class: 'md-chips md-fv-shares' });
+				for (const x of shares) {
+					const on = x.id === share.id;
+					chips.appendChild(el('button', {
+						type: 'button', class: `md-pill md-src${on ? ' is-on' : ''}`, 'aria-pressed': on ? 'true' : 'false', 'data-id': x.id,
+						on: { click: () => { if (x.id !== S.folder.sourceId) { S.folder = { ...S.folder, sourceId: x.id, dir: '', items: [], loaded: false }; renderBody(); } } },
+					}, [icon('folder', 13), el('span', { text: MS.sharePath(x) })]));
+				}
+				wrap.appendChild(chips);
+			}
+			const crumbs = el('nav', { class: 'md-crumbs', 'aria-label': t('media.folders.path') });
+			const list = MS.crumbs(f.dir, MS.sharePath(share));
+			list.forEach((c, i) => {
+				if (i) crumbs.appendChild(el('span', { class: 'md-crumb-sep', 'aria-hidden': 'true', text: '›' }));
+				const last = i === list.length - 1;
+				crumbs.appendChild(el('button', { type: 'button', class: `md-crumb${last ? ' is-cur' : ''}`, 'aria-current': last ? 'location' : null, text: c.label, on: { click: () => { if (!last) openFolder(c.dir); } } }));
+			});
+			const way = MS.shareWay(share, f.via, f.link || share.link, t);
+			const up = MS.parentDir(f.dir);
+			wrap.appendChild(el('div', { class: 'md-fv-head' }, [
+				up !== null ? el('button', { type: 'button', class: 'btn btn-sec btn-sm btn-icon md-fv-up', title: t('media.folders.up'), 'aria-label': t('media.folders.up'), on: { click: () => openFolder(up) } }, [icon('up', 15)]) : null,
+				crumbs,
+				el('span', { class: `md-pill md-fv-way ${MS.wayOf(f.link || share.link) === 'away' ? 'is-away' : 'is-home'}` }, [icon(MS.wayOf(f.link || share.link) === 'away' ? 'globe' : 'wifi', 13), el('span', { text: way.label })]),
 			]));
+			const box = el('div', { class: 'md-fl scroll', role: 'list', 'aria-label': t('media.tabs.folders') });
+			refs.folderList = box;
+			if (f.loading && !f.items.length) box.appendChild(el('div', { class: 'md-state', text: t('media.loading') }));
+			else if (f.error) box.appendChild(el('div', { class: 'md-state is-err', text: MS.errorText(f.error, t) }));
+			else if (!f.items.length) box.appendChild(el('div', { class: 'md-state', text: t('media.folders.emptyDir') }));
+			const videos = f.items.filter((e) => !e.directory && e.itemId);
+			for (const e of f.items) box.appendChild(folderRow(share, e, videos));
+			wrap.appendChild(box);
+			wrap.appendChild(el('div', { class: 'md-fv-hint', text: way.hint }));
+			refs.body.appendChild(wrap);
+		}
+
+		function folderRow(share, e, videos) {
+			const r = MS.folderRow(e, t, lang());
+			if (r.kind === 'folder') {
+				return el('button', { type: 'button', class: 'md-fr is-dir', role: 'listitem', 'data-path': e.path, on: { click: () => openFolder(e.path) } }, [
+					el('span', { class: 'md-fr-ic' }, [icon('folder', 20, '1.8')]),
+					el('span', { class: 'md-fr-tx' }, [el('b', { text: r.title })]),
+					icon('right', 16),
+				]);
+			}
+			const playable = !!e.itemId || r.kind === 'audio';
+			const note = e.itemId ? MS.checkNote(S.checks.get(`${share.id}|${e.itemId}`), t) : null;
+			const play = () => { if (e.itemId) playFile(share, e, videos); };
+			const thumb = r.kind === 'audio'
+				? el('span', { class: 'md-fr-th is-audio' }, [icon('music', 18, '1.8')])
+				: el('span', { class: 'md-fr-th' }, [picture(r.picture, 'is-wide', e.path), r.progress ? el('span', { class: 'md-bar' }, [el('span', { style: `width:${r.progress}%` })]) : null]);
+			return el('div', { class: `md-fr${r.played ? ' is-played' : ''}`, role: 'listitem', 'data-path': e.path, title: r.file }, [
+				el('button', { type: 'button', class: 'md-fr-open', 'aria-label': `${r.title}${r.sub ? ` · ${r.sub}` : ''}`, disabled: !playable || !canPlay() || !e.itemId, on: { click: play } }),
+				thumb,
+				el('span', { class: 'md-fr-tx' }, [
+					el('b', { text: r.title }),
+					el('small', { text: r.sub }),
+					el('span', { class: `md-fr-note is-${note ? note.level : 'unknown'}`, hidden: !note || note.level === 'ok' || note.level === 'unknown', text: note ? note.text : '' }),
+				]),
+				r.played ? el('span', { class: 'md-seen is-inline', title: t('media.detail.played') }, [icon('check', 12, '3')]) : null,
+				canPlay() && e.itemId ? el('button', { type: 'button', class: 'md-ep-play md-fr-play', 'aria-label': `${t('media.detail.play')}: ${r.title}`, title: t('media.detail.play'), on: { click: play } }, [icon('play', 13, '2', true)]) : null,
+			]);
+		}
+
+		function playFile(share, e, videos) {
+			if (!canPlay()) return;
+			const it = folderTitle(share, e);
+			const list = videos.map((x) => folderTitle(share, x));
+			o.player.play({
+				item: it,
+				detail: null,
+				startMs: it.played ? 0 : it.positionMs || 0,
+				next: (cur) => { const i = list.findIndex((x) => x.id === (cur || it).id); return i >= 0 && i + 1 < list.length ? list[i + 1] : null; },
+				onEnd: () => refreshAfterPlay(),
+			});
 		}
 
 		// ── Overview: chips, the way, the rows ───────────────
 
 		function rowsKey() {
-			return MS.sourcesOf(S.status).ready.map((s) => s.id).join(',');
+			return MS.sourcesOf(S.status).library.map((s) => s.id).join(',');
+		}
+
+		/** The Jellyfin titles the page knows so far: a share's twin of one of them is not shown (Jellyfin wins). */
+		function knownJellyfin() {
+			const out = [];
+			for (const k of ['latest', 'movies', 'series']) for (const x of S.rows[k] || []) if (!x.fromShare) out.push(x);
+			for (const g of S.grids.values()) for (const x of g.items || []) if (!x.fromShare) out.push(x);
+			return out;
 		}
 
 		async function loadRows(force = false) {
@@ -347,24 +521,27 @@
 			if (!force && S.rows.key === key && (S.rows.loading || S.rows.loaded)) return;
 			const seq = ++rowsSeq;
 			S.rows = { ...S.rows, key, loading: true, error: null };
-			const ready = MS.sourcesOf(S.status).ready;
+			const { library, shares } = MS.sourcesOf(S.status);
 			const main = MS.pickSource(S.status, S.sourceId);
-			const call = (fn) => Promise.all(ready.map((s) => fn(s).then((r) => handle(r, s.id)).catch(fail)));
+			const call = (list, fn) => Promise.all(list.map((s) => fn(s).then((r) => handle(r, s.id)).catch(fail)));
+			// Jellyfin's rows of the chosen server, the shares' newest films and series beside them
+			const rowOf = (fn) => call((main ? [main] : []).concat(shares), (s) => fn(s.id, { start: 0, limit: MS.ROW_LIMIT, sort: 'added' }));
 			const [resume, latest, movies, series] = await Promise.all([
-				call((s) => api.resume(s.id, MS.ROW_LIMIT)),
-				call((s) => api.latest(s.id, MS.ROW_LIMIT)),
-				main ? api.movies(main.id, { start: 0, limit: MS.ROW_LIMIT, sort: 'added' }).then((r) => handle(r, main.id)).catch(fail) : null,
-				main ? api.series(main.id, { start: 0, limit: MS.ROW_LIMIT, sort: 'added' }).then((r) => handle(r, main.id)).catch(fail) : null,
+				call(library, (s) => api.resume(s.id, MS.ROW_LIMIT)),
+				call(library, (s) => api.latest(s.id, MS.ROW_LIMIT)),
+				rowOf(api.movies),
+				rowOf(api.series),
 			]);
 			if (seq !== rowsSeq) return;
 			const failed = [...resume, ...latest].every((r) => !r || !r.ok);
+			const jf = [...latest, ...movies, ...series].flatMap((r) => (r && r.ok ? r.items : [])).filter((x) => !x.fromShare);
 			S.rows = {
 				key, loading: false, loaded: true,
 				error: failed ? (resume.concat(latest).find((r) => r && r.code) || {}).code || 'failed' : null,
-				resume: MS.mergeResume(resume),
-				latest: MS.mergeLatest(latest).filter((x) => x.kind !== 'episode'),
-				movies: movies && movies.ok ? movies.items : [],
-				series: series && series.ok ? series.items : [],
+				resume: MS.mergeResume(resume, MS.ROW_LIMIT, jf),
+				latest: MS.mergeLatest(latest, MS.ROW_LIMIT, jf).filter((x) => x.kind !== 'episode'),
+				movies: MS.mergeLatest(movies, MS.ROW_LIMIT, jf),
+				series: MS.mergeLatest(series, MS.ROW_LIMIT, jf),
 			};
 			S.home = { items: S.rows.resume, loaded: true };
 			renderHome();
@@ -382,7 +559,12 @@
 					on: { click: () => { if (!s.ready) { openSources(); return; } S.sourceId = s.id; S.grids.clear(); loadRows(true); render(); } },
 				}, [el('span', { class: 'md-dot' }), el('span', { text: MS.sourceChip(s, t) })]));
 			}
-			for (const s of shares) chips.appendChild(el('span', { class: 'md-pill md-src is-share' }, [el('span', { text: MS.sourceChip(s, t) })]));
+			for (const s of shares) {
+				chips.appendChild(el('button', {
+					type: 'button', class: 'md-pill md-src is-share', 'data-id': s.id, title: t('media.folders.open'),
+					on: { click: () => { S.folder = { ...S.folder, sourceId: s.id, dir: '', items: [], loaded: false }; setTab('folders'); } },
+				}, [icon('folder', 13), el('span', { text: MS.sourceChip(s, t) })]));
+			}
 			refs.way = el('span', { class: 'md-pill md-way' });
 			chips.appendChild(refs.way);
 			const wrap = el('div', { class: 'md-ov scroll' }, [chips]);
@@ -451,7 +633,9 @@
 				'aria-label': `${c.title}${c.sub ? ` · ${c.sub}` : ''}`, 'aria-pressed': inGrid ? (selected ? 'true' : 'false') : null,
 			}, [
 				picture(c.picture, '', it.id),
-				c.isNew ? el('span', { class: 'md-mk is-new', text: t('media.mark.new') }) : c.nas ? el('span', { class: 'md-mk', text: t('media.mark.nas') }) : null,
+				// "NAS" on the left (a share's title), "NEU" on the right — both can be
+				c.nas ? el('span', { class: 'md-mk', text: t('media.mark.nas') }) : null,
+				c.isNew ? el('span', { class: 'md-mk is-new', text: t('media.mark.new') }) : null,
 				c.played ? el('span', { class: 'md-seen', title: t('media.detail.played') }, [icon('check', 12, '3')]) : null,
 				c.progress ? el('div', { class: 'md-bar' }, [el('span', { style: `width:${c.progress}%` })]) : null,
 				el('span', { class: 'md-pt' }, [el('b', { text: c.title }), c.sub ? el('small', { text: c.sub }) : null]),
@@ -494,10 +678,40 @@
 
 		function grid(tab) { return S.grids.get(gridKey(tab)) || null; }
 
+		/** All films (or series) of the shares, for their places in the grid (a share's index is small: pages of 200). */
+		function shareTitlesKey(tab) { return `${tab}|${MS.sourcesOf(S.status).shares.map((x) => x.id).join(',')}`; }
+
+		async function loadShareTitles(tab) {
+			const key = shareTitlesKey(tab);
+			const cur = S.shareTitles.get(key);
+			if (cur && (cur.loading || cur.loaded)) return;
+			const st = { items: [], loading: true, loaded: false, error: null };
+			S.shareTitles.set(key, st);
+			const fn = tab === 'series' ? api.series : api.movies;
+			for (const sh of MS.sourcesOf(S.status).shares) {
+				let start = 0;
+				for (let n = 0; n < 50 && start !== null; n++) {
+					let r;
+					try { r = await fn(sh.id, { start, limit: 200, sort: 'name' }); } catch (err) { r = fail(err); }
+					if (!r || !r.ok) { st.error = (r && r.code) || 'failed'; break; }
+					st.items.push(...r.items);
+					start = Number.isInteger(r.next) ? r.next : null;
+				}
+			}
+			st.loading = false;
+			st.loaded = true;
+			if (S.shown && S.view === 'library' && S.tab === tab && !S.search.q) {
+				const top = refs.gridWrap ? refs.gridWrap.scrollTop : 0;
+				renderBody();
+				if (refs.gridWrap) refs.gridWrap.scrollTop = top;
+			}
+		}
+
 		async function loadPage(tab) {
 			const key = gridKey(tab);
 			const g = S.grids.get(key) || { items: [], total: null, next: 0, loading: false, error: null };
 			if (g.loading || g.next === null) return;
+			if (!S.sourceId) { S.grids.set(key, { ...g, next: null }); return; }
 			g.loading = true;
 			S.grids.set(key, g);
 			const f = S.filters[tab];
@@ -520,14 +734,21 @@
 		function renderGrid(tab) {
 			const g = grid(tab);
 			if (!g) loadPage(tab);
-			const items = g ? g.items : [];
+			const hasShares = MS.sourcesOf(S.status).shares.length > 0;
+			const sh = hasShares ? S.shareTitles.get(shareTitlesKey(tab)) : null;
+			if (hasShares && !sh) loadShareTitles(tab);
+			const jfItems = g ? g.items : [];
+			const complete = !S.sourceId || (!!g && g.next === null);
+			const items = hasShares ? MS.mergeGrid(jfItems, complete, sh ? sh.items : [], S.filters[tab]) : jfItems;
 			const sel = S.selected[tab];
 			if (!sel && items.length) S.selected[tab] = items[0];
-			renderLib(tab, items, g ? g.loading || (!g.items.length && g.next !== null) : true, g && g.error, () => { const x = grid(tab); if (x && x.next !== null && !x.loading) loadPage(tab); });
+			const loading = (S.sourceId ? (g ? g.loading || (!g.items.length && g.next !== null) : true) : false) || (!!sh && sh.loading && !items.length) || (hasShares && !sh && !items.length);
+			renderLib(tab, items, loading, (g && g.error) || (!items.length && sh && sh.error) || null, () => { const x = grid(tab); if (x && x.next !== null && !x.loading) loadPage(tab); });
 		}
 
 		function renderLib(tab, items, loading, error, more) {
 			const sel = S.selected[tab];
+			refs.gridItems = items;
 			const gridEl = el('div', { class: 'md-grid', role: 'group', 'aria-label': t(`media.tabs.${tab === 'search' ? 'search' : tab}`) });
 			for (const it of items) gridEl.appendChild(poster(it, { grid: true, selected: !!sel && sel.id === it.id }));
 			refs.grid = gridEl;
@@ -580,8 +801,7 @@
 
 		function currentItems() {
 			if (S.search.q) return S.search.items;
-			const g = grid(S.tab);
-			return g ? g.items : [];
+			return refs.gridItems || [];
 		}
 
 		// ── Detail column ────────────────────────────────────
@@ -624,7 +844,8 @@
 			if (title.kind === 'series') { renderSeries(inner, tab, title); return; }
 			if (d && d.loading) inner.appendChild(el('div', { class: 'md-state is-small', text: t('media.loading') }));
 			if (d && d.error) inner.appendChild(el('div', { class: 'md-state is-small is-err', text: MS.errorText(d.error, t) }));
-			renderPlayable(inner, tab, title, d && d.versions ? d.versions[0] : null, d && d.link);
+			if (title.fromShare === true || it.fromShare === true) renderShareFile(inner, tab, title, d);
+			else renderPlayable(inner, tab, title, d && d.versions ? d.versions[0] : null, d && d.link);
 			if (title.overview) inner.appendChild(el('p', { class: 'md-det-tx', text: title.overview }));
 		}
 
@@ -667,6 +888,71 @@
 			inner.appendChild(selBox(t('media.detail.quality'), MS.qualityOptions(t, lang()), q, qNote, (v) => setQuality(v, tab), 'md-sel-quality'));
 		}
 
+		/** A share's film or episode: the file as it is (always the original), the check, another app. */
+		function renderShareFile(inner, tab, title, d) {
+			const k = dkey(title);
+			const share = d && d.share ? d.share : null;
+			let check = S.checks.get(k);
+			if (share && share.check && !check) { check = share.check; S.checks.set(k, check); }
+			if (share && !check && typeof api.shareCheck === 'function') {
+				S.checks.set(k, { loading: true });
+				api.shareCheck(title.sourceId, title.id).catch(fail).then((r) => {
+					S.checks.set(k, r && r.ok ? r.check : { error: (r && r.code) || 'failed' });
+					if (stillSelected(tab, title)) renderDetail(tab);
+				});
+			}
+			const note = check && check.verdict ? MS.checkNote(check, t) : null;
+			const chips = [el('span', { class: 'md-pill', text: t('media.mark.nas') })];
+			const v = d && d.versions ? d.versions[0] : null;
+			if (v && v.container) chips.push(el('span', { class: 'md-pill', text: String(v.container) }));
+			if (share && share.size) chips.push(el('span', { class: 'md-pill', text: MS.sizeLabel(share.size, lang()) }));
+			if (share && share.via) chips.push(el('span', { class: 'md-pill', text: share.via === 'webdav' ? 'WebDAV' : 'SMB' }));
+			if (note && note.level !== 'ok' && note.level !== 'unknown') chips.push(el('span', { class: 'md-pill is-warn md-check', text: note.text }));
+			inner.appendChild(el('div', { class: 'md-det-chips' }, chips));
+			if (title.positionMs > 0 && !title.played && title.runtimeMs > 0) {
+				inner.appendChild(el('div', { class: 'md-prog', title: `${MS.clock(title.positionMs)} / ${MS.clock(title.runtimeMs)}` }, [el('span', { style: `width:${Math.round(Math.min(1, title.positionMs / title.runtimeMs) * 100)}%` })]));
+			}
+			const btns = el('div', { class: 'md-det-btns' });
+			if (canPlay()) {
+				btns.appendChild(el('button', { type: 'button', class: 'btn btn-pri btn-sm md-play', on: { click: () => playItem(title) } }, [icon('play', 14, '2', true), el('span', { text: MS.playLabel(title, t) })]));
+				if (title.positionMs > 0 && !title.played) btns.appendChild(el('button', { type: 'button', class: 'btn btn-sec btn-sm md-restart', text: t('media.detail.restart'), on: { click: () => playItem(title, { fromStart: true }) } }));
+			}
+			btns.appendChild(el('button', {
+				type: 'button', class: `btn btn-sec btn-sm btn-icon md-played${title.played ? ' is-on' : ''}`, 'aria-pressed': title.played ? 'true' : 'false',
+				title: title.played ? t('media.detail.markUnplayed') : t('media.detail.markPlayed'), 'aria-label': title.played ? t('media.detail.markUnplayed') : t('media.detail.markPlayed'),
+				on: { click: () => togglePlayed(tab, title) },
+			}, [icon('check', 15, '2.4')]));
+			inner.appendChild(btns);
+			if (note && note.external) {
+				const host = el('div', { class: 'md-det-btns md-ext' });
+				inner.appendChild(host);
+				externalInfo().then((info) => {
+					const app = MS.externalApp(info, share && share.via);
+					if (!host.isConnected) return;
+					if (!app) { host.appendChild(el('div', { class: 'md-sel-n', text: t('media.check.noApp') })); return; }
+					host.appendChild(el('button', { type: 'button', class: 'btn btn-sec btn-sm md-ext-btn', 'data-app': app, on: { click: () => openExternal(title, app) } }, [
+						icon('external', 14), el('span', { text: app === 'vlc' ? t('media.check.vlc') : t('media.check.other') }),
+					]));
+				});
+			}
+			inner.appendChild(el('div', { class: 'md-sel-n md-orig', text: t('media.folders.originalHint') }));
+		}
+
+		async function externalInfo() {
+			if (S.ext) return S.ext;
+			let r;
+			try { r = typeof api.externalInfo === 'function' ? await api.externalInfo() : null; } catch { r = null; }
+			S.ext = r && r.ok ? r : { vlc: false, openPath: false };
+			return S.ext;
+		}
+
+		async function openExternal(title, app) {
+			let r;
+			try { r = await api.shareExternal(title.sourceId, title.id, app, title.kind === 'episode' && title.seriesName ? `${title.seriesName} · ${title.name}` : title.name); } catch (err) { r = fail(err); }
+			if (r && r.ok) toast(app === 'vlc' ? t('media.check.openedVlc') : t('media.check.openedOther'), 'info');
+			else toast(MS.errorText(r && r.code, t), 'error');
+		}
+
 		function selBox(label, options, value, note, onChange, cls) {
 			const id = `md-sel-${Math.random().toString(36).slice(2, 9)}`;
 			const sel = el('select', { id, class: 'md-sel-native' });
@@ -699,6 +985,7 @@
 			for (const k of ['resume', 'latest', 'movies', 'series']) S.rows[k].forEach(fix);
 			for (const v of S.episodes.values()) if (v && v.items) v.items.forEach(fix);
 			S.search.items.forEach(fix);
+			for (const v of S.shareTitles.values()) v.items.forEach(fix);
 			Object.values(S.selected).forEach(fix);
 			const d = S.details.get(dkey(title));
 			if (d && d.title) fix(d.title);
@@ -825,8 +1112,11 @@
 		function refreshAfterPlay() {
 			S.details.clear();
 			S.episodes.clear();
+			S.seasons.clear();
 			S.grids.clear();
+			S.shareTitles.clear();
 			loadRows(true);
+			if (S.tab === 'folders' && S.folder.sourceId) loadFolder(S.folder.sourceId, S.folder.dir);
 			if (S.shown) render();
 		}
 
@@ -849,8 +1139,8 @@
 			S.search = { q, items: first ? [] : S.search.items, loading: true, seq, error: null };
 			if (first) S.selected.search = null;
 			render();
-			const ready = MS.sourcesOf(S.status).ready;
-			const answers = await Promise.all(ready.map((s) => api.search(s.id, q).then((r) => handle(r, s.id)).catch(fail)));
+			const library = MS.sourcesOf(S.status).library;
+			const answers = await Promise.all(library.map((s) => api.search(s.id, q).then((r) => handle(r, s.id)).catch(fail)));
 			if (S.search.seq !== seq) return;
 			const items = MS.mergeSearch(answers, q);
 			const err = answers.length && answers.every((r) => !r || !r.ok) ? (answers[0] && answers[0].code) || 'failed' : null;
@@ -887,9 +1177,9 @@
 		function renderHome() {
 			const host = o.homeHost;
 			if (!host) return;
-			const ready = S.status ? MS.sourcesOf(S.status).ready : [];
+			const library = S.status ? MS.sourcesOf(S.status).library : [];
 			const items = S.home.items || [];
-			const show = homeCardOn() && ready.length > 0 && items.length > 0;
+			const show = homeCardOn() && library.length > 0 && items.length > 0;
 			host.hidden = !show;
 			clear(host);
 			if (!show) return;
@@ -920,10 +1210,10 @@
 		async function loadHome() {
 			if (!o.homeHost || !homeCardOn()) { renderHome(); return; }
 			if (!S.status) await loadStatus();
-			const ready = S.status ? MS.sourcesOf(S.status).ready : [];
-			if (!ready.length) { S.home = { items: [], loaded: true }; renderHome(); return; }
-			const answers = await Promise.all(ready.map((s) => api.resume(s.id, 8).then((r) => handle(r, s.id)).catch(fail)));
-			S.home = { items: MS.mergeResume(answers, 8), loaded: true };
+			const library = S.status ? MS.sourcesOf(S.status).library : [];
+			if (!library.length) { S.home = { items: [], loaded: true }; renderHome(); return; }
+			const answers = await Promise.all(library.map((s) => api.resume(s.id, 8).then((r) => handle(r, s.id)).catch(fail)));
+			S.home = { items: MS.mergeResume(answers, 8, knownJellyfin()), loaded: true };
 			renderHome();
 		}
 

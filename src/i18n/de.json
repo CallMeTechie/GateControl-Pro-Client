@@ -5394,8 +5394,17 @@
     },
     "folders": {
       "title": "Ordner der NAS-Freigaben",
-      "text": "Hier erscheinen bald die Ordner deiner SMB- und WebDAV-Freigaben mit Vorschau und Fortschritt. Einrichten kannst du die Freigaben schon jetzt unter Quellen.",
-      "sources": "Zu den Quellen"
+      "text": "Hier erscheinen die Ordner deiner SMB- und WebDAV-Freigaben mit Vorschau und Fortschritt. Richte eine Freigabe unter Quellen ein.",
+      "sources": "Zu den Quellen",
+      "path": "Pfad in der Freigabe",
+      "up": "Eine Ebene höher",
+      "open": "Ordner der Freigabe anzeigen",
+      "emptyDir": "In diesem Ordner liegen keine Videos.",
+      "home": "Zuhause",
+      "away": "unterwegs",
+      "pairHint": "Unterwegs nimmt die App dieselbe Freigabe per WebDAV (robuster über den Tunnel). Freigaben spielen immer das Original, umgerechnet wird nur bei Jellyfin.",
+      "originalHint": "Freigaben spielen immer das Original, umgerechnet wird nur bei Jellyfin.",
+      "fileTitle": "Datei von der NAS"
     },
     "signedOut": "{{name}} ist abgemeldet. Melde dich neu an, um Filme und Serien zu sehen.",
     "src": {
@@ -5516,7 +5525,8 @@
       "cert_untrusted": "Dem Zertifikat des Servers vertraut Windows nicht.",
       "cert_changed": "Das Zertifikat des Servers hat sich geändert.",
       "no_lan_route": "Der Weg zur NAS im Heimnetz ließ sich nicht festlegen.",
-      "failed": "Das hat nicht geklappt."
+      "failed": "Das hat nicht geklappt.",
+      "no_vlc": "VLC ist auf diesem PC nicht installiert."
     },
     "player": {
       "label": "Player",
@@ -5569,6 +5579,23 @@
         "audio": "Ton",
         "back": "Zurück"
       }
+    },
+    "check": {
+      "container": "Format {{format}}: am PC nicht abspielbar",
+      "hevc": "Bild HEVC: diesem PC fehlt der Decoder, nur Ton",
+      "video": "Bild {{codec}}: am PC nicht abspielbar",
+      "audio": "Ton {{codec}}: am PC kein Ton",
+      "someAudio": "Tonspur {{codec}} geht am PC nicht, eine andere schon",
+      "pictureSubs": "Bild-Untertitel werden nicht gezeigt",
+      "ok": "Spielt am PC direkt",
+      "unknown": "Format nicht erkannt – Abspielen wird versucht",
+      "vlc": "In VLC öffnen",
+      "other": "In anderer App öffnen",
+      "anyway": "Trotzdem abspielen",
+      "back": "Zurück",
+      "noApp": "Mit VLC ließe sich die Datei abspielen – VLC ist auf diesem PC nicht installiert.",
+      "openedVlc": "In VLC geöffnet.",
+      "openedOther": "In der Windows-App geöffnet."
     }
   }
 }
