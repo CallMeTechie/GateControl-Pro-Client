@@ -29,7 +29,10 @@
 	const ROW_LIMIT = 16;
 	const HOME_CARD_KEY = 'gc.media.homeCard';
 	const ERROR_CODES = ['invalid', 'offline', 'timeout', 'unauthorized', 'not_found', 'unsupported', 'unsupported_version', 'quick_connect_off',
-		'expired', 'signed_out', 'no_protect', 'too_many', 'smb_conflict', 'cert_untrusted', 'cert_changed', 'no_lan_route', 'no_vlc', 'failed'];
+		'expired', 'signed_out', 'no_protect', 'too_many', 'smb_conflict', 'cert_untrusted', 'cert_changed', 'no_lan_route', 'no_vlc', 'failed',
+		// Medien-Plugin (W2): the sources from the server, the network rule
+		'vpn_required', 'no_mapping', 'admin_user', 'user_disabled', 'not_configured', 'no_access', 'rate_limited', 'code_invalid', 'device_mismatch',
+		'plugin_unavailable', 'license_required', 'jellyfin_unreachable'];
 	// Chromium (Electron on Windows) decodes these sounds itself; everything else Jellyfin converts (core utils/media-jellyfin.js)
 	const DECODED_AUDIO = ['aac', 'mp3', 'opus', 'flac', 'vorbis'];
 	const CODEC_LABELS = {
@@ -38,6 +41,8 @@
 		pgssub: 'PGS', pgs: 'PGS', dvdsub: 'DVD', dvbsub: 'DVB', mov_text: 'Text', hevc: 'HEVC', h265: 'HEVC', h264: 'H.264', avc: 'H.264',
 		av1: 'AV1', vp9: 'VP9', vp8: 'VP8', mpeg2video: 'MPEG-2', mpeg4: 'MPEG-4', vc1: 'VC-1',
 	};
+
+	const PROBLEMS = ['no_mapping', 'quick_connect_off', 'admin_user', 'user_disabled', 'not_configured'];
 
 	const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 	const list = (v) => (Array.isArray(v) ? v.filter(isObj) : []);
@@ -84,9 +89,13 @@
 		return '480p';
 	}
 
-	/** The way to a source now: 'home' (direct in the LAN), 'away' (through the tunnel), 'unknown' (not checked yet). */
+	/**
+	 * The way to a source now: 'home' (direct in the LAN), 'away' (through the tunnel or, with the admin's exception,
+	 * over its HTTPS address), 'blocked' (away, only through the VPN, none up), 'unknown' (not checked yet).
+	 */
 	function wayOf(link) {
 		if (!isObj(link) || link.atHome === null || link.atHome === undefined) return 'unknown';
+		if (link.blocked === true) return 'blocked';
 		return link.atHome ? 'home' : 'away';
 	}
 
@@ -94,8 +103,10 @@
 	function linkLabel(link, t, lang) {
 		const way = wayOf(link);
 		if (way === 'home') return { cls: 'is-home', text: t('media.link.home') };
+		if (way === 'blocked') return { cls: 'is-away is-blocked', text: t('media.link.blocked') };
 		if (way === 'away') {
 			const bw = bandwidth(link.bps, lang);
+			if (link.via === 'direct') return { cls: 'is-away', text: bw ? t('media.link.direct', { bw }) : t('media.link.directNoBw') };
 			return { cls: 'is-away', text: bw ? t('media.link.away', { bw }) : t('media.link.awayNoBw') };
 		}
 		return { cls: 'is-unknown', text: t('media.link.checking') };
@@ -105,8 +116,10 @@
 	function statusLine(link, t, lang) {
 		const way = wayOf(link);
 		if (way === 'home') return t('media.status.home');
+		if (way === 'blocked') return t('media.status.blocked');
 		if (way === 'away') {
 			const bw = bandwidth(link.bps, lang);
+			if (link.via === 'direct') return bw ? t('media.status.direct', { bw }) : t('media.status.directNoBw');
 			return bw ? t('media.status.away', { bw }) : t('media.status.awayNoBw');
 		}
 		return null;
@@ -128,14 +141,77 @@
 		if (!s) return '';
 		if (s.kind === 'jellyfin') {
 			const parts = [];
+			if (s.managed && !s.userName && !s.problem) parts.push(t('media.src.signingIn'));
 			if (s.userName) parts.push(t('media.src.signedInAs', { user: s.userName }));
+			if (s.managed && s.deviceName) deviceName = s.deviceName;
 			if (s.address) parts.push(String(s.address).replace(/^https?:\/\//, ''));
 			if (deviceName) parts.push(t('media.src.device', { device: deviceName }));
 			return parts.join(' · ');
 		}
 		const way = s.pairWith ? t('media.src.smbHomeWebdav') : s.kind === 'smb' ? t('media.src.smb') : t('media.src.webdav');
 		const extra = s.kind === 'smb' && s.useExisting ? ` · ${t('media.src.explorer')}` : s.userName ? ` · ${s.userName}` : '';
-		return `${way}${extra}`;
+		const checked = s.managed && s.smbChecked === true ? ` · ${t('media.src.smbChecked')}` : '';
+		const conflict = isObj(s.link) && s.link.smbConflict ? ` · ${t('media.src.smbConflict')}` : '';
+		return `${way}${extra}${checked}${conflict}`;
+	}
+
+	/**
+	 * The pill of a source in Quellen (Medien-Plugin): its state now — a problem of the admin ("Zuordnung fehlt"), not
+	 * signed in yet, at home / away through the VPN / away direct / blocked (only through the VPN). → { cls, text }.
+	 */
+	function sourcePill(s, t) {
+		if (!s) return { cls: 'is-warn', text: '' };
+		if (s.problem) return { cls: 'is-warn', text: t(`media.problem.${PROBLEMS.includes(s.problem) ? s.problem : 'other'}`) };
+		if (s.kind === 'jellyfin' && !s.ready) return { cls: 'is-warn', text: s.managed ? t('media.src.signingInPill') : t('media.src.signedOutPill') };
+		if (s.kind !== 'jellyfin' && s.managed && s.hasPassword === false && s.userName) return { cls: 'is-warn', text: t('media.src.noPassword') };
+		const way = wayOf(s.link);
+		if (way === 'blocked') return { cls: 'is-warn', text: t('media.way.blocked') };
+		if (way === 'home') return { cls: 'is-acc', text: t('media.way.home') };
+		if (way === 'away') return { cls: 'is-acc', text: s.link.via === 'direct' ? t('media.way.direct') : t('media.way.vpn') };
+		return { cls: 'is-acc', text: t('media.src.connected') };
+	}
+
+	/** "unterwegs nur über VPN" / "unterwegs auch ohne VPN (https://…)": the rule of a server source. */
+	function awayRule(s, t) {
+		if (!s || !s.managed) return null;
+		return s.awayMode === 'direct' && s.awayAddress ? t('media.src.awayDirect', { address: String(s.awayAddress).replace(/^https:\/\//, '') }) : t('media.src.awayVpn');
+	}
+
+	/** "vom Server, vor 3 Min." of the list; null when it never came. */
+	function fetchedLabel(server, t, now = Date.now()) {
+		const at = isObj(server) ? num(server.fetchedAt) : null;
+		if (!at) return null;
+		const min = Math.max(0, Math.floor((now - at) / 60000));
+		if (min < 1) return t('media.server.fetchedNow');
+		if (min < 120) return t('media.server.fetchedMin', { min });
+		const h = Math.floor(min / 60);
+		if (h < 48) return t('media.server.fetchedH', { h });
+		return t('media.server.fetchedD', { d: Math.floor(h / 24) });
+	}
+
+	/**
+	 * The notes of the server's list (Medien-Plugin): the plugin off or without licence, long without the server, the
+	 * sources taken over. → [{ cls, text, key? }] (key: a note that can be put away on this PC).
+	 */
+	function serverNotes(server, t) {
+		const out = [];
+		if (!isObj(server)) return out;
+		if (server.state === 'unavailable') out.push({ cls: 'note-warn', text: t(server.reason === 'license_required' ? 'media.server.license' : 'media.server.off') });
+		if (isObj(server.offline) && server.offline.hint) out.push({ cls: 'note-warn', text: t(server.offline.expired ? 'media.server.offlineExpired' : 'media.server.offline', { days: server.offline.days }) });
+		const n = server.notice;
+		if (isObj(n) && (list(n.adopted).length || list(n.dropped).length)) {
+			const names = (xs) => xs.map((x) => String(x.name || '')).filter(Boolean).join(', ');
+			const parts = [t('media.server.notice')];
+			if (list(n.adopted).length) parts.push(t('media.server.adopted', { names: names(list(n.adopted)) }));
+			if (list(n.dropped).length) parts.push(t('media.server.dropped', { names: names(list(n.dropped)) }));
+			out.push({ cls: 'note-info', text: parts.join(' '), key: `notice:${n.at || 0}` });
+		}
+		return out;
+	}
+
+	/** The entry "Medien" in the sidebar: only while the plugin gives its tab (media:status → server.visible). */
+	function visible(status) {
+		return !!(isObj(status) && isObj(status.server) && status.server.visible === true);
 	}
 
 	/** "Immer Original" on the page: on when every Jellyfin source has it (the switch sets all of them). */
@@ -790,6 +866,11 @@
 		wayOf,
 		linkLabel,
 		statusLine,
+		sourcePill,
+		awayRule,
+		fetchedLabel,
+		serverNotes,
+		visible,
 		sharePath,
 		sourceChip,
 		sourceSub,

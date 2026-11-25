@@ -3932,8 +3932,9 @@ camerasView = camerasApi && window.GCCameraView && $('#page-kameras')
 //  Data: window.gatecontrol.media (core MediaService in main; posters and
 //  video through gcmedia://, the access stays in main); the page is built by
 //  media-view.js (window.GCMediaView) with media-state.js and
-//  media-sources-view.js (Quellen). Pro only; the entry shows while the core
-//  has the service; the card "Weiterschauen" sits on the start page.
+//  media-sources-view.js (Quellen). Pro only; the entry shows while the
+//  plugin "Medien" of the server gives its tab (core media-server-sources.js,
+//  Medien-Plugin W2); the card "Weiterschauen" sits on the start page.
 // ══════════════════════════════════════════════════════════
 // The player (Stufe 4g): in the app's window over the sidebar, its own controls; Windows stays awake while it plays.
 mediaPlayer = mediaApi && window.GCMediaPlayer
@@ -3959,9 +3960,14 @@ mediaView = mediaApi && window.GCMediaView && $('#page-medien')
 		homeHost: $('#media-home'),
 		openPage: () => navigateTo('medien'),
 		player: mediaPlayer,
+		// the network rule: away only through the VPN — "VPN einschalten" of the banner
+		connectVpn: () => tunnel.connect(),
+		onVisible: (show) => {
+			$('#nav-medien').hidden = !show;
+			if (!show && currentPage === 'medien') navigateTo('status');
+		},
 	})
 	: null;
-if (mediaView) $('#nav-medien').hidden = false;
 
 // ══════════════════════════════════════════════════════════
 //  MAIL (plugin gatecontrol-mail: the person's mail accounts on the own

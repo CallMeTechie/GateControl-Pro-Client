@@ -1,12 +1,13 @@
 'use strict';
 
 const { test, expect } = require('./support/fixtures');
-const { setupWithApiKey } = require('./support/ui');
+const { launchWithMedien } = require('./support/medien');
 const { startJellyfin } = require('./support/jellyfin-mock');
 
-// Medien (Stufe 4f): the entry "Medien" in the sidebar, the empty page with "Quelle hinzufügen", the dialog with the
-// search in the LAN, the address, Quick Connect (the code confirmed in Jellyfin) and name and password; Quellen with
-// "Abmelden", "Immer Original", "Weiterschauen auf der Übersicht" and "Gerät anmelden"; the overview with the source
+// Medien (Stufe 4f; Medien-Plugin W2): the entry "Medien" in the sidebar only with the plugin's tab, the sources from
+// the server (support/medien-mock.js) — the sign-in at Jellyfin runs by itself (Quick Connect confirmed by the
+// plugin, no code shown), away the VPN is started for it ("VPN wird verbunden …"); Quellen only shows them, with
+// "Immer Original" and "Weiterschauen auf der Übersicht"; the overview with the source
 // chips, the way ("Unterwegs · … Mbit/s": the fake Jellyfin is not in a LAN subnet, so the core measures), the rows;
 // Filme and Serien as a grid with sorting, filters and the detail column (sound with what the PC does with it,
 // seasons and episodes); the search over all sources; the placeholder of "Ordner"; the card "Weiterschauen" on the
@@ -21,42 +22,23 @@ async function openMedien(page) {
   await expect(page$(page)).toHaveClass(/active/);
 }
 
-/** Medien › Quelle hinzufügen › Jellyfin at `address`, signed in with Quick Connect (confirmed in the fake server). */
-async function addJellyfinQuick(page, jf) {
-  const p = page$(page);
-  await p.locator('.md-empty .btn-pri').click();
-  const dlg = page.locator('.md-dlg');
-  await expect(dlg).toBeVisible();
-  await expect(dlg.locator('.md-kinds [data-kind="jellyfin"]')).toHaveClass(/on/);
-  await dlg.locator('input.md-f-address').fill(jf.address);
-  await dlg.locator('.md-next').click();
-  await expect(dlg.locator('.md-server.is-static')).toContainText('DS918+');
-  await expect(dlg.locator('.md-server.is-static')).toContainText('10.10.3');
-  await expect(dlg.locator('.md-qc-code')).toHaveText('482 913');
-  jf.state.qcConfirmed = true;
-  await expect(dlg).toBeHidden({ timeout: 20000 });
-}
-
 test.describe('medien', () => {
   let jf;
   test.beforeEach(async () => { jf = await startJellyfin(); });
   test.afterEach(async () => { await jf.close(); });
 
-  test('setup with Quick Connect, the overview, Filme with the detail column, Serien, search, Ordner, Quellen, the card on the overview', async ({ launchApp, mock }) => {
-    const { page } = await launchApp();
-    await setupWithApiKey(page, mock);
+  test('the sources from the server: signed in by itself through the VPN, the overview, Filme with the detail column, Serien, search, Ordner, Quellen, the card on the overview', async ({ launchApp, mock }) => {
+    const { page, md } = await launchWithMedien({ launchApp, mock, jf });
     await openMedien(page);
     const p = page$(page);
 
-    // no source yet: the empty page; the card on the app's overview stays hidden
-    await expect(p.locator('.md-empty')).toBeVisible();
-    await expect(page.locator('#media-home')).toBeHidden();
-
-    await addJellyfinQuick(page, jf);
-    // Quellen: the new source, signed in as Mila, this PC's name
-    await expect(p.locator('.md-srccard[data-kind="jellyfin"]')).toContainText('DS918+');
-    await expect(p.locator('.md-srccard[data-kind="jellyfin"]')).toContainText('Mila');
-    await p.locator('.md-back').click();
+    // signed in by itself: the code went to the plugin, never on the screen
+    await expect.poll(() => md.pairs, { timeout: 30000 }).toBe(1);
+    expect(md.log.some((x) => x.path === 'v1/jellyfin/paired')).toBe(true);
+    await expect(page.locator('.md-qc-code')).toHaveCount(0);
+    await expect(page.locator('.md-dlg')).toHaveCount(0);
+    const init = jf.log.find((x) => x.path === '/QuickConnect/Initiate');
+    expect(init).toBeTruthy();
 
     // the overview: chips, the way, the rows
     await expect(p.locator('.md-tabs [data-tab="overview"]')).toHaveClass(/on/);
@@ -155,18 +137,17 @@ test.describe('medien', () => {
     await p.locator('.md-folders .btn').click();
     await expect(p.locator('.md-sources')).toBeVisible();
 
-    // Gerät anmelden: a wrong code, then the TV's code
-    const az = p.locator('.md-authorize');
-    await az.locator('.md-code-inp').fill('12345');
-    await az.locator('.md-code-btn').click();
-    await expect(az.locator('.md-code-note')).toHaveClass(/note-err/);
-    await az.locator('.md-code-inp').fill('111 222');
-    await az.locator('.md-code-btn').click();
-    await expect(az.locator('.md-code-note')).toHaveClass(/note-err/);
-    await az.locator('.md-code-inp').fill('731 205');
-    await az.locator('.md-code-btn').click();
-    await expect(az.locator('.md-code-note')).toHaveClass(/note-ok/);
-    expect(jf.state.authorized).toEqual(['731205']);
+    // Quellen: only shown, from the server — no "+", no dialog, no "Gerät anmelden"
+    await expect(p.locator('.md-managed')).toBeVisible();
+    await expect(p.locator('.md-add')).toHaveCount(0);
+    await expect(p.locator('.md-authorize')).toHaveCount(0);
+    const card = p.locator('.md-srccard[data-kind="jellyfin"]');
+    await expect(card).toContainText('DS918+');
+    await expect(card).toContainText('Mila');
+    await expect(card).toContainText('GateControl · Büro-PC');
+    await expect(card.locator('.md-src-state')).toHaveText(/(Unterwegs über VPN|Away through VPN)/);
+    await expect(card.locator('.md-rule')).toHaveText(/(nur über VPN|only through the VPN)/);
+    await expect(card.locator('button')).toHaveCount(0);
 
     // Immer Original
     await p.locator('.md-sw-original .sw').click();
@@ -195,51 +176,22 @@ test.describe('medien', () => {
     await page.locator('#nav-status').click();
     await expect(home).toBeVisible();
 
-    // Abmelden: this PC signs out at Jellyfin, the source goes
-    await page.locator('#nav-medien').click();
-    await p.locator('.md-srccard[data-kind="jellyfin"] .md-signout').click();
-    await expect(p.locator('.md-srccard')).toHaveCount(0);
-    expect(jf.state.loggedOut).toBe(1);
-    await page.locator('#nav-status').click();
-    await expect(home).toBeHidden();
   });
 
-  test('name and password, a wrong password first; the SMB form with its hints', async ({ launchApp, mock }) => {
-    jf.state.quickConnect = false;
-    const { page } = await launchApp();
-    await setupWithApiKey(page, mock);
+  test('no tab of the plugin: no entry "Medien"', async ({ launchApp, mock }) => {
+    const hidden = await launchWithMedien({ launchApp, mock, jf, tab: false });
+    await expect.poll(() => hidden.md.log.some((x) => x.path === 'v1/sources'), { timeout: 20000 }).toBe(true);
+    await expect(hidden.page.locator('#nav-status')).toBeVisible();
+    await expect(hidden.page.locator('#nav-medien')).toBeHidden();
+  });
+
+  test('away without VPN nothing is sent: the banner with "VPN einschalten"', async ({ launchApp, mock }) => {
+    const { page } = await launchWithMedien({ launchApp, mock, jf, tunnel: false });
     await openMedien(page);
     const p = page$(page);
-    await p.locator('.md-empty .btn-pri').click();
-    const dlg = page.locator('.md-dlg');
-    await dlg.locator('input.md-f-address').fill(jf.address);
-    await dlg.locator('input.md-f-address').press('Enter');
-    // Quick Connect is off on this server: name and password
-    await expect(dlg.locator('.md-methods [aria-selected="true"]')).toHaveText(/(Benutzer|User)/);
-    await dlg.locator('input.md-f-user').fill('mila');
-    await dlg.locator('input.md-f-password').fill('falsch');
-    await dlg.locator('.md-signin').click();
-    await expect(dlg.locator('.md-dlg-err')).toBeVisible();
-    await dlg.locator('input.md-f-password').fill('geheim');
-    await dlg.locator('.md-signin').click();
-    await expect(dlg).toBeHidden();
-    await expect(p.locator('.md-srccard[data-kind="jellyfin"]')).toContainText('Mila');
-    const auth = jf.log.filter((x) => x.path === '/Users/AuthenticateByName');
-    expect(auth.length).toBe(2);
-    // the password is nowhere in the page afterwards
-    expect(await page.content()).not.toContain('geheim');
-
-    // SMB: a name instead of the IP → the hint; "Auch als WebDAV" suggests the address
-    await p.locator('.md-add').click();
-    await dlg.locator('.md-kinds [data-kind="smb"]').click();
-    await dlg.locator('input.md-f-address').fill('\\\\nas\\filme');
-    await expect(dlg.locator('.md-ip-hint')).toBeVisible();
-    await expect(dlg.locator('.md-note')).toContainText('1219');
-    await dlg.locator('input.md-also-webdav').check();
-    await expect(dlg.locator('input.md-f-webdavAddress')).toHaveValue('https://nas:5006/filme');
-    await dlg.locator('input.md-f-address').fill('\\\\192.168.1.20\\filme');
-    await expect(dlg.locator('.md-ip-hint')).toBeHidden();
-    await page.keyboard.press('Escape');
-    await expect(dlg).toBeHidden();
+    await expect(p.locator('.md-vpn.is-failed')).toBeVisible({ timeout: 30000 });
+    await expect(p.locator('.md-vpn')).toContainText(/(Unterwegs nur über VPN|Away only through the VPN)/);
+    await expect(p.locator('.md-vpn-on')).toBeVisible();
+    expect(jf.log.length).toBe(0);
   });
 });

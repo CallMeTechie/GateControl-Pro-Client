@@ -5272,7 +5272,8 @@
       "title": "Sources",
       "add": "Add source",
       "back": "Back to Media",
-      "none": "No source set up yet"
+      "none": "No source set up yet",
+      "managed": "The admin sets up the sources in the server (GateControl › Media). There is nothing to set up on this PC."
     },
     "row": {
       "resume": "Continue watching",
@@ -5307,12 +5308,18 @@
       "home": "At home · straight from the NAS",
       "away": "Away · {{bw}}",
       "awayNoBw": "Away · through the tunnel",
-      "checking": "Checking the connection …"
+      "checking": "Checking the connection …",
+      "blocked": "Away · VPN only",
+      "direct": "Away · direct · {{bw}}",
+      "directNoBw": "Away · direct (without VPN)"
     },
     "status": {
       "home": "Media: at home, direct in the LAN",
       "away": "Media: away, through the tunnel · {{bw}}",
-      "awayNoBw": "Media: away, through the tunnel"
+      "awayNoBw": "Media: away, through the tunnel",
+      "blocked": "Media: away only through the VPN – the VPN is off",
+      "direct": "Media: away, direct (allowed by the admin) · {{bw}}",
+      "directNoBw": "Media: away, direct (allowed by the admin)"
     },
     "sort": {
       "label": "Sort",
@@ -5378,15 +5385,16 @@
       "resume": "S{{s}} E{{e}} from {{time}}"
     },
     "empty": {
-      "title": "Set up media from the NAS",
+      "title": "No media shared with you yet",
       "text": "Movies and shows from Jellyfin and the shares of your NAS — at home straight from the LAN, away through your own tunnel.",
       "add": "Add source",
       "nothing": "Nothing here yet.",
-      "noResults": "No results."
+      "noResults": "No results.",
+      "managed": "Movies and shows come from Jellyfin and the NAS shares the admin shares with you in the GateControl server – at home straight from the LAN, away through the VPN."
     },
     "noJellyfin": {
       "title": "No Jellyfin signed in",
-      "text": "Overview, movies and shows come from Jellyfin. Sign in under Sources; your NAS shares appear under Folders."
+      "text": "Overview, movies and shows come from Jellyfin. Signing in happens on its own; your NAS shares appear under Folders."
     },
     "unsupported": {
       "title": "Media doesn't work on this PC",
@@ -5394,7 +5402,7 @@
     },
     "folders": {
       "title": "Folders of the NAS shares",
-      "text": "The folders of your SMB and WebDAV shares appear here with previews and progress. Set up a share under Sources.",
+      "text": "The folders of the NAS shares the admin shares with you appear here with previews and progress.",
       "sources": "To the sources",
       "path": "Path in the share",
       "up": "One level up",
@@ -5421,7 +5429,14 @@
       "smbHomeWebdav": "SMB at home, WebDAV away",
       "smb": "SMB share",
       "webdav": "WebDAV",
-      "explorer": "with the Explorer's access"
+      "explorer": "with the Explorer's access",
+      "signingIn": "signing in …",
+      "signingInPill": "signing in",
+      "noPassword": "No access yet",
+      "smbChecked": "SMB checked",
+      "smbConflict": "WebDAV, because Windows is connected with another user already",
+      "awayVpn": "Away only through the VPN",
+      "awayDirect": "Away also without VPN via {{address}}"
     },
     "original": {
       "title": "Always original",
@@ -5516,9 +5531,9 @@
       "not_found": "Not found.",
       "unsupported": "That isn't supported (SMB only on port 445).",
       "unsupported_version": "This Jellyfin is too old – GateControl needs 10.9 or newer.",
-      "quick_connect_off": "Quick Connect is off on this server. Sign in with user and password.",
+      "quick_connect_off": "The admin has to turn on Quick Connect in Jellyfin.",
       "expired": "The code has expired.",
-      "signed_out": "Signed out – please sign in again under Sources.",
+      "signed_out": "Signed out – signing in again happens on its own.",
       "no_protect": "Windows can't encrypt here, so no access is stored.",
       "too_many": "8 sources are set up already.",
       "smb_conflict": "Windows is already connected to this server under another user (error 1219).",
@@ -5526,7 +5541,19 @@
       "cert_changed": "The server's certificate has changed.",
       "no_lan_route": "The way to the NAS in the home network couldn't be set.",
       "failed": "That didn't work.",
-      "no_vlc": "VLC is not installed on this PC."
+      "no_vlc": "VLC is not installed on this PC.",
+      "vpn_required": "Away only through the VPN – turn the VPN on.",
+      "no_mapping": "The admin has to link you with Jellyfin in GateControl › Media.",
+      "admin_user": "The admin has to change your Jellyfin link.",
+      "user_disabled": "The Jellyfin user is disabled – the admin has to change the link.",
+      "not_configured": "This source isn’t fully set up in the server yet.",
+      "no_access": "This source isn’t shared with you any more.",
+      "rate_limited": "Too many attempts – try again later.",
+      "code_invalid": "The Jellyfin sign-in expired – it is tried again.",
+      "device_mismatch": "The Jellyfin sign-in didn’t match this device – it is tried again.",
+      "plugin_unavailable": "Media is turned off in the server.",
+      "license_required": "Media needs the licence for the Media plugin in the server.",
+      "jellyfin_unreachable": "The server can’t reach Jellyfin right now – try again later."
     },
     "player": {
       "label": "Player",
@@ -5596,6 +5623,40 @@
       "noApp": "VLC could play this file – it is not installed on this PC.",
       "openedVlc": "Opened in VLC.",
       "openedOther": "Opened in the Windows app."
+    },
+    "signedOutAuto": "{{name}} is signing in again …",
+    "vpn": {
+      "connecting": "Connecting the VPN …",
+      "required": "Away only through the VPN – turn the VPN on to open media.",
+      "connect": "Turn on VPN"
+    },
+    "way": {
+      "home": "At home",
+      "vpn": "Away through VPN",
+      "direct": "Away direct",
+      "blocked": "VPN only"
+    },
+    "problem": {
+      "no_mapping": "Not linked",
+      "quick_connect_off": "Quick Connect off",
+      "admin_user": "Change the link",
+      "user_disabled": "User disabled",
+      "not_configured": "Incomplete in the server",
+      "other": "Error"
+    },
+    "server": {
+      "fetchedNow": "from the server, just now",
+      "fetchedMin": "from the server, {{min}} min ago",
+      "fetchedH": "from the server, {{h}} h ago",
+      "fetchedD": "from the server, {{d}} days ago",
+      "off": "Media is turned off in the server",
+      "license": "Media needs the licence for the Media plugin in the server",
+      "offline": "No contact with the server for a long time ({{days}} days). Media keeps working with the last list.",
+      "offlineExpired": "No contact with the server for {{days}} days: the NAS passwords on this PC were deleted. Connect to the server.",
+      "notice": "Media now comes from the server.",
+      "adopted": "Taken over: {{names}}.",
+      "dropped": "Removed because the server doesn’t know them: {{names}}.",
+      "ok": "OK"
     }
   }
 }

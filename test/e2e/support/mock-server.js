@@ -93,6 +93,7 @@ const selfsigned = require('selfsigned');
 const { createMessenger } = require('./messenger-mock');
 const { createSchool } = require('./school-mock');
 const { createFamilie } = require('./familie-mock');
+const { createMedien } = require('./medien-mock');
 const { createDns } = require('./dns-mock');
 const { createPrint } = require('./print-mock');
 const { createVault } = require('./vault-mock');
@@ -168,6 +169,7 @@ async function startMockServer() {
   let messenger = null; // support/messenger-mock.js, null = no Messenger plugin
   let school = null; // support/school-mock.js, null = no Schule plugin
   let familie = null; // support/familie-mock.js, null = no Familie plugin
+  let medien = null; // support/medien-mock.js, null = no plugin Medien
   let dns = null; // support/dns-mock.js, null = a server before the DNS protection (permissions without `vpnDns`)
   let print = null; // support/print-mock.js, null = no plugin Drucken & Scannen
   let vault = null; // support/vault-mock.js, null = no Vault plugin
@@ -334,6 +336,16 @@ async function startMockServer() {
         return json(200, { ok: true, token: API_TOKEN, peerId: PEER_ID, config: null });
       }
       if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
+
+      // Medien (plugin gatecontrol-medien, app API v1): the sources from the server; the plugin list names it beside
+      // every other plugin that is set.
+      if (medien) {
+        if (route === 'plugins') {
+          const list = messenger ? [{ id: 'gatecontrol-messenger', name: 'Messenger', version: '1.0.0', tab: { label: 'Chats', icon: 'M0 0' } }] : [];
+          return json(200, { ok: true, plugins: [...list, ...[school, vault, drive, mail, gatedrop, door, notes, familie, print].filter(Boolean).map((x) => x.entry()).filter(Boolean), medien.entry()] });
+        }
+        if (medien.handle({ method: req.method, route, raw, query: Object.fromEntries(url.searchParams) }, json)) return undefined;
+      }
 
       // Meine Orte (GateControl 1.299): the profile's places and the address search; an older server: 404.
       if (route.startsWith('me/profile/places') || route.startsWith('me/places/')) {
@@ -508,6 +520,11 @@ async function startMockServer() {
     setSchool(opts = {}) {
       school = createSchool(opts);
       return school;
+    },
+    /** Enables the plugin Medien (support/medien-mock.js: the sources from the server); returns its state. */
+    setMedien(opts = {}) {
+      medien = createMedien(opts);
+      return medien;
     },
     /** Enables the Familie plugin ("Internet zu Hause", support/familie-mock.js); returns its state. */
     setFamilie(opts = {}) {

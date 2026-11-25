@@ -514,3 +514,64 @@ describe('Ordner (4h)', () => {
     assert.match(read('src', 'main', 'main.js'), /openPath: \(target\) => shell\.openPath\(target\)/);
   });
 });
+
+describe('Medien-Plugin (W2): the sources from the server, the network rule', () => {
+  const managed = (o = {}) => jelly({ managed: true, sid: 'jf-1', awayMode: 'vpn', deviceName: 'GateControl · Büro-PC', problem: null, ...o });
+
+  it('the entry "Medien" only with the plugin\'s tab', () => {
+    assert.equal(MS.visible({ server: { visible: true } }), true);
+    assert.equal(MS.visible({ server: { visible: false } }), false);
+    assert.equal(MS.visible({ sources: [jelly()] }), false, 'a source set up on this PC is no reason any more');
+  });
+
+  it('the way: home, away through the VPN, direct, blocked (only through the VPN)', () => {
+    assert.equal(MS.wayOf({ atHome: false, blocked: true }), 'blocked');
+    assert.equal(MS.linkLabel({ atHome: false, blocked: true }, t, 'de').text, 'media.link.blocked');
+    assert.equal(MS.linkLabel({ atHome: false, via: 'direct', bps: null }, t, 'de').text, 'media.link.directNoBw');
+    assert.equal(MS.statusLine({ atHome: false, blocked: true }, t, 'de'), 'media.status.blocked');
+    assert.equal(MS.sourcePill(managed(), t).text, 'media.way.home');
+    assert.equal(MS.sourcePill(managed({ link: { atHome: false, via: 'tunnel' } }), t).text, 'media.way.vpn');
+    assert.equal(MS.sourcePill(managed({ link: { atHome: false, via: 'direct' } }), t).text, 'media.way.direct');
+    assert.equal(MS.sourcePill(managed({ link: { atHome: false, blocked: true } }), t).text, 'media.way.blocked');
+    assert.deepEqual(MS.sourcePill(managed({ problem: 'no_mapping' }), t), { cls: 'is-warn', text: 'media.problem.no_mapping' });
+    assert.equal(MS.sourcePill(managed({ ready: false, userName: null }), t).text, 'media.src.signingInPill', 'signs in by itself');
+    assert.equal(MS.awayRule(managed(), t), 'media.src.awayVpn');
+    assert.equal(MS.awayRule(managed({ awayMode: 'direct', awayAddress: 'https://jellyfin.example.test' }), t), 'media.src.awayDirect(jellyfin.example.test)');
+    assert.equal(MS.awayRule(jelly(), t), null);
+  });
+
+  it('what a source says: the plugin\'s device name, "wird angemeldet", "SMB geprüft", WebDAV after 1219', () => {
+    assert.match(MS.sourceSub(managed(), t, 'PC'), /media\.src\.device\(GateControl · Büro-PC\)/);
+    assert.match(MS.sourceSub(managed({ userName: null, ready: false }), t), /media\.src\.signingIn/);
+    assert.match(MS.sourceSub(share({ managed: true, smbChecked: true }), t), /media\.src\.smbChecked/);
+    assert.match(MS.sourceSub(share({ managed: true, link: { smbConflict: true } }), t), /media\.src\.smbConflict/);
+  });
+
+  it('the notes of the server: off, licence, long offline, taken over; the age of the list', () => {
+    assert.deepEqual(MS.serverNotes({ state: 'unavailable', reason: 'plugin_unavailable' }, t).map((n) => n.text), ['media.server.off']);
+    assert.deepEqual(MS.serverNotes({ state: 'unavailable', reason: 'license_required' }, t).map((n) => n.text), ['media.server.license']);
+    assert.deepEqual(MS.serverNotes({ offline: { days: 31, hint: true, expired: false } }, t).map((n) => n.text), ['media.server.offline(31)']);
+    const n = MS.serverNotes({ notice: { adopted: [{ name: 'DS918+' }], dropped: [{ name: 'Alt' }], at: 5 } }, t);
+    assert.equal(n[0].key, 'notice:5');
+    assert.match(n[0].text, /media\.server\.adopted\(DS918\+\).*media\.server\.dropped\(Alt\)/);
+    assert.equal(MS.fetchedLabel({ fetchedAt: NOW - 3 * MIN }, t, NOW), 'media.server.fetchedMin(3)');
+    assert.equal(MS.fetchedLabel({}, t, NOW), null);
+    assert.equal(MS.errorText('vpn_required', t), 'media.error.vpn_required');
+    assert.equal(MS.errorText('no_mapping', t), 'media.error.no_mapping');
+  });
+
+  it('wiring: Quellen without a dialog, the entry by the tab, the tunnel for the network rule, the server\'s sources', () => {
+    const view = read('src', 'renderer', 'media-sources-view.js');
+    for (const gone of ['addShare', 'quickConnect', 'signIn(', 'authorize(', 'removeSource', 'md-dlg', 'discover(']) assert.ok(!view.includes(gone), gone);
+    const renderer = read('src', 'renderer', 'renderer.js');
+    assert.ok(!/if \(mediaView\) \$\('#nav-medien'\)\.hidden = false;/.test(renderer), 'not shown just because the core has Medien');
+    assert.match(renderer, /onVisible: \(show\) => \{\s*\$\('#nav-medien'\)\.hidden = !show;/);
+    const main = read('src', 'main', 'main.js');
+    assert.match(main, /tunnel: \{\s*up: \(\) => !!tunnelState\.connected,/);
+    assert.match(main, /new MediaServerSources\(\{/);
+    assert.match(main, /mediaSources\?\.start\(\)/);
+    const mediaView = read('src', 'renderer', 'media-view.js');
+    assert.match(mediaView, /media\.vpn\.connecting/);
+    assert.match(mediaView, /api\.sources\.refresh\(\)/);
+  });
+});

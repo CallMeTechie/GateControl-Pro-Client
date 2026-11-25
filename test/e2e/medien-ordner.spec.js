@@ -1,7 +1,7 @@
 'use strict';
 
 const { test, expect } = require('./support/fixtures');
-const { setupWithApiKey } = require('./support/ui');
+const { launchWithMedien } = require('./support/medien');
 const { startJellyfin } = require('./support/jellyfin-mock');
 const { startWebDav } = require('./support/webdav-mock');
 
@@ -23,31 +23,13 @@ test.describe('medien ordner', () => {
   test.afterEach(async () => { await jf.close(); await dav.close(); });
 
   test('a WebDAV share beside Jellyfin: NAS titles once, the folders, play and the place kept, the check before the start', async ({ launchApp, mock }) => {
-    const { page } = await launchApp();
-    await setupWithApiKey(page, mock);
+    // Jellyfin and the WebDAV share from the server (plugin Medien): signed in by itself, the password from the plugin
+    const { page, md } = await launchWithMedien({ launchApp, mock, jf, dav });
     await expect(page.locator('#nav-medien')).toBeVisible();
     await page.locator('#nav-medien').click();
     const p = page$(page);
-
-    // Jellyfin with Quick Connect
-    await p.locator('.md-empty .btn-pri').click();
-    const dlg = page.locator('.md-dlg');
-    await dlg.locator('input.md-f-address').fill(jf.address);
-    await dlg.locator('.md-next').click();
-    await expect(dlg.locator('.md-qc-code')).toHaveText('482 913');
-    jf.state.qcConfirmed = true;
-    await expect(dlg).toBeHidden({ timeout: 20000 });
-
-    // the WebDAV share with name and password
-    await p.locator('.md-add').click();
-    await dlg.locator('.md-kinds [data-kind="webdav"]').click();
-    await dlg.locator('input.md-f-address').fill(dav.address);
-    await dlg.locator('input.md-f-user').fill(dav.user);
-    await dlg.locator('input.md-f-password').fill(dav.password);
-    await dlg.locator('.md-connect').click();
-    await expect(dlg).toBeHidden({ timeout: 20000 });
-    await expect(p.locator('.md-srccard[data-kind="webdav"]')).toBeVisible();
-    await p.locator('.md-back').click();
+    await expect.poll(() => md.pairs, { timeout: 30000 }).toBe(1);
+    expect(md.log.some((x) => x.path === 'v1/sources/sh-1/secret')).toBe(true);
     expect(await page.content()).not.toContain(dav.password);
 
     // the overview: the share's chip; Leuchtfeuer from the NAS with its mark, Kobaltnacht once (Jellyfin's)
