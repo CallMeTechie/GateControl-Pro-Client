@@ -17,6 +17,8 @@ const {
 const remoteTermApi = window.gatecontrol.remoteTerm || null;
 // Meine Orte (GateControl 1.299, Mein Profil › Meine Orte): the profile's places (core PlacesService)
 const placesApi = window.gatecontrol.places || null;
+// Medien (Jellyfin and the NAS shares, core MediaService; absent in an older core): the page and the card on the start page
+const mediaApi = window.gatecontrol.media || null;
 // Schnellaktionen der Plugins (core QuickActionsService; absent in an older core): cards on the start page (home-view.js)
 const quickActionsApi = window.gatecontrol.quickActions || null;
 const RTS = window.GCRemoteTermState;
@@ -214,6 +216,7 @@ function refreshTexts() {
 	mailView?.relabel();
 	notesView?.relabel();
 	camerasView?.relabel();
+	mediaView?.relabel();
 	homeView?.relabel();
 	dnsView?.relabel();
 	notifyRoutesView?.render();
@@ -254,6 +257,7 @@ let driveView = null; // drive-view.js instance (DRIVE section below)
 let mailView = null; // mail-view.js instance (MAIL section below)
 let notesView = null; // notes-view.js instance (NOTIZEN & AUFGABEN section below)
 let camerasView = null; // camera-view.js instance (KAMERAS section below)
+let mediaView = null; // media-view.js instance (MEDIEN section below)
 let dnsView = null; // dns-view.js instance: the card "DNS-Schutz" on the start page (DNS-SCHUTZ section below)
 let homeView = null; // home-view.js instance: pinned favourites and events on the start page (MAIL section below)
 let notifyRoutesView = null; // notify-routes.js in Settings › Benachrichtigungen
@@ -406,7 +410,7 @@ $('#btn-close').addEventListener('click', () => win.close());
 // ══════════════════════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════════════════════
-const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'familie', 'gatedrop', 'mail', 'notizen', 'drive', 'drucken', 'vault', 'kameras', 'inbox', 'orte', 'logs', 'settings', 'setup'];
+const PAGES = ['status', 'rdp', 'services', 'chats', 'schule', 'familie', 'gatedrop', 'mail', 'notizen', 'drive', 'drucken', 'vault', 'kameras', 'inbox', 'orte', 'medien', 'logs', 'settings', 'setup'];
 
 function navigateTo(page, opts = {}) {
 	if (page === 'overview') page = 'status';
@@ -472,6 +476,10 @@ function navigateTo(page, opts = {}) {
 	// Kameras: live picture / stills and clips only while the page is shown
 	if (page === 'kameras' && prev !== 'kameras') camerasView?.show();
 	else if (prev === 'kameras' && page !== 'kameras') camerasView?.hide();
+	// Medien: the rows and the way to the NAS while the page is shown; Start: the card "Weiterschauen"
+	if (page === 'medien' && prev !== 'medien') mediaView?.show();
+	else if (prev === 'medien' && page !== 'medien') mediaView?.hide();
+	if (page === 'status' && prev !== 'status') mediaView?.homeShow();
 	// Vault: footer in the status bar, secrets leave the screen with the page
 	if (page === 'vault' && prev !== 'vault') vaultView?.show();
 	else if (prev === 'vault' && page !== 'vault') vaultView?.hide();
@@ -3215,6 +3223,7 @@ function shownPages() {
 					: p === 'mail' ? !!mailView && !$('#nav-mail').hidden
 					: p === 'notizen' ? !!notesView && !$('#nav-notizen').hidden
 					: p === 'kameras' ? !!camerasView && !$('#nav-kameras').hidden
+					: p === 'medien' ? !!mediaView && !$('#nav-medien').hidden
 					: p === 'vault' ? !!vaultView && !$('#nav-vault').hidden : true));
 }
 
@@ -3913,6 +3922,28 @@ camerasView = camerasApi && window.GCCameraView && $('#page-kameras')
 		},
 	})
 	: null;
+
+// ══════════════════════════════════════════════════════════
+//  MEDIEN (films and series from the NAS: Jellyfin, SMB and WebDAV shares)
+//  Data: window.gatecontrol.media (core MediaService in main; posters and
+//  video through gcmedia://, the access stays in main); the page is built by
+//  media-view.js (window.GCMediaView) with media-state.js and
+//  media-sources-view.js (Quellen). Pro only; the entry shows while the core
+//  has the service; the card "Weiterschauen" sits on the start page.
+// ══════════════════════════════════════════════════════════
+mediaView = mediaApi && window.GCMediaView && $('#page-medien')
+	? window.GCMediaView.mount({
+		root: $('#page-medien'),
+		api: mediaApi,
+		t,
+		getLocale: () => window.gatecontrol.i18n.getLocale(),
+		toast: (msg, type) => showToast(msg, type || 'info'),
+		statusHost: $('#statusbar'),
+		homeHost: $('#media-home'),
+		openPage: () => navigateTo('medien'),
+	})
+	: null;
+if (mediaView) $('#nav-medien').hidden = false;
 
 // ══════════════════════════════════════════════════════════
 //  MAIL (plugin gatecontrol-mail: the person's mail accounts on the own

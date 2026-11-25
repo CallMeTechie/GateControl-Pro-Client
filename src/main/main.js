@@ -51,6 +51,7 @@ let PlacesService;
 let QuickActionsService;
 let CamerasService;
 let DriveStreamService;
+let MediaService, MediaStore, MediaStreamService;
 let VaultService, windowsHello, windowsOcr, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
 let createDriveOnDemand, driveOnDemandExePath, parseDriveActionArgv, drivePathsOverlap;
@@ -148,6 +149,9 @@ try {
   // Drive 1.21: the large view streams pictures and videos over gcdrive: (core services/drive-stream.js); absent in
   // an older core (then "Dateien" opens them in the default program as before).
   ({ DriveStreamService } = require('@gatecontrol/client-core'));
+  // Medien (Stufe 4f/4g): Jellyfin and the NAS shares of this PC, the gcmedia: stream of the player (core
+  // services/media.js, docs/media.md); absent in an older core (then there is no "Medien" page).
+  ({ MediaService, MediaStore, MediaStreamService } = require('@gatecontrol/client-core'));
   // Vault (plugin gatecontrol-vault): end-to-end encrypted password manager
   // (core docs/vault.md); quick search window on Strg+Alt+P.
   ({ VaultService, windowsHello } = require('@gatecontrol/client-core'));
@@ -242,6 +246,9 @@ if (protocol && typeof protocol.registerSchemesAsPrivileged === 'function') {
   // Drive plugin 1.22: the viewer of vault files — gcvault://v/<token>, decrypted in memory by the core (drive-vault-view.js)
   const VaultViews = DriveService && DriveService.VaultViews;
   if (VaultViews && VaultViews.SCHEME) schemes.push({ scheme: VaultViews.SCHEME, privileges: { ...VaultViews.SCHEME_PRIVILEGES } });
+  // Medien: posters, video and the HLS playlists of Jellyfin and the NAS shares — gcmedia://, served by the core
+  // (only a random token in the page, the access stays in this process; CORS-enabled for hls.js)
+  if (MediaStreamService && MediaStreamService.SCHEME) schemes.push({ scheme: MediaStreamService.SCHEME, privileges: { ...MediaStreamService.SCHEME_PRIVILEGES } });
   if (schemes.length) protocol.registerSchemesAsPrivileged(schemes);
 }
 
@@ -368,6 +375,10 @@ let places = null; // Meine Orte (core PlacesService), one per app lifetime
 let quickActions = null; // the plugins' quick actions (core QuickActionsService), one per app lifetime
 let cameras = null; // Kameras im Heimnetz (core CamerasService), one per app lifetime
 let driveStream = null; // Drive 1.21: the large view's gcdrive: (core DriveStreamService)
+let media = null; // Medien (core MediaService): Jellyfin and the NAS shares, one per app lifetime
+let mediaNetKey = null; // the addresses of this PC's adapters last seen (another Wi-Fi → media.networkChanged())
+let mediaNetTimer = null;
+let mediaTunnelUp = null; // the tunnel state media last heard of
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
 let driveSyncTray = '';
 let driveOnDemandLocked = false; // letzter Status von gc-drive-sync: von Drive gestoppt?
@@ -776,6 +787,37 @@ function broadcastState(status, error = null) {
   // Push stream follows the tunnel (path "via", mode vpn_only); only an
   // up/down change reconnects it, not the stats broadcasts.
   notifications?.tunnelChanged(tunnelState.connected);
+  // Medien: the tunnel up or down — home or away is found again (only on a change, not on the stats broadcasts)
+  if (media && mediaTunnelUp !== tunnelState.connected) {
+    const first = mediaTunnelUp === null;
+    mediaTunnelUp = tunnelState.connected;
+    if (!first) { try { media.networkChanged(); } catch (err) { log.debug(`Medien network change: ${err.message}`); } }
+  }
+}
+
+/**
+ * Medien: another Wi-Fi or LAN cable (the addresses of the real adapters change) — home or away is found again.
+ * Asked every 15 s while the app runs; the VPN adapter counts too (its address comes and goes with the tunnel).
+ */
+function mediaNetworkKey() {
+  try {
+    const all = _os.networkInterfaces() || {};
+    return Object.keys(all).sort().map((n) => `${n}=${(all[n] || []).filter((a) => a && !a.internal && a.family === 'IPv4').map((a) => `${a.address}/${a.netmask}`).sort().join(',')}`).join(';');
+  } catch { return null; }
+}
+
+function watchMediaNetwork() {
+  if (!media || mediaNetTimer) return;
+  mediaNetKey = mediaNetworkKey();
+  mediaNetTimer = setInterval(() => {
+    const key = mediaNetworkKey();
+    if (key === null || key === mediaNetKey) return;
+    mediaNetKey = key;
+    try { media.networkChanged(); } catch (err) { log.debug(`Medien network change: ${err.message}`); }
+  }, 15000);
+  if (typeof mediaNetTimer.unref === 'function') mediaNetTimer.unref();
+  // after sleep the PC may wake in another network
+  powerMonitor?.on?.('resume', () => { mediaNetKey = mediaNetworkKey(); try { media.networkChanged(); } catch { /* ignore */ } });
 }
 
 async function connectTunnel() {
@@ -1264,6 +1306,19 @@ function initializeServices() {
   // Drive 1.21: pictures and videos of the large view, streamed with Range (gcdrive:)
   driveStream = drive && DriveStreamService ? new DriveStreamService({ drive, log }) : null;
 
+  // Medien (decision 26 a: Pro only): Jellyfin and the NAS shares of this PC. The sources with their access (Jellyfin
+  // token, a share's password, a confirmed certificate) only under DPAPI (safeStorage) in this store, nothing of it to
+  // the GateControl server or the page; this PC appears in Jellyfin as its Windows name.
+  media = MediaService && MediaStore && DriveService && typeof DriveService.safeStorageProtect === 'function'
+    ? new MediaService({
+      store: new MediaStore({ store, protect: DriveService.safeStorageProtect(safeStorage) }),
+      client: 'GateControl Pro',
+      version: require('../../package.json').version,
+      deviceName: () => _os.hostname().slice(0, 64) || 'PC',
+      log,
+    })
+    : null;
+
   // "Ordner sichern": folders of this PC backed up / synced with Drive. Runs
   // in the main process (tray), the state of each folder lives in
   // %APPDATA%\…\drive-sync (no tokens); deleted files go to the recycle bin.
@@ -1670,6 +1725,8 @@ function registerIpcHandlers() {
     driveSync,
     // drive:stream / drive:stream:end (Drive 1.21's large view), its addresses end on server:setup
     driveStream,
+    // media:* channels + events (Medien: Jellyfin and the NAS shares), forgotten on server:setup (core, opt-in)
+    media,
     // mail:* channels + events, reset on server:setup (core, opt-in)
     mail,
     // notes:* channels + events, reset on server:setup (core, opt-in)
@@ -1800,6 +1857,11 @@ app.on('ready', () => {
   if (driveStream && protocol && typeof protocol.handle === 'function') {
     try { protocol.handle(DriveStreamService.SCHEME, (req) => driveStream.handleProtocol(req)); } catch (err) { log.warn(`Drive protocol not registered: ${err.message}`); }
   }
+  // Medien: posters, video and HLS of Jellyfin and the NAS shares (gcmedia:); the network watched for home / away.
+  if (media && MediaStreamService && protocol && typeof protocol.handle === 'function') {
+    try { protocol.handle(MediaStreamService.SCHEME, (req) => media.stream.handleProtocol(req)); } catch (err) { log.warn(`Medien protocol not registered: ${err.message}`); }
+  }
+  watchMediaNetwork();
   // "Ordner sichern": watches the folders, a full run shortly after start and every 15 min.
   driveSync?.start();
   // Drive „Dateien bei Bedarf“: startet gc-drive-sync.exe nur, wenn eingeschaltet.
@@ -1991,6 +2053,9 @@ app.on('before-quit', (e) => {
   vault?.stop();
   // GateDrop: LAN listener and timers.
   gatedrop?.stop();
+  // Medien: the host routes to the NAS and the SMB connections of this session go.
+  if (mediaNetTimer) { clearInterval(mediaNetTimer); mediaNetTimer = null; }
+  media?.close().catch((err) => log.warn('Medien close failed:', err.message));
 
   // Critical: cleanup all RDP sessions
   if (rdpManager) {

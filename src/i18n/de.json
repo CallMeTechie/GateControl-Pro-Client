@@ -5253,5 +5253,270 @@
     "saveQText": "„Speichern“ legt „{{name}}“ in „Meine Orte“ an, „Nur hier“ nutzt die Adresse nur in diesem Formular.",
     "saveQYes": "Speichern",
     "onlyHere": "Nur hier"
+  },
+  "media": {
+    "title": "Medien",
+    "loading": "Wird geladen …",
+    "search": "In allen Quellen suchen",
+    "searchFor": "Treffer für „{{q}}“",
+    "searchClear": "Suche beenden",
+    "tabs": {
+      "overview": "Übersicht",
+      "movies": "Filme",
+      "series": "Serien",
+      "folders": "Ordner",
+      "search": "Suche"
+    },
+    "sources": {
+      "button": "Quellen",
+      "title": "Quellen",
+      "add": "Quelle hinzufügen",
+      "back": "Zurück zu Medien",
+      "none": "Noch keine Quelle eingerichtet"
+    },
+    "row": {
+      "resume": "Weiterschauen",
+      "latest": "Zuletzt hinzugefügt",
+      "movies": "Filme",
+      "series": "Serien",
+      "count": "{{count}} Titel",
+      "thisWeek": "diese Woche",
+      "all": "Alle anzeigen",
+      "back": "Zurück",
+      "more": "Weiter"
+    },
+    "mark": {
+      "nas": "NAS",
+      "new": "NEU"
+    },
+    "at": "ab {{time}}",
+    "left": {
+      "min": "noch {{min}} Min.",
+      "hm": "noch {{time}}"
+    },
+    "runtime": {
+      "hm": "{{h}} Std. {{m}} Min.",
+      "h": "{{h}} Std.",
+      "m": "{{m}} Min."
+    },
+    "episode": "Staffel {{season}} · Folge {{episode}}",
+    "episodeOnly": "Folge {{episode}}",
+    "seasons": "{{count}} Staffeln",
+    "seasons1": "1 Staffel",
+    "link": {
+      "home": "Zuhause · direkt von der NAS",
+      "away": "Unterwegs · {{bw}}",
+      "awayNoBw": "Unterwegs · über den Tunnel",
+      "checking": "Verbindung wird geprüft …"
+    },
+    "status": {
+      "home": "Medien: Zuhause, direkt im LAN",
+      "away": "Medien: Unterwegs, über den Tunnel · {{bw}}",
+      "awayNoBw": "Medien: Unterwegs, über den Tunnel"
+    },
+    "sort": {
+      "label": "Sortierung",
+      "name": "A–Z",
+      "added": "Zuletzt hinzugefügt",
+      "year": "Jahr"
+    },
+    "filter": {
+      "unplayed": "Ungesehen",
+      "genre": "Genre",
+      "allGenres": "Alle Genres"
+    },
+    "detail": {
+      "none": "Wähle einen Titel, um ihn hier zu sehen.",
+      "play": "Abspielen",
+      "resume": "Weiter ab {{time}}",
+      "restart": "Von vorn",
+      "played": "Gesehen",
+      "markPlayed": "Als gesehen markieren",
+      "markUnplayed": "Als ungesehen markieren",
+      "audio": "Ton",
+      "subtitles": "Untertitel",
+      "quality": "Qualität"
+    },
+    "audio": {
+      "converts": "NAS rechnet in {{target}} um",
+      "cannot": "Chromium kann kein {{codec}}: NAS rechnet in {{target}} um",
+      "direct": "direkt"
+    },
+    "sub": {
+      "off": "Aus",
+      "text": "Text ({{codec}})",
+      "picture": "Bild ({{codec}})",
+      "forced": "erzwungen",
+      "vtt": "als WebVTT, ohne Umrechnen",
+      "burnIn": "NAS brennt ein, dann immer umgerechnet"
+    },
+    "lang": {
+      "unknown": "Unbekannt"
+    },
+    "chip": {
+      "audioConverted": "am PC: Ton umgerechnet",
+      "videoConverted": "am PC: Bild umgerechnet",
+      "bothConverted": "am PC: Bild und Ton umgerechnet"
+    },
+    "quality": {
+      "auto": "Automatisch",
+      "original": "Original",
+      "autoHome": "Automatisch · zu Hause Original",
+      "autoAway": "Automatisch · unterwegs {{res}} · {{bw}}",
+      "autoAwayOriginal": "Automatisch · auch unterwegs Original",
+      "autoUnknown": "Automatisch · nach Messung",
+      "originalNote": "Immer das Original, auch unterwegs",
+      "fixedNote": "Feste Stufe, auch zu Hause",
+      "alwaysOriginal": "Immer Original (in den Quellen eingeschaltet)"
+    },
+    "series": {
+      "season": "Staffel {{n}}",
+      "specials": "Extras",
+      "seasons": "Staffeln",
+      "episodes": "Folgen",
+      "play": "S{{s}} F{{e}} abspielen",
+      "resume": "S{{s}} F{{e}} weiter ab {{time}}"
+    },
+    "empty": {
+      "title": "Medien von der NAS einrichten",
+      "text": "Filme und Serien von Jellyfin und den Freigaben deiner NAS, zu Hause direkt im LAN, unterwegs durch den eigenen Tunnel.",
+      "add": "Quelle hinzufügen",
+      "nothing": "Hier ist noch nichts.",
+      "noResults": "Keine Treffer."
+    },
+    "noJellyfin": {
+      "title": "Kein Jellyfin angemeldet",
+      "text": "Übersicht, Filme und Serien kommen von Jellyfin. Melde dich unter Quellen an; deine NAS-Freigaben erscheinen unter Ordner."
+    },
+    "unsupported": {
+      "title": "Medien gehen auf diesem PC nicht",
+      "text": "Medien brauchen die Verschlüsselung von Windows für die Zugangsdaten. Sie ist auf diesem PC gerade nicht verfügbar."
+    },
+    "folders": {
+      "title": "Ordner der NAS-Freigaben",
+      "text": "Hier erscheinen bald die Ordner deiner SMB- und WebDAV-Freigaben mit Vorschau und Fortschritt. Einrichten kannst du die Freigaben schon jetzt unter Quellen.",
+      "sources": "Zu den Quellen"
+    },
+    "signedOut": "{{name}} ist abgemeldet. Melde dich neu an, um Filme und Serien zu sehen.",
+    "src": {
+      "jellyfin": "Jellyfin · {{name}}",
+      "share": "NAS-Freigabe · {{path}}",
+      "signedInAs": "angemeldet als {{user}}",
+      "device": "dieses Gerät heißt „{{device}}“",
+      "connected": "verbunden",
+      "signedOutPill": "abgemeldet",
+      "signOut": "Abmelden",
+      "signIn": "Neu anmelden",
+      "edit": "Bearbeiten",
+      "remove": "Entfernen",
+      "smbHomeWebdav": "SMB zu Hause, WebDAV unterwegs",
+      "smb": "SMB-Freigabe",
+      "webdav": "WebDAV",
+      "explorer": "mit dem Explorer-Zugang"
+    },
+    "original": {
+      "title": "Immer Original",
+      "text": "Nie umrechnen, auch unterwegs. Formate, die der PC nicht kann (z. B. DTS), rechnet Jellyfin trotzdem um."
+    },
+    "homeCard": {
+      "title": "„Weiterschauen“ auf der Übersicht",
+      "text": "Angefangene Filme und Folgen als Karte auf der Übersicht der App."
+    },
+    "authorize": {
+      "title": "Gerät anmelden",
+      "text": "Fernseher oder anderen PC mit Quick Connect anmelden: Gib den Code ein, den das andere Gerät zeigt. GateControl bestätigt ihn mit deinem Jellyfin-Zugang.",
+      "code": "Quick-Connect-Code",
+      "server": "Jellyfin-Server",
+      "confirm": "Bestätigen",
+      "done": "Bestätigt. Das andere Gerät meldet sich jetzt an.",
+      "notFound": "Diesen Code kennt Jellyfin nicht. Ist er schon abgelaufen?",
+      "invalid": "Der Code hat 6 Ziffern."
+    },
+    "home": {
+      "title": "Weiterschauen",
+      "all": "Alle in Medien"
+    },
+    "dlg": {
+      "title": "Quelle hinzufügen",
+      "editTitle": "Quelle bearbeiten",
+      "close": "Schließen",
+      "cancel": "Abbrechen",
+      "next": "Weiter",
+      "back": "Zurück",
+      "connect": "Verbinden",
+      "connecting": "Verbinde …",
+      "signIn": "Anmelden",
+      "kind": {
+        "jellyfin": "Jellyfin",
+        "smb": "SMB-Freigabe",
+        "webdav": "WebDAV"
+      },
+      "found": "Im Heimnetz gefunden",
+      "searching": "Suche im Heimnetz …",
+      "noneFound": "Kein Jellyfin-Server im Heimnetz gefunden.",
+      "searchAgain": "Erneut suchen",
+      "reached": "erreicht",
+      "address": "Adresse",
+      "user": "Benutzer",
+      "password": "Passwort",
+      "userHint": "z. B. medien-lesen",
+      "webdavAddress": "WebDAV-Adresse",
+      "hint": {
+        "jellyfin": "z. B. 192.168.1.20 oder https://192.168.1.20:8920",
+        "smb": "z. B. \\\\192.168.1.20\\filme – am besten ein NAS-Benutzer nur mit Leserecht",
+        "webdav": "z. B. https://192.168.1.20:5006/filme"
+      },
+      "qc": "Quick Connect",
+      "userPass": "Benutzer & Passwort",
+      "qcCode": "Code",
+      "qcHint": "In Jellyfin bestätigen (Profil › Quick Connect) oder in GateControl auf einem anderen Gerät: Gerät anmelden.",
+      "qcWaiting": "Warte auf Bestätigung …",
+      "qcNew": "Neuer Code",
+      "passwordOnce": "Das Passwort geht einmal an Jellyfin und wird nicht gespeichert.",
+      "smbNoteStrong": "Windows meldet die Freigabe für GateControl an",
+      "smbNote": "(nur für diese App-Sitzung, kein Laufwerksbuchstabe). Ist der Server im Explorer schon mit einem anderen Benutzer verbunden, lehnt Windows ab (Fehler 1219). GateControl sagt das dann und bietet „Mit dem Explorer-Zugang verwenden“ an.",
+      "smbIp": "Am PC lieber die IP-Adresse statt \\\\{{host}}: Unterwegs löst der Tunnel den NAS-Namen nicht auf.",
+      "encrypted": "Passwort mit Windows verschlüsselt (wie Mail und Vault)",
+      "alsoWebdav": "Auch als WebDAV einrichten, für unterwegs",
+      "conflict": "\\\\{{host}} ist im Explorer schon mit einem anderen Benutzer verbunden. Windows lässt keine zweite Anmeldung beim selben Server zu (Fehler 1219).",
+      "useExisting": "Mit dem Explorer-Zugang verwenden",
+      "done": "{{name}} ist eingerichtet.",
+      "webdavFailed": "Die SMB-Freigabe ist eingerichtet, WebDAV nicht: {{error}}",
+      "problem": {
+        "address": "Bitte eine gültige Adresse eingeben.",
+        "user": "Zum Passwort fehlt der Benutzer.",
+        "webdav": "Bitte die WebDAV-Adresse eingeben.",
+        "invalid": "Das geht so nicht."
+      },
+      "cert": {
+        "title": "Zertifikat bestätigen",
+        "text": "Der Server zeigt ein Zertifikat, dem Windows nicht vertraut – auf einer NAS ist es meist selbst signiert. Prüfe den Fingerabdruck (z. B. im DSM unter Sicherheit › Zertifikat) und bestätige ihn einmal.",
+        "changed": "Das Zertifikat ist nicht mehr das, das du bestätigt hast. Bestätige das neue nur, wenn du es selbst erneuert hast.",
+        "address": "Adresse",
+        "subject": "Ausgestellt für",
+        "issuer": "Ausgestellt von",
+        "validTo": "Gültig bis",
+        "fingerprint": "Fingerabdruck (SHA-256)",
+        "trust": "Vertrauen und weiter"
+      }
+    },
+    "error": {
+      "invalid": "Die Adresse stimmt so nicht.",
+      "offline": "Nicht erreichbar. Ist die NAS an und im selben Netz?",
+      "unauthorized": "Benutzer oder Passwort stimmen nicht.",
+      "not_found": "Nicht gefunden.",
+      "unsupported": "Das wird nicht unterstützt (SMB nur über Port 445).",
+      "unsupported_version": "Dieser Jellyfin ist zu alt – GateControl braucht 10.9 oder neuer.",
+      "quick_connect_off": "Quick Connect ist auf diesem Server aus. Melde dich mit Benutzer und Passwort an.",
+      "expired": "Der Code ist abgelaufen.",
+      "signed_out": "Abgemeldet – bitte unter Quellen neu anmelden.",
+      "no_protect": "Windows kann hier nichts verschlüsseln, deshalb wird kein Zugang gespeichert.",
+      "too_many": "Es sind schon 8 Quellen eingerichtet.",
+      "smb_conflict": "Windows ist mit diesem Server schon unter einem anderen Benutzer verbunden (Fehler 1219).",
+      "cert_untrusted": "Dem Zertifikat des Servers vertraut Windows nicht.",
+      "cert_changed": "Das Zertifikat des Servers hat sich geändert.",
+      "no_lan_route": "Der Weg zur NAS im Heimnetz ließ sich nicht festlegen.",
+      "failed": "Das hat nicht geklappt."
+    }
   }
 }

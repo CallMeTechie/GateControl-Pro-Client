@@ -197,6 +197,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       vault: { on() {}, touch() {}, status: () => ({ state: 'unavailable' }) },
       // … and Drive (drive:* channels; a core before Drive ignores it)
       drive: { on() {}, status: () => ({ state: 'unavailable' }) },
+      // … and Medien (media:* channels; a core before Medien ignores it)
+      media: { on() {}, status: () => ({ ok: true, supported: true, sources: [] }) },
       // … and "Ordner sichern" (drive:sync:* channels; a core before it ignores it)
       driveSync: { on() {}, status: () => ({ ok: true, folders: [] }) },
       // … and Mail (mail:* channels; a core before Mail ignores it)
