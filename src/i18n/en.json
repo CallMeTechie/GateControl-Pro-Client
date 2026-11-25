@@ -5394,8 +5394,17 @@
     },
     "folders": {
       "title": "Folders of the NAS shares",
-      "text": "Soon the folders of your SMB and WebDAV shares appear here with previews and progress. You can already set up the shares under Sources.",
-      "sources": "To the sources"
+      "text": "The folders of your SMB and WebDAV shares appear here with previews and progress. Set up a share under Sources.",
+      "sources": "To the sources",
+      "path": "Path in the share",
+      "up": "One level up",
+      "open": "Show the share's folders",
+      "emptyDir": "There are no videos in this folder.",
+      "home": "at home",
+      "away": "away",
+      "pairHint": "Away, the app uses the same share over WebDAV (more robust through the tunnel). Shares always play the original; only Jellyfin converts.",
+      "originalHint": "Shares always play the original; only Jellyfin converts.",
+      "fileTitle": "File from the NAS"
     },
     "signedOut": "{{name}} is signed out. Sign in again to see movies and shows.",
     "src": {
@@ -5516,7 +5525,8 @@
       "cert_untrusted": "Windows doesn't trust the server's certificate.",
       "cert_changed": "The server's certificate has changed.",
       "no_lan_route": "The way to the NAS in the home network couldn't be set.",
-      "failed": "That didn't work."
+      "failed": "That didn't work.",
+      "no_vlc": "VLC is not installed on this PC."
     },
     "player": {
       "label": "Player",
@@ -5569,6 +5579,23 @@
         "audio": "Audio",
         "back": "Back"
       }
+    },
+    "check": {
+      "container": "Format {{format}}: this PC cannot play it",
+      "hevc": "Picture HEVC: this PC has no decoder, sound only",
+      "video": "Picture {{codec}}: this PC cannot play it",
+      "audio": "Audio {{codec}}: no sound on this PC",
+      "someAudio": "Audio track {{codec}} does not play on this PC, another one does",
+      "pictureSubs": "Picture subtitles are not shown",
+      "ok": "Plays directly on this PC",
+      "unknown": "Format not recognised – playing is tried",
+      "vlc": "Open in VLC",
+      "other": "Open in another app",
+      "anyway": "Play anyway",
+      "back": "Back",
+      "noApp": "VLC could play this file – it is not installed on this PC.",
+      "openedVlc": "Opened in VLC.",
+      "openedOther": "Opened in the Windows app."
     }
   }
 }

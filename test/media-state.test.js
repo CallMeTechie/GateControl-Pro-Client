@@ -396,3 +396,121 @@ describe('page wiring', () => {
     }
   });
 });
+
+describe('NAS shares beside Jellyfin (4h, the cases of Android\'s MediaLogic)', () => {
+  const movie = (id, name, o = {}) => title({ id, name, sourceId: o.share ? 's1' : 'j1', fromShare: !!o.share, year: o.year ?? null, playedAt: o.playedAt ?? null, addedAt: o.addedAt ?? null, positionMs: 0, resumable: false, ...o });
+
+  it('the library: ready Jellyfin servers and the shares', () => {
+    const s = MS.sourcesOf({ sources: [jelly(), share(), jelly({ id: 'j2', ready: false })] });
+    assert.deepEqual(s.library.map((x) => x.id), ['j1', 's1']);
+    assert.deepEqual(MS.sourcesOf({ sources: [share()] }).library.map((x) => x.id), ['s1'], 'shares alone are a library');
+  });
+
+  it('keys: the same title written differently, A–Z as Jellyfin', () => {
+    assert.equal(MS.keyOf('Die letzte Fähre nach Mirow'), MS.keyOf('die.letzte.fähre.nach.mirow'));
+    assert.equal(MS.sortKeyOf('The Pegelwart'), 'pegelwart');
+    assert.equal(MS.sortKeyOf('Letzte Fähre'), 'letzte fahre');
+  });
+
+  it('a title in Jellyfin and on a share shows once, Jellyfin\'s', () => {
+    const jf = [movie('j-k', 'Kupferstadt', { year: 2025 }), title({ id: 'j-g', kind: 'series', name: 'Graufeld', year: null })];
+    const shares = [
+      movie('f:Kupferstadt.2025.mkv', 'kupferstadt', { share: true, year: 2025 }),
+      movie('f:Kupferstadt.1961.mkv', 'Kupferstadt', { share: true, year: 1961 }),
+      movie('f:Graufeld.mkv', 'Graufeld', { share: true }),
+      title({ id: 's:graufeld', sourceId: 's1', kind: 'series', name: 'Graufeld', year: null, fromShare: true }),
+      movie('f:Moorlicht.mkv', 'Moorlicht', { share: true }),
+    ];
+    assert.deepEqual(MS.withoutDuplicates(shares, jf).map((x) => x.id), ['f:Kupferstadt.1961.mkv', 'f:Graufeld.mkv', 'f:Moorlicht.mkv']);
+    const ep = title({ id: 'e', kind: 'episode', name: 'Ebbe', seriesName: 'Graufeld', season: 1, episode: 2 });
+    assert.equal(MS.same(ep, { ...ep, id: 'f:x', name: 'Graufeld', fromShare: true }), true);
+    assert.equal(MS.same(ep, { ...ep, id: 'f:y', episode: 3 }), false);
+    assert.deepEqual(MS.withoutDuplicates(shares, []), shares);
+    // the core's keys win over the page's own
+    assert.equal(MS.same({ kind: 'movie', name: 'A', key: 'x' }, { kind: 'movie', name: 'B', key: 'x' }), true);
+  });
+
+  it('Filme A–Z: the shares\' titles in their places, later ones wait for the next page', () => {
+    const jf = [movie('a', 'Achterwasser'), movie('b', 'Blaue Stunde in Tarnow'), movie('k', 'Kobaltnacht')];
+    const shares = [movie('f:z', 'Zwielicht', { share: true }), movie('f:d', 'Der Pegelwart', { share: true }), movie('f:aa', 'Ankerplatz', { share: true }), movie('f:k', 'Kobaltnacht', { share: true })];
+    const f = { sort: 'name', unplayed: false, genre: null };
+    assert.deepEqual(MS.mergeGrid(jf, false, shares, f).map((x) => x.id), ['a', 'f:aa', 'b', 'f:d', 'k']);
+    assert.deepEqual(MS.mergeGrid(jf, true, shares, f).map((x) => x.id), ['a', 'f:aa', 'b', 'f:d', 'k', 'f:z']);
+    assert.deepEqual(MS.mergeGrid([], true, shares, f).map((x) => x.id), ['f:aa', 'f:d', 'f:k', 'f:z'], 'only shares');
+    assert.deepEqual(MS.mergeGrid([], false, shares, f), [], 'Jellyfin not loaded yet');
+    assert.deepEqual(MS.mergeGrid(jf, true, shares, { ...f, genre: 'Drama' }).map((x) => x.id), ['a', 'b', 'k'], 'a genre: the shares have none');
+    const played = [movie('f:p', 'Paulas Werkstatt', { share: true, played: true })];
+    assert.deepEqual(MS.mergeGrid([], true, played, { ...f, unplayed: true }), []);
+    const byYear = MS.mergeGrid([movie('j', 'Jahr 2020', { year: 2020 })], true, [movie('f:n', 'Neu', { share: true, year: 2026 }), movie('f:o', 'Alt', { share: true, year: 1999 })], { ...f, sort: 'year' });
+    assert.deepEqual(byYear.map((x) => x.id), ['f:n', 'j', 'f:o']);
+  });
+
+  it('Weiterschauen of all sources: watched last first, a share\'s twin of a Jellyfin title goes', () => {
+    const jf = { ok: true, items: [movie('k', 'Kobaltnacht', { playedAt: 300 }), movie('p', 'Paulas Werkstatt', { playedAt: 100 })] };
+    const sh = { ok: true, items: [movie('f:l', 'Die Lindqvist-Akten', { share: true, playedAt: 200 }), movie('f:k', 'Kobaltnacht', { share: true, playedAt: 400 })] };
+    assert.deepEqual(MS.mergeResume([jf, sh], 12).map((x) => x.id), ['k', 'f:l', 'p']);
+    assert.deepEqual(MS.mergeResume([jf, sh], 2).map((x) => x.id), ['k', 'f:l']);
+    // a share's title Jellyfin has (known from the rows), even when Jellyfin has not started it
+    assert.deepEqual(MS.mergeResume([sh], 12, [movie('j-l', 'Die Lindqvist-Akten')]).map((x) => x.id), ['f:k']);
+    const latest = MS.mergeLatest([{ ok: true, items: [movie('s', 'Sternwarte 9', { addedAt: 50 })] }, { ok: true, items: [movie('f:g', 'Graufeld', { share: true, addedAt: 70 })] }], 16);
+    assert.deepEqual(latest.map((x) => x.id), ['f:g', 's']);
+  });
+
+  it('the search: Jellyfin first, a share\'s twin goes', () => {
+    const r = MS.mergeSearch([{ ok: true, items: [movie('j', 'Kobaltnacht', { year: 2025 })] }, { ok: true, items: [movie('f:k', 'Kobaltnacht', { share: true, year: 2025 }), movie('f:m', 'Kobaltmond', { share: true })] }], 'Kobalt');
+    assert.deepEqual(r.map((x) => x.id), ['j', 'f:m']);
+  });
+});
+
+describe('Ordner (4h)', () => {
+  const entry = (o) => ({ name: 'x', path: 'x', directory: false, size: 0, kind: 'video', progress: null, ...o });
+
+  it('folders, videos and sound; a line with size, length and "noch … Min."', () => {
+    const items = [entry({ name: 'Urlaub 2025', directory: true, kind: 'folder' }), entry({ name: 'poster.jpg', kind: 'image' }), entry({ name: 'a.srt', kind: 'subtitle' }), entry({ name: 'Hörspiel.mp3', kind: 'audio' }), entry({ name: 'Notizen.txt', kind: null })];
+    assert.deepEqual(MS.folderItems(items).map((e) => e.name), ['Urlaub 2025', 'Hörspiel.mp3']);
+    const r = MS.folderRow(entry({ name: 'Geburtstag Oma.mkv', title: 'Geburtstag Oma', size: 1.8e9, poster: 'gcmedia://image/t/p.jpg', progress: { positionMs: 23 * MIN, durationMs: 42 * MIN, played: false } }), t, 'de');
+    assert.deepEqual(r, { kind: 'video', title: 'Geburtstag Oma', sub: '1,8 GB · media.runtime.m(42) · media.left.min(19)', picture: 'gcmedia://image/t/p.jpg', progress: 55, played: false, file: 'Geburtstag Oma.mkv' });
+    const ep = MS.folderRow(entry({ name: 'Graufeld.S01E02.Ebbe.mkv', title: 'Ebbe', season: 1, episode: 2, size: 920e6, progress: { positionMs: 0, durationMs: 0, played: true } }), t, 'en');
+    assert.equal(ep.sub, 'media.episode(1,2) · 920 MB');
+    assert.equal(ep.played, true);
+    assert.equal(MS.folderRow(entry({ name: 'Ohne Titel.mp4' }), t, 'de').title, 'Ohne Titel');
+    assert.equal(MS.folderRow(entry({ name: 'Urlaub', directory: true }), t, 'de').kind, 'folder');
+    assert.equal(MS.sizeLabel(3.4e9, 'de'), '3,4 GB');
+    assert.equal(MS.sizeLabel(34e9, 'de'), '34 GB');
+    assert.equal(MS.sizeLabel(0, 'de'), null);
+  });
+
+  it('the path as buttons, the folder above, the way of the share', () => {
+    assert.deepEqual(MS.crumbs('Filme/Familie', '\\\\nas\\filme'), [{ label: '\\\\nas\\filme', dir: '' }, { label: 'Filme', dir: 'Filme' }, { label: 'Familie', dir: 'Filme/Familie' }]);
+    assert.equal(MS.parentDir('Filme/Familie'), 'Filme');
+    assert.equal(MS.parentDir('Filme'), '');
+    assert.equal(MS.parentDir(''), null);
+    assert.deepEqual(MS.shareWay(share(), 'smb', { atHome: true }, t), { label: 'SMB · media.folders.home', hint: 'media.folders.pairHint' });
+    assert.deepEqual(MS.shareWay(share({ pairWith: null, kind: 'webdav' }), 'webdav', { atHome: false }, t), { label: 'WebDAV · media.folders.away', hint: 'media.folders.originalHint' });
+    assert.equal(MS.shareWay(share(), null, {}, t).label, 'SMB');
+  });
+
+  it('the check before the start: what the PC cannot, VLC or another app', () => {
+    const dts = { verdict: 'partial', container: 'mkv', video: 'ok', audio: 'no', reasons: ['audio_codec'], external: true, streams: { video: ['h264'], audio: ['dts'], subtitles: [] } };
+    assert.deepEqual(MS.checkNote(dts, t), { level: 'warn', text: 'media.check.audio(DTS)', external: true });
+    assert.deepEqual(MS.checkNote({ verdict: 'no', container: 'avi', reasons: ['container'], external: true }, t), { level: 'bad', text: 'media.check.container(AVI)', external: true });
+    assert.deepEqual(MS.checkNote({ verdict: 'yes', reasons: [], external: false }, t), { level: 'ok', text: 'media.check.ok', external: false });
+    assert.equal(MS.checkNote({ verdict: 'yes', reasons: ['picture_subtitles'], streams: { audio: ['aac'] } }, t).level, 'warn');
+    assert.equal(MS.checkNote({ verdict: 'unknown', reasons: ['unknown'] }, t).level, 'unknown');
+    assert.equal(MS.checkNote({ verdict: 'partial', reasons: ['hevc_no_hw'], external: true, streams: { video: ['hevc'], audio: ['aac'] } }, t).text, 'media.check.hevc');
+    assert.equal(MS.checkNote(null, t), null);
+    assert.equal(MS.externalApp({ vlc: true }, 'webdav'), 'vlc');
+    assert.equal(MS.externalApp({ vlc: false, openPath: true }, 'smb'), 'default');
+    assert.equal(MS.externalApp({ vlc: false, openPath: true }, 'webdav'), null, 'WebDAV has no path for Windows\' app');
+    assert.equal(MS.errorText('no_vlc', t), 'media.error.no_vlc');
+  });
+
+  it('the page and the main process are wired for the folders', () => {
+    const view = read('src', 'renderer', 'media-view.js');
+    assert.match(view, /api\.shareList\(/);
+    assert.match(view, /api\.shareCheck\(/);
+    assert.match(view, /api\.shareExternal\(/);
+    assert.match(read('src', 'renderer', 'media-player.js'), /media\.check\.anyway/);
+    assert.match(read('src', 'main', 'main.js'), /openPath: \(target\) => shell\.openPath\(target\)/);
+  });
+});

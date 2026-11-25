@@ -29,7 +29,7 @@
 	const ROW_LIMIT = 16;
 	const HOME_CARD_KEY = 'gc.media.homeCard';
 	const ERROR_CODES = ['invalid', 'offline', 'timeout', 'unauthorized', 'not_found', 'unsupported', 'unsupported_version', 'quick_connect_off',
-		'expired', 'signed_out', 'no_protect', 'too_many', 'smb_conflict', 'cert_untrusted', 'cert_changed', 'no_lan_route', 'failed'];
+		'expired', 'signed_out', 'no_protect', 'too_many', 'smb_conflict', 'cert_untrusted', 'cert_changed', 'no_lan_route', 'no_vlc', 'failed'];
 	// Chromium (Electron on Windows) decodes these sounds itself; everything else Jellyfin converts (core utils/media-jellyfin.js)
 	const DECODED_AUDIO = ['aac', 'mp3', 'opus', 'flac', 'vorbis'];
 	const CODEC_LABELS = {
@@ -46,15 +46,15 @@
 
 	// ── sources and the way to them ─────────────────────────
 
-	/** The sources of media:status that can be asked now, Jellyfin first (in the order they were set up). */
+	/**
+	 * The sources of media:status that can be asked now, Jellyfin first (in the order they were set up); `library`: the
+	 * ready Jellyfin servers and the shares (a pair once, as the core lists it) — the rows, grids and the search (4h).
+	 */
 	function sourcesOf(status) {
 		const all = list(status && status.sources);
-		return {
-			all,
-			jellyfin: all.filter((s) => s.kind === 'jellyfin'),
-			ready: all.filter((s) => s.kind === 'jellyfin' && s.ready),
-			shares: all.filter((s) => s.kind === 'smb' || s.kind === 'webdav'),
-		};
+		const ready = all.filter((s) => s.kind === 'jellyfin' && s.ready);
+		const shares = all.filter((s) => s.kind === 'smb' || s.kind === 'webdav');
+		return { all, jellyfin: all.filter((s) => s.kind === 'jellyfin'), ready, shares, library: ready.concat(shares.filter((s) => s.ready !== false)) };
 	}
 
 	/** The Jellyfin source the grid shows: the one chosen when it is still there and signed in, else the first ready one. */
@@ -248,8 +248,52 @@
 		return l.every((x) => isNew(x, now)) ? t('media.row.thisWeek') : t('media.row.count', { count: l.length });
 	}
 
-	/** Several Jellyfin servers: "Weiterschauen" of all of them, the one played last first, each title once. */
-	function mergeResume(answers, limit = ROW_LIMIT) {
+	// ── titles of several sources (4h, as Android's MediaLogic) ─
+
+	/** The key two titles are the same by (letters and digits, no case) — the core sends it as `key`. */
+	function keyOf(name) {
+		return String(name || '').toLowerCase().replace(/[^\p{L}\p{Nd}]/gu, '');
+	}
+
+	/** A–Z as Jellyfin sorts (an English article in front does not count) — the core sends it as `sortKey`. */
+	function sortKeyOf(name) {
+		const n = String(name || '').toLowerCase().trim();
+		const article = ['the ', 'a ', 'an '].find((x) => n.startsWith(x) && n.length > x.length);
+		const plain = (article ? n.slice(article.length) : n).replace(/ß/g, 'ss').normalize('NFD').replace(/\p{M}+/gu, '');
+		return plain.replace(/[^\p{L}\p{Nd} ]/gu, '').replace(/ +/g, ' ').trim();
+	}
+
+	const titleKey = (it) => (typeof it.key === 'string' ? it.key : keyOf(it.kind === 'episode' ? it.seriesName || it.name : it.name));
+	const sortOf = (it) => (typeof it.sortKey === 'string' ? it.sortKey : sortKeyOf(it.name));
+
+	/** Two titles are the same film, series or episode (the name, and the year when both have one). */
+	function same(a, b) {
+		if (!a || !b) return false;
+		if (a.kind === 'episode' || b.kind === 'episode') {
+			return a.kind === b.kind && Number.isInteger(a.season) && a.season === b.season && a.episode === b.episode
+				&& !!a.seriesName && !!b.seriesName && keyOf(a.seriesName) === keyOf(b.seriesName);
+		}
+		if ((a.kind === 'series') !== (b.kind === 'series')) return false;
+		const k = titleKey(a);
+		if (!k || k !== titleKey(b)) return false;
+		return !a.year || !b.year || a.year === b.year;
+	}
+
+	/** `shares`' titles without those `jellyfin` has too: a title in both shows once, Jellyfin's. */
+	function withoutDuplicates(shares, jellyfin) {
+		const j = list(jellyfin);
+		if (!j.length) return list(shares);
+		const byKey = new Map();
+		for (const it of j) {
+			const k = titleKey(it);
+			if (!byKey.has(k)) byKey.set(k, []);
+			byKey.get(k).push(it);
+		}
+		return list(shares).filter((s) => !(byKey.get(titleKey(s)) || []).some((x) => same(s, x)));
+	}
+
+	/** The titles of several answers, each once (Jellyfin's first: a share's twin goes), in the order they came. */
+	function flatten(answers, known) {
 		const seen = new Set();
 		const out = [];
 		for (const a of answers) for (const it of list(a && a.ok ? a.items : [])) {
@@ -258,20 +302,58 @@
 			seen.add(key);
 			out.push(it);
 		}
-		out.sort((a, b) => (num(b.playedAt) || 0) - (num(a.playedAt) || 0));
-		return out.slice(0, limit);
+		const jf = out.filter((x) => x.fromShare !== true).concat(list(known));
+		const shares = withoutDuplicates(out.filter((x) => x.fromShare === true), jf);
+		return out.filter((x) => x.fromShare !== true || shares.includes(x));
 	}
 
-	/** Several Jellyfin servers: "Zuletzt hinzugefügt" of all of them, the newest first. */
-	function mergeLatest(answers, limit = ROW_LIMIT) {
+	const stable = (items, cmp) => items.map((it, i) => ({ it, i })).sort((a, b) => cmp(a.it, b.it) || a.i - b.i).map((x) => x.it);
+
+	/** "Weiterschauen" of all sources (Jellyfin servers and shares): the one played last first, each title once. */
+	function mergeResume(answers, limit = ROW_LIMIT, known = []) {
+		return stable(flatten(answers, known), (a, b) => (num(b.playedAt) || 0) - (num(a.playedAt) || 0)).slice(0, limit);
+	}
+
+	/** "Zuletzt hinzugefügt" of all sources, the newest first, a title of Jellyfin and a share once (Jellyfin's). */
+	function mergeLatest(answers, limit = ROW_LIMIT, known = []) {
+		return stable(flatten(answers, known), (a, b) => (num(b.addedAt) || 0) - (num(a.addedAt) || 0)).slice(0, limit);
+	}
+
+	/** The order of a grid: A–Z, newest first, or the latest year first; then A–Z. */
+	function comparator(sort) {
+		const byName = (a, b) => { const x = sortOf(a); const y = sortOf(b); return x < y ? -1 : x > y ? 1 : 0; };
+		if (sort === 'added') return (a, b) => (num(b.addedAt) || 0) - (num(a.addedAt) || 0) || byName(a, b);
+		if (sort === 'year') return (a, b) => (num(b.year) || 0) - (num(a.year) || 0) || byName(a, b);
+		return byName;
+	}
+
+	/** Not watched yet: a film or episode not played, a series with episodes left. */
+	function unwatched(t) {
+		if (t.kind === 'series' || t.kind === 'season') return Number.isInteger(t.unplayed) ? t.unplayed > 0 : !t.played;
+		return !t.played;
+	}
+
+	/**
+	 * A grid of Jellyfin (its pages in the server's order) with the shares' titles in their places — a title Jellyfin
+	 * has too once, Jellyfin's. While Jellyfin has more pages (`complete` false) a share's title after the last one
+	 * loaded waits for the next page. Filters: only unwatched ones; a genre leaves the shares out (they have none).
+	 */
+	function mergeGrid(jellyfin, complete, shares, f) {
+		const o = f || {};
+		const j = list(jellyfin);
+		if (!complete && !j.length) return [];
+		const cmp = comparator(o.sort);
+		const last = j.length ? j[j.length - 1] : null;
+		const waiting = stable(withoutDuplicates(shares, j).filter((t) => (!o.unplayed || unwatched(t)) && !o.genre), cmp)
+			.filter((t) => complete || !last || cmp(t, last) <= 0);
 		const out = [];
-		const seen = new Set();
-		for (const a of answers) for (const it of list(a && a.ok ? a.items : [])) {
-			const key = `${it.sourceId}|${it.id}`;
-			if (!seen.has(key)) { seen.add(key); out.push(it); }
+		let i = 0;
+		for (const x of j) {
+			while (i < waiting.length && cmp(waiting[i], x) < 0) out.push(waiting[i++]);
+			out.push(x);
 		}
-		out.sort((a, b) => (num(b.addedAt) || 0) - (num(a.addedAt) || 0));
-		return out.slice(0, limit);
+		while (i < waiting.length) out.push(waiting[i++]);
+		return out;
 	}
 
 	const norm = (s) => String(s || '').toLocaleLowerCase('de').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -282,12 +364,9 @@
 	 */
 	function mergeSearch(answers, q) {
 		const term = norm(q);
-		const seen = new Set();
 		const out = [];
 		for (const a of answers) for (const it of list(a && a.ok ? a.items : [])) {
-			const key = `${it.kind === 'episode' ? `${it.seriesId}|${it.season}|${it.episode}` : it.kind}|${norm(it.name)}|${it.year || ''}`;
-			if (seen.has(key)) continue;
-			seen.add(key);
+			if (out.some((x) => (x.sourceId === it.sourceId && x.id === it.id) || same(x, it))) continue;
 			out.push(it);
 		}
 		const rank = (it) => (it.kind === 'episode' ? 2 : 0) + (norm(it.name).startsWith(term) ? 0 : 1);
@@ -514,6 +593,113 @@
 		return i >= 0 && i + 1 < l.length ? l[i + 1] : null;
 	}
 
+	// ── Ordner: the folders of a share (4h) ─────────────────
+
+	/** What the folder view shows: folders, videos and sound (no pictures, subtitles or other files). */
+	function folderItems(items) {
+		return list(items).filter((e) => e.directory === true || e.kind === 'video' || e.kind === 'audio');
+	}
+
+	/** "1,4 GB" / "700 MB" / "12 kB". */
+	function sizeLabel(bytes, lang) {
+		const n = num(bytes);
+		if (n === null || n <= 0) return null;
+		const dec = (v) => (lang === 'en' ? v : v.replace('.', ','));
+		if (n >= 1e9) return `${dec((n / 1e9).toFixed(n >= 1e10 ? 0 : 1))} GB`;
+		if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
+		return `${Math.max(1, Math.round(n / 1e3))} kB`;
+	}
+
+	/** The name of a file without its extension ("Moorlicht.mp4" → "Moorlicht"). */
+	function baseName(name) {
+		const n = String(name || '');
+		const i = n.lastIndexOf('.');
+		return i > 0 ? n.slice(0, i) : n;
+	}
+
+	/**
+	 * A line of the folder view: { kind 'folder' | 'video' | 'audio', title (from the name: "Kobaltnacht", an episode's
+	 * name), sub ("2025 · 1,4 GB · 1 Std. 48 Min. · noch 19 Min." / "Staffel 1 · Folge 2 · …"), picture, progress 0..100,
+	 * played, file (the name as it is) }.
+	 */
+	function folderRow(e, t, lang) {
+		if (e.directory) return { kind: 'folder', title: e.name, sub: '', picture: null, progress: 0, played: false, file: e.name };
+		const p = isObj(e.progress) ? e.progress : null;
+		const dur = p && p.durationMs > 0 ? p.durationMs : null;
+		const pos = p && !p.played ? p.positionMs || 0 : 0;
+		const parts = [];
+		if (Number.isInteger(e.season) && Number.isInteger(e.episode)) parts.push(t('media.episode', { season: e.season, episode: e.episode }));
+		if (e.year) parts.push(String(e.year));
+		parts.push(sizeLabel(e.size, lang));
+		if (dur) parts.push(runtime(dur, t));
+		if (pos > 0 && dur) parts.push(leftLabel({ leftMs: Math.max(0, dur - pos) }, t));
+		return {
+			kind: e.kind === 'audio' ? 'audio' : 'video',
+			title: e.title || baseName(e.name),
+			sub: parts.filter(Boolean).join(' · '),
+			picture: e.poster || null,
+			progress: pos > 0 && dur ? Math.round(Math.min(1, pos / dur) * 100) : 0,
+			played: !!(p && p.played),
+			file: e.name,
+		};
+	}
+
+	/** The path above a folder as buttons: [{ label, dir }] from the share's root ("\\nas\filme") down. */
+	function crumbs(dir, rootLabel) {
+		const parts = String(dir || '').split('/').filter(Boolean);
+		const out = [{ label: rootLabel, dir: '' }];
+		parts.forEach((p, i) => out.push({ label: p, dir: parts.slice(0, i + 1).join('/') }));
+		return out;
+	}
+
+	/** The folder above `dir` ("" at the root: none). */
+	function parentDir(dir) {
+		const parts = String(dir || '').split('/').filter(Boolean);
+		return parts.length ? parts.slice(0, -1).join('/') : null;
+	}
+
+	/** The line under a share's head: "SMB · Zuhause" / "WebDAV · unterwegs", with the hint of a pair. */
+	function shareWay(source, via, link, t) {
+		const way = wayOf(link);
+		const kind = via === 'webdav' ? 'WebDAV' : via === 'smb' ? 'SMB' : source && source.kind === 'webdav' ? 'WebDAV' : 'SMB';
+		const where = way === 'home' ? t('media.folders.home') : way === 'away' ? t('media.folders.away') : null;
+		return {
+			label: where ? `${kind} · ${where}` : kind,
+			hint: source && source.pairWith ? t('media.folders.pairHint') : t('media.folders.originalHint'),
+		};
+	}
+
+	/**
+	 * The check before the start (core check: utils/media-playable.js) as the page says it: { level 'ok' | 'warn' |
+	 * 'bad' | 'unknown', text ("Ton DTS: am PC kein Ton"), external (VLC is the better way) }; null without a check.
+	 */
+	function checkNote(check, t) {
+		if (!isObj(check)) return null;
+		const reasons = Array.isArray(check.reasons) ? check.reasons : [];
+		const st = isObj(check.streams) ? check.streams : {};
+		const audio = Array.isArray(st.audio) && st.audio.length ? codecLabel(st.audio[0]) : null;
+		const video = Array.isArray(st.video) && st.video.length ? codecLabel(st.video[0]) : null;
+		const container = check.container ? String(check.container).toUpperCase() : '';
+		const texts = [];
+		if (reasons.includes('container')) texts.push(t('media.check.container', { format: container || '?' }));
+		if (reasons.includes('hevc_no_hw')) texts.push(t('media.check.hevc'));
+		if (reasons.includes('video_codec')) texts.push(t('media.check.video', { codec: video || '?' }));
+		if (reasons.includes('audio_codec')) texts.push(t('media.check.audio', { codec: audio || '?' }));
+		if (reasons.includes('some_audio')) texts.push(t('media.check.someAudio', { codec: audio || '?' }));
+		if (reasons.includes('picture_subtitles')) texts.push(t('media.check.pictureSubs'));
+		const verdict = check.verdict;
+		const level = verdict === 'yes' ? (texts.length ? 'warn' : 'ok') : verdict === 'partial' ? 'warn' : verdict === 'no' ? 'bad' : 'unknown';
+		if (!texts.length) texts.push(level === 'ok' ? t('media.check.ok') : t('media.check.unknown'));
+		return { level, text: texts.join(' · '), external: check.external === true && (verdict === 'no' || verdict === 'partial') };
+	}
+
+	/** Which other app: VLC when it is there, else Windows' app for the file (SMB only: WebDAV has no path), else none. */
+	function externalApp(info, via) {
+		if (isObj(info) && info.vlc) return 'vlc';
+		if (isObj(info) && info.openPath !== false && via === 'smb') return 'default';
+		return null;
+	}
+
 	// ── Quellen: the dialog ─────────────────────────────────
 
 	const ipv4 = (h) => /^(?:\d{1,3}\.){3}\d{1,3}$/.test(h) && h.split('.').every((p) => Number(p) <= 255);
@@ -621,6 +807,22 @@
 		mergeResume,
 		mergeLatest,
 		mergeSearch,
+		keyOf,
+		sortKeyOf,
+		same,
+		withoutDuplicates,
+		comparator,
+		unwatched,
+		mergeGrid,
+		folderItems,
+		sizeLabel,
+		baseName,
+		folderRow,
+		crumbs,
+		parentDir,
+		shareWay,
+		checkNote,
+		externalApp,
 		genresOf,
 		appendPage,
 		gridMove,

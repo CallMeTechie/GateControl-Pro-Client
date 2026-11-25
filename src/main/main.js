@@ -1319,6 +1319,8 @@ function initializeServices() {
       client: 'GateControl Pro',
       version: require('../../package.json').version,
       deviceName: () => _os.hostname().slice(0, 64) || 'PC',
+      // Ordner (4h): "In anderer App öffnen" hands an SMB file's UNC path to Windows' app for its type
+      openPath: (target) => shell.openPath(target),
       log,
     })
     : null;
