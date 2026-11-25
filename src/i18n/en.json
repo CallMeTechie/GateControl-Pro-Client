@@ -5270,7 +5270,6 @@
     "sources": {
       "button": "Sources",
       "title": "Sources",
-      "add": "Add source",
       "back": "Back to Media",
       "none": "No source set up yet",
       "managed": "The admin sets up the sources in the server (GateControl › Media). There is nothing to set up on this PC."
@@ -5386,8 +5385,6 @@
     },
     "empty": {
       "title": "No media shared with you yet",
-      "text": "Movies and shows from Jellyfin and the shares of your NAS — at home straight from the LAN, away through your own tunnel.",
-      "add": "Add source",
       "nothing": "Nothing here yet.",
       "noResults": "No results.",
       "managed": "Movies and shows come from Jellyfin and the NAS shares the admin shares with you in the GateControl server – at home straight from the LAN, away through the VPN."
@@ -5422,10 +5419,6 @@
       "device": "this device is called “{{device}}”",
       "connected": "connected",
       "signedOutPill": "signed out",
-      "signOut": "Sign out",
-      "signIn": "Sign in again",
-      "edit": "Edit",
-      "remove": "Remove",
       "smbHomeWebdav": "SMB at home, WebDAV away",
       "smb": "SMB share",
       "webdav": "WebDAV",
@@ -5446,83 +5439,9 @@
       "title": "“Continue watching” on the overview",
       "text": "Started movies and episodes as a card on the app's overview."
     },
-    "authorize": {
-      "title": "Sign in a device",
-      "text": "Sign in a TV or another PC with Quick Connect: enter the code the other device shows. GateControl confirms it with your Jellyfin access.",
-      "code": "Quick Connect code",
-      "server": "Jellyfin server",
-      "confirm": "Confirm",
-      "done": "Confirmed. The other device signs in now.",
-      "notFound": "Jellyfin doesn't know this code. Has it expired?",
-      "invalid": "The code has 6 digits."
-    },
     "home": {
       "title": "Continue watching",
       "all": "All in Media"
-    },
-    "dlg": {
-      "title": "Add source",
-      "editTitle": "Edit source",
-      "close": "Close",
-      "cancel": "Cancel",
-      "next": "Next",
-      "back": "Back",
-      "connect": "Connect",
-      "connecting": "Connecting …",
-      "signIn": "Sign in",
-      "kind": {
-        "jellyfin": "Jellyfin",
-        "smb": "SMB share",
-        "webdav": "WebDAV"
-      },
-      "found": "Found in the home network",
-      "searching": "Searching the home network …",
-      "noneFound": "No Jellyfin server found in the home network.",
-      "searchAgain": "Search again",
-      "reached": "reached",
-      "address": "Address",
-      "user": "User",
-      "password": "Password",
-      "userHint": "e.g. media-read",
-      "webdavAddress": "WebDAV address",
-      "hint": {
-        "jellyfin": "e.g. 192.168.1.20 or https://192.168.1.20:8920",
-        "smb": "e.g. \\\\192.168.1.20\\movies – ideally a NAS user with read access only",
-        "webdav": "e.g. https://192.168.1.20:5006/movies"
-      },
-      "qc": "Quick Connect",
-      "userPass": "User & password",
-      "qcCode": "Code",
-      "qcHint": "Confirm it in Jellyfin (Profile › Quick Connect) or in GateControl on another device: Sign in a device.",
-      "qcWaiting": "Waiting for confirmation …",
-      "qcNew": "New code",
-      "passwordOnce": "The password goes to Jellyfin once and isn't stored.",
-      "smbNoteStrong": "Windows signs the share in for GateControl",
-      "smbNote": "(only for this app session, no drive letter). If the Explorer is already connected to the server with another user, Windows refuses (error 1219). GateControl then says so and offers “Use with the Explorer's access”.",
-      "smbIp": "On a PC prefer the IP address over \\\\{{host}}: away, the tunnel doesn't resolve the NAS name.",
-      "encrypted": "Password encrypted by Windows (like Mail and Vault)",
-      "alsoWebdav": "Also set up as WebDAV, for when you're away",
-      "conflict": "The Explorer is already connected to \\\\{{host}} with another user. Windows doesn't allow a second sign-in to the same server (error 1219).",
-      "useExisting": "Use with the Explorer's access",
-      "done": "{{name}} is set up.",
-      "webdavFailed": "The SMB share is set up, WebDAV isn't: {{error}}",
-      "problem": {
-        "address": "Please enter a valid address.",
-        "user": "The user for the password is missing.",
-        "webdav": "Please enter the WebDAV address.",
-        "invalid": "That doesn't work."
-      },
-      "cert": {
-        "title": "Confirm certificate",
-        "text": "The server shows a certificate Windows doesn't trust – on a NAS it is usually self-signed. Check the fingerprint (e.g. in DSM under Security › Certificate) and confirm it once.",
-        "changed": "The certificate isn't the one you confirmed any more. Only confirm the new one if you renewed it yourself.",
-        "address": "Address",
-        "subject": "Issued to",
-        "issuer": "Issued by",
-        "validTo": "Valid until",
-        "fingerprint": "Fingerprint (SHA-256)",
-        "trust": "Trust and continue"
-      }
     },
     "error": {
       "invalid": "That address isn't right.",
