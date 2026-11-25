@@ -11,8 +11,13 @@
  * runs over all sources, and "Ordner" shows a share's folders and files (picture and title from the name or a picture
  * beside it, size, length, "noch 19 Min.", at home SMB, away WebDAV; at home the files Chromium cannot play are marked
  * before, "In VLC öffnen" / "In anderer App öffnen" in the detail and the player). The page
- * "Quellen" with its dialog is media-sources-view.js (window.GCMediaSources), the card "Weiterschauen" of the
+ * "Quellen" is media-sources-view.js (window.GCMediaSources), the card "Weiterschauen" of the
  * app's overview is built here as well (homeCard()).
+ *
+ * Medien-Plugin (W2): the sources come from the server — nothing is set up here. The entry "Medien" shows only while
+ * the plugin gives its tab (o.onVisible(status.server.visible)); opening the page asks the server's list again. The
+ * network rule of the core: away only through the VPN — while the core starts the tunnel the banner says "VPN wird
+ * verbunden …"; does it not come up, "Unterwegs nur über VPN" with "VPN einschalten" (o.connectVpn).
  *
  * Data: window.gatecontrol.media (core MediaService over IPC; posters as gcmedia:// addresses, no access in the
  * page); texts: media.* of the Pro locales; view logic without DOM: media-state.js (window.GCMediaState). Playing is
@@ -124,6 +129,7 @@
 			search: { q: '', items: [], loading: false, seq: 0, error: null },
 			home: { items: [], loaded: false },
 			signedOut: new Set(),
+			vpn: null,              // the tunnel started for Medien: 'connecting' | 'failed' | null
 			shareTitles: new Map(), // `${tab}|${share ids}` → { items, loading, loaded, error }: all films / series of the shares
 			folder: { sourceId: null, dir: '', items: [], via: null, link: null, loading: false, error: null, seq: 0, loaded: false },
 			checks: new Map(),      // `${source}|${item}` → the core's check of a share's file (or { loading })
@@ -191,6 +197,39 @@
 			return st;
 		}
 
+		/** Opening Medien: the server's list asked again (the core merges it), then the status. */
+		async function refreshServer() {
+			if (api.sources && typeof api.sources.refresh === 'function') {
+				try { await api.sources.refresh(); } catch { /* the last list counts */ }
+			}
+			return loadStatus();
+		}
+
+		let lastVisible = null;
+		function tellVisible() {
+			const v = MS.visible(S.status);
+			if (v === lastVisible || !S.status) return;
+			lastVisible = v;
+			if (typeof o.onVisible === 'function') o.onVisible(v, S.status.server || null);
+		}
+
+		function onVpn(ev) {
+			const st = ev && ev.state;
+			S.vpn = st === 'connecting' ? 'connecting' : st === 'failed' ? 'failed' : null;
+			renderBanner();
+			if (st === 'up') loadStatus().then(() => { if (S.shown && S.view === 'library') loadRows(true); }).catch(() => {});
+		}
+
+		async function connectVpn() {
+			if (typeof o.connectVpn !== 'function') return;
+			S.vpn = 'connecting';
+			renderBanner();
+			try { await o.connectVpn(); } catch { /* the tunnel's own message */ }
+			S.vpn = null;
+			await loadStatus();
+			if (S.view === 'library') loadRows(true);
+		}
+
 		function afterStatus() {
 			const src = MS.pickSource(S.status, S.sourceId);
 			S.sourceId = src ? src.id : null;
@@ -201,6 +240,7 @@
 			render();
 			renderHome();
 			if (sources) sources.render();
+			tellVisible();
 		}
 
 		function source(id) { return MS.sourcesOf(S.status).all.find((s) => s.id === id) || null; }
@@ -235,17 +275,33 @@
 				S.signedOut.add(sourceId);
 				renderBanner();
 			}
+			if (r && !r.ok && r.code === 'vpn_required' && S.vpn !== 'connecting') {
+				S.vpn = 'failed';
+				renderBanner();
+			}
 			return r;
 		}
 
 		function renderBanner() {
+			clear(refs.banner);
+			// the network rule: "VPN wird verbunden …" / "Unterwegs nur über VPN – VPN einschalten"
+			if (S.vpn) {
+				refs.banner.hidden = false;
+				refs.banner.className = `md-banner md-vpn is-${S.vpn}`;
+				if (S.vpn === 'connecting') refs.banner.append(el('span', { class: 'dot pulse' }), el('span', { class: 'md-grow', text: t('media.vpn.connecting') }));
+				else {
+					refs.banner.append(icon('alert', 15), el('span', { class: 'md-grow', text: t('media.vpn.required') }));
+					if (typeof o.connectVpn === 'function') refs.banner.append(el('button', { type: 'button', class: 'btn btn-pri btn-xs md-vpn-on', text: t('media.vpn.connect'), on: { click: () => connectVpn() } }));
+				}
+				return;
+			}
+			refs.banner.className = 'md-banner';
 			const out = [...S.signedOut].map((id) => source(id)).filter(Boolean);
 			refs.banner.hidden = !out.length;
-			clear(refs.banner);
 			if (!out.length) return;
 			const s = out[0];
-			refs.banner.append(icon('alert', 15), el('span', { class: 'md-grow', text: t('media.signedOut', { name: MS.sourceChip(s, t) }) }),
-				el('button', { type: 'button', class: 'btn btn-sec btn-xs', text: t('media.src.signIn'), on: { click: () => { openSources(); if (sources) sources.signInAgain(s); } } }));
+			// a source of the server signs in again by itself (the plugin confirms): no button, nothing to type
+			refs.banner.append(icon('alert', 15), el('span', { class: 'md-grow', text: s.managed ? t('media.signedOutAuto', { name: MS.sourceChip(s, t) }) : t('media.signedOut', { name: MS.sourceChip(s, t) }) }));
 		}
 
 		// ── Head ─────────────────────────────────────────────
@@ -318,7 +374,9 @@
 			if (S.search.q) { renderSearch(); return; }
 			if (S.tab === 'folders') { renderFolders(); return; }
 			if (!all.length) {
-				refs.body.appendChild(emptyCard(t('media.empty.title'), t('media.empty.text'), { label: t('media.empty.add'), click: () => { openSources(); if (sources) sources.add(); } }));
+				const server = S.status.server;
+				const off = server && server.state === 'unavailable';
+				refs.body.appendChild(emptyCard(off ? t(server.reason === 'license_required' ? 'media.server.license' : 'media.server.off') : t('media.empty.title'), t('media.empty.managed'), null));
 				return;
 			}
 			if (!library.length) {
@@ -334,7 +392,7 @@
 				el('span', { class: 'md-empty-ic' }, [icon('film', 26, '1.6')]),
 				el('h2', { class: 'md-empty-h', text: title }),
 				el('p', { class: 'md-empty-tx', text }),
-				action ? el('button', { type: 'button', class: 'btn btn-pri', on: { click: action.click } }, [icon('plus', 15), el('span', { text: action.label })]) : null,
+				action ? el('button', { type: 'button', class: 'btn btn-pri', on: { click: action.click } }, [el('span', { text: action.label })]) : null,
 			]);
 		}
 
@@ -1221,6 +1279,10 @@
 
 		if (typeof api.onState === 'function') api.onState((st) => { if (st && st.ok) { S.status = st; S.statusError = null; afterStatus(); } });
 		if (typeof api.onLink === 'function') api.onLink((ev) => onLink(ev));
+		if (typeof api.onVpn === 'function') api.onVpn((ev) => onVpn(ev));
+		if (api.sources && typeof api.sources.onState === 'function') {
+			api.sources.onState((server) => { if (S.status && server) { S.status.server = server; afterStatus(); } });
+		}
 
 		loadStatus().then(() => loadHome()).catch(() => {});
 
@@ -1228,7 +1290,7 @@
 			show() {
 				S.shown = true;
 				refs.sb.hidden = false;
-				loadStatus().then(() => {
+				refreshServer().then(() => {
 					if (S.view === 'library' && S.tab === 'overview') loadRows(true);
 				});
 				if (S.view === 'sources' && sources) sources.show();

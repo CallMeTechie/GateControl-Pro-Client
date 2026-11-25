@@ -1,7 +1,7 @@
 'use strict';
 
 const { test, expect } = require('./support/fixtures');
-const { setupWithApiKey } = require('./support/ui');
+const { launchWithMedien } = require('./support/medien');
 const { startJellyfin } = require('./support/jellyfin-mock');
 
 // Medien › Player (Stufe 4g): plays in the app's window with its own controls — a film played directly (the file
@@ -13,19 +13,13 @@ const { startJellyfin } = require('./support/jellyfin-mock');
 
 const page$ = (page) => page.locator('#page-medien');
 
-async function signedIn(page, mock, jf) {
-  await setupWithApiKey(page, mock);
+/** Medien from the server (plugin Medien): signed in at Jellyfin by itself, away through the (fake) VPN. */
+async function signedIn(launchApp, mock, jf) {
+  const { page, md } = await launchWithMedien({ launchApp, mock, jf });
   await page.locator('#nav-medien').click();
   const p = page$(page);
-  await p.locator('.md-empty .btn-pri').click();
-  const dlg = page.locator('.md-dlg');
-  await dlg.locator('input.md-f-address').fill(jf.address);
-  await dlg.locator('.md-next').click();
-  await expect(dlg.locator('.md-qc-code')).toBeVisible();
-  jf.state.qcConfirmed = true;
-  await expect(dlg).toBeHidden({ timeout: 20000 });
-  await p.locator('.md-back').click();
-  return p;
+  await expect.poll(() => md.pairs, { timeout: 30000 }).toBe(1);
+  return { page, p };
 }
 
 const video = (page) => page.locator('.mp video');
@@ -37,8 +31,7 @@ test.describe('medien player', () => {
   test.afterEach(async () => { await jf.close(); });
 
   test('a film played directly: info line, keys, panel, progress at Jellyfin, back with Esc', async ({ launchApp, mock }) => {
-    const { page } = await launchApp();
-    const p = await signedIn(page, mock, jf);
+    const { page, p } = await signedIn(launchApp, mock, jf);
     await p.locator('.md-tabs [data-tab="movies"]').click();
     await p.locator('.md-grid .md-pst', { hasText: 'Achterwasser' }).click();
     await expect(p.locator('.md-det .md-det-h')).toHaveText('Achterwasser');
@@ -89,8 +82,7 @@ test.describe('medien player', () => {
   });
 
   test('HEVC without a decoder: no picture → asked again, HLS through hls.js; a text subtitle as WebVTT', async ({ launchApp, mock }) => {
-    const { page } = await launchApp();
-    const p = await signedIn(page, mock, jf);
+    const { page, p } = await signedIn(launchApp, mock, jf);
     await p.locator('.md-tabs [data-tab="movies"]').click();
     await p.locator('.md-grid .md-pst', { hasText: 'Kobaltnacht' }).click();
     await expect(p.locator('.md-det .md-play')).toContainText('42:10');
@@ -123,8 +115,7 @@ test.describe('medien player', () => {
   });
 
   test('the end of an episode: "Nächste Folge" plays the next one', async ({ launchApp, mock }) => {
-    const { page } = await launchApp();
-    const p = await signedIn(page, mock, jf);
+    const { page, p } = await signedIn(launchApp, mock, jf);
     await p.locator('.md-tabs [data-tab="series"]').click();
     await p.locator('.md-grid .md-pst', { hasText: 'Station Eisvogel' }).click();
     await p.locator('.md-ep', { hasText: 'Tauwetter' }).locator('.md-ep-play').click();

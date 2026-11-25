@@ -5272,7 +5272,8 @@
       "title": "Quellen",
       "add": "Quelle hinzufügen",
       "back": "Zurück zu Medien",
-      "none": "Noch keine Quelle eingerichtet"
+      "none": "Noch keine Quelle eingerichtet",
+      "managed": "Quellen richtet der Admin im Server ein (GateControl › Medien). Auf diesem PC ist nichts einzurichten."
     },
     "row": {
       "resume": "Weiterschauen",
@@ -5307,12 +5308,18 @@
       "home": "Zuhause · direkt von der NAS",
       "away": "Unterwegs · {{bw}}",
       "awayNoBw": "Unterwegs · über den Tunnel",
-      "checking": "Verbindung wird geprüft …"
+      "checking": "Verbindung wird geprüft …",
+      "blocked": "Unterwegs · nur über VPN",
+      "direct": "Unterwegs · direkt · {{bw}}",
+      "directNoBw": "Unterwegs · direkt (ohne VPN)"
     },
     "status": {
       "home": "Medien: Zuhause, direkt im LAN",
       "away": "Medien: Unterwegs, über den Tunnel · {{bw}}",
-      "awayNoBw": "Medien: Unterwegs, über den Tunnel"
+      "awayNoBw": "Medien: Unterwegs, über den Tunnel",
+      "blocked": "Medien: Unterwegs nur über VPN – VPN ist aus",
+      "direct": "Medien: Unterwegs, direkt (vom Admin erlaubt) · {{bw}}",
+      "directNoBw": "Medien: Unterwegs, direkt (vom Admin erlaubt)"
     },
     "sort": {
       "label": "Sortierung",
@@ -5378,15 +5385,16 @@
       "resume": "S{{s}} F{{e}} weiter ab {{time}}"
     },
     "empty": {
-      "title": "Medien von der NAS einrichten",
+      "title": "Noch keine Medien freigegeben",
       "text": "Filme und Serien von Jellyfin und den Freigaben deiner NAS, zu Hause direkt im LAN, unterwegs durch den eigenen Tunnel.",
       "add": "Quelle hinzufügen",
       "nothing": "Hier ist noch nichts.",
-      "noResults": "Keine Treffer."
+      "noResults": "Keine Treffer.",
+      "managed": "Filme und Serien kommen von Jellyfin und den NAS-Freigaben, die der Admin im GateControl-Server für dich freigibt – zu Hause direkt im LAN, unterwegs über das VPN."
     },
     "noJellyfin": {
       "title": "Kein Jellyfin angemeldet",
-      "text": "Übersicht, Filme und Serien kommen von Jellyfin. Melde dich unter Quellen an; deine NAS-Freigaben erscheinen unter Ordner."
+      "text": "Übersicht, Filme und Serien kommen von Jellyfin. Die Anmeldung läuft von selbst; deine NAS-Freigaben erscheinen unter Ordner."
     },
     "unsupported": {
       "title": "Medien gehen auf diesem PC nicht",
@@ -5394,7 +5402,7 @@
     },
     "folders": {
       "title": "Ordner der NAS-Freigaben",
-      "text": "Hier erscheinen die Ordner deiner SMB- und WebDAV-Freigaben mit Vorschau und Fortschritt. Richte eine Freigabe unter Quellen ein.",
+      "text": "Hier erscheinen die Ordner der NAS-Freigaben, die der Admin für dich freigibt, mit Vorschau und Fortschritt.",
       "sources": "Zu den Quellen",
       "path": "Pfad in der Freigabe",
       "up": "Eine Ebene höher",
@@ -5421,7 +5429,14 @@
       "smbHomeWebdav": "SMB zu Hause, WebDAV unterwegs",
       "smb": "SMB-Freigabe",
       "webdav": "WebDAV",
-      "explorer": "mit dem Explorer-Zugang"
+      "explorer": "mit dem Explorer-Zugang",
+      "signingIn": "wird angemeldet …",
+      "signingInPill": "wird angemeldet",
+      "noPassword": "Zugang fehlt",
+      "smbChecked": "SMB geprüft",
+      "smbConflict": "WebDAV, weil Windows schon mit einem anderen Benutzer verbunden ist",
+      "awayVpn": "Unterwegs nur über VPN",
+      "awayDirect": "Unterwegs auch ohne VPN über {{address}}"
     },
     "original": {
       "title": "Immer Original",
@@ -5516,9 +5531,9 @@
       "not_found": "Nicht gefunden.",
       "unsupported": "Das wird nicht unterstützt (SMB nur über Port 445).",
       "unsupported_version": "Dieser Jellyfin ist zu alt – GateControl braucht 10.9 oder neuer.",
-      "quick_connect_off": "Quick Connect ist auf diesem Server aus. Melde dich mit Benutzer und Passwort an.",
+      "quick_connect_off": "Der Admin muss Quick Connect in Jellyfin einschalten.",
       "expired": "Der Code ist abgelaufen.",
-      "signed_out": "Abgemeldet – bitte unter Quellen neu anmelden.",
+      "signed_out": "Abgemeldet – die Anmeldung läuft gleich von selbst neu.",
       "no_protect": "Windows kann hier nichts verschlüsseln, deshalb wird kein Zugang gespeichert.",
       "too_many": "Es sind schon 8 Quellen eingerichtet.",
       "smb_conflict": "Windows ist mit diesem Server schon unter einem anderen Benutzer verbunden (Fehler 1219).",
@@ -5526,7 +5541,19 @@
       "cert_changed": "Das Zertifikat des Servers hat sich geändert.",
       "no_lan_route": "Der Weg zur NAS im Heimnetz ließ sich nicht festlegen.",
       "failed": "Das hat nicht geklappt.",
-      "no_vlc": "VLC ist auf diesem PC nicht installiert."
+      "no_vlc": "VLC ist auf diesem PC nicht installiert.",
+      "vpn_required": "Unterwegs nur über VPN – VPN einschalten.",
+      "no_mapping": "Der Admin muss dich in GateControl › Medien mit Jellyfin verknüpfen.",
+      "admin_user": "Der Admin muss die Zuordnung zu Jellyfin ändern.",
+      "user_disabled": "Der Jellyfin-Benutzer ist deaktiviert – der Admin muss die Zuordnung ändern.",
+      "not_configured": "Die Quelle ist im Server noch nicht fertig eingerichtet.",
+      "no_access": "Diese Quelle ist für dich nicht mehr freigegeben.",
+      "rate_limited": "Zu viele Versuche – später erneut.",
+      "code_invalid": "Die Anmeldung bei Jellyfin ist abgelaufen – sie wird neu versucht.",
+      "device_mismatch": "Die Anmeldung bei Jellyfin passte nicht zu diesem Gerät – sie wird neu versucht.",
+      "plugin_unavailable": "Medien ist im Server ausgeschaltet.",
+      "license_required": "Medien braucht im Server die Lizenz für das Plugin Medien.",
+      "jellyfin_unreachable": "Der Server erreicht Jellyfin gerade nicht – später erneut."
     },
     "player": {
       "label": "Player",
@@ -5596,6 +5623,40 @@
       "noApp": "Mit VLC ließe sich die Datei abspielen – VLC ist auf diesem PC nicht installiert.",
       "openedVlc": "In VLC geöffnet.",
       "openedOther": "In der Windows-App geöffnet."
+    },
+    "signedOutAuto": "{{name}} wird neu angemeldet …",
+    "vpn": {
+      "connecting": "VPN wird verbunden …",
+      "required": "Unterwegs nur über VPN – VPN einschalten, um Medien zu öffnen.",
+      "connect": "VPN einschalten"
+    },
+    "way": {
+      "home": "Zuhause",
+      "vpn": "Unterwegs über VPN",
+      "direct": "Unterwegs direkt",
+      "blocked": "Nur über VPN"
+    },
+    "problem": {
+      "no_mapping": "Zuordnung fehlt",
+      "quick_connect_off": "Quick Connect aus",
+      "admin_user": "Zuordnung ändern",
+      "user_disabled": "Benutzer deaktiviert",
+      "not_configured": "Im Server unvollständig",
+      "other": "Fehler"
+    },
+    "server": {
+      "fetchedNow": "vom Server, gerade eben",
+      "fetchedMin": "vom Server, vor {{min}} Min.",
+      "fetchedH": "vom Server, vor {{h}} Std.",
+      "fetchedD": "vom Server, vor {{d}} Tagen",
+      "off": "Medien ist im Server ausgeschaltet",
+      "license": "Medien braucht im Server die Lizenz für das Plugin Medien",
+      "offline": "Lange keinen Kontakt zum Server (seit {{days}} Tagen). Medien läuft mit der zuletzt geladenen Liste weiter.",
+      "offlineExpired": "Seit {{days}} Tagen kein Kontakt zum Server: die NAS-Passwörter wurden auf diesem PC gelöscht. Verbinde dich mit dem Server.",
+      "notice": "Medien kommen jetzt vom Server.",
+      "adopted": "Übernommen: {{names}}.",
+      "dropped": "Entfernt, weil der Server sie nicht kennt: {{names}}.",
+      "ok": "OK"
     }
   }
 }

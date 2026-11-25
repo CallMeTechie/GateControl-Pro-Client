@@ -52,7 +52,7 @@ let PlacesService;
 let QuickActionsService;
 let CamerasService;
 let DriveStreamService;
-let MediaService, MediaStore, MediaStreamService;
+let MediaService, MediaStore, MediaStreamService, MediaServerSources;
 let VaultService, windowsHello, windowsOcr, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
 let createDriveOnDemand, driveOnDemandExePath, parseDriveActionArgv, drivePathsOverlap;
@@ -154,7 +154,7 @@ try {
   ({ DriveStreamService } = require('@gatecontrol/client-core'));
   // Medien (Stufe 4f/4g): Jellyfin and the NAS shares of this PC, the gcmedia: stream of the player (core
   // services/media.js, docs/media.md); absent in an older core (then there is no "Medien" page).
-  ({ MediaService, MediaStore, MediaStreamService } = require('@gatecontrol/client-core'));
+  ({ MediaService, MediaStore, MediaStreamService, MediaServerSources } = require('@gatecontrol/client-core'));
   // Vault (plugin gatecontrol-vault): end-to-end encrypted password manager
   // (core docs/vault.md); quick search window on Strg+Alt+P.
   ({ VaultService, windowsHello } = require('@gatecontrol/client-core'));
@@ -379,6 +379,7 @@ let quickActions = null; // the plugins' quick actions (core QuickActionsService
 let cameras = null; // Kameras im Heimnetz (core CamerasService), one per app lifetime
 let driveStream = null; // Drive 1.21: the large view's gcdrive: (core DriveStreamService)
 let media = null; // Medien (core MediaService): Jellyfin and the NAS shares, one per app lifetime
+let mediaSources = null; // Medien-Plugin (core MediaServerSources): the sources from the server, the plugin's tab
 let mediaNetKey = null; // the addresses of this PC's adapters last seen (another Wi-Fi → media.networkChanged())
 let mediaNetTimer = null;
 let mediaTunnelUp = null; // the tunnel state media last heard of
@@ -1321,9 +1322,21 @@ function initializeServices() {
       deviceName: () => _os.hostname().slice(0, 64) || 'PC',
       // Ordner (4h): "In anderer App öffnen" hands an SMB file's UNC path to Windows' app for its type
       openPath: (target) => shell.openPath(target),
+      // the plugin's network rule: away a source goes only through the tunnel — opening or playing starts it
+      tunnel: {
+        up: () => !!tunnelState.connected,
+        connect: async () => { if (!tunnelState.connected) await connectTunnel(); return !!tunnelState.connected; },
+      },
       log,
     })
     : null;
+  // Medien-Plugin (W2): the sources come from the server (plugin "Medien"), nothing is set up on this PC; the entry
+  // "Medien" shows only with the plugin's tab. The silent signal media.revoke comes through the notification center.
+  mediaSources = media && MediaServerSources ? new MediaServerSources({
+    media, apiClient, log,
+    pushClient: notifications?.pushClient,
+    notificationCenter: notifications?.notificationCenter,
+  }) : null;
   // the player's "no sleep while playing", released a minute after a pause and when it closes
   mediaAwake = media && powerSaveBlocker ? createMediaAwake({ powerSaveBlocker, log }) : null;
 
@@ -1842,6 +1855,7 @@ app.on('ready', () => {
   school?.start();
   // Familie: member of a family? push → page.
   familie?.start();
+  mediaSources?.start();
   // DNS-Schutz: does the server report one? Its state for the card and the tray.
   dnsProtect?.start();
   // Drucken: is the plugin there for the apps? print pushes → page.
@@ -2042,6 +2056,7 @@ app.on('before-quit', (e) => {
   chats?.stop();
   school?.stop();
   familie?.stop();
+  mediaSources?.stop();
   dnsProtect?.stop();
   print?.stop();
   drive?.stop();

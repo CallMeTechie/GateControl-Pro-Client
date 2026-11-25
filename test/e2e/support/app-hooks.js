@@ -97,13 +97,16 @@ function install({ app, env }) {
     async readConfig(configPath) { return fs.promises.readFile(configPath, 'utf8'); }
     async connect() {
       record('wg.connect');
+      // Medien (the plugin's network rule: away only through the VPN): a test may let the tunnel come up
+      // (globalThis.__gcE2E.tunnelWorks = true) — no adapter, just a handshake for the app's state.
+      if (state.tunnelWorks === true) { this.connected = true; return; }
       throw new Error('E2E: WireGuard tunnel is stubbed');
     }
     async disconnect() { record('wg.disconnect'); this.connected = false; }
-    async isConnected() { return false; }
+    async isConnected() { return this.connected; }
     async isInstalled() { return true; }
     async getVersion() { return 'e2e-stub'; }
-    async getStats() { return null; }
+    async getStats() { return this.connected ? { handshake: Date.now(), rxBytes: 0, txBytes: 0 } : null; }
   }
 
   class FakeKillSwitch {
