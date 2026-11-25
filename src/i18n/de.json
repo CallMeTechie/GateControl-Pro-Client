@@ -5270,7 +5270,6 @@
     "sources": {
       "button": "Quellen",
       "title": "Quellen",
-      "add": "Quelle hinzufügen",
       "back": "Zurück zu Medien",
       "none": "Noch keine Quelle eingerichtet",
       "managed": "Quellen richtet der Admin im Server ein (GateControl › Medien). Auf diesem PC ist nichts einzurichten."
@@ -5386,8 +5385,6 @@
     },
     "empty": {
       "title": "Noch keine Medien freigegeben",
-      "text": "Filme und Serien von Jellyfin und den Freigaben deiner NAS, zu Hause direkt im LAN, unterwegs durch den eigenen Tunnel.",
-      "add": "Quelle hinzufügen",
       "nothing": "Hier ist noch nichts.",
       "noResults": "Keine Treffer.",
       "managed": "Filme und Serien kommen von Jellyfin und den NAS-Freigaben, die der Admin im GateControl-Server für dich freigibt – zu Hause direkt im LAN, unterwegs über das VPN."
@@ -5422,10 +5419,6 @@
       "device": "dieses Gerät heißt „{{device}}“",
       "connected": "verbunden",
       "signedOutPill": "abgemeldet",
-      "signOut": "Abmelden",
-      "signIn": "Neu anmelden",
-      "edit": "Bearbeiten",
-      "remove": "Entfernen",
       "smbHomeWebdav": "SMB zu Hause, WebDAV unterwegs",
       "smb": "SMB-Freigabe",
       "webdav": "WebDAV",
@@ -5446,83 +5439,9 @@
       "title": "„Weiterschauen“ auf der Übersicht",
       "text": "Angefangene Filme und Folgen als Karte auf der Übersicht der App."
     },
-    "authorize": {
-      "title": "Gerät anmelden",
-      "text": "Fernseher oder anderen PC mit Quick Connect anmelden: Gib den Code ein, den das andere Gerät zeigt. GateControl bestätigt ihn mit deinem Jellyfin-Zugang.",
-      "code": "Quick-Connect-Code",
-      "server": "Jellyfin-Server",
-      "confirm": "Bestätigen",
-      "done": "Bestätigt. Das andere Gerät meldet sich jetzt an.",
-      "notFound": "Diesen Code kennt Jellyfin nicht. Ist er schon abgelaufen?",
-      "invalid": "Der Code hat 6 Ziffern."
-    },
     "home": {
       "title": "Weiterschauen",
       "all": "Alle in Medien"
-    },
-    "dlg": {
-      "title": "Quelle hinzufügen",
-      "editTitle": "Quelle bearbeiten",
-      "close": "Schließen",
-      "cancel": "Abbrechen",
-      "next": "Weiter",
-      "back": "Zurück",
-      "connect": "Verbinden",
-      "connecting": "Verbinde …",
-      "signIn": "Anmelden",
-      "kind": {
-        "jellyfin": "Jellyfin",
-        "smb": "SMB-Freigabe",
-        "webdav": "WebDAV"
-      },
-      "found": "Im Heimnetz gefunden",
-      "searching": "Suche im Heimnetz …",
-      "noneFound": "Kein Jellyfin-Server im Heimnetz gefunden.",
-      "searchAgain": "Erneut suchen",
-      "reached": "erreicht",
-      "address": "Adresse",
-      "user": "Benutzer",
-      "password": "Passwort",
-      "userHint": "z. B. medien-lesen",
-      "webdavAddress": "WebDAV-Adresse",
-      "hint": {
-        "jellyfin": "z. B. 192.168.1.20 oder https://192.168.1.20:8920",
-        "smb": "z. B. \\\\192.168.1.20\\filme – am besten ein NAS-Benutzer nur mit Leserecht",
-        "webdav": "z. B. https://192.168.1.20:5006/filme"
-      },
-      "qc": "Quick Connect",
-      "userPass": "Benutzer & Passwort",
-      "qcCode": "Code",
-      "qcHint": "In Jellyfin bestätigen (Profil › Quick Connect) oder in GateControl auf einem anderen Gerät: Gerät anmelden.",
-      "qcWaiting": "Warte auf Bestätigung …",
-      "qcNew": "Neuer Code",
-      "passwordOnce": "Das Passwort geht einmal an Jellyfin und wird nicht gespeichert.",
-      "smbNoteStrong": "Windows meldet die Freigabe für GateControl an",
-      "smbNote": "(nur für diese App-Sitzung, kein Laufwerksbuchstabe). Ist der Server im Explorer schon mit einem anderen Benutzer verbunden, lehnt Windows ab (Fehler 1219). GateControl sagt das dann und bietet „Mit dem Explorer-Zugang verwenden“ an.",
-      "smbIp": "Am PC lieber die IP-Adresse statt \\\\{{host}}: Unterwegs löst der Tunnel den NAS-Namen nicht auf.",
-      "encrypted": "Passwort mit Windows verschlüsselt (wie Mail und Vault)",
-      "alsoWebdav": "Auch als WebDAV einrichten, für unterwegs",
-      "conflict": "\\\\{{host}} ist im Explorer schon mit einem anderen Benutzer verbunden. Windows lässt keine zweite Anmeldung beim selben Server zu (Fehler 1219).",
-      "useExisting": "Mit dem Explorer-Zugang verwenden",
-      "done": "{{name}} ist eingerichtet.",
-      "webdavFailed": "Die SMB-Freigabe ist eingerichtet, WebDAV nicht: {{error}}",
-      "problem": {
-        "address": "Bitte eine gültige Adresse eingeben.",
-        "user": "Zum Passwort fehlt der Benutzer.",
-        "webdav": "Bitte die WebDAV-Adresse eingeben.",
-        "invalid": "Das geht so nicht."
-      },
-      "cert": {
-        "title": "Zertifikat bestätigen",
-        "text": "Der Server zeigt ein Zertifikat, dem Windows nicht vertraut – auf einer NAS ist es meist selbst signiert. Prüfe den Fingerabdruck (z. B. im DSM unter Sicherheit › Zertifikat) und bestätige ihn einmal.",
-        "changed": "Das Zertifikat ist nicht mehr das, das du bestätigt hast. Bestätige das neue nur, wenn du es selbst erneuert hast.",
-        "address": "Adresse",
-        "subject": "Ausgestellt für",
-        "issuer": "Ausgestellt von",
-        "validTo": "Gültig bis",
-        "fingerprint": "Fingerabdruck (SHA-256)",
-        "trust": "Vertrauen und weiter"
-      }
     },
     "error": {
       "invalid": "Die Adresse stimmt so nicht.",

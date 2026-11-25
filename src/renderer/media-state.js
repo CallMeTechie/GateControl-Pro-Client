@@ -5,8 +5,8 @@
  * WebDAV shares beside it): the sources and the way to them ("Zuhause · direkt von der NAS", "Unterwegs · 18 Mbit/s",
  * the status bar), the cards of the rows (Weiterschauen, Zuletzt hinzugefügt, Filme, Serien), the posters of the
  * grid, the times ("noch 18 Min.", "ab 42:10", "1 Std. 48 Min."), the detail column (chips, sound, subtitles and
- * quality with what the PC does with them), seasons and episodes, the search over all sources, the keys of the grid,
- * the dialog "Quelle hinzufügen" (address hints, the Quick Connect code, the certificate) and the error texts.
+ * quality with what the PC does with them), seasons and episodes, the search over all sources, the keys of the grid
+ * and the error texts. Sources come from the server (Medien-Plugin), there is no setup on this PC.
  * Loaded as a plain script before media-view.js (window.GCMediaState) and required by the node tests
  * (test/media-state.test.js).
  *
@@ -23,7 +23,6 @@
 	const TABS = ['overview', 'movies', 'series', 'folders'];
 	const SORTS = ['name', 'added', 'year'];
 	const QUALITIES = ['auto', 'original', '20', '12', '8', '4', '2'];
-	const KINDS = ['jellyfin', 'smb', 'webdav'];
 	const NEW_MS = 7 * 24 * 60 * 60 * 1000;
 	const PAGE_SIZE = 60;
 	const ROW_LIMIT = 16;
@@ -778,67 +777,6 @@
 
 	// ── Quellen: the dialog ─────────────────────────────────
 
-	const ipv4 = (h) => /^(?:\d{1,3}\.){3}\d{1,3}$/.test(h) && h.split('.').every((p) => Number(p) <= 255);
-
-	/** The host of `\\nas\filme` / `smb://nas/filme`; null when it is none. */
-	function smbHost(address) {
-		const a = String(address || '').trim();
-		const m = /^(?:\\\\|\/\/|smb:\/\/)([^\\/]+)/i.exec(a);
-		return m ? m[1].replace(/:\d+$/, '') : null;
-	}
-
-	/** "Am PC lieber die IP-Adresse statt \\nas": a share given by name (unterwegs the tunnel does not resolve it). */
-	function smbNameHint(address) {
-		const h = smbHost(address);
-		return !!h && !ipv4(h) && !h.includes(':');
-	}
-
-	/** What the form needs before "Verbinden": an address; a user only with a password field filled or the reverse. */
-	function formProblem(kind, f) {
-		const address = String((f && f.address) || '').trim();
-		if (!KINDS.includes(kind)) return 'invalid';
-		if (!address) return 'address';
-		if (kind === 'smb' && !smbHost(address)) return 'address';
-		if (kind === 'webdav' && /^(?:\\\\|smb:)/i.test(address)) return 'address';
-		if (kind !== 'jellyfin' && !String(f.user || '').trim() && String(f.password || '')) return 'user';
-		if (kind === 'smb' && f.alsoWebdav && !String(f.webdavAddress || '').trim()) return 'webdav';
-		return null;
-	}
-
-	/** A WebDAV address to suggest for `\\192.168.1.20\filme`: https://192.168.1.20:5006/filme (Synology's port). */
-	function webdavFor(smbAddress) {
-		const a = String(smbAddress || '').trim();
-		const m = /^(?:\\\\|\/\/|smb:\/\/)([^\\/]+)[\\/]+([^\\/]+)/i.exec(a);
-		if (!m) return '';
-		return `https://${m[1].replace(/:\d+$/, '')}:5006/${m[2]}`;
-	}
-
-	/** The Quick Connect code as shown: "482 913". */
-	function codeLabel(code) {
-		const s = String(code || '').replace(/\s+/g, '');
-		return /^\d{6}$/.test(s) ? `${s.slice(0, 3)} ${s.slice(3)}` : s;
-	}
-
-	/** The code of another device as typed ("731 205", "731-205") → "731205", else null. */
-	function codeOf(input) {
-		const s = String(input == null ? '' : input).replace(/[\s-]/g, '');
-		return /^\d{6}$/.test(s) ? s : null;
-	}
-
-	/** "AB:CD:…" of a SHA-256 fingerprint in groups (the dialog "Zertifikat bestätigen"). */
-	function fingerprintLabel(fp) {
-		const hex = String(fp || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
-		if (hex.length !== 64) return String(fp || '');
-		return hex.match(/.{2}/g).join(':');
-	}
-
-	/** A date of the certificate ("validTo") as the person reads it. */
-	function dateLabel(v, locale) {
-		const d = new Date(v);
-		if (Number.isNaN(d.getTime())) return String(v || '');
-		try { return d.toLocaleDateString(locale || undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }); } catch { return d.toISOString().slice(0, 10); }
-	}
-
 	/** The sentence of an error code (media.error.*); an unknown one is "failed". */
 	function errorText(code, t) {
 		const c = ERROR_CODES.includes(code) ? code : 'failed';
@@ -854,7 +792,6 @@
 		TABS,
 		SORTS,
 		QUALITIES,
-		KINDS,
 		PAGE_SIZE,
 		ROW_LIMIT,
 		HOME_CARD_KEY,
@@ -926,14 +863,6 @@
 		nextEpisode,
 		episodeRow,
 		episodeAfter,
-		smbHost,
-		smbNameHint,
-		formProblem,
-		webdavFor,
-		codeLabel,
-		codeOf,
-		fingerprintLabel,
-		dateLabel,
 		errorText,
 		homeCardOn,
 	};

@@ -2,8 +2,7 @@
 
 // View logic of the page "Medien" (src/renderer/media-state.js, no DOM): the sources and the way to them, the times,
 // the cards of the rows, merging several Jellyfin servers and the search over all sources, the grid's keys and pages,
-// the detail column (chips, sound, subtitles, quality), seasons and episodes, the dialog "Quelle hinzufügen" (address
-// hints, the Quick Connect code, the certificate), error texts; and how the page is wired (index.html with the CSP for
+// the detail column (chips, sound, subtitles, quality), seasons and episodes, error texts; and how the page is wired (index.html with the CSP for
 // gcmedia:, renderer, preload, main: the scheme, the service, the network changes) and that every media.* key exists
 // in both Pro locales.
 
@@ -273,48 +272,7 @@ describe('the detail column', () => {
   });
 });
 
-describe('the dialog "Quelle hinzufügen"', () => {
-  it('a share by name gets the hint to take the IP address', () => {
-    assert.equal(MS.smbHost('\\\\nas\\filme'), 'nas');
-    assert.equal(MS.smbHost('smb://192.168.1.20/filme'), '192.168.1.20');
-    assert.equal(MS.smbHost('filme'), null);
-    assert.equal(MS.smbNameHint('\\\\nas\\filme'), true);
-    assert.equal(MS.smbNameHint('\\\\192.168.1.20\\filme'), false);
-    assert.equal(MS.smbNameHint(''), false);
-  });
-
-  it('the form: an address, a user to a password, the WebDAV address when asked', () => {
-    assert.equal(MS.formProblem('smb', { address: '' }), 'address');
-    assert.equal(MS.formProblem('smb', { address: 'filme' }), 'address');
-    assert.equal(MS.formProblem('webdav', { address: '\\\\nas\\filme' }), 'address');
-    assert.equal(MS.formProblem('smb', { address: '\\\\nas\\filme', user: '', password: 'x' }), 'user');
-    assert.equal(MS.formProblem('smb', { address: '\\\\nas\\filme', user: 'u', password: 'x', alsoWebdav: true, webdavAddress: '' }), 'webdav');
-    assert.equal(MS.formProblem('smb', { address: '\\\\nas\\filme', user: 'u', password: 'x' }), null);
-    assert.equal(MS.formProblem('webdav', { address: 'https://192.168.1.20:5006/filme' }), null);
-    assert.equal(MS.formProblem('ftp', { address: 'x' }), 'invalid');
-  });
-
-  it('the WebDAV address suggested for an SMB share (Synology\'s port)', () => {
-    assert.equal(MS.webdavFor('\\\\192.168.1.20\\filme'), 'https://192.168.1.20:5006/filme');
-    assert.equal(MS.webdavFor('smb://nas/serien/alt'), 'https://nas:5006/serien');
-    assert.equal(MS.webdavFor('nas'), '');
-  });
-
-  it('the Quick Connect codes: shown "482 913", typed "731 205" / "731-205"', () => {
-    assert.equal(MS.codeLabel('482913'), '482 913');
-    assert.equal(MS.codeOf('731 205'), '731205');
-    assert.equal(MS.codeOf('731-205'), '731205');
-    assert.equal(MS.codeOf('12345'), null);
-    assert.equal(MS.codeOf('abcdef'), null);
-  });
-
-  it('the certificate: the fingerprint in pairs, the date', () => {
-    const fp = 'ab'.repeat(32);
-    assert.equal(MS.fingerprintLabel(fp), Array(32).fill('AB').join(':'));
-    assert.equal(MS.fingerprintLabel('short'), 'short');
-    assert.match(MS.dateLabel('2027-03-01T00:00:00Z', 'de-DE'), /0?1\.0?3\.2027/);
-  });
-
+describe('error texts', () => {
   it('error texts; an unknown code is "failed"', () => {
     assert.equal(MS.errorText('smb_conflict', t), 'media.error.smb_conflict');
     assert.equal(MS.errorText('timeout', t), 'media.error.offline');
@@ -386,8 +344,6 @@ describe('page wiring', () => {
     const keys = new Set([...src.matchAll(/['`](media\.[a-zA-Z.]+[a-zA-Z])['`]/g)].map((m) => m[1]));
     for (const tab of MS.TABS.concat('search')) keys.add(`media.tabs.${tab}`);
     for (const s of MS.SORTS) keys.add(`media.sort.${s}`);
-    for (const k of MS.KINDS) keys.add(`media.dlg.kind.${k}`);
-    for (const p of ['address', 'user', 'webdav', 'invalid']) keys.add(`media.dlg.problem.${p}`);
     for (const c of ['invalid', 'offline', 'unauthorized', 'not_found', 'unsupported', 'unsupported_version', 'quick_connect_off', 'expired', 'signed_out', 'no_protect', 'too_many', 'smb_conflict', 'cert_untrusted', 'cert_changed', 'no_lan_route', 'failed']) keys.add(`media.error.${c}`);
     assert.ok(keys.size > 100);
     for (const k of keys) {
