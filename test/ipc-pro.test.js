@@ -199,6 +199,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       drive: { on() {}, status: () => ({ state: 'unavailable' }) },
       // … and Medien (media:* channels; a core before Medien ignores it)
       media: { on() {}, status: () => ({ ok: true, supported: true, sources: [] }) },
+      // … and "Auf TV/PC abspielen" (media:cast:* channels, with media; a core before it ignores it)
+      mediaCast: { on() {}, status: () => ({ ok: true, session: null }), opened: () => ({ ok: true }), state: () => ({ ok: true }), closed: () => ({ ok: true }) },
       // … and "Ordner sichern" (drive:sync:* channels; a core before it ignores it)
       driveSync: { on() {}, status: () => ({ ok: true, folders: [] }) },
       // … and Mail (mail:* channels; a core before Mail ignores it)

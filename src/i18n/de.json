@@ -5497,6 +5497,8 @@
       "nextCancel": "Abbrechen",
       "loading": "Wird gestartet …",
       "buffering": "Lädt …",
+      "cast": "Vom Handy gesteuert",
+      "castBy": "Vom Handy gesteuert · {{name}}",
       "retry": "Erneut versuchen",
       "streamError": "Das Video lässt sich nicht abspielen.",
       "noPicture": "Kein Bild: Dieser PC kann HEVC nicht selbst abspielen. Jellyfin rechnet jetzt in H.264 um.",

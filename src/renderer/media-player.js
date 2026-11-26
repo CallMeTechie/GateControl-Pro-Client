@@ -18,6 +18,9 @@
  * check says what Chromium cannot (DTS / AC3 sound, HEVC without the decoder, avi …) — then the player says so and
  * offers "In VLC öffnen" (VLC installed) or "In anderer App öffnen" (Windows' app, SMB), and "Trotzdem abspielen".
  *
+ * "Auf TV/PC abspielen": a title the phone sent (req.cast, media-cast-remote.js) plays here the same way; the top line
+ * says "Vom Handy gesteuert · <Handy>", every change goes to `o.onChange` and the phone's keys come in through `remote`.
+ *
  * Built by renderer.js (GCMediaPlayer.mount); pure logic in media-player-state.js and media-state.js; texts
  * media.player.* of the Pro locales. Server text only into textContent; icons from static path data.
  */
@@ -44,6 +47,7 @@
 		check: 'M5 12l5 5 9-10',
 		alert: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 8v5M12 16h.01',
 		x: 'M18 6L6 18M6 6l12 12',
+		phone: 'M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z|M11 18h2',
 	};
 
 	function icon(name, size = 18, fill = false) {
@@ -104,6 +108,8 @@
 		const lang = () => (typeof o.getLocale === 'function' ? o.getLocale() : 'de');
 		const toast = typeof o.toast === 'function' ? o.toast : () => {};
 		const awake = (state) => { if (typeof o.awake === 'function') Promise.resolve(o.awake(state)).catch(() => {}); };
+		// "Auf TV/PC abspielen": every change of the playback (media-cast-remote.js decides what goes to the phone)
+		const changed = (why) => { if (typeof o.onChange === 'function') { try { o.onChange(why); } catch { /* the remote is gone */ } } };
 		const now = () => Date.now();
 		const storage = (() => { try { return root.localStorage || null; } catch { return null; } })();
 
@@ -125,6 +131,7 @@
 			awakeAt: 0,
 			ext: null,          // media:external:info (VLC there?), asked once per app run
 			hint: null,         // a share's file waits for "Trotzdem abspielen": { r, startMs }
+			waiting: false,     // the video waits for data ('waiting' until 'playing' / 'canplay')
 		};
 		let hideTimer = null;
 		let countdownTimer = null;
@@ -136,9 +143,10 @@
 		R.title = el('b', { class: 'mp-title' });
 		R.sub = el('span', { class: 'mp-sub' });
 		R.info = el('span', { class: 'mp-info' });
+		R.cast = el('span', { class: 'mp-cast', hidden: true }, [icon('phone', 14), el('span')]);
 		R.back = el('button', { type: 'button', class: 'mp-ib mp-back', on: { click: () => close() } }, [icon('back', 20)]);
 		R.panelBtn = el('button', { type: 'button', class: 'mp-ib mp-panel-btn', on: { click: () => togglePanel() } }, [icon('sliders', 18)]);
-		R.top = el('div', { class: 'mp-top' }, [R.back, el('div', { class: 'mp-tt' }, [R.title, el('div', { class: 'mp-line' }, [R.sub, R.info])]), el('span', { class: 'mp-grow' }), R.panelBtn]);
+		R.top = el('div', { class: 'mp-top' }, [R.back, el('div', { class: 'mp-tt' }, [R.title, el('div', { class: 'mp-line' }, [R.sub, R.info, R.cast])]), el('span', { class: 'mp-grow' }), R.panelBtn]);
 		R.panel = el('div', { class: 'mp-panel', role: 'dialog', hidden: true });
 		R.keys = el('div', { class: 'mp-keys' });
 		R.center = el('div', { class: 'mp-center', role: 'status', 'aria-live': 'polite', hidden: true });
@@ -261,6 +269,9 @@
 			R.info.hidden = !info || !info.text;
 			R.info.textContent = info ? info.text : '';
 			R.info.className = `mp-info${info && info.converted ? ' is-conv' : ''}${info && info.way === 'home' ? ' is-home' : ''}`;
+			const cast = P.req && P.req.cast;
+			R.cast.hidden = !cast;
+			R.cast.lastChild.textContent = cast ? (cast.controllerName ? t('media.player.castBy', { name: cast.controllerName }) : t('media.player.cast')) : '';
 		}
 
 		function renderPanel() {
@@ -319,13 +330,20 @@
 		/** Opens the player for `req`: { item, detail?, startMs, audioIndex?, subtitleIndex?, next?, onEnd? }. */
 		async function play(req) {
 			if (!req || !req.item) return;
-			if (P.open) await stop('switch');
+			if (P.open) {
+				const before = P.req;
+				const end = ending();
+				await stop('switch');
+				// another title instead of the phone's: its remote ends
+				if (before && before.cast && before.cast !== req.cast && typeof before.onEnd === 'function') before.onEnd({ ...end, why: 'switch' });
+			}
 			P.open = true;
 			P.req = req;
 			P.detail = req.detail || null;
 			P.play = null;
 			P.ended = null;
 			P.error = null;
+			P.waiting = false;
 			clearInterval(countdownTimer);
 			R.nextBox.hidden = true;
 			R.root.hidden = false;
@@ -370,7 +388,7 @@
 			P.started = false;
 			P.lastReport = NaN;
 			const note = isShare() ? MS.checkNote(r.check, t) : null;
-			if (note && note.external && !P.req.anyway) {
+			if (note && note.external && !P.req.anyway && !P.req.cast) {
 				P.hint = { r, startMs: startMs || 0 };
 				renderInfo();
 				renderPanel();
@@ -381,6 +399,7 @@
 			renderInfo();
 			renderPanel();
 			renderControls();
+			changed('start');
 		}
 
 		function isShare() { return !!(P.req && P.req.item && P.req.item.fromShare === true); }
@@ -495,6 +514,7 @@
 			const msg = code === 'stream' || code === 'media' ? t('media.player.streamError') : MS.errorText(code, t);
 			setCenter(msg, 'error');
 			R.center.appendChild(el('button', { type: 'button', class: 'btn btn-sec btn-sm mp-retry', text: t('media.player.retry'), on: { click: () => restartHere() } }));
+			changed('error');
 			if (isShare() && P.play) {
 				const seq = P.seq;
 				externalButtons().then((btns) => { if (seq === P.seq && P.error) R.center.appendChild(el('div', { class: 'mp-hint-b' }, btns)); });
@@ -632,7 +652,7 @@
 			if (played) api.endStream(played.playId).catch(() => {});
 			awake('paused');
 			const n = nextOf();
-			if (!n) { close(); return; }
+			if (!n) { close('ended'); return; }
 			P.ended = { at: now(), next: n };
 			const draw = () => {
 				const left = PS.countdown(P.ended.at, now());
@@ -657,12 +677,14 @@
 
 		const v = R.video;
 		v.addEventListener('playing', () => {
+			P.waiting = false;
 			setCenter(null);
 			if (!P.started && P.play) { P.started = true; report('start'); }
 			awake('playing');
 			P.awakeAt = now();
 			renderControls();
 			showControls();
+			changed('playing');
 		});
 		v.addEventListener('pause', () => {
 			if (!P.open) return;
@@ -670,12 +692,14 @@
 			awake('paused');
 			renderControls();
 			showControls();
+			changed('pause');
 		});
-		v.addEventListener('seeked', () => { if (P.play && P.started) report('progress'); renderTime(); });
-		v.addEventListener('waiting', () => { if (P.open && !P.error) setCenter(t('media.player.buffering'), 'loading'); });
-		v.addEventListener('canplay', () => { if (!P.error && !P.loading) setCenter(null); });
+		v.addEventListener('seeked', () => { if (P.play && P.started) report('progress'); renderTime(); changed('seeked'); });
+		v.addEventListener('waiting', () => { if (P.open && !P.error) { P.waiting = true; setCenter(t('media.player.buffering'), 'loading'); changed('waiting'); } });
+		v.addEventListener('canplay', () => { P.waiting = false; if (!P.error && !P.loading) setCenter(null); });
 		v.addEventListener('timeupdate', () => {
 			renderTime();
+			changed('time');
 			if (!P.play) return;
 			if (P.started && PS.progressDue(P.lastReport, now(), v.paused)) report('progress');
 			if (!v.paused && now() - P.awakeAt >= PS.AWAKE_MS) { P.awakeAt = now(); awake('playing'); }
@@ -687,9 +711,9 @@
 				noPicture();
 			}
 		});
-		v.addEventListener('loadedmetadata', () => { P.startSec = v.currentTime || 0; renderTime(); });
+		v.addEventListener('loadedmetadata', () => { P.startSec = v.currentTime || 0; renderTime(); changed('metadata'); });
 		v.addEventListener('progress', () => renderTime());
-		v.addEventListener('volumechange', () => renderControls());
+		v.addEventListener('volumechange', () => { renderControls(); changed('volume'); });
 		v.addEventListener('ended', () => onEnded());
 		v.addEventListener('error', () => { if (P.open && P.play && !P.hls) showError('media'); });
 		v.addEventListener('dblclick', () => fullscreen());
@@ -742,9 +766,16 @@
 			if (why !== 'switch') awake('stopped');
 		}
 
-		async function close() {
+		/** What the end tells the one who opened it: why ('user', 'ended', 'remote', 'switch'), the place and the length. */
+		function ending(why = 'user') {
+			const d = duration();
+			return { why, positionMs: Math.floor(position()), durationMs: d > 0 ? Math.floor(d * 1000) : 0 };
+		}
+
+		async function close(why = 'user') {
 			if (!P.open) return;
 			const req = P.req;
+			const end = ending(typeof why === 'string' ? why : 'user');
 			await stop('close');
 			P.open = false;
 			P.ended = null;
@@ -756,8 +787,52 @@
 			R.nextBox.hidden = true;
 			setCenter(null);
 			document.body.classList.remove('mp-open');
-			if (req && typeof req.onEnd === 'function') req.onEnd();
+			if (req && typeof req.onEnd === 'function') req.onEnd(end);
 		}
+
+		// ── The phone's keys ("Auf TV/PC abspielen", media-cast-remote.js) ──
+
+		/** How it plays now, for the phone: { phase, positionMs, durationMs, title, version, play, volume, muted }. */
+		function snapshot() {
+			const v = R.video;
+			let phase = 'loading';
+			if (P.error) phase = 'failed';
+			else if (P.ended || v.ended) phase = 'ended';
+			else if (P.loading || !P.play || P.hint) phase = 'loading';
+			else if (P.waiting) phase = 'buffering';
+			else if (v.paused) phase = 'paused';
+			else phase = 'playing';
+			const d = duration();
+			return {
+				phase,
+				positionMs: Math.floor(P.play ? position() : (P.req && P.req.startMs) || 0),
+				durationMs: d > 0 ? Math.floor(d * 1000) : 0,
+				title: P.req && P.req.item ? PS.titleOf(P.req.item, t).title : null,
+				version: version(),
+				play: P.play ? { audioIndex: P.play.audioIndex, subtitleIndex: Number.isInteger(P.play.subtitleIndex) ? P.play.subtitleIndex : -1 } : null,
+				share: isShare(),
+				volume: Math.round((v.muted ? 0 : v.volume) * 100),
+				muted: v.muted === true,
+			};
+		}
+
+		const remote = {
+			snapshot,
+			play() { const v = R.video; if (P.open && v.paused && !P.ended) { const p = v.play(); if (p && p.catch) p.catch(() => {}); } },
+			pause() { if (P.open && !R.video.paused) R.video.pause(); },
+			seekTo(ms) { if (P.open && P.play) { R.video.currentTime = PS.seekTarget(Math.max(0, ms) / 1000, 0, duration()); showControls(); } },
+			seekBy(ms) { if (P.open && P.play) seekBy(ms / 1000); },
+			audio(index) { if (P.open && P.play && !isShare() && Number.isInteger(index)) switchTo({ audioIndex: index }); },
+			subtitle(index) { if (P.open && P.play && !isShare() && Number.isInteger(index)) switchTo({ subtitleIndex: index }); },
+			volume(level, muted) {
+				if (!P.open) return;
+				if (Number.isFinite(level)) { R.video.volume = Math.min(1, Math.max(0, level / 100)); R.video.muted = level === 0; }
+				if (typeof muted === 'boolean') R.video.muted = muted;
+				saveVolume();
+				renderControls();
+			},
+			stop() { return close('remote'); },
+		};
 
 		relabel();
 
@@ -765,6 +840,7 @@
 			play,
 			close,
 			relabel,
+			remote,
 			get open() { return P.open; },
 			get state() { return P; },
 		};

@@ -52,7 +52,7 @@ let PlacesService;
 let QuickActionsService;
 let CamerasService;
 let DriveStreamService;
-let MediaService, MediaStore, MediaStreamService, MediaServerSources;
+let MediaService, MediaStore, MediaStreamService, MediaServerSources, MediaCastReceiver;
 let VaultService, windowsHello, windowsOcr, setupVaultQuick;
 let GateDropService, GateDropFirewall, gatedropShell, setupGateDrop;
 let createDriveOnDemand, driveOnDemandExePath, parseDriveActionArgv, drivePathsOverlap;
@@ -154,7 +154,7 @@ try {
   ({ DriveStreamService } = require('@gatecontrol/client-core'));
   // Medien (Stufe 4f/4g): Jellyfin and the NAS shares of this PC, the gcmedia: stream of the player (core
   // services/media.js, docs/media.md); absent in an older core (then there is no "Medien" page).
-  ({ MediaService, MediaStore, MediaStreamService, MediaServerSources } = require('@gatecontrol/client-core'));
+  ({ MediaService, MediaStore, MediaStreamService, MediaServerSources, MediaCastReceiver } = require('@gatecontrol/client-core'));
   // Vault (plugin gatecontrol-vault): end-to-end encrypted password manager
   // (core docs/vault.md); quick search window on Strg+Alt+P.
   ({ VaultService, windowsHello } = require('@gatecontrol/client-core'));
@@ -380,6 +380,7 @@ let cameras = null; // Kameras im Heimnetz (core CamerasService), one per app li
 let driveStream = null; // Drive 1.21: the large view's gcdrive: (core DriveStreamService)
 let media = null; // Medien (core MediaService): Jellyfin and the NAS shares, one per app lifetime
 let mediaSources = null; // Medien-Plugin (core MediaServerSources): the sources from the server, the plugin's tab
+let mediaCast = null; // "Auf TV/PC abspielen" (core MediaCastReceiver): this PC plays what the phone sends, remote-controlled
 let mediaNetKey = null; // the addresses of this PC's adapters last seen (another Wi-Fi → media.networkChanged())
 let mediaNetTimer = null;
 let mediaTunnelUp = null; // the tunnel state media last heard of
@@ -1337,6 +1338,18 @@ function initializeServices() {
     pushClient: notifications?.pushClient,
     notificationCenter: notifications?.notificationCenter,
   }) : null;
+  // "Auf TV/PC abspielen": the phone sends a title to this PC (plugin "Medien", cast contract v1) — the window comes to
+  // the front, the player opens it at the place and the phone stays the remote. Only with an older core: none.
+  mediaCast = media && MediaCastReceiver ? new MediaCastReceiver({
+    media, apiClient, log,
+    pushClient: notifications?.pushClient,
+    notificationCenter: notifications?.notificationCenter,
+  }) : null;
+  mediaCast?.on('play', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    showWindow();
+  });
   // the player's "no sleep while playing", released a minute after a pause and when it closes
   mediaAwake = media && powerSaveBlocker ? createMediaAwake({ powerSaveBlocker, log }) : null;
 
@@ -1748,6 +1761,8 @@ function registerIpcHandlers() {
     driveStream,
     // media:* channels + events (Medien: Jellyfin and the NAS shares), forgotten on server:setup (core, opt-in)
     media,
+    // media:cast:* ("Auf TV/PC abspielen": this PC as the receiver of the phone), with media (core, opt-in)
+    mediaCast,
     // mail:* channels + events, reset on server:setup (core, opt-in)
     mail,
     // notes:* channels + events, reset on server:setup (core, opt-in)
@@ -1856,6 +1871,7 @@ app.on('ready', () => {
   // Familie: member of a family? push → page.
   familie?.start();
   mediaSources?.start();
+  mediaCast?.start();
   // DNS-Schutz: does the server report one? Its state for the card and the tray.
   dnsProtect?.start();
   // Drucken: is the plugin there for the apps? print pushes → page.
@@ -2057,6 +2073,7 @@ app.on('before-quit', (e) => {
   school?.stop();
   familie?.stop();
   mediaSources?.stop();
+  mediaCast?.stop();
   dnsProtect?.stop();
   print?.stop();
   drive?.stop();

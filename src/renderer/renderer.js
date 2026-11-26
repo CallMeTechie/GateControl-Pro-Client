@@ -260,6 +260,7 @@ let notesView = null; // notes-view.js instance (NOTIZEN & AUFGABEN section belo
 let camerasView = null; // camera-view.js instance (KAMERAS section below)
 let mediaView = null; // media-view.js instance (MEDIEN section below)
 let mediaPlayer = null; // media-player.js instance: the player over the window (MEDIEN section below)
+let mediaCastRemote = null; // media-cast-remote.js: the phone plays a title here and stays the remote (MEDIEN section below)
 let dnsView = null; // dns-view.js instance: the card "DNS-Schutz" on the start page (DNS-SCHUTZ section below)
 let homeView = null; // home-view.js instance: pinned favourites and events on the start page (MAIL section below)
 let notifyRoutesView = null; // notify-routes.js in Settings › Benachrichtigungen
@@ -3947,6 +3948,8 @@ mediaPlayer = mediaApi && window.GCMediaPlayer
 		quality: () => (mediaView ? mediaView.quality() : 'auto'),
 		setQuality: (q) => (mediaView ? mediaView.setQuality(q) : null),
 		sourceName: (id) => (mediaView ? mediaView.sourceName(id) : ''),
+		// "Auf TV/PC abspielen": every change of the player, for the phone that sent the title
+		onChange: (why) => mediaCastRemote?.onChange(why),
 	})
 	: null;
 mediaView = mediaApi && window.GCMediaView && $('#page-medien')
@@ -3966,6 +3969,19 @@ mediaView = mediaApi && window.GCMediaView && $('#page-medien')
 			$('#nav-medien').hidden = !show;
 			if (!show && currentPage === 'medien') navigateTo('status');
 		},
+	})
+	: null;
+
+// "Auf TV/PC abspielen": the phone sends a title to this PC (core MediaCastReceiver) — Medien and the player open it at
+// the place, the phone's keys come in, every change goes back to it. Only with a core that has it (media.cast).
+mediaCastRemote = mediaPlayer && mediaApi && mediaApi.cast && window.GCMediaCastRemote
+	? window.GCMediaCastRemote.mount({
+		cast: mediaApi.cast,
+		player: mediaPlayer,
+		MS: window.GCMediaState,
+		t,
+		caps: () => (mediaPlayer.state && mediaPlayer.state.caps) || null,
+		openPage: () => { if (currentPage !== 'medien') navigateTo('medien'); },
 	})
 	: null;
 
