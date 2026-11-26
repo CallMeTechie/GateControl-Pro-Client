@@ -5497,6 +5497,8 @@
       "nextCancel": "Cancel",
       "loading": "Starting …",
       "buffering": "Loading …",
+      "cast": "Controlled from the phone",
+      "castBy": "Controlled from the phone · {{name}}",
       "retry": "Try again",
       "streamError": "The video can't be played.",
       "noPicture": "No picture: this PC can't play HEVC itself. Jellyfin now converts to H.264.",

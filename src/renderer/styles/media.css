@@ -251,6 +251,9 @@ button.md-src { cursor: pointer; }
 .mp-info { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 8px; background: rgba(0, 0, 0, .45); color: #DFE5EC; font-size: 12px; font-weight: 600; }
 .mp-info.is-conv { color: #F5B544; }
 .mp-info.is-home { color: #46E0A0; }
+/* "Auf TV/PC abspielen": the phone sent the title and stays the remote */
+.mp-cast { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 8px; background: rgba(0, 0, 0, .45); color: #8FC7FF; font-size: 12px; font-weight: 600; }
+.mp-cast[hidden] { display: none; }
 .mp-ib { width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; border: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .4); cursor: pointer; }
 .mp-ib:hover { background: rgba(255, 255, 255, .14); }
 .mp.has-panel .mp-panel-btn { background: rgba(61, 220, 151, .22); color: #46E0A0; }
