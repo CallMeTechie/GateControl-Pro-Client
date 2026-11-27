@@ -286,6 +286,14 @@ function install({ app, env }) {
     return { canceled: false, filePath: p };
   };
 
+  // "Bildschirm bleibt an": the blockers the app starts (media-awake.js) are counted; state.awake() → whether
+  // one is held now (the real powerSaveBlocker still runs)
+  const { powerSaveBlocker } = require('electron');
+  const awakeIds = [];
+  const realPsbStart = powerSaveBlocker.start.bind(powerSaveBlocker);
+  powerSaveBlocker.start = (type) => { const id = realPsbStart(type); awakeIds.push(id); record('awake.start', { type }); return id; };
+  state.awake = () => awakeIds.some((id) => powerSaveBlocker.isStarted(id));
+
   // Notifications: recorded (still shown); a test "clicks" one by emitting
   // the event Electron emits for a click on the toast.
   const { Notification } = require('electron');
