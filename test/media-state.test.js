@@ -462,6 +462,25 @@ describe('Ordner (4h)', () => {
     assert.deepEqual(MS.libraryRoots([]), { rows: [], error: null });
   });
 
+  it('the overview "Ergänzt" (as Android #309): head without names, Als Nächstes, marks, genres', () => {
+    assert.equal(MS.headLabel(jelly(), t, false), 'media.src.jellyfinOnly', 'one server: only the kind');
+    assert.equal(MS.headLabel(jelly(), t, true), 'media.src.jellyfin(DS918+)', 'several: the name only in the choice');
+    assert.deepEqual(MS.nextUpWithout([title({ id: 'e5' }), title({ id: 'e4' })], [title({ id: 'e4' })]).map((x) => x.id), ['e5']);
+    assert.equal(MS.newEpisodes([title({ kind: 'series', newCount: 3 }), title({ kind: 'episode' })]), 4);
+    assert.equal(MS.posterMark(title({ kind: 'series', newCount: 3 }), t), 'media.mark.newCount(3)');
+    assert.equal(MS.posterMark(title({ kind: 'episode', season: 2, episode: 5 }), t), 'media.mark.seasonEpisode(2,5)');
+    assert.equal(MS.posterMark(title(), t), null);
+    const c = MS.nextCard(title({ kind: 'episode', name: 'Tauwetter', seriesName: 'Station Eisvogel', season: 2, episode: 5, runtimeMs: 52 * MIN, backdrop: 'gcmedia://image/tok/b' }), t);
+    assert.deepEqual(c, { id: 'a1', title: 'Station Eisvogel', sub: 'Tauwetter · media.runtime.m(52)', mark: 'media.mark.seasonEpisode(2,5)', picture: 'gcmedia://image/tok/b' });
+    assert.equal(MS.genreTone('Krimi'), MS.genreTone('krimi'));
+    assert.ok(MS.genreTone('Drama') >= 0 && MS.genreTone('Drama') < 5);
+    assert.deepEqual(MS.mergeGenres(['Krimi', 'drama'], ['Drama', ' ', 'Äpfel']), ['Äpfel', 'drama', 'Krimi']);
+    // "Favoriten" leaves the shares out of the grid (they have none)
+    const nas = title({ id: 'f:x', sourceId: 's1', name: 'Leuchtfeuer', fromShare: true, played: false });
+    assert.equal(MS.mergeGrid([], true, [nas], { sort: 'name' }).length, 1);
+    assert.equal(MS.mergeGrid([], true, [nas], { sort: 'name', favorite: true }).length, 0);
+  });
+
   it('a title in a Jellyfin folder: its line, picture, bar and whether it plays', () => {
     const m = MS.libraryTitle(title(), t);
     assert.equal(m.title, 'Kobaltnacht');

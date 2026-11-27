@@ -122,6 +122,8 @@ test.describe('medien player', () => {
     const mp = page.locator('.mp');
     await expect(mp.locator('.mp-title')).toHaveText('Station Eisvogel');
     await expect(mp.locator('.mp-sub')).toContainText('Tauwetter');
+    // under the title no source name or server address (as Android #311)
+    await expect(mp.locator('.mp-sub')).not.toContainText(/DS918\+|Jellyfin|localhost/);
     await expect.poll(() => time(page), { timeout: 20000 }).toBeGreaterThan(0.5);
     await expect(mp.locator('.mp-next')).toBeVisible();
     await video(page).evaluate((v) => { v.currentTime = v.duration - 0.5; });

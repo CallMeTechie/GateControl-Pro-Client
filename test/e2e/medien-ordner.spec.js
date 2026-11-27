@@ -33,7 +33,7 @@ test.describe('medien ordner', () => {
     expect(await page.content()).not.toContain(dav.password);
 
     // the overview: the share's chip; Leuchtfeuer from the NAS with its mark, Kobaltnacht once (Jellyfin's)
-    await expect(p.locator('.md-src.is-share')).toContainText('localhost');
+    await expect(p.locator('.md-src.is-share')).toHaveText(/^(NAS-Freigabe|NAS share)$/);
     await p.locator('.md-tabs [data-tab="movies"]').click();
     const grid = p.locator('.md-grid');
     const leucht = grid.locator('.md-pst', { hasText: 'Leuchtfeuer' });

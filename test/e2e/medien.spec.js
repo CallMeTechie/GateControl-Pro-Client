@@ -44,7 +44,9 @@ test.describe('medien', () => {
 
     // the overview: chips, the way, the rows
     await expect(p.locator('.md-tabs [data-tab="overview"]')).toHaveClass(/on/);
-    await expect(p.locator('.md-src.is-on')).toContainText('Jellyfin · DS918+');
+    // the head (as Android #301): only the kind, no server name or address
+    await expect(p.locator('.md-src.is-on')).toHaveText('Jellyfin');
+    await expect(p.locator('.md-chips')).not.toContainText('DS918+');
     await expect(p.locator('.md-way')).toHaveClass(/is-away/);
     await expect(p.locator('.md-way')).toContainText(/(Unterwegs|Away) · \d/);
     await expect(page.locator('#statusbar .md-sb')).toContainText(/(Medien: Unterwegs|Media: away)/);
@@ -60,15 +62,54 @@ test.describe('medien', () => {
     const img = kobalt.locator('img');
     await expect(img).toHaveAttribute('src', /^gcmedia:\/\/image\//);
     await expect.poll(() => img.evaluate((i) => i.naturalWidth)).toBe(320);
-    const latest = p.locator('.md-sec').nth(1);
+    // the overview "Ergänzt" (as Android #309): the rows in their order, each with its count
+    await expect(p.locator('.md-sec')).toHaveCount(9);
+    expect(await p.locator('.md-sec').evaluateAll((x) => x.map((e) => e.dataset.row))).toEqual(['resume', 'next', 'latest-movies', 'latest-episodes', 'favorites', 'movies', 'series', 'collections', 'genres']);
+    // Als Nächstes: the episode after the one begun, "S2 · F5", not what Weiterschauen shows
+    const next = p.locator('.md-sec[data-row="next"]');
+    await expect(next.locator('.md-th')).toHaveCount(1);
+    await expect(next.locator('.md-th')).toContainText('Station Eisvogel');
+    await expect(next.locator('.md-th')).toContainText('Tauwetter');
+    await expect(next.locator('.md-mk')).toHaveText(/^S2 · (F|E)5$/);
+    await expect(next.locator('.md-lbl-s')).toHaveText('1');
+    const latest = p.locator('.md-sec[data-row="latest-movies"]');
     await expect(latest.locator('.md-pst').first()).toContainText('Sternwarte 9');
     await expect(latest.locator('.md-pst').first().locator('.md-mk.is-new')).toBeVisible();
+    await expect(latest.locator('.md-pst', { hasText: 'Station Eisvogel' })).toHaveCount(0);
+    // Neue Folgen grouped per series: "6 neu"; the count in episodes
+    const neweps = p.locator('.md-sec[data-row="latest-episodes"]');
+    await expect(neweps.locator('.md-pst').first()).toContainText('Graufeld');
+    await expect(neweps.locator('.md-pst').first().locator('.md-mk.is-own')).toHaveText(/^6 (neu|new)$/);
+    await expect(neweps.locator('.md-lbl-s')).toHaveText('12');
+    await expect(p.locator('.md-sec[data-row="favorites"] .md-pst')).toHaveCount(2);
+    await expect(p.locator('.md-sec[data-row="movies"] .md-lbl-s')).toHaveText('12');
+    await expect(p.locator('.md-sec[data-row="movies"] .md-pst').first()).toContainText('Achterwasser');
+    await expect(p.locator('.md-sec[data-row="collections"] .md-pst')).toContainText('Kobalt-Reihe');
+    await expect(p.locator('.md-sec[data-row="genres"] .md-genre-tile')).toHaveText(['Drama', 'Komödie', 'Krimi', 'Mystery', 'Science-Fiction']);
+    await shot(page, 'medien-uebersicht');
+    await p.locator('.md-ov').evaluate((e) => { e.scrollTop = e.scrollHeight; });
+    await shot(page, 'medien-uebersicht-unten');
+    // a genre's tile: Filme with that genre
+    await p.locator('.md-genre-tile', { hasText: 'Krimi' }).click();
+    await expect(p.locator('.md-tabs [data-tab="movies"]')).toHaveClass(/on/);
+    await expect(p.locator('.md-filters .md-genre')).toHaveValue('Krimi');
+    await expect(p.locator('.md-grid .md-pst')).toHaveCount(2);
+    await expect(p.locator('.md-filters .md-count')).toHaveText(/^2 (Filme|movies)$/);
+    // the collection: its films in the detail column
+    await p.locator('.md-tabs [data-tab="overview"]').click();
+    await p.locator('.md-sec[data-row="collections"] .md-pst').click();
+    await expect(p.locator('.md-det .md-det-h')).toHaveText('Kobalt-Reihe');
+    await expect(p.locator('.md-det .md-set .md-fr')).toHaveText([/Kobaltnacht/]);
+    await shot(page, 'medien-sammlung');
+    await p.locator('.md-tabs [data-tab="overview"]').click();
     // nothing of the access in the page
     const html = await page.content();
     expect(html).not.toContain('e2e-jellyfin-token');
 
     // Filme: the grid A–Z, the first selected, a click selects, the detail column
     await p.locator('.md-tabs [data-tab="movies"]').click();
+    await p.locator('.md-filters .md-genre').selectOption('');
+    await p.locator('.md-grid .md-pst').first().click();
     const grid = p.locator('.md-grid');
     await expect(grid.locator('.md-pst')).toHaveCount(12);
     await expect(grid.locator('.md-pst').first()).toContainText('Achterwasser');
@@ -88,6 +129,16 @@ test.describe('medien', () => {
     await expect(det.locator('.md-sel-quality .md-sel-n')).toContainText(/(Automatisch|Automatic)/);
     await expect(det.locator('.md-prog')).toBeVisible();
     await expect(det).toContainText('Funkerin');
+    await shot(page, 'medien-detail');
+    // the heart (as Android #309): kept in Jellyfin, the filter "Favoriten"
+    await expect(det.locator('.md-fav')).toHaveAttribute('aria-pressed', 'false');
+    await det.locator('.md-fav').click();
+    await expect(det.locator('.md-fav')).toHaveAttribute('aria-pressed', 'true');
+    expect(jf.log.some((x) => x.method === 'POST' && /^\/UserFavoriteItems\//.test(x.path))).toBe(true);
+    await p.locator('.md-filters .md-fav-filter').click();
+    await expect(grid.locator('.md-pst')).toHaveText([/Kobaltnacht/, /Moorlicht/]);
+    await p.locator('.md-filters .md-fav-filter').click();
+    await grid.locator('.md-pst', { hasText: 'Kobaltnacht' }).click();
     // another sound: its note
     await det.locator('.md-sel-audio select').selectOption({ index: 2 });
     await expect(det.locator('.md-sel-audio .md-sel-n')).toHaveText(/(direkt|direct)/);
@@ -102,9 +153,9 @@ test.describe('medien', () => {
     await expect.poll(() => jf.log.filter((x) => x.method === 'POST' && /^\/UserPlayedItems\//.test(x.path)).length).toBe(1);
     await expect(grid.locator('.md-pst', { hasText: 'Kobaltnacht' })).toHaveClass(/is-played/);
     // filters: Ungesehen, sorting by year, the genres of the loaded titles
-    await p.locator('.md-filters .md-toggle').click();
+    await p.locator('.md-filters .md-toggle').first().click();
     await expect(grid.locator('.md-pst')).toHaveCount(10);
-    await p.locator('.md-filters .md-toggle').click();
+    await p.locator('.md-filters .md-toggle').first().click();
     await expect(grid.locator('.md-pst')).toHaveCount(12);
     await p.locator('.md-filters .md-sort').selectOption('year');
     await expect(grid.locator('.md-pst').first()).toContainText('Sternwarte 9');
