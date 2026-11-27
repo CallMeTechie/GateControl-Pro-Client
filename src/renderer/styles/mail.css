@@ -140,6 +140,9 @@
 .ml-read-bar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 12px 16px 8px; border-bottom: 1px solid var(--line); }
 .ml-read-btn { gap: 6px; }
 .ml-read { flex-grow: 1; min-height: 0; overflow-y: auto; padding: 14px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
+/* the pane scrolls, its parts keep their height: the mail's frame (overflow hidden, as tall as the mail) would
+   otherwise be squeezed to what is left of the pane — cut off, and nothing for the mouse wheel to scroll */
+.ml-read > * { flex-shrink: 0; }
 .ml-read .ml-banner { margin: 0; }
 .ml-read-subj { margin: 0; font-family: var(--font-disp); font-size: 21px; font-weight: 700; line-height: 1.25; letter-spacing: -.01em; overflow-wrap: anywhere; user-select: text; }
 .ml-read-from { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
@@ -744,8 +747,9 @@
 .ml-selbar-n, .ml-selbar-every { flex: none; white-space: nowrap; }
 .ml-link { padding: 0; border: 0; background: transparent; color: var(--acc-t); font-size: 12.5px; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .ml-link:focus-visible, .ml-selbar-btn:focus-visible, .ml-selbar-cb:focus-visible, .ml-row-pick:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
-.ml-selbar-acts { display: flex; flex-wrap: wrap; gap: 4px; }
-.ml-selbar-btn { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; border: 1px solid var(--line2); border-radius: 8px; background: var(--panel); color: var(--text); font-size: 12.5px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+/* the actions: icons only, in one row (the text is the tooltip / aria-label) */
+.ml-selbar-acts { display: flex; flex-wrap: nowrap; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.ml-selbar-btn { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 30px; height: 28px; padding: 0; border: 1px solid var(--line2); border-radius: 8px; background: var(--panel); color: var(--text); cursor: pointer; }
 .ml-selbar-btn:hover { background: var(--bg); }
 .ml-selbar-btn svg { color: var(--muted); }
 .ml-selbar-btn.is-delete svg { color: var(--err); }

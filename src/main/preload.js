@@ -154,5 +154,7 @@ if (typeof createMediaBridge === 'function') api.media = createMediaBridge(ipcRe
 
 // The player says whether a film plays: 'playing' | 'paused' | 'stopped' (Windows may sleep a minute after a pause).
 api.mediaAwake = (state) => ipcRenderer.invoke('media-player:awake', state);
+// The other videos (Drive, Tresor, camera clips — renderer/video-awake.js): each its own key, no minute after a pause.
+api.videoAwake = (key, state) => ipcRenderer.invoke('video:awake', key, state);
 
 contextBridge.exposeInMainWorld('gatecontrol', api);
