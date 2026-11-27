@@ -17,8 +17,12 @@
  * Ältere Versionen, Im Portal öffnen (Drive 1.6 'links'), In den Papierkorb.
  * Search covers names and the recognised text of scans (with the words
  * around the hit). Uploads and downloads show in a list at the bottom; a
- * taken name asks "Neue Version" / "Beide behalten" / "Überspringen". Whole
- * folders go up too ("Ordner hochladen" or dropped). What changes elsewhere
+ * taken name asks "Neue Version" / "Beide behalten" / "Überspringen" (several
+ * at once: "Für alle … übernehmen"). Whole folders go up too ("Ordner
+ * hochladen" or dropped from the Explorer: a folder there already takes the
+ * files; dropped on a folder row: into that folder, the zone at the bottom of
+ * the list says where). "Abbrechen" per upload / folder and "Alle abbrechen"
+ * in the list; a long list shows the newest rows. What changes elsewhere
  * (push `changed`) and coming back to the window reload the folder, search,
  * trash or links shown (at most every 2 s, scroll position and focus kept).
  * Drive 1.6 'guard': while Drive keeps this device stopped, a banner on top
@@ -475,7 +479,9 @@
 		refs.bar = el('div', { class: 'dv-bar' });
 		refs.note = el('div', { class: 'dv-note', hidden: true });
 		refs.list = el('div', { class: 'dv-list card', role: 'list' });
-		refs.listWrap = el('div', { class: 'dv-list-wrap scroll' }, [refs.list]);
+		// files dragged in from the Explorer: the zone says where they go (the folder shown, or the row's folder)
+		refs.dropZone = el('div', { class: 'dv-drop-zone', 'aria-hidden': 'true' }, [icon('upload', 15), el('span', { class: 'dv-drop-zone-tx' })]);
+		refs.listWrap = el('div', { class: 'dv-list-wrap scroll' }, [refs.list, refs.dropZone]);
 		// Drive 1.12: the green bar of the selection, the shortcuts below the list, the hint while dragging
 		refs.selBar = el('div', { class: 'dv-selbar', role: 'toolbar', hidden: true });
 		refs.keys = el('div', { class: 'dv-keys', role: 'group', hidden: true });
@@ -658,8 +664,10 @@
 			...[refs.dropHint, bulkUi ? bulkUi.el : null].filter(Boolean),
 		);
 
-		// Files dropped on the page go into the folder shown.
+		// Files and folders dropped on the page (from the Explorer) go into the folder shown — or, dropped on a folder
+		// of the list, into that folder; the core reads dropped folders with everything in them.
 		let dragDepth = 0;
+		let fileRow = null;
 		const hasFiles = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
 		// into a vault: "In Tresor verschieben" — the hint at the pointer says the originals go
 		const moveHint = (e) => {
@@ -671,26 +679,50 @@
 			refs.dropHint.style.top = `${e.clientY + 12}px`;
 		};
 		const endMoveHint = () => { if (refs.dropHint.dataset.move) { refs.dropHint.hidden = true; delete refs.dropHint.dataset.move; } };
+		/** The folder row under the pointer: { el, node, ok } (ok: files may go there) or null. */
+		const rowUnder = (e) => {
+			const rowEl = e.target && typeof e.target.closest === 'function' ? e.target.closest('.dv-list .dv-row[data-id]') : null;
+			if (!rowEl || !S.folder || !Array.isArray(S.folder.items)) return null;
+			const node = S.folder.items.find((x) => x && String(x.id) === rowEl.dataset.id);
+			if (!node || !node.isDir) return null;
+			return { el: rowEl, node, ok: DS.canDropFiles(node, { inVault: inVault() }) };
+		};
+		const markRow = (hit) => {
+			const el2 = hit && hit.ok ? hit.el : null;
+			if (fileRow && fileRow !== el2) fileRow.classList.remove('is-drop-target');
+			fileRow = el2;
+			if (fileRow) fileRow.classList.add('is-drop-target');
+			const tx = refs.dropZone.querySelector('.dv-drop-zone-tx');
+			if (tx) tx.textContent = DS.dropZoneText(hit && hit.ok ? hit.node : null, t);
+		};
+		const endFileDrag = () => {
+			dragDepth = 0;
+			rootEl.classList.remove('is-drop');
+			markRow(null);
+			endMoveHint();
+		};
 		rootEl.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; dragDepth++; rootEl.classList.toggle('is-drop', canUpload()); });
-		rootEl.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) { rootEl.classList.remove('is-drop'); endMoveHint(); } });
+		rootEl.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) endFileDrag(); });
 		rootEl.addEventListener('dragover', (e) => {
 			if (!hasFiles(e)) return;
 			e.preventDefault();
+			const hit = canUpload() ? rowUnder(e) : null;
+			markRow(hit);
 			// always 'copy', also into a vault: with 'move' Explorer would delete the originals itself, before the upload
 			// is verified — the app deletes them only afterwards
-			if (e.dataTransfer) e.dataTransfer.dropEffect = canUpload() ? 'copy' : 'none';
+			if (e.dataTransfer) e.dataTransfer.dropEffect = canUpload() && !(hit && !hit.ok) ? 'copy' : 'none';
 			moveHint(e);
 		});
 		rootEl.addEventListener('drop', async (e) => {
 			if (!hasFiles(e)) return;
 			e.preventDefault();
-			dragDepth = 0;
-			rootEl.classList.remove('is-drop');
-			endMoveHint();
+			const hit = canUpload() ? rowUnder(e) : null;
+			endFileDrag();
 			if (!canUpload()) { toast(t('drive.upload.notHere'), 'error'); return; }
+			if (hit && !hit.ok) { toast(t('drive.upload.vaultRow'), 'error'); return; }
 			// the files now: the drop's list is empty once the event is over (the question below waits)
 			const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
-			const folderId = S.folder.node.id;
+			const folderId = hit ? hit.node.id : S.folder.node.id;
 			if (!(await confirmMove())) return;
 			const r = await Promise.resolve(api.uploadDropped(folderId, files)).catch(fail);
 			afterQueue(r);
@@ -704,7 +736,7 @@
 		}
 		Promise.resolve(api.status()).then(setStatus).catch(() => {});
 		api.onState((st) => { S.dirty = true; setStatus(st); });
-		api.onTransfers((rows) => { S.transfers = Array.isArray(rows) ? rows : []; renderTransfers(); maybeAskConflict(); if (ki) ki.onTransfers(S.transfers); });
+		api.onTransfers((rows) => { S.transfers = Array.isArray(rows) ? rows : []; renderTransfers(); if (S.conflictMore) S.conflictMore(); maybeAskConflict(); if (ki) ki.onTransfers(S.transfers); });
 		api.onChanged((c) => {
 			if (S.shown && S.view === 'folder' && S.folder && c && c.folderId === S.folder.node.id) loadFolder(S.folder.node.id, { quiet: true });
 			else S.dirty = true;
@@ -1656,12 +1688,26 @@
 		function askConflict(row) {
 			if (S.conflictOpen) return;
 			S.conflictOpen = true;
-			const dlg = openDialog({ title: t('drive.conflict.title', { name: row.name }), host, closeLabel: t('drive.close'), onClose: () => { S.conflictOpen = false; setTimeout(maybeAskConflict, 0); } });
+			const dlg = openDialog({ title: t('drive.conflict.title', { name: row.name }), host, closeLabel: t('drive.close'), onClose: () => { S.conflictOpen = false; S.conflictMore = null; setTimeout(maybeAskConflict, 0); } });
+			// several names taken (a folder dropped into one there already): one answer for all of them — the line
+			// follows the transfer list while the question is open (the next names come one by one)
+			const others = () => S.transfers.filter((r) => r.state === 'conflict' && r.id !== row.id);
+			const allId = nextId('dv-conflict-all');
+			const all = el('input', { id: allId, type: 'checkbox' });
+			const allTx = el('span');
+			const allRow = el('label', { class: 'dv-check dv-conflict-all', for: allId, hidden: true }, [all, allTx]);
+			S.conflictMore = () => {
+				const n = others().length;
+				allRow.hidden = !n;
+				if (n) allTx.textContent = t('drive.conflict.all', { count: n + 1 });
+			};
 			const choose = async (choice) => {
-				await Promise.resolve(api.resolve(row.id, choice)).catch(() => {});
+				const ids = [row.id, ...(all.checked && !allRow.hidden ? others().map((r) => r.id) : [])];
+				for (const id of ids) await Promise.resolve(api.resolve(id, choice)).catch(() => {});
 				dlg.close(true);
 			};
-			dlg.body.append(el('p', { class: 'dv-p', text: t('drive.conflict.text') }));
+			dlg.body.append(el('p', { class: 'dv-p', text: t('drive.conflict.text') }), allRow);
+			S.conflictMore();
 			dlg.foot.append(
 				el('span', { class: 'dv-grow' }),
 				el('button', { type: 'button', class: 'btn btn-ghost', text: t('drive.conflict.skip'), on: { click: () => choose(null) } }),
@@ -2497,14 +2543,17 @@
 			clear(refs.transfers);
 			if (refs.transfers.hidden) return;
 			const summary = DS.transfersSummary(rows, t);
+			const cancelAll = typeof api.cancelUploads === 'function' && DS.uploadsOpen(rows);
 			refs.transfers.appendChild(el('div', { class: 'dv-tr-head' }, [
 				el('span', { class: 'lbl', text: t('drive.transfer.title') }),
 				summary ? el('span', { class: 'dv-tr-sum', text: summary }) : null,
 				el('span', { class: 'dv-grow' }),
+				cancelAll ? el('button', { type: 'button', class: 'btn btn-ghost btn-xs dv-tr-cancel-all', text: t('drive.transfer.cancelAll'), on: { click: (e) => { e.currentTarget.disabled = true; Promise.resolve(api.cancelUploads()).catch(() => {}); } } }) : null,
 				rows.some((r) => !['queued', 'running', 'conflict'].includes(r.state)) ? el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('drive.transfer.clear'), on: { click: () => Promise.resolve(api.clearTransfers()).then((r) => { if (r && r.ok) { S.transfers = r.transfers; renderTransfers(); } }).catch(() => {}) } }) : null,
 			]));
 			const list = el('div', { class: 'dv-tr-list scroll' });
-			for (const r of rows.slice().reverse()) {
+			const pick = DS.transferRows(rows);
+			for (const r of pick.shown) {
 				if (r.dir === 'op') { if (BS) list.appendChild(opRow(r)); continue; }
 				const v = DS.transferView(r, t, locale());
 				list.appendChild(el('div', { class: `dv-tr ${v.cls}` }, [
@@ -2514,9 +2563,11 @@
 						v.active ? el('div', { class: 'dv-tr-bar' }, [el('span', { style: `width:${v.pct}%` })]) : null,
 					]),
 					v.conflict ? el('button', { type: 'button', class: 'btn btn-sec btn-xs', text: t('drive.transfer.choose'), on: { click: () => askConflict(r) } }) : null,
+					v.cancel && typeof api.cancelUpload === 'function' ? el('button', { type: 'button', class: 'btn btn-ghost btn-xs dv-tr-cancel', 'aria-label': `${t('drive.transfer.cancel')}: ${v.name}`, text: t('drive.transfer.cancel'), on: { click: (e) => { e.currentTarget.disabled = true; Promise.resolve(api.cancelUpload(r.id)).catch(() => {}); } } }) : null,
 					v.path ? el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('drive.transfer.show'), on: { click: () => api.showItem(v.path) } }) : null,
 				]));
 			}
+			if (pick.hidden) list.appendChild(el('div', { class: 'dv-tr dv-tr-more', text: DS.plural(t, 'drive.transfer.more', pick.hidden) }));
 			refs.transfers.appendChild(list);
 		}
 
