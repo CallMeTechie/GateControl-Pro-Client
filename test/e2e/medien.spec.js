@@ -10,11 +10,13 @@ const { startJellyfin } = require('./support/jellyfin-mock');
 // "Immer Original" and "Weiterschauen auf der Übersicht"; the overview with the source
 // chips, the way ("Unterwegs · … Mbit/s": the fake Jellyfin is not in a LAN subnet, so the core measures), the rows;
 // Filme and Serien as a grid with sorting, filters and the detail column (sound with what the PC does with it,
-// seasons and episodes); the search over all sources; the placeholder of "Ordner"; the card "Weiterschauen" on the
+// seasons and episodes); the search over all sources; "Ordner" with Jellyfin's libraries; the card "Weiterschauen" on the
 // app's overview. The real core MediaService talks to a fake Jellyfin (support/jellyfin-mock.js) — tokens stay in
 // the main process, the page only sees gcmedia:// addresses. Selectors by id/class/data attributes.
 
 const page$ = (page) => page.locator('#page-medien');
+const SHOTS = process.env.GC_E2E_SHOTS || null;
+const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` }); };
 
 async function openMedien(page) {
   await expect(page.locator('#nav-medien')).toBeVisible();
@@ -131,10 +133,38 @@ test.describe('medien', () => {
     await p.locator('.md-search-inp').fill('');
     await expect(p.locator('.md-searchhead')).toHaveCount(0);
 
-    // Ordner: the placeholder until the folders come (4h)
+    // Ordner with Jellyfin alone (as Android #301): its libraries (no music), a library's folders and titles, back
     await p.locator('.md-tabs [data-tab="folders"]').click();
-    await expect(p.locator('.md-folders')).toBeVisible();
-    await p.locator('.md-folders .btn').click();
+    const fl = p.locator('.md-fl');
+    await expect(fl.locator('.md-fr.is-lib')).toHaveCount(2);
+    await expect(fl.locator('.md-fr.is-lib b')).toHaveText(['Filme', 'Serien']);
+    await expect(fl.locator('.md-fr.is-lib').first()).toContainText(/(Jellyfin-Bibliothek|Jellyfin library)/);
+    await expect(p.locator('.md-folders')).toHaveCount(0);
+    await shot(page, 'medien-ordner-bibliotheken');
+    await fl.locator('.md-fr.is-lib', { hasText: 'Filme' }).click();
+    await expect(p.locator('.md-crumb.is-cur')).toHaveText('Filme');
+    // the folders first (a box set too), then the titles A–Z
+    await expect(fl.locator('.md-fr.is-dir b')).toHaveText(['Klassiker', 'Kobalt-Reihe']);
+    await expect(fl.locator('.md-fr.is-title').first()).toContainText('Achterwasser');
+    await expect(fl.locator('.md-fr.is-title', { hasText: 'Kobaltnacht' }).locator('small')).toContainText('2025');
+    await shot(page, 'medien-ordner-filme');
+    await fl.locator('.md-fr.is-dir', { hasText: 'Klassiker' }).click();
+    await expect(p.locator('.md-crumb')).toHaveText(['Filme', 'Klassiker']);
+    await expect(fl.locator('.md-fr.is-title b')).toHaveText(['Der Pegelwart', 'Moorlicht', 'Zugvogelzeit']);
+    await expect(fl.locator('.md-fr.is-title', { hasText: 'Der Pegelwart' }).locator('.md-seen')).toHaveCount(1);
+    await p.locator('.md-crumb', { hasText: 'Filme' }).click();
+    await expect(p.locator('.md-crumb.is-cur')).toHaveText('Filme');
+    // a title opens its tab with the detail column
+    await fl.locator('.md-fr.is-title', { hasText: 'Kupferstadt' }).locator('.md-fr-open').click();
+    await expect(p.locator('.md-tabs [data-tab="movies"]')).toHaveClass(/on/);
+    await expect(p.locator('.md-det .md-det-h')).toHaveText('Kupferstadt');
+    // back in Ordner: the library is still open; up to the list of libraries
+    await p.locator('.md-tabs [data-tab="folders"]').click();
+    await expect(p.locator('.md-crumb.is-cur')).toHaveText('Filme');
+    await p.locator('.md-fv-up').click();
+    await expect(fl.locator('.md-fr.is-lib')).toHaveCount(2);
+    expect(jf.log.some((x) => x.path === '/UserViews')).toBe(true);
+    await p.locator('.md-srcbtn').click();
     await expect(p.locator('.md-sources')).toBeVisible();
 
     // Quellen: only shown, from the server — no "+", no dialog, no "Gerät anmelden"

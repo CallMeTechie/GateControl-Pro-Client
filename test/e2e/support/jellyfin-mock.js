@@ -126,7 +126,23 @@ function createLibrary() {
   mkSeries('Graufeld', 2021, [8, 8, 6], { addedDaysAgo: 4, genres: ['Krimi'] });
   mkSeries('Ankerplatz 12', 2023, [10], { addedDaysAgo: 90, genres: ['Komödie'] });
   const all = () => [...movies, ...series, ...[...episodes.values()].flat()];
-  return { movies, series, seasons, episodes, all, kobalt };
+  // "Ordner" (/UserViews, /Items?parentId=): Filme with a folder "Klassiker" (the films before 2019), Serien, Musik
+  // (left out by the app); a box set "Kobalt-Reihe" in Filme
+  const views = [
+    { Id: id(), Name: 'Filme', Type: 'CollectionFolder', CollectionType: 'movies', IsFolder: true },
+    { Id: id(), Name: 'Serien', Type: 'CollectionFolder', CollectionType: 'tvshows', IsFolder: true },
+    { Id: id(), Name: 'Musik', Type: 'CollectionFolder', CollectionType: 'music', IsFolder: true },
+  ];
+  const classics = { Id: id(), Name: 'Klassiker', Type: 'Folder', IsFolder: true };
+  const boxSet = { Id: id(), Name: 'Kobalt-Reihe', Type: 'BoxSet', IsFolder: true };
+  const children = new Map([
+    [views[0].Id, [classics, boxSet, ...movies.filter((m) => m.ProductionYear >= 2019)]],
+    [views[1].Id, series],
+    [views[2].Id, [{ Id: id(), Name: 'Album', Type: 'MusicAlbum', IsFolder: true }]],
+    [classics.Id, movies.filter((m) => m.ProductionYear < 2019)],
+    [boxSet.Id, [kobalt]],
+  ]);
+  return { movies, series, seasons, episodes, all, kobalt, views, children };
 }
 
 const pick = (it) => {
@@ -250,6 +266,11 @@ async function startJellyfin({ password = 'geheim', quickConnect = true, authori
       if (p === '/Items/Latest') {
         const items = [...lib.movies, ...lib.series].sort((a, b) => b.DateCreated.localeCompare(a.DateCreated)).slice(0, Number(q.get('limit')) || 16);
         return send(res, 200, items.map(pick));
+      }
+      if (p === '/UserViews') return send(res, 200, { Items: lib.views, TotalRecordCount: lib.views.length });
+      if (p === '/Items' && q.get('parentId')) {
+        const list = (lib.children.get(q.get('parentId')) || []).slice().sort((a, b) => a.Name.localeCompare(b.Name, 'de'));
+        return send(res, 200, { Items: list.map(pick), TotalRecordCount: list.length });
       }
       if (p === '/Items') {
         const types = String(q.get('includeItemTypes') || '').split(',');
