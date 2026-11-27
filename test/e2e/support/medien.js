@@ -6,9 +6,10 @@
 
 const { setupWithApiKey } = require('./ui');
 
-async function launchWithMedien({ launchApp, mock, jf = null, dav = null, tunnel = true, tab = true }) {
+async function launchWithMedien({ launchApp, mock, jf = null, dav = null, tunnel = true, tab = true, version = null }) {
   const md = mock.setMedien({ jf, dav });
   md.tab = tab;
+  if (version) md.version = version;
   const launched = await launchApp();
   if (tunnel) await launched.app.evaluate(() => { globalThis.__gcE2E.tunnelWorks = true; });
   await setupWithApiKey(launched.page, mock);

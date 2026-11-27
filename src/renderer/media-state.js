@@ -586,6 +586,56 @@
 		return out;
 	}
 
+	// ── „Videos umwandeln“ (gatecontrol-medien 1.6.0) ───────
+
+	/** What this PC does not play itself, for the hint: „HEVC“, „Dolby Vision“, „HDR“, „MPEG-2“ (core MC.videoProblem). */
+	function convertWhat(problem) {
+		if (!isObj(problem)) return null;
+		if (problem.code === 'dovi') return 'Dolby Vision';
+		if (problem.code === 'hdr') return [codecLabel(problem.codec), 'HDR'].filter(Boolean).join(' ');
+		return codecLabel(problem.codec);
+	}
+
+	/** The clock time of `startsAt` (ms) — German 24 hours „01:08“, English the locale's short time; null when past or unknown. */
+	function convertClock(startsAt, lang, now = Date.now()) {
+		const ms = num(startsAt);
+		if (ms === null || ms <= now) return null;
+		const d = new Date(ms);
+		if (lang !== 'en') return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+		try { return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); } catch { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+	}
+
+	/**
+	 * The card before playing (core media:convert:hint) → null | { kind, title, text, button (label) | null, percent }:
+	 *   offer      „Wird beim Abspielen umgewandelt“ · „Für heute Nacht vormerken“
+	 *   requested  „Zum Umwandeln vorgemerkt“
+	 *   queued     „Wird heute Nacht umgewandelt · Platz 2 · ab 01:08 Uhr“
+	 *   running    „Wird gerade umgewandelt – 47 %“ (with the bar)
+	 * Playing stays possible always: the card never replaces a button.
+	 */
+	function convertCard(hint, t, lang, now = Date.now()) {
+		if (!isObj(hint)) return null;
+		const what = convertWhat(hint.problem);
+		if (hint.kind === 'offer') {
+			return { kind: 'offer', title: t('media.convert.offerTitle'), text: what ? t('media.convert.offerText', { what }) : t('media.convert.offerTextPlain'), button: t('media.convert.request'), percent: null };
+		}
+		if (hint.kind === 'requested') return { kind: 'requested', title: t('media.convert.requestedTitle'), text: t('media.convert.requestedText'), button: null, percent: null };
+		if (hint.kind === 'queued') {
+			const parts = [t('media.convert.queuedTitle')];
+			const pos = num(hint.position);
+			if (pos !== null && pos > 0) parts.push(t('media.convert.queuedPlace', { n: pos }));
+			const clock = convertClock(hint.startsAt, lang, now);
+			if (clock) parts.push(t('media.convert.queuedFrom', { time: clock }));
+			return { kind: 'queued', title: parts.join(' · '), text: t('media.convert.after'), button: null, percent: null };
+		}
+		if (hint.kind === 'running') {
+			const pc = num(hint.percent);
+			const p = pc === null ? null : Math.round(Math.min(100, Math.max(0, pc)));
+			return { kind: 'running', title: p === null ? t('media.convert.runningTitle') : t('media.convert.runningPercent', { n: p }), text: t('media.convert.after'), button: null, percent: p };
+		}
+		return null;
+	}
+
 	/** The meta line: "2025 · 1 Std. 48 Min. · Drama · FSK 12". */
 	function metaLine(title, t) {
 		if (!title) return '';
@@ -854,6 +904,9 @@
 		pickedAudio,
 		videoConverted,
 		detailChips,
+		convertWhat,
+		convertClock,
+		convertCard,
 		metaLine,
 		qualityOptions,
 		qualityNote,

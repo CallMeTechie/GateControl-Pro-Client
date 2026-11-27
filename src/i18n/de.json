@@ -5430,6 +5430,22 @@
       "videoConverted": "am PC: Bild umgerechnet",
       "bothConverted": "am PC: Bild und Ton umgerechnet"
     },
+    "convert": {
+      "offerTitle": "Wird beim Abspielen umgewandelt",
+      "offerText": "Dein PC kann dieses Video ({{what}}) nicht selbst abspielen. Jetzt kann es ruckeln. Über Nacht dauerhaft umwandeln?",
+      "offerTextPlain": "Dein PC kann dieses Video nicht selbst abspielen. Jetzt kann es ruckeln. Über Nacht dauerhaft umwandeln?",
+      "request": "Für heute Nacht vormerken",
+      "requestedTitle": "Zum Umwandeln vorgemerkt",
+      "requestedText": "Wer die Medien verwaltet, startet das Umwandeln. Abspielen geht trotzdem.",
+      "queuedTitle": "Wird heute Nacht umgewandelt",
+      "queuedPlace": "Platz {{n}}",
+      "queuedFrom": "ab {{time}} Uhr",
+      "runningTitle": "Wird gerade umgewandelt",
+      "runningPercent": "Wird gerade umgewandelt – {{n}} %",
+      "after": "Danach läuft es hier flüssig. Abspielen geht trotzdem.",
+      "failed": "Das hat nicht geklappt. Bitte später noch einmal versuchen.",
+      "tooMany": "Gerade zu viele Anfragen. Bitte später noch einmal versuchen."
+    },
     "quality": {
       "auto": "Automatisch",
       "original": "Original",
