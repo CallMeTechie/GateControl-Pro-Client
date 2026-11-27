@@ -362,3 +362,26 @@
 .nz-dl .hint, .nz-dl-del, .nz-readonly { margin: 0; line-height: 1.45; }
 .nz-from.is-plain { cursor: default; }
 .nz-moved { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+
+/* plugin 1.9.0: „Termin“ in the quick entry, an event's row, „Termine aus dem Kalender“ */
+.nz-qmode { margin-bottom: 2px; }
+.nz-evask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 12px; border-radius: 12px; background: var(--info-bg); color: var(--info); font-size: 13px; }
+.nz-evask[hidden] { display: none; }
+.nz-evask[data-card="no-calendar"] { background: var(--warn-bg); color: var(--warn); }
+.nz-evask-tx { flex: 1 1 260px; line-height: 1.45; color: var(--text); }
+.nz-evask-body { display: flex; flex-direction: column; gap: 2px; flex: 1 1 260px; }
+.nz-evask-body b { color: inherit; }
+.nz-evask-body .nz-evask-tx { flex: none; }
+.nz-qchip-ev { display: inline-flex; align-items: center; gap: 6px; }
+.nz-qchip-ev.is-suggest { background: transparent; border: 1px dashed var(--line2); color: var(--muted); }
+.nz-qchip-ev[data-kind="calendar"] svg { color: var(--ev-color, currentColor); }
+.nz-qmore { border: 0; cursor: pointer; background: transparent; color: var(--acc-t); font-weight: 600; }
+.nz-qmore:hover span { text-decoration: underline; }
+.nz-qmore:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.nz-evhint { flex-basis: 100%; line-height: 1.45; }
+.nz-evtimes { display: flex; gap: 12px; }
+.nz-evtimes[hidden] { display: none; }
+.nz-evcal { display: inline-flex; align-items: center; justify-content: center; width: 22px; flex-shrink: 0; color: var(--acc-t); }
+.nz-ev.is-pending .nz-row-title { color: var(--muted); }
+.nz-evcal-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--text); }
+.nz-evcal-row { align-items: center; }

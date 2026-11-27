@@ -513,8 +513,14 @@
 			if (S.view.kind === 'filing') renderFiling();
 		}
 
-		async function loadAll() {
+		/** The first load; a push target or a link from another page that comes meanwhile waits for it (open()). */
+		function loadAll() {
 			S.loaded = true;
+			S.loadingAll = loadAllNow().finally(() => { S.loadingAll = null; });
+			return S.loadingAll;
+		}
+
+		async function loadAllNow() {
 			await loadMe();
 			await loadFolders();
 			renderMenu();
@@ -3242,10 +3248,13 @@
 			 * | the start page: { kind: 'contact', contactId } | { kind: 'contacts' } | Drive 1.18: { kind: 'filing' }
 			 * | Mail 1.9.0: { kind: 'requests', bookingId } (a booking request) | { kind: 'bookings', bookingId } | { kind: 'shared',
 			 * calendarId } (a calendar shared with the person); the answer to a booking comes as { kind: 'event' }.
+			 * | Notizen & Aufgaben 1.9.0: { kind: 'newEvent', prefill } („Mehr Angaben …“ — the form of a new event, filled in).
 			 */
 			async open(context) {
 				S.shown = true;
 				if (!S.loaded && S.status && S.status.state === 'available') await loadAll();
+				// the page was just shown and is still loading (S.me, the features): the target waits for it
+				else if (S.loadingAll) await S.loadingAll;
 				if (!context) return;
 				// the start page (Mail 1.4.0): a favourite's tile opens its contact
 				if (context.kind === 'contact' || context.kind === 'contacts') {
@@ -3254,10 +3263,11 @@
 					if (context.kind === 'contact' && context.contactId) contacts.openCard(context.contactId);
 					return;
 				}
-				if (context.kind === 'event' || context.kind === 'invitation' || context.kind === 'calendar' || context.kind === 'requests' || context.kind === 'bookings' || context.kind === 'shared') {
+				if (context.kind === 'event' || context.kind === 'invitation' || context.kind === 'calendar' || context.kind === 'requests' || context.kind === 'bookings' || context.kind === 'shared' || context.kind === 'newEvent') {
 					if (!calendar || !has('calendar')) return;
 					setArea('calendar');
 					if (context.kind === 'event') calendar.openEvent(context.eventId, context.occurrence || null);
+					else if (context.kind === 'newEvent') calendar.newEvent(null, context.prefill && typeof context.prefill === 'object' ? context.prefill : null);
 					else if (context.kind === 'invitation') calendar.openInvitation(context.invitationId);
 					else if (context.kind === 'requests' && has('bookingRequests')) calendar.openRequests('open', context.bookingId || null);
 					else if ((context.kind === 'requests' || context.kind === 'bookings') && has('resources')) calendar.openRequests('mine', context.bookingId || null);

@@ -82,6 +82,7 @@
 		home: 'M4 11l8-7 8 7|M6 10v10h12V10|M10 20v-5h4v5',
 		place: 'M12 21s-7-6.3-7-11.2a7 7 0 0 1 14 0C19 14.7 12 21 12 21z|M12 7.3a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2',
 		turn: 'M17 2l4 4-4 4|M3 11V9a3 3 0 0 1 3-3h15|M7 22l-4-4 4-4|M21 13v2a3 3 0 0 1-3 3H3',
+		clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 7v5l3 2',
 		people: 'M9 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7z|M2.5 20a6.5 6.5 0 0 1 13 0|M16 4.3a3.5 3.5 0 0 1 0 6.4|M18 14.2a6.5 6.5 0 0 1 3.5 5.8',
 	};
 
@@ -155,6 +156,9 @@
 			quickPlace: null, // … and what the person chose for the quick entry's line: { text, choice }
 			quickTurn: null,  // plugin 1.6.0: „Wer ist dran?“ chosen for the people of the quick entry's line: { key, value }
 			movedTold: false, // … and the note „Umzug abgeschlossen“ was shown in this run
+			// plugin 1.9.0: „Aufgabe | Termin | Notiz“, the choices of the chips of an event ({ text, date, time, endTime,
+			// allDay, location, calendarId, reminder }), „Aufgabe lassen“ until the line is emptied or saved, the calendars
+			quickMode: 'task', quickEv: null, quickKeepTask: false, cals: null, calsAt: 0,
 		};
 
 		// ── skeleton ─────────────────────────────────────────
@@ -185,6 +189,18 @@
 				if (o.onCount) o.onCount(r.nav.smart.myday);
 			}
 			renderSide();
+		}
+
+		// ── „Termin“ (plugin 1.9.0) ─────────────────────────
+		const eventsOn = () => NS.eventsOn(S.me);
+
+		/** The person's calendars in Mail (asked at most once a minute here; offline the last answer). */
+		async function loadCals(force = false) {
+			if (!eventsOn()) { S.cals = null; return null; }
+			if (!force && S.cals && Date.now() - S.calsAt < 60000) return S.cals;
+			const r = await Promise.resolve(api.eventCalendars()).catch(() => null);
+			if (ok(r)) { S.cals = r.calendars; S.calsAt = Date.now(); }
+			return S.cals;
 		}
 
 		// ── shopping lists (plugin 1.4.0) ───────────────────
@@ -260,6 +276,8 @@
 			if (v.kind === 'sources') {
 				// plugin 1.5.0: „Orte“ shows what holds now (the administrator may have switched the search on or off meanwhile)
 				if (placesOn()) { await loadMe(); reloadPlaces(); }
+				// plugin 1.9.0: „Termine aus dem Kalender“ (the switches as the server holds them now)
+				if (eventsOn()) await loadCals(true);
 				return api.sources();
 			}
 			if (v.kind === 'import') return { ok: true };
@@ -310,7 +328,7 @@
 			if (!S.me) { if (!(await loadMe())) { renderGate('error'); return; } }
 			renderGate(null);
 			const pp = Promise.resolve(api.people()).then((r) => { if (ok(r)) S.people = r.people; }).catch(() => {});
-			await Promise.all([reloadNav(), reloadView(), pp, reloadShop()]);
+			await Promise.all([reloadNav(), reloadView(), pp, reloadShop(), loadCals()]);
 			if (S.detail && !S.editing) reloadDetail();
 			movedNote();
 		}
@@ -582,6 +600,8 @@
 				click: () => openDetail(x),
 				keydown: (e) => { if (e.key === 'Enter' && e.target === row) openDetail(x); },
 			} });
+			// plugin 1.9.0: an event of the calendar — the calendar's colour instead of a tick box, it opens Mail's event
+			if (NS.isEvent(x)) return eventRow(x, openNow);
 			if (x.canComplete && !(S.me && S.me.readOnly)) {
 				row.appendChild(el('button', { type: 'button', class: `nz-ck${x.done ? ' on' : ''}`, 'aria-label': x.done ? t('notes.undo') : t('notes.complete'), 'aria-pressed': x.done ? 'true' : 'false',
 					on: { click: (e) => { e.stopPropagation(); complete(x, !x.done); } } }, [icon('check', 13)]));
@@ -598,6 +618,36 @@
 			if (x.type === 'task') {
 				row.appendChild(el('button', { type: 'button', class: `nz-star${x.important ? ' on' : ''}`, 'aria-label': t('notes.important'), 'aria-pressed': x.important ? 'true' : 'false',
 					on: { click: async (e) => { e.stopPropagation(); const r = await api.updateTask(x.id, { important: !x.important }); if (ok(r)) soon(0); else fail(r); } } }, [icon('star', 16)]));
+			}
+			return row;
+		}
+
+		/** An event's row (Bild 7): the calendar sign in its colour, „Ort · Kalender“, the time on the right, no tick box. */
+		function eventRow(x, openNow) {
+			const open = () => {
+				if (x.pending) { toast(t('notes.ev.pendingHint')); return; }
+				const target = NS.openTarget(x.source.open, o.pages ? o.pages() : null);
+				if (target) o.openTarget(target);
+			};
+			const row = el('div', { class: `nz-row nz-ev${openNow ? ' on' : ''}${x.pending ? ' is-pending' : ''}`, role: 'button', tabindex: '0', 'data-uid': x.uid, 'data-kind': 'event', on: {
+				click: open,
+				keydown: (e) => { if (e.key === 'Enter' && e.target === row) open(); },
+			} });
+			const color = x.event.calendar && x.event.calendar.color;
+			const sign = el('span', { class: 'nz-evcal', title: x.event.calendar ? x.event.calendar.name : null }, [icon('cal', 16)]);
+			if (color) sign.style.color = color;
+			row.appendChild(sign);
+			const meta = NS.eventMeta(x, S.me && S.me.today, t);
+			row.appendChild(el('div', { class: 'nz-row-tx' }, [el('span', { class: 'nz-row-title', text: x.title }), meta.length ? el('span', { class: 'nz-row-meta' }, [el('span', { class: 'nz-row-meta-tx', text: meta.join(' · ') })]) : null]));
+			const w = NS.eventWhen(x);
+			if (w) row.appendChild(el('span', { class: 'nz-when', text: w }));
+			if (x.pending) {
+				row.appendChild(el('button', { type: 'button', class: 'nz-ib', 'data-act': 'unqueue', title: t('notes.ev.unqueue'), 'aria-label': t('notes.ev.unqueue'), on: { click: async (e) => {
+					e.stopPropagation();
+					const r = await api.unqueueEvent(x.clientId);
+					if (!ok(r)) { fail(r); return; }
+					soon(0);
+				} } }, [icon('x', 15)]));
 			}
 			return row;
 		}
@@ -843,9 +893,26 @@
 
 		// ── the quick entry (Strg+N) ─────────────────────────
 		function quickBox() {
-			const input = el('input', { id: 'nz-quick', class: 'nz-quick-inp', type: 'text', autocomplete: 'off', maxlength: '500', placeholder: t('notes.quick.ph'), 'aria-label': t('notes.quick.label') });
+			// plugin 1.9.0: „Aufgabe | Termin | Notiz“ — the switch is always clear; the app never switches by itself
+			const evOn = eventsOn();
+			if (!evOn) S.quickMode = 'task';
+			const mode = () => S.quickMode;
+			const input = el('input', { id: 'nz-quick', class: 'nz-quick-inp', type: 'text', autocomplete: 'off', maxlength: '500', placeholder: t(mode() === 'event' ? 'notes.ev.ph' : mode() === 'note' ? 'notes.ev.notePh' : 'notes.quick.ph'), 'aria-label': t('notes.quick.label') });
 			input.value = S.quickText;
 			const chips = el('div', { class: 'nz-chips', 'aria-live': 'polite' });
+			// the question „Als Termin anlegen?“ and the card „Kein Kalender“
+			const ask = el('div', { class: 'nz-evask', hidden: true });
+			let draft = null;
+			const evCh = () => {
+				const text = input.value.trim();
+				if (!S.quickEv || S.quickEv.text !== text) {
+					// what came from the line goes with it; the calendar and the reminder the person chose stay
+					const keep = S.quickEv ? { calendarId: S.quickEv.calendarId, reminder: S.quickEv.reminder } : {};
+					S.quickEv = { text, ...keep };
+				}
+				return S.quickEv;
+			};
+			const setEv = (patch) => { Object.assign(evCh(), patch); show(); input.focus(); };
 			// plugin 1.6.0: „Wer ist dran?“ — shown from two people on, read on this PC (the plugin's ui/turnwords.js)
 			const turnBox = el('div', { class: 'nz-qturn', hidden: true });
 			let parsed = null;
@@ -862,8 +929,20 @@
 			const show = () => {
 				S.quickText = input.value;
 				clear(chips);
+				clear(ask).hidden = true;
+				if (!input.value.trim()) S.quickKeepTask = false;
+				if (mode() === 'event') { clear(turnBox).hidden = true; showEvent(); return; }
+				if (mode() === 'note') { clear(turnBox).hidden = true; parsed = null; return; }
 				const ctx = NS.quickCtx(S.me, S.nav, S.people);
 				parsed = NS.quickParse(input.value, ctx);
+				// plugin 1.9.0: a date and a time — „Das sieht wie ein Termin aus“ (asked, never switched)
+				if (NS.eventAsk(parsed, S.me, mode(), S.quickKeepTask)) {
+					ask.hidden = false;
+					ask.setAttribute('data-card', 'ask');
+					ask.append(icon('cal', 16), el('span', { class: 'nz-evask-tx', text: t('notes.ev.askText') }),
+						btn(t('notes.ev.askYes'), () => setMode('event'), 'btn-pri', null, { 'data-act': 'as-event' }),
+						btn(t('notes.ev.askNo'), () => { S.quickKeepTask = true; show(); input.focus(); }, 'btn-ghost', null, { 'data-act': 'keep-task' }));
+				}
 				words = NS.quickWords(parsed, ctx, S.me, S.view);
 				const qt = turnNow();
 				clear(turnBox).hidden = !qt;
@@ -913,7 +992,7 @@
 				return chip;
 			};
 			const suggest = () => {
-				if (!lists && !placesOn) return;
+				if ((!lists && !placesOn) || mode() !== 'task') return;
 				clearTimeout(sug.timer);
 				const text = input.value.trim();
 				if (text === sug.text) return;
@@ -933,10 +1012,157 @@
 					if (input.value.trim() === text) show();
 				}, 250);
 			};
+			/** Event mode: the line read as an event, its chips (each one changes what it shows), or „Kein Kalender“. */
+			const showEvent = () => {
+				const text = input.value.trim();
+				const ctx = NS.quickCtx(S.me, S.nav, S.people);
+				const p = text && ctx.today ? NS.quickParse(text, { ...ctx, mode: 'event' }) : null;
+				draft = p ? NS.eventDraft(p, evCh(), S.cals, S.me.today) : null;
+				const why = NS.eventBlocked(S.me, S.cals);
+				if (why) { noCalendar(why); return; }
+				if (!draft) return;
+				chips.appendChild(el('span', { class: 'nz-chips-l', text: t('notes.ev.found') }));
+				for (const c of NS.eventChips(draft, S.cals, t, S.me.today, lang())) chips.appendChild(eventChip(c));
+				if (o.pages && o.pages().includes('mail')) {
+					chips.appendChild(el('button', { type: 'button', class: 'chip nz-qchip nz-qmore', 'data-kind': 'more', on: { click: moreDetails } }, [el('span', { text: t('notes.ev.more') })]));
+				}
+				if (!draft.location && draft.placeSuggest) chips.appendChild(el('span', { class: 'hint nz-evhint', text: t('notes.ev.placeHint', { title: draft.title }) }));
+			};
+			/** Bild 9: the switch stays, the reason, and the line saved as a task with its day instead. */
+			const noCalendar = (why) => {
+				ask.hidden = false;
+				ask.setAttribute('data-card', 'no-calendar');
+				ask.setAttribute('data-why', NS.eventWhy(why));
+				ask.append(el('div', { class: 'nz-evask-body' }, [el('b', { text: t('notes.ev.noCalTitle') }), el('span', { class: 'nz-evask-tx', text: t(`notes.ev.noCal.${NS.eventWhy(why)}`) })]),
+					input.value.trim() ? btn(t('notes.ev.asTask'), () => saveTask(), 'btn-sec', 'check', { 'data-act': 'as-task' }) : null);
+			};
+			const eventChip = (c) => {
+				const attrs = { class: `chip nz-qchip nz-qchip-ev${c.plain ? ' plain' : ''}${c.suggest ? ' is-suggest' : ''}`, 'data-kind': c.kind };
+				if (c.kind === 'calendar' || c.kind === 'reminder') {
+					const opts = c.kind === 'calendar'
+						? S.cals.calendars.filter((x) => x.target).map((x) => ({ value: String(x.id), label: t('notes.ev.calendar', { name: x.name }) }))
+						: NS.reminderChoices(draft.allDay, draft.reminder, t).map((x) => ({ value: String(x.value), label: x.label }));
+					const sel = el('select', { class: 'nz-qsel', 'aria-label': t(c.kind === 'calendar' ? 'notes.ev.calendarLabel' : 'notes.ev.reminderLabel'), 'data-act': c.kind }, opts.map((x) => el('option', { value: x.value, text: x.label })));
+					sel.value = c.kind === 'calendar' ? String(draft.calendarId) : String(draft.reminder === null ? false : draft.reminder);
+					sel.addEventListener('change', () => setEv(c.kind === 'calendar' ? { calendarId: Number(sel.value) } : { reminder: sel.value === 'false' ? false : Number(sel.value) }));
+					const chip = el('span', attrs, [icon(c.kind === 'calendar' ? 'cal' : 'bell', 13), sel]);
+					if (c.color) chip.style.setProperty('--ev-color', c.color);
+					return chip;
+				}
+				const ic = { date: 'cal', time: 'clock', place: 'place', repeat: 'refresh' }[c.kind] || 'cal';
+				const click = () => {
+					if (c.kind === 'date') dateDialog();
+					else if (c.kind === 'time') timeDialog();
+					else if (c.kind === 'place') { if (c.suggest) setEv({ location: draft.placeSuggest }); else placeTextDialog(); }
+				};
+				if (c.kind === 'repeat') return el('span', attrs, [el('span', { text: c.text })]);
+				return el('span', attrs, [el('button', { type: 'button', class: 'nz-qbtn', 'data-act': c.kind, on: { click } }, [icon(ic, 13), el('span', { text: c.text })])]);
+			};
+			const dateDialog = () => {
+				const inp = el('input', { class: 'inp', type: 'date', value: draft.date || '', 'aria-label': t('notes.ev.day') });
+				let d = null;
+				const save = () => { if (!inp.value) return; d.close(); setEv({ date: inp.value }); };
+				inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+				d = dialog(t('notes.ev.day'), [field(t('notes.ev.day'), inp)], [btn(t('notes.cancel'), () => d.close(), 'btn-ghost'), btn(t('notes.ev.apply'), save, 'btn-pri', null, { 'data-act': 'apply' })]);
+				d.box.setAttribute('data-dlg', 'ev-date');
+			};
+			const timeDialog = () => {
+				let allDay = draft.allDay;
+				const from = el('input', { class: 'inp nz-inp-sm', type: 'time', value: draft.time || '09:00', 'aria-label': t('notes.ev.from') });
+				const to = el('input', { class: 'inp nz-inp-sm', type: 'time', value: draft.endTime || '10:00', 'aria-label': t('notes.ev.to') });
+				const times = el('div', { class: 'nz-evtimes' }, [field(t('notes.ev.from'), from), field(t('notes.ev.to'), to)]);
+				times.hidden = allDay;
+				let d = null;
+				const save = () => { d.close(); setEv(allDay ? { allDay: true } : { allDay: false, time: from.value || '09:00', endTime: to.value || null }); };
+				d = dialog(t('notes.ev.time'), [field(t('notes.ev.allDay'), sw(allDay, (v) => { allDay = v; times.hidden = v; }, t('notes.ev.allDay'))), times], [btn(t('notes.cancel'), () => d.close(), 'btn-ghost'), btn(t('notes.ev.apply'), save, 'btn-pri', null, { 'data-act': 'apply' })]);
+				d.box.setAttribute('data-dlg', 'ev-time');
+			};
+			/** Bild 4: only a text — it stands in the calendar's entry; no reminder on arriving, no position. */
+			const placeTextDialog = () => {
+				const inp = el('input', { class: 'inp', type: 'text', maxlength: '255', value: draft.location || draft.placeSuggest || '', placeholder: t('notes.ev.placePh'), 'aria-label': t('notes.ev.placePh') });
+				let d = null;
+				const save = () => { d.close(); setEv({ location: inp.value.trim() || null }); };
+				inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+				d = dialog(t('notes.ev.placeTitle'), [field(t('notes.ev.placePh'), inp, t('notes.ev.placeOnlyText'))],
+					[draft.location ? btn(t('notes.ev.placeRemove'), () => { d.close(); setEv({ location: null }); }, 'btn-ghost', null, { 'data-act': 'place-remove' }) : null, btn(t('notes.ev.apply'), save, 'btn-pri', null, { 'data-act': 'apply' })].filter(Boolean));
+				d.box.setAttribute('data-dlg', 'ev-place');
+			};
+			/** „Mehr Angaben …“: Mail's own form of a new event, filled in with what the chips show — saved there. */
+			const moreDetails = () => {
+				if (!draft || !draft.title) return;
+				o.openTarget({ page: 'mail', context: { kind: 'newEvent', prefill: NS.eventPrefill(draft) } });
+			};
+			const setMode = (m) => {
+				S.quickMode = m;
+				// no calendar last time: asked again at once (it may be there now)
+				if (m === 'event') loadCals(!!S.cals && S.cals.state !== 'ok').then(() => { const q = refs.main.querySelector('#nz-quick'); if (q && mode() === 'event') q.dispatchEvent(new Event('input')); });
+				renderMain();
+				const again = refs.main.querySelector('#nz-quick');
+				if (again) again.focus();
+			};
+			const clearLine = () => {
+				input.value = '';
+				S.quickText = '';
+				S.quickPlace = null;
+				S.quickTurn = null;
+				S.quickEv = null;
+				S.quickKeepTask = false;
+				suggest();
+				show();
+				input.focus();
+			};
+			/** „Als Aufgabe mit Datum speichern“ (no calendar): the line unchanged as a task — its day, time and reminder from it. */
+			const saveTask = async () => {
+				const ctx = NS.quickCtx(S.me, S.nav, S.people);
+				const p = NS.quickParse(input.value, ctx);
+				const body = NS.quickBody(input.value, p, S.view, S.area, null, null, null, null);
+				input.disabled = true;
+				const r = await api.createTask(body);
+				input.disabled = false;
+				if (!ok(r)) { fail(r); input.focus(); return; }
+				clearLine();
+				toast(t('notes.quick.added', { title: r.task.title }), 'success');
+				soon(0);
+			};
+			const saveEvent = async () => {
+				if (!draft || !draft.title || !draft.date) return;
+				if (NS.eventBlocked(S.me, S.cals)) return;
+				input.disabled = true;
+				const r = await api.createEvent(NS.eventBody(draft));
+				input.disabled = false;
+				if (!ok(r)) {
+					// refused for good (Mail gone, the calendar off): the card with „Als Aufgabe mit Datum speichern“
+					if (r && r.code === 'unavailable' && r.reason) { S.cals = { ...(S.cals || {}), state: 'none', reason: r.reason, calendars: (S.cals && S.cals.calendars) || [], targets: [] }; show(); }
+					else fail(r);
+					input.focus();
+					return;
+				}
+				const title = draft.title;
+				clearLine();
+				const undo = { label: t('notes.ev.undo'), run: async () => {
+					const u = r.queued ? await api.unqueueEvent(r.clientId) : await api.deleteEvent(r.event.id);
+					if (!ok(u)) fail(u);
+					soon(0);
+				} };
+				toast(r.queued ? t('notes.ev.queued', { title }) : t('notes.ev.added', { title }), 'success', undo);
+				soon(0);
+			};
+			const saveNote = async () => {
+				const text = input.value.trim();
+				input.disabled = true;
+				const r = await api.createNote({ title: text.slice(0, 300), body: '', area: S.area });
+				input.disabled = false;
+				if (!ok(r)) { fail(r); input.focus(); return; }
+				clearLine();
+				toast(t('notes.ev.noteAdded', { title: text }), 'success', { label: t('notes.ev.noteOpen'), run: () => { go({ kind: 'notes' }).then(() => openNote(r.note.id)); } });
+				reloadNav();
+			};
 			input.addEventListener('input', () => { suggest(); show(); });
 			input.addEventListener('keydown', async (e) => {
-				if (e.key === 'Escape') { input.value = ''; suggest(); show(); return; }
+				if (e.key === 'Escape') { input.value = ''; S.quickEv = null; S.quickKeepTask = false; suggest(); show(); return; }
 				if (e.key !== 'Enter' || !input.value.trim() || input.disabled) return;
+				if (mode() === 'event') { await saveEvent(); return; }
+				if (mode() === 'note') { await saveNote(); return; }
 				// the suggestion for this very line has not come yet: the server decides (it attaches when exactly one list fits)
 				// … and likewise the place: it sets the one that is decided and surely meant, never another
 				const here = sug.text === input.value.trim();
@@ -945,19 +1171,17 @@
 				const r = await api.createTask(body);
 				input.disabled = false;
 				if (!ok(r)) { fail(r); input.focus(); return; }
-				input.value = '';
-				S.quickText = '';
-				S.quickPlace = null;
-				S.quickTurn = null;
-				suggest();
-				show();
-				input.focus();
+				clearLine();
 				toast(r.task.attachedList ? t('notes.shop.addedWith', { title: r.task.title, name: r.task.attachedList.name })
 					: r.task.place ? t('notes.place.added', { title: r.task.title, name: r.task.place.name }) : t('notes.quick.added', { title: r.task.title }), 'success');
 				soon(0);
 			});
 			setTimeout(() => { suggest(); show(); }, 0);
-			return el('div', { class: 'nz-quick' }, [el('label', { class: 'nz-quick-box' }, [icon('plus', 18), input, el('span', { class: 'nz-kbd', text: t('notes.quick.kbd') })]), chips, turnBox]);
+			const seg = evOn ? el('div', { class: 'seg nz-qmode', role: 'group', 'aria-label': t('notes.ev.kind') }, ['task', 'event', 'note'].map((k) => el('button', {
+				type: 'button', class: mode() === k ? 'on' : '', 'aria-pressed': mode() === k ? 'true' : 'false', 'data-mode': k, text: t(`notes.ev.mode.${k}`),
+				on: { click: () => { if (mode() !== k) setMode(k); } },
+			}))) : null;
+			return el('div', { class: 'nz-quick', 'data-mode': mode() }, [seg, el('label', { class: 'nz-quick-box' }, [icon(mode() === 'event' ? 'cal' : mode() === 'note' ? 'note' : 'plus', 18), input, el('span', { class: 'nz-kbd', text: t('notes.quick.kbd') })]), ask, chips, turnBox]);
 		}
 
 		/** „Eine Person · Reihum · Wer zuerst“ — the choice of the quick entry and of a task's details. */
@@ -2249,6 +2473,19 @@
 				fb.addEventListener('change', () => save({ feedback: fb.value }));
 				wrap.appendChild(el('h2', { class: 'nz-set-title', 'data-set': 'family', text: t('notes.turn.setTitle') }));
 				wrap.appendChild(el('div', { class: 'card nz-card', 'data-card': 'feedback' }, [field(t('notes.turn.feedback'), fb, t('notes.turn.feedbackHint'))]));
+			}
+			// plugin 1.9.0: „Termine aus dem Kalender“ — which calendars show on „Mein Tag“ and „Geplant“ (Bild 8)
+			if (eventsOn() && S.cals && S.cals.calendars.length) {
+				const card = el('div', { class: 'card nz-card nz-srccard', 'data-card': 'calendars' });
+				card.appendChild(el('div', { class: 'nz-set-h' }, [el('span', { class: 'nz-evcal' }, [icon('cal', 18)]), el('div', { class: 'grow' }, [el('b', { text: t('notes.ev.cal.title') }), el('span', { class: 'hint nz-block', text: t('notes.ev.cal.hint') })])]));
+				for (const c of S.cals.calendars) {
+					const name = el('span', { class: 'nz-evcal-name' }, [el('span', { class: 'nz-evcal' }, [icon('cal', 14)]), el('span', { text: c.name })]);
+					if (c.color) name.firstChild.style.color = c.color;
+					card.appendChild(el('div', { class: 'nz-f nz-evcal-row', 'data-cal': c.key }, [el('span', { class: 'nz-f-l' }, [name, el('span', { class: 'hint nz-block', text: NS.calendarSub(c, t) })]),
+						sw(c.shown, async (v) => { await save({ groups: NS.calendarChoice(c, v) }); await loadCals(true); }, c.name)]));
+				}
+				card.appendChild(el('p', { class: 'hint', text: t('notes.ev.cal.tasksHint') }));
+				wrap.appendChild(card);
 			}
 			// plugin 1.5.0: the person's switches of places and „Meine Orte“
 			if (placesOn() && S.me.places) placesSettings(wrap, save);
