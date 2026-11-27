@@ -32,9 +32,13 @@ const { driveOnDemandChannels } = require('./drive-ondemand');
  * @param {object} [ctx.driveOnDemand] - ./drive-ondemand.js (drive-ondemand:* channels)
  * @param {object} [ctx.remoteHost] - ./remote-host.js (remote-host:* channels, Fernzugriff)
  * @param {object} [ctx.terminal] - ./terminal.js (remote-term:* channels, the SSH terminal)
- * @param {object} [ctx.mediaAwake] - ./media-awake.js (media-player:awake, Medien: no sleep while a film plays)
+ * @param {object} [ctx.mediaAwake] - ./media-awake.js (media-player:awake, Medien: no sleep while a film plays;
+ *   video:awake, the same for the videos of Drive, the vault and the camera clips)
  * @returns {string[]} registered channels
  */
+/** A video's key from renderer/video-awake.js ('v1', 'v2', …). */
+const VIDEO_KEY = /^v[0-9]{1,9}$/;
+
 const REMOTE_HOST_CHANNELS = ['remote-host:status', 'remote-host:share', 'remote-host:decide', 'remote-host:new-code', 'remote-host:enable-rdp',
   // stage 7: "Bildschirm teilen"
   'remote-host:screen', 'remote-host:screen-stop', 'remote-host:screen-view-only'];
@@ -151,6 +155,10 @@ function registerProIpc(ipcMain, ctx) {
 
     // ── Medien: no sleep while a film plays (./media-awake.js): 'playing' | 'paused' | 'stopped' ──
     'media-player:awake': (_, state) => (ctx.mediaAwake ? ctx.mediaAwake.set(typeof state === 'string' ? state : '') : false),
+    // the other videos (Drive, Tresor, camera clips — renderer/video-awake.js): the same blocker, each video its own
+    // key (counted, one never frees another), no minute after a pause
+    'video:awake': (_, key, state) => (ctx.mediaAwake && typeof key === 'string' && VIDEO_KEY.test(key)
+      ? ctx.mediaAwake.set(typeof state === 'string' ? state : '', `video:${key}`, 0) : false),
   };
 
   return registerBaseHandlers(ipcMain, { ...ctx, getUpdater, overrides });

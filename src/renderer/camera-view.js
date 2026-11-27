@@ -121,6 +121,8 @@
 		// player
 		refs.video = el('video', { class: 'cm-media', playsinline: true, muted: true, autoplay: true, hidden: true, disablepictureinpicture: true });
 		refs.video.muted = true;
+		// a clip: the screen stays on while it really plays (video-awake.js); the live picture not (as on the start page)
+		if (root.GCVideoAwake) root.GCVideoAwake.watch(refs.video, { when: () => !!S.clip });
 		refs.img = el('img', { class: 'cm-media', alt: '', draggable: 'false', hidden: true });
 		refs.badge = el('span', { class: 'cm-ov-pill', hidden: true });
 		refs.quality = el('span', { class: 'cm-ov-pill is-dark', hidden: true });
