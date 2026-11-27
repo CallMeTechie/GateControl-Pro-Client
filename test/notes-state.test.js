@@ -550,6 +550,95 @@ describe('plugin 1.7.0: a task that reminds of a deadline of a file in Drive', (
   });
 });
 
+describe('plugin 1.9.0: „Termin“ in the quick entry', () => {
+  it('every event vector (mode event) and the signal of task mode — the plugin\'s parser as the page loads it', () => {
+    assert.ok(qv.eventCases.length >= 25 && qv.signalCases.length >= 8);
+    for (const c of qv.eventCases) {
+      const p = Q.parse(c.input, { ...qv.ctx, mode: 'event' });
+      assert.deepEqual({ title: p.title, date: p.date, time: p.time, endTime: p.endTime, allDay: p.allDay, location: p.location, repeat: p.repeat }, c.expect, c.input);
+      assert.deepEqual(p.marks, c.marks, `${c.input} (marks)`);
+    }
+    for (const c of qv.signalCases) assert.equal(Q.parse(c.input, qv.ctx).looksLikeEvent, c.looksLikeEvent, c.input);
+  });
+
+  const cals = {
+    state: 'ok', reason: null, defaultId: 7, targets: [7, 8], reminders: { timed: 15, allDay: 360 },
+    calendars: [{ id: 7, key: 'cal:7', name: 'Privat', color: '#4F8DF5', kind: 'own', target: true, isDefault: true, shown: true }, { id: 8, key: 'cal:8', name: 'Arbeit', color: '#22A06B', kind: 'own', target: true, isDefault: false, shown: true },
+      { id: 9, key: 'cal:9', name: 'Feiertage', color: '#999999', kind: 'subscribed', target: false, isDefault: false, shown: false }],
+  };
+  const me = { features: ['tasks', 'calendarEvents'], today: '2026-11-27', events: { available: true, reason: null } };
+  const ev = (s) => Q.parse(s, { today: '2026-11-27', mode: 'event' });
+
+  it('the question „Als Termin anlegen?“: a date and a time in task mode, never after „Aufgabe lassen“, never without the word', () => {
+    const p = Q.parse('Freitag 4. Dezember 14 Uhr Fashion Outlet Zweibrücken', { today: '2026-11-27' });
+    assert.equal(NS.eventAsk(p, me, 'task', false), true);
+    assert.equal(NS.eventAsk(p, me, 'task', true), false);
+    assert.equal(NS.eventAsk(p, me, 'event', false), false);
+    assert.equal(NS.eventAsk(p, { ...me, features: ['tasks'] }, 'task', false), false);
+    assert.equal(NS.eventAsk(Q.parse('Freitag Müll rausbringen', { today: '2026-11-27' }), me, 'task', false), false);
+  });
+
+  it('the chips of Bild 1 and Bild 2, the body (calendar and reminder only when chosen)', () => {
+    const d1 = NS.eventDraft(ev('Freitag 4. Dezember 14 Uhr Fashion Outlet Zweibrücken'), {}, cals, me.today);
+    assert.deepEqual(NS.eventChips(d1, cals, t, me.today, 'de').map((c) => [c.kind, c.text, !!c.suggest]), [
+      ['date', 'Fr. 4. Dez.', false], ['time', '14:00–15:00', false], ['place', 'Ort: Fashion Outlet Zweibrücken?', true], ['calendar', 'Kalender: Privat', false], ['reminder', '15 Min. vorher', false]]);
+    assert.deepEqual(NS.eventBody(d1), { title: 'Fashion Outlet Zweibrücken', date: '2026-12-04', time: '14:00', endTime: '15:00' });
+    const d2 = NS.eventDraft(ev('Freitag 4. Dezember Einkaufen im Fashion Outlet Zweibrücken'), {}, cals, me.today);
+    assert.deepEqual(NS.eventChips(d2, cals, t, me.today, 'de').map((c) => c.text), ['Fr. 4. Dez.', 'Ganztägig', 'Ort: Fashion Outlet Zweibrücken', 'Kalender: Privat', 'Vortag, 18:00']);
+    assert.deepEqual(NS.eventBody(d2), { title: 'Einkaufen', date: '2026-12-04', location: 'Fashion Outlet Zweibrücken' });
+    // chosen: the place from the dashed chip, another calendar, no reminder, a time span
+    const d3 = NS.eventDraft(ev('Freitag 4. Dezember 14 Uhr Fashion Outlet Zweibrücken'), { location: 'Fashion Outlet Zweibrücken', calendarId: 8, reminder: false, time: '10:00', endTime: '12:30' }, cals, me.today);
+    assert.deepEqual(NS.eventBody(d3), { title: 'Fashion Outlet Zweibrücken', date: '2026-12-04', time: '10:00', endTime: '12:30', location: 'Fashion Outlet Zweibrücken', calendarId: 8, reminder: false });
+    assert.equal(NS.eventChips(d3, cals, t, me.today, 'de').find((c) => c.kind === 'reminder').text, 'Keine Erinnerung');
+    // a calendar that is no target is not taken; no date: today; all day chosen
+    const d4 = NS.eventDraft(ev('Zahnarzt'), { calendarId: 9, allDay: true }, cals, me.today);
+    assert.deepEqual([d4.calendarId, d4.calendarChosen, d4.date, d4.allDay, d4.time], [7, false, '2026-11-27', true, null]);
+    assert.deepEqual(NS.eventBody(NS.eventDraft(ev('jeden Montag 19 Uhr Training'), {}, cals, me.today)).repeat, { type: 'weekly', interval: 1, days: [1] });
+  });
+
+  it('the texts of a reminder and its choices', () => {
+    assert.deepEqual([0, 15, 60, 120, 1440].map((m) => NS.reminderText(m, false, t)), ['Zu Beginn', '15 Min. vorher', '1 Std. vorher', '2 Std. vorher', '1 Tag(e) vorher']);
+    assert.deepEqual([360, 720, 1800, null].map((m) => NS.reminderText(m, true, t)), ['Vortag, 18:00', 'Vortag, 12:00', '2 Tage vorher, 18:00', 'Keine Erinnerung']);
+    assert.deepEqual(NS.reminderChoices(false, 45, t).map((c) => c.value), [0, 5, 10, 15, 30, 45, 60, 120, 1440, false]);
+  });
+
+  it('no calendar: why, and only reasons that do not pass', () => {
+    assert.equal(NS.eventBlocked(me, cals), null);
+    assert.equal(NS.eventBlocked(me, { state: 'none', reason: 'no_mail' }), 'no_mail');
+    assert.equal(NS.eventBlocked(me, { state: 'none', reason: 'unreachable' }), null);
+    assert.equal(NS.eventBlocked({ ...me, events: { available: false, reason: 'feature_off' } }, null), 'feature_off');
+    assert.deepEqual(['no_mail', 'mail_old', 'no_seat', 'no_calendar', 'unreachable'].map(NS.eventWhy), ['mail', 'mail', 'off', 'none', 'unreachable']);
+  });
+
+  it('an event\'s row: no source chip, „Ort · Kalender“, the time; it opens Mail\'s event; the switches of „Quellen“', () => {
+    const x = { type: 'source', kind: 'event', title: 'Zahnarzt', subtitle: 'Praxis am Markt', allDay: false, source: { plugin: 'gatecontrol-mail', label: 'Mail', open: { plugin: 'gatecontrol-mail', route: 'event/912' } },
+      due: { date: '2026-11-27', time: '16:30' }, show: { date: '2026-11-27', time: '16:30' }, event: { location: 'Praxis am Markt', calendar: { key: 'cal:7', name: 'Privat', color: '#4F8DF5', kind: 'own' }, eventId: 912 } };
+    assert.equal(NS.isEvent(x), true);
+    assert.equal(NS.sourceChip(x, t), null);
+    assert.deepEqual(NS.eventMeta(x, '2026-11-27', t), ['Praxis am Markt', 'Privat']);
+    assert.equal(NS.eventWhen(x), '16:30');
+    assert.deepEqual(NS.eventMeta({ ...x, allDay: true, show: { date: '2026-12-04', time: null }, event: { ...x.event, location: null }, subtitle: null }, '2026-11-27', t), ['Fr. 4. Dez.', 'ganztägig', 'Privat']);
+    assert.deepEqual(NS.eventMeta({ ...x, pending: true, event: { ...x.event, calendar: null } }, '2026-11-27', t), ['Praxis am Markt', 'wartet auf Verbindung']);
+    assert.deepEqual(NS.openTarget(x.source.open, ['mail']), { page: 'mail', context: { kind: 'event', eventId: 912, occurrence: null } });
+    assert.deepEqual(NS.openTarget({ plugin: 'gatecontrol-mail', route: 'event/912/2026-12-04' }, ['mail']).context, { kind: 'event', eventId: 912, occurrence: '2026-12-04' });
+    // Schule's events stay as they were
+    assert.equal(NS.isEvent({ type: 'source', kind: 'event', source: { plugin: 'gatecontrol-schule' } }), false);
+    assert.deepEqual(NS.calendarChoice(cals.calendars[2], true), { 'gatecontrol-mail|cal:9': 'show' });
+    assert.deepEqual(NS.calendarChoice(cals.calendars[0], false), { 'gatecontrol-mail|cal:7': 'hide' });
+    assert.deepEqual(NS.calendarChoice(cals.calendars[0], true), { 'gatecontrol-mail|cal:7': null });
+    assert.deepEqual(cals.calendars.map((c) => NS.calendarSub(c, t)), ['Standard für neue Termine', 'eigener Kalender', 'abonniert']);
+  });
+
+  it('„Mehr Angaben …“: Mail\'s form gets title, times, place, calendar, the reminder the chip shows and the rule', () => {
+    const d = NS.eventDraft(ev('Freitag 4. Dezember 14 Uhr Fashion Outlet Zweibrücken'), { location: 'Outlet' }, cals, me.today);
+    const f = NS.eventPrefill(d);
+    assert.deepEqual([f.title, f.allDay, f.calendarId, f.location, f.reminders, f.recurrence, f.end - f.start], ['Fashion Outlet Zweibrücken', false, 7, 'Outlet', [15], null, 3600000]);
+    assert.equal(new Date(f.start).getHours(), 14);
+    const all = NS.eventPrefill(NS.eventDraft(ev('jeden Freitag Markt'), { reminder: false }, cals, me.today));
+    assert.deepEqual([all.allDay, all.reminders, all.recurrence], [true, [], { freq: 'weekly', interval: 1, byDay: ['FR'] }]);
+  });
+});
+
 describe('the page', () => {
   const view = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'notes-view.js'), 'utf8');
   it('builds its DOM without HTML strings', () => {

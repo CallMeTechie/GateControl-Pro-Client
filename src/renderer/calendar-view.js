@@ -760,8 +760,12 @@
 			try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; }
 		}
 
-		/** The dialog of a new (ev null, at { start, end }) or an existing event. */
-		async function openEditor(ev, at = null) {
+		/**
+		 * The dialog of a new (ev null, at { start, end }) or an existing event. `prefill` (a new one only): the fields of
+		 * „Mehr Angaben …“ of Notizen & Aufgaben' quick entry ({ title, start, end, allDay, startDate, endDate, calendarId,
+		 * location, reminders, recurrence }) — saved here through Mail, like any new event.
+		 */
+		async function openEditor(ev, at = null, prefill = null) {
 			if (!C.cals) await loadCalendars();
 			// Mail 1.9.0: calendars shared at „Bearbeiten“ too (without attendees)
 			const writable = allCals().filter((c) => c.writable);
@@ -769,6 +773,7 @@
 			const prefs = (C.cals && C.cals.prefs) || {};
 			let F;
 			if (ev) F = MS.eventForm(ev, prefs, allCals());
+			else if (prefill) F = MS.eventForm({ ...prefill, calendarId: prefill.calendarId || prefs.defaultCalendarId }, prefs, allCals());
 			else {
 				const base = at || (() => { const s = MS.slotAt(new Date(C.anchor).setHours(0, 0, 0, 0), Math.max(9 * 60, (new Date().getHours() + 1) * 60)); return s; })();
 				F = MS.eventForm({ start: base.start, end: base.end, allDay: false, calendarId: prefs.defaultCalendarId }, prefs, allCals());
@@ -1709,7 +1714,7 @@
 			openEvent,
 			openInvitation,
 			inviteCard,
-			newEvent: (at) => openEditor(null, at || null),
+			newEvent: (at, prefill) => openEditor(null, at || null, prefill || null),
 			calendars: () => C.cals,
 		};
 	}

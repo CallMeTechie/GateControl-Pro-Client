@@ -19,6 +19,11 @@
  * is asked to accept a place (`place.canConsent`; without `placeMine` as before). Plugin 1.7.0 (`driveDeadlines`): a task
  * that reminds of a deadline of a file in Drive — „Frist 30. Nov. · Versicherungsschein.pdf · 3 Tage vorher“ at the row,
  * the file and the hints in the details. And who only reads a list (the list's `canEdit`, a task's `canEdit`).
+ * Plugin 1.9.0 (`calendarEvents`): „Termin“ in the quick entry — the line read in event mode, the chips (Tag, Zeit /
+ * Ganztägig, Ort as text, Kalender, Erinnerung), the question „Als Termin anlegen?“ (a date and a time in task mode;
+ * the app never switches by itself), the body of POST events (calendar and reminder only when chosen), the card „Kein
+ * Kalender“, an event's row (the calendar's colour, no tick box, never overdue), where it opens (Mail's event) and the
+ * switches „Termine aus dem Kalender“. The event is stored in Mail's calendar only.
  * window.GCNotesState.
  */
 (function (root) {
@@ -487,6 +492,8 @@
 	/** The chip of a row's source ('Mail · Zu tun', 'Drive · Frist') → { text, tone } or null. */
 	function sourceChip(x, t) {
 		if (!x || !x.source) return null;
+		// plugin 1.9.0: an event of the calendar does not name „Mail“ as where it comes from
+		if (isEvent(x)) return null;
 		const plugin = x.source.plugin;
 		const label = x.type === 'source' ? x.source.label : t(`notes.src.${plugin}`);
 		const kind = x.type === 'source' && ['deadline', 'homework', 'exam'].includes(x.kind) ? ` · ${t(`notes.kind.${x.kind}`)}` : '';
@@ -635,6 +642,11 @@
 		const has = (p) => !pages || pages.includes(p);
 		const parts = route.split('/');
 		if (open.plugin === 'gatecontrol-mail' && has('mail')) {
+			// plugin 1.9.0: an event of the calendar (event/<id>[/<occurrence>]) opens Mail's own event page
+			if (parts[0] === 'event' && /^[1-9]\d{0,14}$/.test(str(parts[1]))) {
+				return { page: 'mail', context: { kind: 'event', eventId: Number(parts[1]), occurrence: parts[2] && /^[A-Za-z0-9:._-]{1,80}$/.test(parts[2]) ? parts[2] : null } };
+			}
+			if (parts[0] === 'calendar') return { page: 'mail', context: { kind: 'calendar' } };
 			return { page: 'mail', context: parts[0] === 'message' && /^[1-9]\d{0,14}$/.test(str(parts[1])) ? { kind: 'message', messageId: Number(parts[1]), accountId: null } : null };
 		}
 		if (open.plugin === 'gatecontrol-drive' && has('drive')) {
@@ -706,6 +718,166 @@
 		return t('notes.import.progress', { done: e.done || 0, total: e.total || 0 });
 	}
 
+	// ── plugin 1.9.0: „Termin“ ──
+
+	const EV_PERMANENT = ['no_mail', 'mail_old', 'feature_off', 'not_allowed', 'not_licensed', 'no_seat', 'no_calendar'];
+	const REM_TIMED = [0, 5, 10, 15, 30, 60, 120, 1440];
+	const REM_ALLDAY = [360, 720, 1800];
+
+	/** May the quick entry offer „Termin“ (the word `calendarEvents`)? */
+	function eventsOn(me) {
+		return offers(me, 'calendarEvents');
+	}
+
+	/** The card „Kein Kalender“: 'mail' | 'off' | 'none' | 'unreachable' for a reason. */
+	function eventWhy(reason) {
+		if (reason === 'no_mail' || reason === 'mail_old') return 'mail';
+		if (['feature_off', 'not_allowed', 'not_licensed', 'no_seat'].includes(reason)) return 'off';
+		if (reason === 'no_calendar') return 'none';
+		return 'unreachable';
+	}
+
+	/** Why no event can be made now (a reason that does not pass), or null — the calendars are the newer word. */
+	function eventBlocked(me, cals) {
+		let r = null;
+		if (cals) r = cals.state === 'ok' ? null : cals.reason || 'no_calendar';
+		else if (me && me.events && me.events.available === false) r = me.events.reason || 'no_calendar';
+		return r && EV_PERMANENT.includes(r) ? r : null;
+	}
+
+	/** „Das sieht wie ein Termin aus“: task mode, the line names a date and a time, not waved away. */
+	function eventAsk(p, me, mode, kept) {
+		return mode === 'task' && !kept && eventsOn(me) && !!(p && p.looksLikeEvent);
+	}
+
+	const plusHour = (time) => `${pad((Number(time.slice(0, 2)) + 1) % 24)}:${time.slice(3, 5)}`;
+
+	/**
+	 * The event the chips show: the parser's line in event mode with the person's choices on top (`ch`: date, time,
+	 * endTime, allDay, location — '' / null takes it off —, calendarId, reminder: minutes | false). No date: today; the
+	 * calendar: the default one; the reminder: the calendar's own (only shown — it is not sent unless chosen).
+	 */
+	function eventDraft(p, ch, cals, today) {
+		const c = ch || {};
+		const base = p || {};
+		const allDay = c.allDay !== undefined ? !!c.allDay : !base.time;
+		const time = allDay ? null : (c.time || base.time || '09:00');
+		let endTime = allDay ? null : (c.endTime || (c.time ? null : base.endTime) || null);
+		if (time && !endTime) endTime = plusHour(time);
+		const title = str(base.title).trim();
+		const location = c.location !== undefined ? (str(c.location).trim() || null) : base.location || null;
+		const calChosen = c.calendarId != null && cals && cals.targets && cals.targets.includes(c.calendarId);
+		const calendarId = calChosen ? c.calendarId : (cals ? cals.defaultId : null);
+		const remChosen = c.reminder !== undefined;
+		const shownRem = remChosen ? (c.reminder === false ? null : c.reminder) : (cals && cals.reminders ? (allDay ? cals.reminders.allDay : cals.reminders.timed) : null);
+		return {
+			title, date: c.date || base.date || today || null, time, endTime, allDay, location, calendarId, calendarChosen: !!calChosen,
+			reminder: shownRem, reminderChosen: remChosen, repeat: base.repeat && base.repeat.type !== 'after' ? base.repeat : null,
+			// „Ort: <Titel>?“ — no place word in the line: the title may be taken as the place (one click)
+			placeSuggest: !location && c.location === undefined && title ? title : null,
+		};
+	}
+
+	/** The draft → the body of notes:event:create (calendarId and reminder only when chosen; no time: all day). */
+	function eventBody(d) {
+		const b = { title: str(d.title).trim().slice(0, 255), date: d.date };
+		if (!d.allDay && d.time) { b.time = d.time; if (d.endTime) b.endTime = d.endTime; }
+		if (d.location) b.location = d.location.slice(0, 255);
+		if (d.calendarChosen && d.calendarId) b.calendarId = d.calendarId;
+		if (d.reminderChosen) b.reminder = d.reminder === null ? false : d.reminder;
+		if (d.repeat) b.repeat = d.repeat;
+		return b;
+	}
+
+	/** „15 Min. vorher“, „1 Std. vorher“, „Vortag, 18:00“, „Keine Erinnerung“ — minutes before (all day: before midnight). */
+	function reminderText(min, allDay, t) {
+		if (min === null || min === undefined || min === false) return t('notes.ev.remNone');
+		if (allDay) {
+			const days = Math.ceil(min / 1440);
+			const at = days * 1440 - min;
+			const time = `${pad(Math.floor(at / 60))}:${pad(at % 60)}`;
+			return days === 1 ? t('notes.ev.remDayBefore', { time }) : t('notes.ev.remDaysBefore', { n: days, time });
+		}
+		if (min === 0) return t('notes.ev.remAtStart');
+		if (min % 1440 === 0) return t('notes.ev.remDays', { n: min / 1440 });
+		if (min % 60 === 0) return t('notes.ev.remHours', { n: min / 60 });
+		return t('notes.ev.remMinutes', { n: min });
+	}
+
+	/** The choices of the chip „Erinnerung“ → [{ value: minutes | false, label }] (the shown one included). */
+	function reminderChoices(allDay, current, t) {
+		const list = (allDay ? REM_ALLDAY : REM_TIMED).slice();
+		if (Number.isInteger(current) && !list.includes(current)) list.push(current);
+		list.sort((a, b) => a - b);
+		return [...list.map((m) => ({ value: m, label: reminderText(m, allDay, t) })), { value: false, label: t('notes.ev.remNone') }];
+	}
+
+	/** The chips of event mode → [{ kind, text, plain?, suggest? }] (the view makes them buttons). */
+	function eventChips(d, cals, t, today, lang) {
+		if (!d) return [];
+		const out = [{ kind: 'date', text: dayText(d.date, today, t) }];
+		out.push({ kind: 'time', text: d.allDay ? t('notes.ev.allDay') : `${d.time}–${d.endTime}` });
+		if (d.location) out.push({ kind: 'place', text: t('notes.ev.place', { place: d.location }) });
+		else if (d.placeSuggest) out.push({ kind: 'place', text: t('notes.ev.placeSuggest', { place: d.placeSuggest }), suggest: true, plain: true });
+		const cal = cals && (cals.calendars || []).find((c) => c.id === d.calendarId);
+		if (cal) out.push({ kind: 'calendar', text: t('notes.ev.calendar', { name: cal.name }), color: cal.color });
+		out.push({ kind: 'reminder', text: reminderText(d.reminder, d.allDay, t), plain: d.reminder === null });
+		if (d.repeat) out.push({ kind: 'repeat', text: `↻ ${RP().describe(d.repeat, lang === 'en' ? 'en' : 'de')}` });
+		return out;
+	}
+
+	/** A row of the overview that is an event of a calendar in Mail (plugin 1.9.0; Schule / Alltag have no `event`). */
+	function isEvent(x) {
+		return !!(x && x.type === 'source' && x.event);
+	}
+
+	/** The grey line of an event's row: „Ort · Kalender“ (all day: „ganztägig“), waiting: „wartet auf Verbindung“. */
+	function eventMeta(x, today, t) {
+		const out = [];
+		const d = x.show || x.due;
+		if (d && d.date !== today) out.push(dayText(d.date, today, t));
+		if (x.event.location) out.push(x.event.location);
+		else if (x.subtitle && !x.pending) out.push(x.subtitle);
+		if (x.allDay) out.push(t('notes.ev.allDayShort'));
+		if (x.event.calendar && x.event.calendar.name) out.push(x.event.calendar.name);
+		if (x.pending) out.push(t('notes.ev.pending'));
+		return out;
+	}
+
+	/** The time on the right of an event's row („14:00“, all day: nothing). */
+	function eventWhen(x) {
+		const d = x.show || x.due;
+		return d && d.time && !x.allDay ? d.time.replace(/^0/, '') : '';
+	}
+
+	/** „Termine aus dem Kalender“: the line under a calendar's name, its switch's default, the choice to save. */
+	function calendarSub(c, t) {
+		if (c.isDefault) return t('notes.ev.cal.default');
+		return t(`notes.ev.cal.${c.kind}`);
+	}
+	const calendarDefault = (c) => !['subscribed', 'tasks'].includes(c && c.kind);
+	function calendarChoice(c, on) {
+		return { [groupKey('gatecontrol-mail', c.key)]: on === calendarDefault(c) ? null : on ? 'show' : 'hide' };
+	}
+
+	/**
+	 * „Mehr Angaben …“: what Mail's form of a new event is filled in with (calendar-view openEditor's prefill) — start
+	 * and end as this PC's wall clock, the reminder the chip shows ([] for none), the rule in Mail's form.
+	 */
+	function eventPrefill(d) {
+		const at = (date, time) => { const [y, m, dd] = date.split('-').map(Number); const [h, mi] = (time || '00:00').split(':').map(Number); return new Date(y, m - 1, dd, h, mi, 0, 0).getTime(); };
+		const start = at(d.date, d.allDay ? '00:00' : d.time);
+		let end = d.allDay ? start : at(d.date, d.endTime || plusHour(d.time));
+		if (!d.allDay && end <= start) end += 86400000;
+		const days = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+		const r = d.repeat;
+		const recurrence = r ? { freq: r.type, interval: r.interval || 1, ...(r.type === 'weekly' && r.days ? { byDay: r.days.map((x) => days[x - 1]) } : {}) } : null;
+		return {
+			title: d.title, start, end, allDay: !!d.allDay, startDate: d.date, endDate: d.date, calendarId: d.calendarId || null,
+			location: d.location || '', reminders: d.reminder === null || d.reminder === undefined ? [] : [d.reminder], recurrence,
+		};
+	}
+
 	/** The key of a group's choice in prefs ('<plugin>|<group id>'). */
 	function groupKey(plugin, id) {
 		return `${plugin}|${id}`;
@@ -724,5 +896,7 @@
 		deadlineBefore, deadlineInfo, listWritable,
 		placeSummary, distText, searchState, nearOptions, nearArg, placeChoiceArg, profileArg, placeChoiceText, placeSub, placeHint, quickPlace, sourceChip, metaLine, sectionTitle, quickCtx, quickParse, quickChips, quickBody,
 		repeatOptions, openTarget, errText, vaultLocked, noteTitle, notebookName, isoDay, formatBytes, importText, groupKey, localInput,
+		eventsOn, eventWhy, eventBlocked, eventAsk, eventDraft, eventBody, reminderText, reminderChoices, eventChips, isEvent, eventMeta, eventWhen,
+		calendarSub, calendarDefault, calendarChoice, eventPrefill,
 	};
 })(typeof self !== 'undefined' ? self : this);
