@@ -140,7 +140,13 @@
 		device: 'M3 6h14v10H3z|M17 10l4-2v8l-4-2',
 		resource: 'M12 3l9 5v8l-9 5-9-5V8z',
 		share: 'M18 3a3 3 0 1 0 0 6a3 3 0 1 0 0-6|M6 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6|M18 15a3 3 0 1 0 0 6a3 3 0 1 0 0-6|M8.6 13.5l6.8 4|M15.4 6.5l-6.8 4',
+		// "Ansicht": the reading pane right / below, widths back
+		layout: 'M3 4h18v16H3z|M9 4v16|M15 4v16',
+		layoutBottom: 'M3 4h18v16H3z|M9 4v16|M9 12h12',
+		reset: 'M3 12a9 9 0 1 0 3-6.7L3 8|M3 3v5h5',
 	};
+	// the folders' roles in the narrow folder bar (icons only)
+	const ROLE_ICON = { inbox: 'inbox', drafts: 'draft', sent: 'send', archive: 'archive', junk: 'junk', trash: 'trash' };
 	const TONE = { err: ['var(--err-bg)', 'var(--err)'], info: ['var(--info-bg)', 'var(--info)'], acc: ['var(--acc-bg)', 'var(--acc-t)'], warn: ['var(--warn-bg)', 'var(--warn)'], pro: ['var(--pro-bg)', 'var(--pro)'], muted: ['var(--panel2)', 'var(--muted)'] };
 	const SAVE_DELAY_MS = 2500;
 	const LIST_RELOAD_MS = 800;
@@ -458,6 +464,254 @@
 		page.append(side, listCol, pane, mainCol);
 		o.root.append(gate, page, undoBar, noteBar);
 
+		// ── Ansicht: reading pane right / below / off, folder bar full / narrow / off, density, the AI line ──
+		//
+		// Chosen in the menu "Ansicht" beside the search (Strg+Umschalt+L) and kept on this PC with the widths of the
+		// dividers (gc.layout.mail, gc-split.js). Below 1100 px of window the folder bar is narrow for the time being.
+
+		const LS = root.GCLayoutState || null;
+		const GS = root.GCSplit || null;
+		const V = { view: LS ? LS.mailView(GS ? GS.getPage('mail') : null) : { reading: 'right', folders: 'full', density: 'normal', ai: true }, folders: 'full', auto: false, pop: null };
+		// the list above the reading pane ("unten")
+		const stack = el('div', { class: 'ml-stack' });
+		const splits = { folders: null, list: null, height: null };
+		// (the dividers' keys in backticks: names of the layout on this PC, not texts)
+		if (LS && GS) {
+			// the folder bar takes its room from what grows: the reading pane, the list and pane below, or the list alone
+			const grows = () => (V.view.reading === 'bottom' && !page.classList.contains('is-wide') ? stack : (!pane.hidden && V.view.reading === 'right' && !page.classList.contains('is-wide') ? pane : listCol));
+			splits.folders = GS.create({ key: `mail.w.folders`, pane: side, other: grows, t, label: () => t('layout.split.mailFolders') });
+			splits.list = GS.create({ key: `mail.w.list`, pane: listCol, other: pane, t, label: () => t('layout.split.mailList') });
+			splits.height = GS.create({ key: `mail.h.list`, pane: listCol, other: pane, t, label: () => t('layout.split.mailHeight') });
+			side.after(splits.folders.el);
+			listCol.after(splits.list.el);
+			stack.append(splits.height.el);
+			splits.height.attach();
+			splits.folders.attach();
+			splits.list.attach();
+		}
+		const lineMode = () => V.view.reading === 'bottom';
+
+		/** The list and the reading pane where the layout wants them (below: both in the stack); the iframe is drawn again. */
+		function arrange() {
+			const below = V.view.reading === 'bottom';
+			if (below && listCol.parentElement !== stack) {
+				listCol.style.width = '';
+				stack.prepend(listCol);
+				stack.append(pane);
+				page.insertBefore(stack, mainCol);
+				return true;
+			}
+			if (!below && listCol.parentElement === stack) {
+				listCol.style.height = '';
+				page.insertBefore(listCol, mainCol);
+				if (splits.list) page.insertBefore(splits.list.el, mainCol);
+				page.insertBefore(pane, mainCol);
+				stack.remove();
+				return true;
+			}
+			return false;
+		}
+
+		/** The dividers shown for the layout (not for "Zum Ablegen" / Postausgang, Kalender, Kontakte) and their sizes. */
+		function syncSplits() {
+			if (!splits.folders) return;
+			const wide = page.classList.contains('is-wide');
+			const area = page.classList.contains('is-area');
+			const r = V.view.reading;
+			splits.folders.el.hidden = V.folders !== 'full';
+			splits.list.el.hidden = r !== 'right' || wide || area || pane.hidden;
+			splits.height.el.hidden = r !== 'bottom' || wide || area || pane.hidden;
+			if (V.folders !== 'full') side.style.width = '';
+			if (splits.list.el.hidden) listCol.style.width = '';
+			if (splits.height.el.hidden) listCol.style.height = '';
+			for (const x of [splits.folders, splits.list, splits.height]) if (!x.el.hidden) x.apply();
+		}
+
+		/** The classes of the page for the layout; `draw`: the list (rows in one line or not) and the pane again. */
+		function applyLayout({ draw = false } = {}) {
+			const f = LS ? LS.mailFolders(V.view.folders, { width: root.innerWidth || 0, area: S.area !== 'mail' }) : { folders: 'full', auto: false };
+			V.folders = f.folders;
+			V.auto = f.auto;
+			const r = V.view.reading;
+			page.classList.toggle('is-read-bottom', r === 'bottom');
+			page.classList.toggle('is-read-off', r === 'off');
+			page.classList.toggle('is-folders-narrow', V.folders === 'narrow');
+			page.classList.toggle('is-folders-off', V.folders === 'off');
+			page.classList.toggle('is-compact', V.view.density === 'compact');
+			page.classList.toggle('no-ai', !V.view.ai);
+			const moved = arrange();
+			if ((draw || moved) && !areaView()) {
+				renderList();
+				renderPane();
+			}
+			paneDrawn();
+			if (V.pop) V.pop.sync();
+		}
+
+		function setView(what, value) {
+			if (!LS || !GS) return;
+			GS.setPage('mail', LS.withMailView(GS.getPage('mail'), what, value));
+			const before = V.view;
+			V.view = LS.mailView(GS.getPage('mail'));
+			// "Lesebereich aus" chosen: the list (an open mail is opened again from it)
+			if (what === 'reading' && value === 'off' && before.reading !== 'off' && S.pane === 'read') { S.pane = 'empty'; S.read = null; }
+			applyLayout({ draw: before.reading !== V.view.reading });
+		}
+
+		/** The reading pane shows something (a mail, writing, a sender): with "Lesebereich aus" it takes the place of the list. */
+		function paneDrawn() {
+			const showing = !pane.hidden && !!S.pane && S.pane !== 'empty';
+			page.classList.toggle('is-showing', showing);
+			if (V.view.reading === 'off' && showing) {
+				const bar = pane.querySelector(':scope > .ml-read-bar');
+				const reading = pane.querySelector(':scope > .ml-read:not(.ml-sender)');
+				if (bar && reading && !bar.querySelector('.ml-read-back')) {
+					const back = el('button', { type: 'button', class: 'btn btn-ghost btn-sm ml-read-back', title: t('mail.view.back'), on: { click: backToList } }, [icon('back', 15), el('span', { text: t('mail.view.back') })]);
+					bar.prepend(back);
+					// the list that had the focus is hidden now: the focus goes to "Zurück"
+					const a = document.activeElement;
+					if (!a || a === document.body || listCol.contains(a)) back.focus({ preventScroll: true });
+				}
+			}
+			syncSplits();
+		}
+		if (typeof MutationObserver === 'function') new MutationObserver(paneDrawn).observe(pane, { childList: true, attributes: true, attributeFilter: ['hidden'] });
+		// Kalender / Kontakte in and out (their menu is the folder bar, always full), "Zum Ablegen": the dividers follow
+		let wasArea = false;
+		if (typeof MutationObserver === 'function') {
+			new MutationObserver(() => {
+				const area = page.classList.contains('is-area');
+				if (area !== wasArea) { wasArea = area; applyLayout(); } else syncSplits();
+			}).observe(page, { attributes: true, attributeFilter: ['class'] });
+		}
+		let resizeTimer = null;
+		root.addEventListener('resize', () => {
+			clearTimeout(resizeTimer);
+			resizeTimer = setTimeout(() => { const was = V.folders; applyLayout(); if (was !== V.folders && V.pop) V.pop.sync(); }, 60);
+		});
+
+		// "Ansicht" (Strg+Umschalt+L); Esc with "Lesebereich aus" goes back to the list (on the document: the hidden list
+		// may just have had the focus)
+		document.addEventListener('keydown', (e) => {
+			if (!S.shown || e.defaultPrevented || page.hidden || !page.isConnected || page.getClientRects().length === 0 || S.area !== 'mail') return;
+			if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l') {
+				e.preventDefault();
+				const b = listCol.querySelector('.ml-view-btn');
+				if (V.pop) V.pop.close(); else if (b) openView(b);
+			} else if (e.key === 'Escape' && V.view.reading === 'off' && S.pane === 'read' && !S.sel && !document.querySelector('.ml-scrim, .ml-menu-layer')) {
+				e.preventDefault();
+				backToList();
+			}
+		});
+
+		/** "Lesebereich aus": back from the mail to the list (also Esc). */
+		function backToList() {
+			S.pane = 'empty';
+			S.read = null;
+			renderPane();
+			// the list is shown again now (not only when the observer runs), so it can take the focus
+			paneDrawn();
+			const r = S.selectedId != null && listCol.querySelector(`.ml-row[data-id="${CSS.escape(String(S.selectedId))}"]`);
+			if (r) { r.scrollIntoView({ block: 'nearest' }); r.focus({ preventScroll: true }); }
+		}
+
+		/** The button "Ansicht" beside the search. */
+		function viewButton() {
+			const b = el('button', {
+				type: 'button', class: `ml-ib ml-view-btn${V.pop ? ' on' : ''}`, title: t('mail.view.button'), 'aria-label': t('mail.view.title'), 'aria-haspopup': 'dialog', 'aria-expanded': V.pop ? 'true' : 'false',
+				on: { click: (e) => { if (V.pop) V.pop.close(); else openView(e.currentTarget); } },
+			}, [icon(lineMode() ? 'layoutBottom' : 'layout', 16)]);
+			return b;
+		}
+
+		/** The menu "Ansicht": Lesebereich, Ordnerleiste, Dichte, the AI line, "Spaltenbreiten zurücksetzen". */
+		function openView(btn) {
+			if (V.pop) V.pop.close();
+			const layer = el('div', { class: 'ml-menu-layer', on: { mousedown: (ev) => { if (ev.target === layer) close(); } } });
+			const tiles = el('div', { class: 'vw-lays', role: 'radiogroup', 'aria-label': t('mail.view.reading') });
+			const pic = (k) => el('span', { class: `vw-pic p-${k}`, 'aria-hidden': 'true' }, (k === 'off' ? ['', 'r'] : ['', '', 'r']).map((c) => el('i', { class: c || null })));
+			for (const k of ['right', 'bottom', 'off']) {
+				tiles.append(el('button', { type: 'button', role: 'radio', class: 'vw-lay', 'data-reading': k, on: { click: () => setView('reading', k) } }, [pic(k), el('span', { text: t(`mail.view.${k}`) })]));
+			}
+			const folders = seg([['full', t('mail.view.foldersFull')], ['narrow', t('mail.view.foldersNarrow')], ['off', t('mail.view.foldersOff')]], V.view.folders, (v) => setView('folders', v), t('mail.view.folders'));
+			folders.classList.add('vw-seg');
+			folders.setAttribute('data-seg', 'folders');
+			const density = seg([['normal', t('mail.view.normal')], ['compact', t('mail.view.compact')]], V.view.density, (v) => setView('density', v), t('mail.view.density'));
+			density.classList.add('vw-seg');
+			density.setAttribute('data-seg', 'density');
+			const auto = el('p', { class: 'ml-note vw-auto', text: t('mail.view.autoNarrow'), hidden: true });
+			const ai = has('ai') ? sw(V.view.ai, t('mail.view.ai'), (on) => setView('ai', on)) : null;
+			const pop = el('div', { class: 'ml-menu vw-pop', role: 'dialog', 'aria-label': t('mail.view.title') }, [
+				el('div', { class: 'vw-h' }, [icon('layout', 16), el('span', { text: t('mail.view.title') })]),
+				el('div', { class: 'vw-lab', text: t('mail.view.reading') }), tiles,
+				el('div', { class: 'vw-lab', text: t('mail.view.folders') }), folders, auto,
+				el('div', { class: 'vw-lab', text: t('mail.view.density') }), density,
+				ai ? el('div', { class: 'vw-row' }, [el('span', { class: 'ml-grow', text: t('mail.view.ai') }), ai]) : null,
+				el('button', { type: 'button', class: 'ml-menu-item vw-reset', on: { click: () => { if (GS) GS.resetPage('mail'); } } }, [icon('reset', 15), el('span', { text: t('mail.view.reset') })]),
+				el('div', { class: 'vw-foot' }, [el('p', { class: 'ml-note', text: t('mail.view.note') }), el('span', { class: 'vw-kbd', text: t('mail.view.kbd') })]),
+			]);
+			layer.append(pop);
+			document.body.append(layer);
+			const r = btn.getBoundingClientRect();
+			const w = pop.getBoundingClientRect().width;
+			pop.style.left = `${Math.max(8, Math.min(r.left, root.innerWidth - w - 8))}px`;
+			pop.style.top = `${r.bottom + 6}px`;
+			const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } };
+			document.addEventListener('keydown', onKey, true);
+			function close() {
+				layer.remove();
+				document.removeEventListener('keydown', onKey, true);
+				V.pop = null;
+				const b = listCol.querySelector('.ml-view-btn');
+				if (b) { b.classList.remove('on'); b.setAttribute('aria-expanded', 'false'); b.focus(); }
+			}
+			function sync() {
+				for (const b of tiles.children) {
+					const on = b.getAttribute('data-reading') === V.view.reading;
+					b.classList.toggle('on', on);
+					b.setAttribute('aria-checked', on ? 'true' : 'false');
+				}
+				auto.hidden = !V.auto;
+				const vb = listCol.querySelector('.ml-view-btn');
+				if (vb) { vb.classList.add('on'); vb.setAttribute('aria-expanded', 'true'); }
+			}
+			V.pop = { close, sync };
+			sync();
+			const first = tiles.querySelector('.vw-lay.on') || tiles.firstChild;
+			if (first) first.focus();
+		}
+
+		/** The column heads of the list in one line (reading pane below). */
+		function lineHead() {
+			return el('div', { class: 'ml-cols', 'aria-hidden': 'true' }, [
+				el('span', { class: 'ml-cols-av' }),
+				el('span', { class: 'ml-line-from', text: t('mail.view.colFrom') }),
+				el('span', { class: 'ml-line-tx', text: t('mail.view.colSubject') }),
+				el('span', { class: 'ml-line-ic' }),
+				el('span', { class: 'ml-line-time', text: t('mail.view.colDate') }),
+			]);
+		}
+
+		/** A row in one line: picture, sender, subject – preview, symbols, time (the quick buttons on hover). */
+		function lineCells(m, { pick, color, acts, now }) {
+			return [
+				pick,
+				el('span', { class: 'ml-line-from' }, [dot(color), el('span', { class: 'ml-row-from', text: MS.senderName(m.from, t) }), m.threadCount > 1 && S.me && S.me.settings.threads ? el('span', { class: 'ml-row-n', text: String(m.threadCount) }) : null]),
+				el('span', { class: 'ml-line-tx' }, [
+					m.invite ? el('span', { class: `ml-row-inv is-${m.invite}`, text: t(`mail.cal.label.${m.invite}`) }) : null,
+					el('b', { text: m.subject || t('mail.noSubject') }),
+					m.snippet ? el('span', { class: 'ml-line-snip', text: ` – ${m.snippet}` }) : null,
+				]),
+				el('span', { class: 'ml-line-ic' }, [
+					m.flagged ? el('span', { class: 'ml-row-flag', title: t('mail.act.flagged') }, [icon('flag', 13)]) : null,
+					m.hasAttachments ? el('span', { class: 'ml-row-ic', title: t('mail.hasAttachments') }, [icon('clip', 13)]) : null,
+					m.savedToDrive ? el('span', { class: 'ml-row-ic', title: t('mail.drive.saved') }, [icon('cloud', 13)]) : null,
+				]),
+				el('span', { class: 'ml-line-time ml-row-time', text: MS.timeLabel(m.date, now, lang(), t) }),
+				acts,
+			];
+		}
+
 		// ── Availability ─────────────────────────────────
 
 		function setStatus(st) {
@@ -597,9 +851,11 @@
 
 		// ── Menu (left) ──────────────────────────────────
 
-		function menuItem({ label, ic, color, count, on, onClick, sub = false, depth = 0, warn = false, title = null, below = 0 }) {
+		function menuItem({ label, ic, color, count, on, onClick, sub = false, depth = 0, warn = false, title = null, below = 0, role = null }) {
 			const b = el('button', { type: 'button', class: `ml-it${on ? ' on' : ''}${sub ? ' sub' : ''}`, 'aria-current': on ? 'page' : null, title: title || label, on: { click: onClick } }, [
 				color ? dot(color) : (ic ? icon(ic, 16) : null),
+				// a folder shows its icon only in the narrow folder bar ("Ansicht")
+				sub && !ic && !color ? el('span', { class: 'ml-it-nic', 'aria-hidden': 'true' }, [icon(ROLE_ICON[role] || 'folder', 16)]) : null,
 				el('span', { class: 'ml-it-tx', text: label }),
 				warn ? el('span', { class: 'ml-it-warn', title: t('mail.accountProblem') }, [icon('alert', 14)]) : null,
 				count ? el('span', { class: `ml-n${on ? ' on' : ''}`, text: count > 999 ? '999+' : String(count) }) : null,
@@ -657,7 +913,7 @@
 					const inboxOn = v.kind === 'box' && v.box === a.id && !v.folderId;
 					const current = v.kind === 'box' && v.box === a.id ? v.folderId : null;
 					if (!tree.some(({ folder }) => folder.role === 'inbox')) {
-						side.append(menuItem({ label: t('mail.role.inbox'), sub: true, depth: 0, on: inboxOn, onClick: () => go({ kind: 'box', box: a.id, folderId: null }) }));
+						side.append(menuItem({ label: t('mail.role.inbox'), sub: true, depth: 0, role: 'inbox', on: inboxOn, onClick: () => go({ kind: 'box', box: a.id, folderId: null }) }));
 					}
 					// the folders as a tree: the arrow of a parent opens or closes its children, the name opens the folder
 					for (const r of MS.folderRows(tree, S.ffolds, current)) {
@@ -665,7 +921,7 @@
 						const inbox = folder.role === 'inbox';
 						const label = MS.folderName(folder, t);
 						const item = menuItem({
-							label, sub: true, depth: r.indent, count: folder.role === 'sent' || folder.role === 'trash' ? 0 : folder.unread, below: r.unreadBelow,
+							label, sub: true, depth: r.indent, role: folder.role, count: folder.role === 'sent' || folder.role === 'trash' ? 0 : folder.unread, below: r.unreadBelow,
 							on: inbox ? inboxOn : v.kind === 'box' && v.folderId === folder.id,
 							onClick: () => go({ kind: 'box', box: a.id, folderId: inbox ? null : folder.id }),
 						});
@@ -800,7 +1056,11 @@
 			]));
 			searchIn.placeholder = t('mail.search.placeholder');
 			searchIn.setAttribute('aria-label', t('mail.search.placeholder'));
-			listCol.append(el('label', { class: 'ml-search' }, [icon('search', 15), searchIn]));
+			// the search and "Ansicht" beside it; with the reading pane below both sit in the head's line
+			const searchRow = el('div', { class: 'ml-search-row' }, [el('label', { class: 'ml-search' }, [icon('search', 15), searchIn]), viewButton()]);
+			const headEl = listCol.querySelector('.ml-head');
+			if (lineMode() && headEl) headEl.insertBefore(searchRow, headEl.querySelector('.ml-ib'));
+			else listCol.append(searchRow);
 			const accounts = (S.me && S.me.accounts) || [];
 			if (v.kind === 'box' && !v.folderId && accounts.length > 1) {
 				const chips = el('div', { class: 'ml-chips', role: 'group', 'aria-label': t('mail.boxes') });
@@ -830,6 +1090,13 @@
 			if (v.kind === 'search' && S.remote) listCol.append(el('div', { class: 'ml-note', text: t('mail.search.remote') }));
 			listCol.classList.toggle('is-selecting', !!S.sel);
 			if (S.sel) listCol.append(selBar(head.title));
+			if (lineMode()) {
+				// below the list is short: account chips, Relevant / Sonstige and the filters in one line, then the column heads
+				const bar = el('div', { class: 'ml-linebar' });
+				for (const c of listCol.querySelectorAll(':scope > .ml-chips, :scope > .ml-tabs, :scope > .ml-filters')) bar.append(c);
+				if (bar.firstChild && headEl) headEl.after(bar);
+				listCol.append(lineHead());
+			}
 			const rows = el('div', { class: 'ml-rows', role: 'listbox', 'aria-label': head.title, 'aria-multiselectable': 'true', tabindex: '0' });
 			rows.addEventListener('keydown', onListKey);
 			if (!accounts.length && S.me && v.kind === 'box') {
@@ -899,15 +1166,16 @@
 				class: 'ml-row-pick', role: 'checkbox', 'aria-checked': picked ? 'true' : 'false', 'aria-label': t('mail.bulk.tick', { name: MS.senderName(m.from, t) }), title: t('mail.bulk.tickHint'),
 				on: { click: (e) => { e.stopPropagation(); tick(m.id); }, mousedown: (e) => e.preventDefault() },
 			}, [av, el('span', { class: 'ml-cb' }, [icon('check', 13, '3')])]);
+			const line = lineMode();
 			const row = el('div', {
-				class: `ml-row${on ? ' on' : ''}${picked ? ' is-picked' : ''}${m.unread ? ' is-unread' : ''}`, role: 'option', 'aria-selected': on || picked ? 'true' : 'false', 'data-id': String(m.id), tabindex: on || (picked && S.sel.focus === m.id) ? '0' : '-1', draggable: 'true',
+				class: `ml-row${line ? ' is-line' : ''}${on ? ' on' : ''}${picked ? ' is-picked' : ''}${m.unread ? ' is-unread' : ''}`, role: 'option', 'aria-selected': on || picked ? 'true' : 'false', 'data-id': String(m.id), tabindex: on || (picked && S.sel.focus === m.id) ? '0' : '-1', draggable: 'true',
 				on: {
 					click: (e) => rowClick(e, m),
 					contextmenu: (e) => { e.preventDefault(); rowMenu(e, m); },
 					dragstart: (e) => dragStart(e, m),
 					dragend: () => dragEnd(),
 				},
-			}, [
+			}, line ? lineCells(m, { pick, color, acts, now }) : [
 				pick,
 				el('span', { class: 'ml-row-main' }, [
 					el('span', { class: 'ml-row-l1' }, [dot(color), el('span', { class: 'ml-row-from', text: MS.senderName(m.from, t) }), m.threadCount > 1 && S.me && S.me.settings.threads ? el('span', { class: 'ml-row-n', text: String(m.threadCount) }) : null, el('span', { class: 'ml-row-time', text: MS.timeLabel(m.date, now, lang(), t) })]),
@@ -3217,6 +3485,7 @@
 			if (contacts.escape()) e.preventDefault();
 		});
 
+		applyLayout();
 		renderMenu();
 		renderList();
 		renderPane();

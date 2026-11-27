@@ -4179,6 +4179,30 @@
         "goCopy": "Nach „{{folder}}“ kopieren",
         "choose": "Ordner wählen"
       }
+    },
+    "view": {
+      "title": "Ansicht",
+      "button": "Ansicht (Strg+Umschalt+L)",
+      "reading": "Lesebereich",
+      "right": "Rechts",
+      "bottom": "Unten",
+      "off": "Aus",
+      "folders": "Ordnerleiste",
+      "foldersFull": "Ein",
+      "foldersNarrow": "Schmal",
+      "foldersOff": "Aus",
+      "density": "Dichte",
+      "normal": "Normal",
+      "compact": "Kompakt",
+      "ai": "KI-Zeile in der Liste",
+      "reset": "Spaltenbreiten zurücksetzen",
+      "note": "Gilt nur für diesen PC.",
+      "kbd": "Strg+Umschalt+L",
+      "autoNarrow": "Das Fenster ist schmal: Die Ordnerleiste ist vorübergehend schmal.",
+      "back": "Zurück zur Liste",
+      "colFrom": "Von",
+      "colSubject": "Betreff",
+      "colDate": "Datum"
     }
   },
   "home": {
@@ -5678,7 +5702,10 @@
       },
       "inbox": "Breite der Mitteilungsliste",
       "notesSide": "Breite des Menüs",
-      "notesDetail": "Breite der Details"
+      "notesDetail": "Breite der Details",
+      "mailFolders": "Breite der Ordnerleiste",
+      "mailList": "Breite der Mailliste",
+      "mailHeight": "Höhe der Mailliste"
     }
   }
 }
