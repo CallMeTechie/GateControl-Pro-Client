@@ -79,6 +79,10 @@
 /* List */
 .dv-list-wrap { flex-grow: 1; min-height: 0; border-radius: 14px; }
 .dv.is-drop .dv-list { outline: 2px dashed var(--acc); outline-offset: -2px; background: var(--acc-bg); }
+/* files from the Explorer: the zone says where they go (the folder shown, or the folder row under the pointer) */
+.dv-drop-zone { display: none; position: sticky; bottom: 12px; z-index: 5; width: fit-content; max-width: calc(100% - 24px); margin: -46px auto 12px; padding: 7px 14px; border-radius: 999px; background: var(--acc); color: var(--bg); font-size: 12.5px; font-weight: 700; align-items: center; gap: 8px; pointer-events: none; box-shadow: var(--shadow); }
+.dv-drop-zone-tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv.is-drop .dv-drop-zone { display: flex; }
 .dv-list { display: flex; flex-direction: column; min-height: 100%; overflow: hidden; }
 .dv-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 96px 52px; gap: 12px; align-items: center; padding: 6px 12px 6px 8px; border-top: 1px solid var(--line); font-size: 13.5px; }
 .dv-row:first-child { border-top: 0; }
@@ -131,6 +135,9 @@
 .dv-tr.is-ok .dv-tr-ic { background: var(--acc-bg); color: var(--acc-t); }
 .dv-tr.is-err .dv-tr-ic { background: var(--err-bg); color: var(--err); }
 .dv-tr.is-warn .dv-tr-ic { background: var(--warn-bg); color: var(--warn); }
+.dv-tr-more { justify-content: center; color: var(--muted); font-size: 12.5px; }
+.dv-conflict-all { margin-top: 10px; }
+.dv-conflict-all[hidden] { display: none; }
 .dv-tr-tx { display: flex; flex-direction: column; gap: 5px; flex-grow: 1; min-width: 0; }
 .dv-tr-top { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .dv-tr-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

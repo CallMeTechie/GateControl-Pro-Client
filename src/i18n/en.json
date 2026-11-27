@@ -1093,7 +1093,10 @@
       "skipped": {
         "one": "1 item left out",
         "other": "{{count}} items left out"
-      }
+      },
+      "dropHere": "Drop to upload into this folder",
+      "dropInto": "Drop to upload into “{{name}}”",
+      "vaultRow": "Open the vault to put files into it."
     },
     "transfer": {
       "title": "Transfers",
@@ -1114,14 +1117,22 @@
         "one": "Folder created · 1 file",
         "other": "Folder created · {{count}} files"
       },
-      "folderMaking": "Creating folders …"
+      "folderMaking": "Creating folders …",
+      "cancelled": "cancelled",
+      "cancel": "Cancel",
+      "cancelAll": "Cancel all",
+      "more": {
+        "one": "… and 1 more transfer",
+        "other": "… and {{count}} more transfers"
+      }
     },
     "conflict": {
       "title": "“{{name}}” already exists here",
       "text": "Save as a new version of the file, keep both or skip?",
       "version": "New version",
       "keep": "Keep both",
-      "skip": "Skip"
+      "skip": "Skip",
+      "all": "Apply to all {{count}} name conflicts"
     },
     "versions": {
       "menu": "Older versions",
