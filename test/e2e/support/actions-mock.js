@@ -11,11 +11,12 @@
  * — return { status, body } to answer a run yourself, or nothing for the
  * default: a control of the widget takes the value (409 control_disabled while
  * it is disabled, 400 for an unknown control / value), a toggle the state, a
- * button answers ok; 404 for an action that is not listed.
+ * button answers ok; 404 for an action that is not listed. `listDelay` (ms)
+ * lets the list come late.
  */
 
 function createActions({ actions = [], onRun = null } = {}) {
-  const state = { actions: JSON.parse(JSON.stringify(actions)), log: [], onRun, listed: 0 };
+  const state = { actions: JSON.parse(JSON.stringify(actions)), log: [], onRun, listed: 0, listDelay: 0 };
 
   function run(plugin, id, body) {
     state.log.push({ plugin, id, body });
