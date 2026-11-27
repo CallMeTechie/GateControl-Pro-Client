@@ -275,6 +275,8 @@
 		function showMedia(s, stage, r) {
 			const m = el(r.kind === 'audio' ? 'audio' : 'video', { class: 'dv-vv-video', controls: true, preload: 'metadata', controlsList: 'nodownload noremoteplayback', disablePictureInPicture: true });
 			m.src = r.url;
+			// a video: the screen stays on only while it really plays, also in full screen (video-awake.js)
+			const awake = r.kind === 'video' && root.GCVideoAwake ? root.GCVideoAwake.watch(m) : null;
 			// watching counts as use of the vault (it would lock in the middle of a film otherwise)
 			let timer = null;
 			m.addEventListener('play', () => { touch(); clearInterval(timer); timer = setInterval(() => { if (!m.paused) touch(); }, 30000); });
@@ -298,6 +300,7 @@
 				if (onKey) document.removeEventListener('keydown', onKey);
 				// closed in full screen (the lock, the window hidden): out of it before the video goes
 				if (document.fullscreenElement === m && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+				if (awake) awake.release();
 				clearInterval(timer); m.pause(); m.removeAttribute('src'); m.load(); m.remove();
 			});
 		}

@@ -34,7 +34,7 @@ let createSupportBundleSender, loadUpdatePublicKey, reconnectDelay, shouldOpenPo
 let e2e = null; // E2E test hooks (unpackaged dev runs only, see e2e-guard.js)
 let setupRemoteHost; // ./remote-host.js (loaded with the other services)
 let setupTerminal; // ./terminal.js — Fernzugriff stage 3, the SSH terminal window with tabs
-let createMediaAwake; // ./media-awake.js — Medien: no sleep while a film plays
+let createMediaAwake; // ./media-awake.js — no sleep while a film or a video plays
 let setupScreenBar; // ./screen-bar.js — Fernzugriff stage 7, the bar at the top while "Bildschirm teilen" runs
 let Store, log, validateWgConfig, registerProIpc, WireGuardService, KillSwitch, RdpAllowSvc, ApiClientPro, Updater, ConnectionMonitor, DnsPolicy, RdpManager, runRdpTrustMigration, RdpWolClient;
 let ClientPolicyService, clientPolicyUtil, applyPolicyToStore;
@@ -384,7 +384,7 @@ let mediaCast = null; // "Auf TV/PC abspielen" (core MediaCastReceiver): this PC
 let mediaNetKey = null; // the addresses of this PC's adapters last seen (another Wi-Fi → media.networkChanged())
 let mediaNetTimer = null;
 let mediaTunnelUp = null; // the tunnel state media last heard of
-let mediaAwake = null; // Medien: Windows stays awake while a film plays (./media-awake.js)
+let mediaAwake = null; // Windows stays awake while a film or a video plays (./media-awake.js)
 let driveSync = null; // "Ordner sichern" (core DriveSync), runs in this process (also with the window closed)
 let driveSyncTray = '';
 let driveOnDemandLocked = false; // letzter Status von gc-drive-sync: von Drive gestoppt?
@@ -1350,8 +1350,9 @@ function initializeServices() {
     if (mainWindow.isMinimized()) mainWindow.restore();
     showWindow();
   });
-  // the player's "no sleep while playing", released a minute after a pause and when it closes
-  mediaAwake = media && powerSaveBlocker ? createMediaAwake({ powerSaveBlocker, log }) : null;
+  // "no sleep while playing": the Medien player (released a minute after a pause and when it closes) and the other
+  // videos of the app (Drive, Tresor, camera clips — only while one really plays); one blocker, counted per video
+  mediaAwake = powerSaveBlocker ? createMediaAwake({ powerSaveBlocker, log }) : null;
 
   // "Ordner sichern": folders of this PC backed up / synced with Drive. Runs
   // in the main process (tray), the state of each folder lives in
