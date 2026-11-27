@@ -553,20 +553,55 @@
 			case 'done': text = x.folder ? plural(t, 'drive.transfer.folderDone', x.files || 0) : t(x.dir === 'down' ? 'drive.transfer.loaded' : 'drive.transfer.done'); cls = 'is-ok'; break;
 			case 'same': text = t('drive.transfer.same'); cls = 'is-ok'; break;
 			case 'skipped': text = t('drive.transfer.skipped'); break;
+			case 'cancelled': text = t('drive.transfer.cancelled'); break;
 			case 'failed': text = t('drive.transfer.failed', { reason: errorText({ code: x.code }, t) }); cls = 'is-err'; break;
 			default: text = '';
 		}
 		return {
 			id: x.id, name: str(x.name), dir: x.dir === 'down' ? 'down' : 'up', pct, text, cls,
 			conflict: x.state === 'conflict', active: x.state === 'queued' || x.state === 'running', path: x.path || null,
+			// an upload (or a folder being made) not through yet: "Abbrechen"
+			cancel: x.dir === 'up' && ['queued', 'running', 'conflict'].includes(x.state),
 		};
+	}
+
+	/** Uploads not through yet (queued, running, asking): "Alle abbrechen" is offered. */
+	function uploadsOpen(rows) {
+		return (Array.isArray(rows) ? rows : []).some((r) => r && r.dir === 'up' && ['queued', 'running', 'conflict'].includes(r.state));
+	}
+
+	/**
+	 * The rows the transfer list shows (newest first) → { shown, hidden }: at most `max`, but every row running or
+	 * asking (and every job of the selection) always — a dropped folder of thousands of files keeps the list light.
+	 */
+	function transferRows(rows, max = 200) {
+		const all = (Array.isArray(rows) ? rows : []).slice().reverse();
+		if (all.length <= max) return { shown: all, hidden: 0 };
+		const must = (r) => r && (r.dir === 'op' || r.state === 'running' || r.state === 'conflict');
+		let room = Math.max(0, max - all.filter(must).length);
+		const shown = all.filter((r) => must(r) || (room-- > 0));
+		return { shown, hidden: all.length - shown.length };
+	}
+
+	/** What a drop from the Explorer does: into the row's folder `target` (its name) or the folder shown. */
+	function dropZoneText(target, t) {
+		return target && str(target.name) ? t('drive.upload.dropInto', { name: str(target.name) }) : t('drive.upload.dropHere');
+	}
+
+	/**
+	 * May files from the Explorer go into this row's node (the list of a writable folder)? A folder only, not one
+	 * still locked; a vault's folder only from inside that vault (its files are encrypted there).
+	 */
+	function canDropFiles(node, { inVault = false } = {}) {
+		if (!node || !node.isDir || node.locked) return false;
+		return !node.encrypted === !inVault;
 	}
 
 	/** "2 von 5 hochgeladen" while uploads run, else null. */
 	function transfersSummary(rows, t) {
 		const ups = (Array.isArray(rows) ? rows : []).filter((r) => r.dir === 'up');
 		if (!ups.some((r) => r.state === 'queued' || r.state === 'running')) return null;
-		const done = ups.filter((r) => ['done', 'same', 'skipped', 'failed'].includes(r.state)).length;
+		const done = ups.filter((r) => ['done', 'same', 'skipped', 'failed', 'cancelled'].includes(r.state)).length;
 		return t('drive.transfer.summary', { done, total: ups.length });
 	}
 
@@ -669,7 +704,7 @@
 		localInputValue, parseLocalInput, timeTravelPresets, timeTravelError, longWhen, timeTravelView, timeTravelLinked, timeTravelResultText,
 		liveRelevant, throttle, guardView, folderQueuedText,
 		linkModes, pinOk, linkRequest, linkView,
-		transferView, transfersSummary,
+		transferView, transfersSummary, uploadsOpen, transferRows, dropZoneText, canDropFiles,
 		writableAreas, pickerStart, canPick, pickerFolders, pickerPath,
 		chatCanSave, savedText,
 		ERROR_CODES: CODES, errorText,

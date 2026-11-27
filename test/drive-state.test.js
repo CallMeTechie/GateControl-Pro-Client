@@ -156,7 +156,7 @@ describe('links', () => {
 describe('transfers', () => {
   it('rows and the summary', () => {
     assert.deepEqual(DS.transferView({ id: 'u1', dir: 'up', name: 'a.pdf', total: 2048, sent: 1024, state: 'running' }, t, 'de'),
-      { id: 'u1', name: 'a.pdf', dir: 'up', pct: 50, text: 'drive.transfer.progress(sent=1 KB,total=2 KB)', cls: '', conflict: false, active: true, path: null });
+      { id: 'u1', name: 'a.pdf', dir: 'up', pct: 50, text: 'drive.transfer.progress(sent=1 KB,total=2 KB)', cls: '', conflict: false, active: true, path: null, cancel: true });
     const c = DS.transferView({ id: 'u2', dir: 'up', name: 'b', total: 1, state: 'conflict' }, t, 'de');
     assert.equal(c.conflict, true);
     assert.equal(c.cls, 'is-warn');
@@ -272,7 +272,7 @@ describe('page wiring', () => {
     for (const m of ['view', 'download', 'upload']) keys.add(`drive.link.mode.${m}`);
     for (const k of Object.values(DS.ERROR_CODES)) keys.add(`drive.err.${k}`);
     keys.add('drive.err.generic');
-    const plurals = new Set(['drive.trash.files', 'drive.upload.rejected', 'drive.guard.more', 'drive.guard.files', 'drive.upload.folders', 'drive.upload.files', 'drive.upload.skipped', 'drive.transfer.folderDone']);
+    const plurals = new Set(['drive.trash.files', 'drive.upload.rejected', 'drive.guard.more', 'drive.guard.files', 'drive.upload.folders', 'drive.upload.files', 'drive.upload.skipped', 'drive.transfer.folderDone', 'drive.transfer.more']);
     for (const p of plurals) { keys.delete(p); keys.add(`${p}.one`); keys.add(`${p}.other`); }
     assert.ok(keys.size > 150, `only ${keys.size} keys found`);
     for (const k of keys) {
@@ -388,5 +388,43 @@ describe('sorting by type ("Typ")', () => {
     assert.match(v, /DS\.sortRows\(S\.folder\.items, S\.sort/);
     assert.match(v, /function setSort\(s\)/);
     assert.match(v, /keep\('gc\.drive\.sort', s\)/);
+  });
+});
+
+describe('drag & drop from the Explorer, cancelling uploads', () => {
+  it('cancelled rows, "Abbrechen" only while not through, "Alle abbrechen"', () => {
+    assert.equal(DS.transferView({ id: 'u1', dir: 'up', state: 'cancelled', total: 5 }, t, 'de').text, 'drive.transfer.cancelled');
+    assert.equal(DS.transferView({ id: 'u1', dir: 'up', state: 'cancelled' }, t, 'de').cancel, false);
+    for (const state of ['queued', 'running', 'conflict']) assert.equal(DS.transferView({ id: 'u1', dir: 'up', state }, t, 'de').cancel, true);
+    assert.equal(DS.transferView({ id: 'f1', dir: 'up', folder: true, state: 'running' }, t, 'de').cancel, true);
+    assert.equal(DS.transferView({ id: 'd1', dir: 'down', state: 'running' }, t, 'de').cancel, false);
+    assert.equal(DS.uploadsOpen([{ dir: 'up', state: 'done' }, { dir: 'down', state: 'running' }]), false);
+    assert.equal(DS.uploadsOpen([{ dir: 'up', state: 'conflict' }]), true);
+    // a cancelled one counts as through in the summary
+    assert.equal(DS.transfersSummary([{ dir: 'up', state: 'cancelled' }, { dir: 'up', state: 'running' }], t), 'drive.transfer.summary(done=1,total=2)');
+  });
+
+  it('a long list: newest first, at most max, but running / asking rows and jobs always', () => {
+    const rows = Array.from({ length: 500 }, (_, i) => ({ id: `u${i}`, dir: 'up', state: i === 0 ? 'running' : i === 3 ? 'conflict' : 'queued' }));
+    rows.push({ id: 'op1', dir: 'op', state: 'done' });
+    const r = DS.transferRows(rows, 10);
+    assert.equal(r.shown.length, 10);
+    assert.equal(r.hidden, 491);
+    assert.equal(r.shown[0].id, 'op1');
+    assert.deepEqual(r.shown.slice(-2).map((x) => x.id), ['u3', 'u0']);
+    const few = DS.transferRows(rows.slice(0, 3));
+    assert.deepEqual([few.shown.map((x) => x.id), few.hidden], [['u2', 'u1', 'u0'], 0]);
+  });
+
+  it('where a drop goes: the zone text and which rows take files', () => {
+    assert.equal(DS.dropZoneText(null, t), 'drive.upload.dropHere');
+    assert.equal(DS.dropZoneText({ name: 'Belege' }, t), 'drive.upload.dropInto(name=Belege)');
+    assert.equal(DS.canDropFiles({ isDir: true }), true);
+    assert.equal(DS.canDropFiles({ isDir: false }), false);
+    assert.equal(DS.canDropFiles({ isDir: true, locked: true }, { inVault: true }), false);
+    // a vault (or its folder) only from inside the vault; a plain folder not from inside one
+    assert.equal(DS.canDropFiles({ isDir: true, encrypted: true }), false);
+    assert.equal(DS.canDropFiles({ isDir: true, encrypted: true }, { inVault: true }), true);
+    assert.equal(DS.canDropFiles({ isDir: true }, { inVault: true }), false);
   });
 });
