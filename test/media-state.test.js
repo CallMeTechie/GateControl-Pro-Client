@@ -531,3 +531,45 @@ describe('Medien-Plugin (W2): the sources from the server, the network rule', ()
     assert.match(mediaView, /api\.sources\.refresh\(\)/);
   });
 });
+
+describe('media-state: „Videos umwandeln“ (gatecontrol-medien 1.6.0)', () => {
+  it('what this PC does not play itself, for the text', () => {
+    assert.equal(MS.convertWhat({ code: 'hevc', codec: 'hevc' }), 'HEVC');
+    assert.equal(MS.convertWhat({ code: 'video_codec', codec: 'mpeg2video' }), 'MPEG-2');
+    assert.equal(MS.convertWhat({ code: 'dovi', codec: 'hevc' }), 'Dolby Vision');
+    assert.equal(MS.convertWhat({ code: 'hdr', codec: 'hevc' }), 'HEVC HDR');
+    assert.equal(MS.convertWhat(null), null);
+  });
+
+  it('the clock of the start: German 24 hours, past or unknown none', () => {
+    const at = new Date(2026, 10, 25, 1, 8).getTime();
+    assert.equal(MS.convertClock(at, 'de', NOW), '01:08');
+    assert.match(MS.convertClock(at, 'en', NOW), /^01:08/);
+    assert.equal(MS.convertClock(NOW - 1000, 'de', NOW), null);
+    assert.equal(MS.convertClock(null, 'de', NOW), null);
+  });
+
+  it('the card per state: offer with the button, requested, queued with place and time, running with the bar; else none', () => {
+    const problem = { code: 'hevc', codec: 'hevc' };
+    const offer = MS.convertCard({ kind: 'offer', problem }, t, 'de', NOW);
+    assert.deepEqual(offer, { kind: 'offer', title: 'media.convert.offerTitle', text: 'media.convert.offerText(HEVC)', button: 'media.convert.request', percent: null });
+    assert.equal(MS.convertCard({ kind: 'offer' }, t, 'de', NOW).text, 'media.convert.offerTextPlain');
+    assert.deepEqual(MS.convertCard({ kind: 'requested', problem }, t, 'de', NOW), { kind: 'requested', title: 'media.convert.requestedTitle', text: 'media.convert.requestedText', button: null, percent: null });
+    const q = MS.convertCard({ kind: 'queued', position: 2, startsAt: new Date(2026, 10, 25, 1, 0).getTime(), problem }, t, 'de', NOW);
+    assert.equal(q.title, 'media.convert.queuedTitle · media.convert.queuedPlace(2) · media.convert.queuedFrom(01:00)');
+    assert.equal(q.button, null, 'nothing to press: playing stays');
+    assert.equal(MS.convertCard({ kind: 'queued', position: null, startsAt: null }, t, 'de', NOW).title, 'media.convert.queuedTitle');
+    const r = MS.convertCard({ kind: 'running', percent: 47.4, problem }, t, 'de', NOW);
+    assert.deepEqual([r.title, r.percent], ['media.convert.runningPercent(47)', 47]);
+    assert.deepEqual([MS.convertCard({ kind: 'running', percent: null }, t, 'de', NOW).title], ['media.convert.runningTitle']);
+    assert.equal(MS.convertCard(null, t, 'de', NOW), null);
+    assert.equal(MS.convertCard({ kind: 'done' }, t, 'de', NOW), null);
+  });
+
+  it('the page asks the core and keeps playing possible', () => {
+    const mediaView = read('src', 'renderer', 'media-view.js');
+    assert.match(mediaView, /api\.convertHint\(/);
+    assert.match(mediaView, /api\.convertRequest\(/);
+    assert.match(mediaView, /api\.convertPrefetch\(/);
+  });
+});

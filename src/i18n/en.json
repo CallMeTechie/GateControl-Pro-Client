@@ -5430,6 +5430,22 @@
       "videoConverted": "on this PC: video converted",
       "bothConverted": "on this PC: video and audio converted"
     },
+    "convert": {
+      "offerTitle": "Converted while playing",
+      "offerText": "Your PC cannot play this video ({{what}}) itself. It may stutter now. Convert it for good overnight?",
+      "offerTextPlain": "Your PC cannot play this video itself. It may stutter now. Convert it for good overnight?",
+      "request": "Mark for tonight",
+      "requestedTitle": "Marked for converting",
+      "requestedText": "Whoever looks after the media starts the converting. You can still play it now.",
+      "queuedTitle": "Converted tonight",
+      "queuedPlace": "Position {{n}}",
+      "queuedFrom": "from {{time}}",
+      "runningTitle": "Being converted now",
+      "runningPercent": "Being converted now – {{n}} %",
+      "after": "After that it plays smoothly here. You can still play it now.",
+      "failed": "That did not work. Please try again later.",
+      "tooMany": "Too many requests right now. Please try again later."
+    },
     "quality": {
       "auto": "Automatic",
       "original": "Original",

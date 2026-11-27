@@ -138,6 +138,16 @@ button.md-src { cursor: pointer; }
 .md-prog { height: 5px; border-radius: 3px; background: var(--line2); overflow: hidden; }
 .md-prog > span { display: block; height: 100%; background: var(--acc); }
 .md-det-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+/* „Videos umwandeln“ (gatecontrol-medien 1.6.0): the hint above the buttons — playing stays possible */
+.md-conv { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--warn-bg); }
+.md-conv.is-queued, .md-conv.is-running, .md-conv.is-requested { background: var(--info-bg); }
+.md-conv-ic { flex-shrink: 0; display: inline-flex; padding-top: 1px; color: var(--warn); }
+.md-conv.is-queued .md-conv-ic, .md-conv.is-running .md-conv-ic, .md-conv.is-requested .md-conv-ic { color: var(--info); }
+.md-conv-tx { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex-grow: 1; }
+.md-conv-tx > b { font-size: 13px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.md-conv-tx > span { font-size: 12.5px; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+.md-conv-tx > .md-conv-bar { display: block; margin: 2px 0; }
+.md-conv-btn { align-self: flex-start; margin-top: 4px; gap: 6px; }
 .md-played.is-on { background: var(--acc-bg); border-color: var(--acc); color: var(--acc-t); }
 .md-sel { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 8px 11px; border-radius: 10px; border: 1px solid var(--line2); background: var(--bg); }
 .md-sel:hover { border-color: var(--faint); }

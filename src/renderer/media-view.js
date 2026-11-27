@@ -50,6 +50,7 @@
 		music: 'M9 18V5l11-2v13|M6 15a3 3 0 1 0 0 6a3 3 0 1 0 0-6|M17 13a3 3 0 1 0 0 6a3 3 0 1 0 0-6',
 		up: 'M12 19V5M5 12l7-7 7 7',
 		external: 'M14 4h6v6M20 4l-9 9|M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
+		moon: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z',
 	};
 
 	function icon(name, size = 16, stroke = '2', fill = false) {
@@ -134,6 +135,9 @@
 			folder: { sourceId: null, dir: '', items: [], via: null, link: null, loading: false, error: null, seq: 0, loaded: false },
 			checks: new Map(),      // `${source}|${item}` → the core's check of a share's file (or { loading })
 			ext: null,              // media:external:info
+			conv: new Map(),        // `${source}|${item}` → { loading } | { hint, sending }: „Videos umwandeln“ (media:convert:hint)
+			convPre: new Set(),     // `${source}|${series}|${season}`: the season's episodes asked ahead once
+			capsProbed: false,      // what Chromium plays, told to the core before the first hint
 		};
 		let rowsSeq = 0;
 		let searchTimer = null;
@@ -919,6 +923,8 @@
 			if (title.positionMs > 0 && !title.played && title.runtimeMs > 0) {
 				inner.appendChild(el('div', { class: 'md-prog', title: `${MS.clock(title.positionMs)} / ${MS.clock(title.runtimeMs)}` }, [el('span', { style: `width:${Math.round(Math.min(1, title.positionMs / title.runtimeMs) * 100)}%` })]));
 			}
+			const conv = convertCard(tab, title, version);
+			if (conv) inner.appendChild(conv);
 			const btns = el('div', { class: 'md-det-btns' });
 			if (canPlay()) {
 				btns.appendChild(el('button', { type: 'button', class: 'btn btn-pri btn-sm md-play', on: { click: () => playItem(title) } }, [icon('play', 14, '2', true), el('span', { text: MS.playLabel(title, t) })]));
@@ -944,6 +950,90 @@
 			const srcObj = source(title.sourceId);
 			const qNote = MS.qualityNote(q, version.quality, link || (srcObj && srcObj.link), t, lang(), srcObj && srcObj.alwaysOriginal);
 			inner.appendChild(selBox(t('media.detail.quality'), MS.qualityOptions(t, lang()), q, qNote, (v) => setQuality(v, tab), 'md-sel-quality'));
+		}
+
+		// ── „Videos umwandeln“ (gatecontrol-medien 1.6.0): the hint before playing ──
+
+		const convertible = (sourceId) => {
+			const src = source(sourceId);
+			return !!src && src.kind === 'jellyfin' && typeof api.convertHint === 'function';
+		};
+
+		/** What Chromium plays, told to the core once before the first hint (else the core's default counts). */
+		async function ensureCaps() {
+			if (S.capsProbed) return;
+			S.capsProbed = true;
+			const player = root.GCMediaPlayer;
+			if (!player || typeof player.probeCaps !== 'function' || typeof api.setCaps !== 'function') return;
+			try {
+				const caps = await player.probeCaps(document.createElement('video'));
+				if (!caps) return;
+				const r = await api.setCaps(caps);
+				if (r && r.caps && S.status) S.status.caps = r.caps;
+			} catch { /* the core keeps its default */ }
+		}
+
+		/**
+		 * The card above the buttons (Entwurf Bild 5/6): only when the core says this PC does not show the picture itself
+		 * and the plugin knows the file — „Für heute Nacht vormerken“, vorgemerkt, Platz / ab … Uhr, n %. Asked once per
+		 * title (the core keeps the plugin's answer 3 minutes); playing stays possible always.
+		 */
+		function convertCard(tab, title, version) {
+			if (!version || !title || !convertible(title.sourceId)) return null;
+			const k = dkey(title);
+			const c = S.conv.get(k);
+			if (!c) {
+				const sel = S.selected[tab];
+				S.conv.set(k, { loading: true });
+				ensureCaps()
+					.then(() => api.convertHint(title.sourceId, title.id, version.id))
+					.catch(fail)
+					.then((r) => {
+						S.conv.set(k, { hint: r && r.ok ? r.hint || null : null });
+						if (sel && stillSelected(tab, sel)) renderDetail(tab);
+					});
+				return null;
+			}
+			const card = MS.convertCard(c.hint, t, lang(), now());
+			if (!card) return null;
+			return el('div', { class: `md-conv is-${card.kind}`, role: 'status', 'data-kind': card.kind }, [
+				el('span', { class: 'md-conv-ic' }, [icon('moon', 16)]),
+				el('div', { class: 'md-conv-tx' }, [
+					el('b', { text: card.title }),
+					el('span', { text: card.text }),
+					card.percent !== null ? el('span', { class: 'md-prog md-conv-bar' }, [el('span', { style: `width:${card.percent}%` })]) : null,
+					card.button ? el('button', {
+						type: 'button', class: 'btn btn-sec btn-sm md-conv-btn', disabled: c.sending === true,
+						on: { click: () => requestConvert(tab, title) },
+					}, [icon('moon', 14), el('span', { text: card.button })]) : null,
+				]),
+			]);
+		}
+
+		/** „Für heute Nacht vormerken“: onto the plugin's list only (the admin queues it). */
+		async function requestConvert(tab, title) {
+			const k = dkey(title);
+			const c = S.conv.get(k) || {};
+			if (c.sending) return;
+			const sel = S.selected[tab];
+			S.conv.set(k, { ...c, sending: true });
+			renderDetail(tab);
+			let r;
+			try { r = await api.convertRequest(title.sourceId, title.id); } catch (err) { r = fail(err); }
+			if (r && r.ok && r.hint) S.conv.set(k, { hint: r.hint });
+			else {
+				S.conv.set(k, { ...c, sending: false });
+				toast(t(r && r.code === 'rate_limited' ? 'media.convert.tooMany' : 'media.convert.failed'), 'error');
+			}
+			if (sel && stillSelected(tab, sel)) renderDetail(tab);
+		}
+
+		/** A season's episodes asked ahead in one question (the core keeps them), once per season. */
+		function prefetchConvert(sourceId, seriesId, seasonId, episodes) {
+			const k = `${sourceId}|${seriesId}|${seasonId || ''}`;
+			if (S.convPre.has(k) || !episodes.length || !convertible(sourceId) || typeof api.convertPrefetch !== 'function') return;
+			S.convPre.add(k);
+			api.convertPrefetch(sourceId, episodes.slice(0, 100).map((e) => e.id)).catch(() => {});
 		}
 
 		/** A share's film or episode: the file as it is (always the original), the check, another app. */
@@ -1093,6 +1183,16 @@
 			const episodes = ep && ep.items ? ep.items : [];
 			const next = title.episodeHint && episodes.some((e) => e.id === title.episodeHint.id) ? episodes.find((e) => e.id === title.episodeHint.id) : MS.nextEpisode(episodes);
 
+			if (episodes.length) prefetchConvert(title.sourceId, title.id, seasonId, episodes);
+			if (next) {
+				// the episode "S1 F3 abspielen" plays: its streams (detail) decide whether this PC shows the picture itself
+				const nd = S.details.get(dkey(next));
+				if (!nd) loadDetail(next).then(() => { if (stillSelected(tab, title)) renderDetail(tab); });
+				else if (nd.versions && nd.versions[0]) {
+					const conv = convertCard(tab, next, nd.versions[0]);
+					if (conv) inner.appendChild(conv);
+				}
+			}
 			const btns = el('div', { class: 'md-det-btns' });
 			if (canPlay() && next) {
 				const label = next.positionMs > 0 && !next.played
@@ -1169,6 +1269,7 @@
 		/** After the player: the progress changed in Jellyfin — the rows, the grids' bars and the details again. */
 		function refreshAfterPlay() {
 			S.details.clear();
+			S.conv.clear();
 			S.episodes.clear();
 			S.seasons.clear();
 			S.grids.clear();
