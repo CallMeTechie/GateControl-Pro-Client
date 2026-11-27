@@ -5661,5 +5661,24 @@
       "dropped": "Removed because the server doesn’t know them: {{names}}.",
       "ok": "OK"
     }
+  },
+  "layout": {
+    "split": {
+      "w": {
+        "drag": "Drag: change the width",
+        "hint": "Double-click: standard width · Arrow keys: in steps",
+        "min": "Minimum width {{value}}",
+        "max": "Maximum width {{value}}"
+      },
+      "h": {
+        "drag": "Drag: change the height",
+        "hint": "Double-click: standard height · Arrow keys: in steps",
+        "min": "Minimum height {{value}}",
+        "max": "Maximum height {{value}}"
+      },
+      "inbox": "Width of the notification list",
+      "notesSide": "Width of the menu",
+      "notesDetail": "Width of the details"
+    }
   }
 }
