@@ -783,6 +783,56 @@
 		return parts.length ? parts.slice(0, -1).join('/') : null;
 	}
 
+	// ── Ordner: Jellyfin's libraries beside the shares (as Android #301) ──
+
+	/**
+	 * What "Ordner" shows first: 'roots' (a Jellyfin server is ready: its libraries and the shares as a list),
+	 * 'share' (no Jellyfin: the share as before, several as chips), 'empty' (neither).
+	 */
+	function folderStart(status) {
+		const { ready, shares } = sourcesOf(status);
+		if (ready.length) return 'roots';
+		return shares.length ? 'share' : 'empty';
+	}
+
+	/**
+	 * The libraries of the servers asked ([{ sourceId, r }], r the answer of media:libraries) → { rows, error }: rows
+	 * [{ sourceId, id, name }] in the servers' order; error only when no server could be read (one is enough).
+	 */
+	function libraryRoots(answers) {
+		const rows = [];
+		let read = false;
+		let error = null;
+		for (const a of list(answers)) {
+			const r = a && a.r;
+			if (r && r.ok) {
+				read = true;
+				for (const f of list(r.folders)) if (isObj(f) && typeof f.id === 'string' && typeof f.name === 'string') rows.push({ sourceId: a.sourceId, id: f.id, name: f.name });
+			} else if (!error) error = (r && r.code) || 'failed';
+		}
+		return { rows, error: read ? null : error };
+	}
+
+	/** A film, series or video in a Jellyfin folder: picture, name, "2024 · 1 Std. 48 Min. · noch 18 Min.". */
+	function libraryTitle(item, t) {
+		const parts = [];
+		if (item.kind === 'episode') parts.push(episodeLabel(item, t));
+		if (item.kind === 'season' && item.seriesName) parts.push(item.seriesName);
+		if (item.year) parts.push(String(item.year));
+		if (item.kind === 'series') parts.push(seasonsLabel(item, t));
+		else if (item.kind !== 'season') parts.push(runtime(item.runtimeMs, t));
+		if (item.resumable) parts.push(leftLabel(item, t));
+		const playable = item.kind === 'movie' || item.kind === 'episode' || item.kind === 'video';
+		return {
+			title: item.name,
+			sub: parts.filter(Boolean).join(' · '),
+			picture: item.backdrop || item.poster || null,
+			progress: item.resumable ? Math.round(Math.min(1, Math.max(0, num(item.progress) || 0)) * 100) : 0,
+			played: item.played === true,
+			playable,
+		};
+	}
+
 	/** The line under a share's head: "SMB · Zuhause" / "WebDAV · unterwegs", with the hint of a pair. */
 	function shareWay(source, via, link, t) {
 		const way = wayOf(link);
@@ -888,6 +938,9 @@
 		folderRow,
 		crumbs,
 		parentDir,
+		folderStart,
+		libraryRoots,
+		libraryTitle,
 		shareWay,
 		checkNote,
 		externalApp,

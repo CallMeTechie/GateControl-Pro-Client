@@ -5491,8 +5491,8 @@
       "text": "Media needs Windows' encryption for the access data. It isn't available on this PC right now."
     },
     "folders": {
-      "title": "Folders of the NAS shares",
-      "text": "The folders of the NAS shares the admin shares with you appear here with previews and progress.",
+      "title": "No folders yet",
+      "text": "The libraries of your Jellyfin account and the NAS shares the admin shares with you appear here.",
       "sources": "To the sources",
       "path": "Path in the share",
       "up": "One level up",
@@ -5502,7 +5502,15 @@
       "away": "away",
       "pairHint": "Away, the app uses the same share over WebDAV (more robust through the tunnel). Shares always play the original; only Jellyfin converts.",
       "originalHint": "Shares always play the original; only Jellyfin converts.",
-      "fileTitle": "File from the NAS"
+      "fileTitle": "File from the NAS",
+      "library": "Jellyfin library",
+      "all": "All folders",
+      "roots": "Libraries and shares",
+      "none": "No folders yet. The libraries of your Jellyfin account and the NAS shares appear here.",
+      "retry": "Try again",
+      "smb": "SMB share",
+      "webdav": "WebDAV share",
+      "libPath": "Path in the library"
     },
     "signedOut": "{{name}} is signed out. Sign in again to see movies and shows.",
     "src": {

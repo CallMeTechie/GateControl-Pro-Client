@@ -8,7 +8,8 @@
  * (a click selects, a double click or Enter plays, the arrow keys move through the grid; a series shows its seasons
  * and episodes there); the search over all sources. NAS shares (Stufe 4h): their films and series (from the file names)
  * sit in the rows and grids with the mark "NAS" — a title Jellyfin has too shows once, Jellyfin's —, "Weiterschauen"
- * runs over all sources, and "Ordner" shows a share's folders and files (picture and title from the name or a picture
+ * runs over all sources, and "Ordner" lists the Jellyfin libraries (as Android #301: a library's folders and titles, a
+ * title opens its tab) beside the shares, and shows a share's folders and files (picture and title from the name or a picture
  * beside it, size, length, "noch 19 Min.", at home SMB, away WebDAV; at home the files Chromium cannot play are marked
  * before, "In VLC öffnen" / "In anderer App öffnen" in the detail and the player). The page
  * "Quellen" is media-sources-view.js (window.GCMediaSources), the card "Weiterschauen" of the
@@ -133,6 +134,12 @@
 			vpn: null,              // the tunnel started for Medien: 'connecting' | 'failed' | null
 			shareTitles: new Map(), // `${tab}|${share ids}` → { items, loading, loaded, error }: all films / series of the shares
 			folder: { sourceId: null, dir: '', items: [], via: null, link: null, loading: false, error: null, seq: 0, loaded: false },
+			// Ordner with Jellyfin (as Android #301): the libraries of the ready servers beside the shares; `open` a library or a
+			// folder in it ({ sourceId, trail: [{ id, name }], folders, items, loading, loaded, error, seq }); `share` the
+			// share opened from that list (null: the list)
+			libs: { key: null, rows: [], loading: false, loaded: false, error: null, seq: 0 },
+			libOpen: null,
+			folderShareOpen: false,
 			checks: new Map(),      // `${source}|${item}` → the core's check of a share's file (or { loading })
 			ext: null,              // media:external:info
 			conv: new Map(),        // `${source}|${item}` → { loading } | { hint, sending }: „Videos umwandeln“ (media:convert:hint)
@@ -470,23 +477,185 @@
 			};
 		}
 
+		// ── Ordner: Jellyfin's libraries (as Android #301) ──
+
+		function libsKey() { return MS.sourcesOf(S.status).ready.map((x) => x.id).join(','); }
+
+		async function loadLibraries(quiet = false) {
+			if (typeof api.libraries !== 'function') { S.libs = { ...S.libs, key: libsKey(), loading: false, loaded: true, rows: [], error: null }; return; }
+			const key = libsKey();
+			const seq = S.libs.seq + 1;
+			S.libs = { ...S.libs, key, loading: true, error: quiet ? S.libs.error : null, seq };
+			const { ready } = MS.sourcesOf(S.status);
+			const answers = await Promise.all(ready.map((x) => api.libraries(x.id).then((r) => ({ sourceId: x.id, r: handle(r, x.id) || r })).catch((err) => ({ sourceId: x.id, r: fail(err) }))));
+			if (seq !== S.libs.seq) return;
+			const { rows, error } = MS.libraryRoots(answers);
+			S.libs = { key, rows, loading: false, loaded: true, error, seq };
+			if (S.shown && S.view === 'library' && S.tab === 'folders' && !S.search.q && !S.libOpen) renderBody();
+		}
+
+		async function loadLibraryPlace(place, quiet = false) {
+			const seq = (S.libOpen && S.libOpen.seq ? S.libOpen.seq : 0) + 1;
+			const same = S.libOpen && S.libOpen.sourceId === place.sourceId && S.libOpen.trail.length === place.trail.length && S.libOpen.trail.every((f, i) => f.id === place.trail[i].id);
+			S.libOpen = { ...place, folders: same && quiet ? S.libOpen.folders : [], items: same && quiet ? S.libOpen.items : [], loading: true, loaded: same && quiet ? S.libOpen.loaded : false, error: null, seq };
+			let r;
+			try { r = await api.libraryItems(place.sourceId, place.trail[place.trail.length - 1].id); } catch (err) { r = fail(err); }
+			handle(r, place.sourceId);
+			if (!S.libOpen || S.libOpen.seq !== seq) return;
+			if (r && r.ok) S.libOpen = { ...S.libOpen, folders: Array.isArray(r.folders) ? r.folders : [], items: Array.isArray(r.items) ? r.items : [], loading: false, loaded: true, error: null };
+			else S.libOpen = { ...S.libOpen, loading: false, loaded: true, error: (r && r.code) || 'failed' };
+			if (S.shown && S.view === 'library' && S.tab === 'folders' && !S.search.q) renderBody();
+		}
+
+		function openLibrary(row) {
+			loadLibraryPlace({ sourceId: row.sourceId, trail: [{ id: row.id, name: row.name }] });
+			renderBody();
+		}
+
+		function openLibraryFolder(f) {
+			const cur = S.libOpen;
+			if (!cur) return;
+			loadLibraryPlace({ sourceId: cur.sourceId, trail: cur.trail.concat([{ id: f.id, name: f.name }]) });
+			renderBody();
+		}
+
+		function openLibraryTrail(i) {
+			const cur = S.libOpen;
+			if (!cur || i < 0 || i >= cur.trail.length - 1) return;
+			loadLibraryPlace({ sourceId: cur.sourceId, trail: cur.trail.slice(0, i + 1) });
+			renderBody();
+		}
+
+		/** Back to the list of libraries and shares. */
+		function folderRoots() {
+			S.libOpen = null;
+			S.folderShareOpen = false;
+			renderBody();
+		}
+
+		function libraryUp() {
+			const cur = S.libOpen;
+			if (cur && cur.trail.length > 1) openLibraryTrail(cur.trail.length - 2);
+			else folderRoots();
+		}
+
+		/** A title of a Jellyfin folder: its tab with it selected (a season: its series with that season). */
+		function openLibraryTitle(it) {
+			if (it.kind === 'season' && it.seriesId) {
+				openItem({ kind: 'episode', id: it.id, sourceId: it.sourceId, seriesId: it.seriesId, seriesName: it.seriesName, seasonId: it.id, name: it.seriesName || it.name });
+				return;
+			}
+			openItem(it);
+		}
+
+		function renderFoldersEmpty() {
+			refs.body.appendChild(el('div', { class: 'md-empty md-folders' }, [
+				el('span', { class: 'md-empty-ic' }, [icon('folder', 26, '1.6')]),
+				el('h2', { class: 'md-empty-h', text: t('media.folders.title') }),
+				el('p', { class: 'md-empty-tx', text: t('media.folders.text') }),
+				el('button', { type: 'button', class: 'btn btn-sec', text: t('media.folders.sources'), on: { click: () => openSources() } }),
+			]));
+		}
+
+		/** The list of the libraries of the Jellyfin servers and the shares (each with its way). */
+		function renderFolderRoots() {
+			const { shares } = MS.sourcesOf(S.status);
+			if (S.libs.key !== libsKey() || (!S.libs.loaded && !S.libs.loading)) loadLibraries();
+			const L = S.libs;
+			const wrap = el('div', { class: 'md-fv md-roots' });
+			wrap.appendChild(el('div', { class: 'md-fv-head' }, [el('nav', { class: 'md-crumbs', 'aria-label': t('media.folders.roots') }, [el('span', { class: 'md-crumb is-cur', 'aria-current': 'location', text: t('media.tabs.folders') })])]));
+			const box = el('div', { class: 'md-fl scroll', role: 'list', 'aria-label': t('media.folders.roots') });
+			if (L.error) {
+				box.appendChild(el('div', { class: 'md-state is-err md-roots-err' }, [
+					el('span', { text: MS.errorText(L.error, t) }), ' ',
+					el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('media.folders.retry'), on: { click: () => { loadLibraries(); renderBody(); } } }),
+				]));
+			}
+			for (const row of L.rows) {
+				box.appendChild(el('button', { type: 'button', class: 'md-fr is-dir is-lib', role: 'listitem', 'data-id': row.id, on: { click: () => openLibrary(row) } }, [
+					el('span', { class: 'md-fr-ic' }, [icon('folder', 20, '1.8')]),
+					el('span', { class: 'md-fr-tx' }, [el('b', { text: row.name }), el('small', { text: t('media.folders.library') })]),
+					icon('right', 16),
+				]));
+			}
+			for (const x of shares) {
+				box.appendChild(el('button', {
+					type: 'button', class: 'md-fr is-dir is-share', role: 'listitem', 'data-id': x.id,
+					on: { click: () => { S.folderShareOpen = true; S.folder = { ...S.folder, sourceId: x.id, dir: '', items: [], loaded: false }; renderBody(); } },
+				}, [
+					el('span', { class: 'md-fr-ic' }, [icon('folder', 20, '1.8')]),
+					el('span', { class: 'md-fr-tx' }, [el('b', { text: MS.sharePath(x) }), el('small', { text: x.pairWith ? t('media.src.smbHomeWebdav') : t(x.kind === 'webdav' ? 'media.folders.webdav' : 'media.folders.smb') })]),
+					icon('right', 16),
+				]));
+			}
+			if (!L.rows.length && !shares.length && !L.error) box.appendChild(el('div', { class: 'md-state md-roots-none', text: L.loading || !L.loaded ? t('media.loading') : t('media.folders.none') }));
+			else if (L.loading && !L.loaded) box.appendChild(el('div', { class: 'md-state', text: t('media.loading') }));
+			wrap.appendChild(box);
+			refs.body.appendChild(wrap);
+		}
+
+		/** A Jellyfin library or folder: the way into it, its folders, then its films, series and videos. */
+		function renderLibraryPlace() {
+			const P = S.libOpen;
+			const wrap = el('div', { class: 'md-fv md-libfv' });
+			const crumbs = el('nav', { class: 'md-crumbs', 'aria-label': t('media.folders.libPath') });
+			P.trail.forEach((c, i) => {
+				if (i) crumbs.appendChild(el('span', { class: 'md-crumb-sep', 'aria-hidden': 'true', text: '›' }));
+				const last = i === P.trail.length - 1;
+				crumbs.appendChild(el('button', { type: 'button', class: `md-crumb${last ? ' is-cur' : ''}`, 'aria-current': last ? 'location' : null, text: c.name, on: { click: () => { if (!last) openLibraryTrail(i); } } }));
+			});
+			const upLabel = P.trail.length > 1 ? t('media.folders.up') : t('media.folders.all');
+			wrap.appendChild(el('div', { class: 'md-fv-head' }, [
+				el('button', { type: 'button', class: 'btn btn-sec btn-sm btn-icon md-fv-up', title: upLabel, 'aria-label': upLabel, on: { click: () => libraryUp() } }, [icon('up', 15)]),
+				crumbs,
+			]));
+			const box = el('div', { class: 'md-fl scroll', role: 'list', 'aria-label': t('media.tabs.folders') });
+			refs.folderList = null;
+			if (P.loading && !P.loaded) box.appendChild(el('div', { class: 'md-state', text: t('media.loading') }));
+			else if (P.error) {
+				box.appendChild(el('div', { class: 'md-state is-err' }, [
+					el('span', { text: MS.errorText(P.error, t) }), ' ',
+					el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('media.folders.retry'), on: { click: () => { loadLibraryPlace(P); renderBody(); } } }),
+				]));
+			} else if (!P.folders.length && !P.items.length) box.appendChild(el('div', { class: 'md-state', text: t('media.folders.emptyDir') }));
+			for (const f of P.folders) {
+				box.appendChild(el('button', { type: 'button', class: 'md-fr is-dir', role: 'listitem', 'data-id': f.id, on: { click: () => openLibraryFolder(f) } }, [
+					el('span', { class: 'md-fr-ic' }, [icon('folder', 20, '1.8')]),
+					el('span', { class: 'md-fr-tx' }, [el('b', { text: f.name })]),
+					icon('right', 16),
+				]));
+			}
+			for (const it of P.items) box.appendChild(libraryTitleRow(it));
+			wrap.appendChild(box);
+			refs.body.appendChild(wrap);
+		}
+
+		function libraryTitleRow(it) {
+			const r = MS.libraryTitle(it, t);
+			return el('div', { class: `md-fr is-title${r.played ? ' is-played' : ''}`, role: 'listitem', 'data-id': it.id }, [
+				el('button', { type: 'button', class: 'md-fr-open', 'aria-label': `${r.title}${r.sub ? ` · ${r.sub}` : ''}`, on: { click: () => openLibraryTitle(it), dblclick: () => { if (r.playable) playItem(it); } } }),
+				el('span', { class: 'md-fr-th' }, [picture(r.picture, 'is-wide', it.id), r.progress ? el('span', { class: 'md-bar' }, [el('span', { style: `width:${r.progress}%` })]) : null]),
+				el('span', { class: 'md-fr-tx' }, [el('b', { text: r.title }), r.sub ? el('small', { text: r.sub }) : null]),
+				r.played ? el('span', { class: 'md-seen is-inline', title: t('media.detail.played') }, [icon('check', 12, '3')]) : null,
+				canPlay() && r.playable ? el('button', { type: 'button', class: 'md-ep-play md-fr-play', 'aria-label': `${t('media.detail.play')}: ${r.title}`, title: t('media.detail.play'), on: { click: () => playItem(it) } }, [icon('play', 13, '2', true)]) : null,
+			]);
+		}
+
 		function renderFolders() {
 			const { shares } = MS.sourcesOf(S.status);
-			if (!shares.length) {
-				refs.body.appendChild(el('div', { class: 'md-empty md-folders' }, [
-					el('span', { class: 'md-empty-ic' }, [icon('folder', 26, '1.6')]),
-					el('h2', { class: 'md-empty-h', text: t('media.folders.title') }),
-					el('p', { class: 'md-empty-tx', text: t('media.folders.text') }),
-					el('button', { type: 'button', class: 'btn btn-sec', text: t('media.folders.sources'), on: { click: () => openSources() } }),
-				]));
-				return;
+			const start = MS.folderStart(S.status);
+			if (start === 'empty') { renderFoldersEmpty(); return; }
+			if (start === 'roots') {
+				if (S.libOpen && !MS.sourcesOf(S.status).ready.some((x) => x.id === S.libOpen.sourceId)) S.libOpen = null;
+				if (S.libOpen) { renderLibraryPlace(); return; }
+				if (!S.folderShareOpen || !shares.some((x) => x.id === S.folder.sourceId)) { S.folderShareOpen = false; renderFolderRoots(); return; }
 			}
 			const share = folderShare();
 			if (S.folder.sourceId !== share.id || (!S.folder.loaded && !S.folder.loading)) { loadFolder(share.id, S.folder.sourceId === share.id ? S.folder.dir : ''); }
 			const f = S.folder;
 			const wrap = el('div', { class: 'md-fv' });
 			// the shares (more than one: chips), the path, the way
-			if (shares.length > 1) {
+			if (shares.length > 1 && start !== 'roots') {
 				const chips = el('div', { class: 'md-chips md-fv-shares' });
 				for (const x of shares) {
 					const on = x.id === share.id;
@@ -506,8 +675,10 @@
 			});
 			const way = MS.shareWay(share, f.via, f.link || share.link, t);
 			const up = MS.parentDir(f.dir);
+			const upLabel = up !== null ? t('media.folders.up') : t('media.folders.all');
+			const upClick = up !== null ? () => openFolder(up) : start === 'roots' ? () => folderRoots() : null;
 			wrap.appendChild(el('div', { class: 'md-fv-head' }, [
-				up !== null ? el('button', { type: 'button', class: 'btn btn-sec btn-sm btn-icon md-fv-up', title: t('media.folders.up'), 'aria-label': t('media.folders.up'), on: { click: () => openFolder(up) } }, [icon('up', 15)]) : null,
+				upClick ? el('button', { type: 'button', class: 'btn btn-sec btn-sm btn-icon md-fv-up', title: upLabel, 'aria-label': upLabel, on: { click: upClick } }, [icon('up', 15)]) : null,
 				crumbs,
 				el('span', { class: `md-pill md-fv-way ${MS.wayOf(f.link || share.link) === 'away' ? 'is-away' : 'is-home'}` }, [icon(MS.wayOf(f.link || share.link) === 'away' ? 'globe' : 'wifi', 13), el('span', { text: way.label })]),
 			]));
@@ -624,7 +795,7 @@
 			for (const s of shares) {
 				chips.appendChild(el('button', {
 					type: 'button', class: 'md-pill md-src is-share', 'data-id': s.id, title: t('media.folders.open'),
-					on: { click: () => { S.folder = { ...S.folder, sourceId: s.id, dir: '', items: [], loaded: false }; setTab('folders'); } },
+					on: { click: () => { S.libOpen = null; S.folderShareOpen = true; S.folder = { ...S.folder, sourceId: s.id, dir: '', items: [], loaded: false }; setTab('folders'); } },
 				}, [icon('folder', 13), el('span', { text: MS.sourceChip(s, t) })]));
 			}
 			refs.way = el('span', { class: 'md-pill md-way' });
@@ -1275,7 +1446,8 @@
 			S.grids.clear();
 			S.shareTitles.clear();
 			loadRows(true);
-			if (S.tab === 'folders' && S.folder.sourceId) loadFolder(S.folder.sourceId, S.folder.dir);
+			if (S.tab === 'folders' && S.libOpen) loadLibraryPlace(S.libOpen, true);
+			else if (S.tab === 'folders' && S.folder.sourceId) loadFolder(S.folder.sourceId, S.folder.dir);
 			if (S.shown) render();
 		}
 
@@ -1393,6 +1565,10 @@
 				refs.sb.hidden = false;
 				refreshServer().then(() => {
 					if (S.view === 'library' && S.tab === 'overview') loadRows(true);
+					// Ordner: the libraries and the open one again, quietly (as Android on resume)
+					if (S.view === 'library' && S.tab === 'folders' && MS.folderStart(S.status) === 'roots') {
+						if (S.libOpen) loadLibraryPlace(S.libOpen, true); else if (S.libs.loaded) loadLibraries(true);
+					}
 				});
 				if (S.view === 'sources' && sources) sources.show();
 				render();

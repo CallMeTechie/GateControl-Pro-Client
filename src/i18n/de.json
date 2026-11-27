@@ -5491,8 +5491,8 @@
       "text": "Medien brauchen die Verschlüsselung von Windows für die Zugangsdaten. Sie ist auf diesem PC gerade nicht verfügbar."
     },
     "folders": {
-      "title": "Ordner der NAS-Freigaben",
-      "text": "Hier erscheinen die Ordner der NAS-Freigaben, die der Admin für dich freigibt, mit Vorschau und Fortschritt.",
+      "title": "Noch keine Ordner",
+      "text": "Hier erscheinen die Bibliotheken deines Jellyfin-Kontos und die NAS-Freigaben, die der Admin für dich freigibt.",
       "sources": "Zu den Quellen",
       "path": "Pfad in der Freigabe",
       "up": "Eine Ebene höher",
@@ -5502,7 +5502,15 @@
       "away": "unterwegs",
       "pairHint": "Unterwegs nimmt die App dieselbe Freigabe per WebDAV (robuster über den Tunnel). Freigaben spielen immer das Original, umgerechnet wird nur bei Jellyfin.",
       "originalHint": "Freigaben spielen immer das Original, umgerechnet wird nur bei Jellyfin.",
-      "fileTitle": "Datei von der NAS"
+      "fileTitle": "Datei von der NAS",
+      "library": "Jellyfin-Bibliothek",
+      "all": "Alle Ordner",
+      "roots": "Bibliotheken und Freigaben",
+      "none": "Noch keine Ordner. Hier erscheinen die Bibliotheken deines Jellyfin-Kontos und die NAS-Freigaben.",
+      "retry": "Erneut versuchen",
+      "smb": "SMB-Freigabe",
+      "webdav": "WebDAV-Freigabe",
+      "libPath": "Pfad in der Bibliothek"
     },
     "signedOut": "{{name}} ist abgemeldet. Melde dich neu an, um Filme und Serien zu sehen.",
     "src": {

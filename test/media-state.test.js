@@ -446,6 +446,38 @@ describe('Ordner (4h)', () => {
     assert.equal(MS.shareWay(share(), null, {}, t).label, 'SMB');
   });
 
+  it('Ordner with Jellyfin (as Android #301): the libraries beside the shares, one server read is enough', () => {
+    assert.equal(MS.folderStart({ sources: [jelly()] }), 'roots', 'Jellyfin alone: its libraries, no empty card');
+    assert.equal(MS.folderStart({ sources: [jelly(), share()] }), 'roots', 'beside libraries a share is not opened by itself');
+    assert.equal(MS.folderStart({ sources: [jelly({ ready: false }), share()] }), 'share');
+    assert.equal(MS.folderStart({ sources: [share()] }), 'share');
+    assert.equal(MS.folderStart({ sources: [jelly({ ready: false })] }), 'empty');
+    assert.equal(MS.folderStart(null), 'empty');
+    const ok = { ok: true, folders: [{ id: 'v1', name: 'Filme' }, { id: 'v2', name: 'Serien' }, { id: 7 }], items: [] };
+    assert.deepEqual(MS.libraryRoots([{ sourceId: 'j1', r: ok }, { sourceId: 'j2', r: { ok: false, code: 'offline' } }]), {
+      rows: [{ sourceId: 'j1', id: 'v1', name: 'Filme' }, { sourceId: 'j1', id: 'v2', name: 'Serien' }], error: null,
+    });
+    assert.deepEqual(MS.libraryRoots([{ sourceId: 'j2', r: { ok: false, code: 'offline' } }]), { rows: [], error: 'offline' });
+    assert.deepEqual(MS.libraryRoots([{ sourceId: 'j1', r: { ok: true, folders: [], items: [] } }]), { rows: [], error: null });
+    assert.deepEqual(MS.libraryRoots([]), { rows: [], error: null });
+  });
+
+  it('a title in a Jellyfin folder: its line, picture, bar and whether it plays', () => {
+    const m = MS.libraryTitle(title(), t);
+    assert.equal(m.title, 'Kobaltnacht');
+    assert.equal(m.sub, `2025 · media.runtime.hm(1,48) · ${MS.leftLabel(title(), t)}`);
+    assert.equal(m.picture, title().poster);
+    assert.equal(m.progress, 39);
+    assert.equal(m.playable, true);
+    const s = MS.libraryTitle(title({ kind: 'series', childCount: 3, resumable: false, backdrop: 'gcmedia://image/tok/b' }), t);
+    assert.equal(s.sub, '2025 · media.seasons(3)');
+    assert.equal(s.picture, 'gcmedia://image/tok/b');
+    assert.equal(s.playable, false);
+    assert.equal(s.progress, 0);
+    assert.equal(MS.libraryTitle(title({ kind: 'season', seriesName: 'Graufeld', year: null, resumable: false }), t).sub, 'Graufeld');
+    assert.equal(MS.libraryTitle(title({ kind: 'video', year: null, resumable: false, played: true }), t).played, true);
+  });
+
   it('the check before the start: what the PC cannot, VLC or another app', () => {
     const dts = { verdict: 'partial', container: 'mkv', video: 'ok', audio: 'no', reasons: ['audio_codec'], external: true, streams: { video: ['h264'], audio: ['dts'], subtitles: [] } };
     assert.deepEqual(MS.checkNote(dts, t), { level: 'warn', text: 'media.check.audio(DTS)', external: true });
