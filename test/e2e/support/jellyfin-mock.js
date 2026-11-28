@@ -56,7 +56,7 @@ function movie(name, year, o = {}) {
     Genres: o.genres || ['Drama'], OfficialRating: o.rating || null, Overview: o.overview || null,
     DateCreated: new Date(Date.now() - (o.addedDaysAgo ?? 40) * DAY).toISOString(),
     ImageTags: o.poster ? { Primary: 'tag1' } : {}, BackdropImageTags: o.poster ? ['bd1'] : [],
-    UserData: { PlaybackPositionTicks: (o.posMin || 0) * MIN * TICKS, Played: !!o.played, LastPlayedDate: o.posMin ? new Date(Date.now() - (o.playedHoursAgo || 1) * 3600000).toISOString() : null },
+    UserData: { IsFavorite: !!o.favorite, PlaybackPositionTicks: (o.posMin || 0) * MIN * TICKS, Played: !!o.played, LastPlayedDate: o.posMin ? new Date(Date.now() - (o.playedHoursAgo || 1) * 3600000).toISOString() : null },
     MediaSources: [{
       Id: o.sourceId || id(), Container: o.container || 'mkv', Bitrate: o.bitrate || 40000000, RunTimeTicks: (o.min || 100) * MIN * TICKS,
       SupportsDirectPlay: true, SupportsDirectStream: true, SupportsTranscoding: true,
@@ -80,7 +80,7 @@ function createLibrary() {
     movie('Blaue Stunde in Tarnow', 2020, { genres: ['Drama'] }),
     movie('Der Pegelwart', 2018, { genres: ['Komödie'], played: true }),
     movie('Kupferstadt', 2025, { min: 124, addedDaysAgo: 3, genres: ['Krimi'] }),
-    movie('Moorlicht', 2017, { genres: ['Mystery'] }),
+    movie('Moorlicht', 2017, { genres: ['Mystery'], favorite: true }),
     movie('Nordkap, einfach', 2021, { genres: ['Komödie'] }),
     movie('Sternwarte 9', 2026, { min: 112, addedDaysAgo: 1, genres: ['Science-Fiction'] }),
     movie('Wolkenbruch & Söhne', 2023, { min: 104, genres: ['Komödie'] }),
@@ -96,7 +96,7 @@ function createLibrary() {
     const s = {
       Id: sid, Type: 'Series', Name: name, ProductionYear: year, ChildCount: plan.length, Genres: o.genres || ['Drama'],
       Overview: o.overview || null, DateCreated: new Date(Date.now() - (o.addedDaysAgo ?? 60) * DAY).toISOString(), ImageTags: {},
-      UserData: { UnplayedItemCount: 0, Played: false },
+      UserData: { UnplayedItemCount: 0, Played: false, IsFavorite: !!o.favorite },
     };
     series.push(s);
     const list = [];
@@ -110,6 +110,8 @@ function createLibrary() {
         const played = o.watched ? (si + 1 < o.watched[0] || (si + 1 === o.watched[0] && e <= o.watched[1])) : false;
         const ep = movie(`Folge ${e}: ${o.titles && o.titles[e - 1] ? o.titles[e - 1] : 'Ohne Titel'}`, year, { min: 52, posMin: pos, playedHoursAgo: pos ? 1 : 0, played, genres: s.Genres });
         Object.assign(ep, { Type: 'Episode', SeriesId: sid, SeriesName: name, SeasonId: seasonId, ParentIndexNumber: si + 1, IndexNumber: e });
+        // the last season came when the series was added ("Neue Folgen")
+        if (si === plan.length - 1) ep.DateCreated = s.DateCreated;
         eps.push(ep);
         if (!played) season.UserData.UnplayedItemCount++;
       }
@@ -124,9 +126,25 @@ function createLibrary() {
     overview: 'Eine Forschungsstation im Eis, sechs Menschen und ein Winter, der nicht enden will.',
   });
   mkSeries('Graufeld', 2021, [8, 8, 6], { addedDaysAgo: 4, genres: ['Krimi'] });
-  mkSeries('Ankerplatz 12', 2023, [10], { addedDaysAgo: 90, genres: ['Komödie'] });
-  const all = () => [...movies, ...series, ...[...episodes.values()].flat()];
-  return { movies, series, seasons, episodes, all, kobalt };
+  mkSeries('Ankerplatz 12', 2023, [10], { addedDaysAgo: 90, genres: ['Komödie'], favorite: true });
+  const all = () => [...movies, ...series, ...[...episodes.values()].flat(), boxSet];
+  // "Ordner" (/UserViews, /Items?parentId=): Filme with a folder "Klassiker" (the films before 2019), Serien, Musik
+  // (left out by the app); a box set "Kobalt-Reihe" in Filme
+  const views = [
+    { Id: id(), Name: 'Filme', Type: 'CollectionFolder', CollectionType: 'movies', IsFolder: true },
+    { Id: id(), Name: 'Serien', Type: 'CollectionFolder', CollectionType: 'tvshows', IsFolder: true },
+    { Id: id(), Name: 'Musik', Type: 'CollectionFolder', CollectionType: 'music', IsFolder: true },
+  ];
+  const classics = { Id: id(), Name: 'Klassiker', Type: 'Folder', IsFolder: true };
+  const boxSet = { Id: id(), Name: 'Kobalt-Reihe', Type: 'BoxSet', IsFolder: true, ChildCount: 1, ProductionYear: 2025, Overview: 'Alle Filme um die Wetterstation.', DateCreated: new Date(Date.now() - 50 * DAY).toISOString(), UserData: {}, ImageTags: {} };
+  const children = new Map([
+    [views[0].Id, [classics, boxSet, ...movies.filter((m) => m.ProductionYear >= 2019)]],
+    [views[1].Id, series],
+    [views[2].Id, [{ Id: id(), Name: 'Album', Type: 'MusicAlbum', IsFolder: true }]],
+    [classics.Id, movies.filter((m) => m.ProductionYear < 2019)],
+    [boxSet.Id, [kobalt]],
+  ]);
+  return { movies, series, seasons, episodes, all, kobalt, views, children };
 }
 
 const pick = (it) => {
@@ -248,18 +266,65 @@ async function startJellyfin({ password = 'geheim', quickConnect = true, authori
         return send(res, 200, { Items: items.map(pick), TotalRecordCount: items.length });
       }
       if (p === '/Items/Latest') {
-        const items = [...lib.movies, ...lib.series].sort((a, b) => b.DateCreated.localeCompare(a.DateCreated)).slice(0, Number(q.get('limit')) || 16);
+        const types = String(q.get('includeItemTypes') || 'Movie,Series');
+        const limit = Number(q.get('limit')) || 16;
+        if (types === 'Episode') {
+          // grouped per series: several new episodes of one series come as that series with their number (ChildCount)
+          const recent = lib.all().filter((x) => x.Type === 'Episode' && Date.now() - Date.parse(x.DateCreated) < 30 * DAY)
+            .sort((a, b) => b.DateCreated.localeCompare(a.DateCreated));
+          const out = [];
+          for (const ep of recent) {
+            const same = recent.filter((x) => x.SeriesId === ep.SeriesId);
+            if (out.some((x) => x.Id === ep.SeriesId || x.SeriesId === ep.SeriesId)) continue;
+            if (same.length > 1) out.push({ ...pick(lib.series.find((x) => x.Id === ep.SeriesId)), ChildCount: same.length });
+            else out.push(pick(ep));
+          }
+          return send(res, 200, out.slice(0, limit));
+        }
+        const want = types.split(',');
+        const items = [...lib.movies, ...lib.series].filter((x) => want.includes(x.Type)).sort((a, b) => b.DateCreated.localeCompare(a.DateCreated)).slice(0, limit);
         return send(res, 200, items.map(pick));
+      }
+      if (p === '/Shows/NextUp') {
+        // the next unseen episode after the last one seen; one begun stays in Weiterschauen (enableResumable=false)
+        const out = [];
+        for (const s of lib.series) {
+          const eps = (lib.seasons.get(s.Id) || []).flatMap((se) => lib.episodes.get(se.Id) || []);
+          const last = eps.map((e) => e.UserData.Played).lastIndexOf(true);
+          if (last < 0) continue;
+          const next = eps.slice(last + 1).find((e) => !e.UserData.Played && !(e.UserData.PlaybackPositionTicks > 0));
+          if (next) out.push(next);
+        }
+        return send(res, 200, { Items: out.map(pick), TotalRecordCount: out.length });
+      }
+      if (p === '/Genres') {
+        const types = String(q.get('includeItemTypes') || 'Movie').split(',');
+        const names = [...new Set(lib.all().filter((x) => types.includes(x.Type)).flatMap((x) => x.Genres || []))].sort((a, b) => a.localeCompare(b, 'de'));
+        return send(res, 200, { Items: names.map((n) => ({ Name: n, Id: hex(n.length) })), TotalRecordCount: names.length });
+      }
+      m = /^\/UserFavoriteItems\/([0-9a-f]{32})$/.exec(p);
+      if (m) {
+        const it = lib.all().find((x) => x.Id === m[1]);
+        if (!it) return send(res, 404, '');
+        it.UserData.IsFavorite = req.method === 'POST';
+        return send(res, 200, { IsFavorite: it.UserData.IsFavorite });
+      }
+      if (p === '/UserViews') return send(res, 200, { Items: lib.views, TotalRecordCount: lib.views.length });
+      if (p === '/Items' && q.get('parentId')) {
+        const list = (lib.children.get(q.get('parentId')) || []).slice().sort((a, b) => a.Name.localeCompare(b.Name, 'de'));
+        return send(res, 200, { Items: list.map(pick), TotalRecordCount: list.length });
       }
       if (p === '/Items') {
         const types = String(q.get('includeItemTypes') || '').split(',');
         let items = lib.all().filter((x) => types.includes(x.Type));
         const term = q.get('searchTerm');
         if (term) items = items.filter((x) => x.Name.toLowerCase().includes(term.toLowerCase()));
-        if (q.get('filters') === 'IsUnplayed') items = items.filter((x) => !x.UserData.Played);
+        const filters = String(q.get('filters') || '').split(',');
+        if (filters.includes('IsUnplayed')) items = items.filter((x) => !x.UserData.Played);
+        if (filters.includes('IsFavorite')) items = items.filter((x) => x.UserData.IsFavorite);
         if (q.get('genres')) items = items.filter((x) => (x.Genres || []).includes(q.get('genres')));
         const by = String(q.get('sortBy') || 'SortName');
-        if (by.startsWith('DateCreated')) items.sort((a, b) => b.DateCreated.localeCompare(a.DateCreated));
+        if (by.startsWith('Date')) items.sort((a, b) => b.DateCreated.localeCompare(a.DateCreated));
         else if (by.startsWith('ProductionYear')) items.sort((a, b) => (b.ProductionYear - a.ProductionYear) || a.Name.localeCompare(b.Name, 'de'));
         else items.sort((a, b) => a.Name.localeCompare(b.Name, 'de'));
         const start = Number(q.get('startIndex')) || 0;

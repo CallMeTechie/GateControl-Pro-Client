@@ -340,6 +340,19 @@ describe('mail page wiring', () => {
     assert.equal(MS.foldOpen(new Map(), 1, { kind: 'search', q: 'x' }), false);
   });
 
+  it('the menu: a tap on an account opens its inbox and its folders (also when they were closed); the arrow folds', () => {
+    const folds = new Map([[1, false]]);
+    assert.deepEqual(MS.accountInbox(folds, 1), { kind: 'box', box: 1, folderId: null });
+    assert.equal(MS.foldOpen(folds, 1, { kind: 'box', box: 1, folderId: null }), true);
+    assert.deepEqual(MS.accountInbox(folds, 1), { kind: 'box', box: 1, folderId: null }, 'again: stays open');
+    assert.equal(folds.get(1), true);
+    MS.toggleFold(folds, 1, { kind: 'box', box: 1, folderId: null });
+    assert.equal(folds.get(1), false, 'the arrow still closes them');
+    const view = read('src', 'renderer', 'mail-view.js');
+    assert.match(view, /onClick: \(\) => go\(MS\.accountInbox\(S\.folds, a\.id\)\)/);
+    assert.match(view, /class: `ml-fold\$\{open \? ' open' : ''\}`, 'aria-expanded'/, 'the arrow says whether the folders are open');
+  });
+
   it('a conversation around the open mail: older above, newer below, oldest first; its senders once', () => {
     const m = (id, date, email = 'a@b.de', name = 'Anna') => ({ id, date, from: { name, email } });
     const items = [m(3, 300), m(1, 100), m(2, 200, 'tim@b.de', 'Tim'), m(4, 400), m(4, 400)];

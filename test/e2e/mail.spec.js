@@ -118,8 +118,9 @@ test.describe('mail', () => {
 
     // the account opens: its folders, the subfolders closed; the role folders on top as before
     const privat = side.locator('.ml-acc').nth(0).locator('.ml-it-acc');
+    const privatFold = side.locator('.ml-acc').nth(0).locator('.ml-fold');
     await privat.click();
-    await expect(privat).toHaveAttribute('aria-expanded', 'true');
+    await expect(privatFold).toHaveAttribute('aria-expanded', 'true');
     await expect(frow(31)).toBeVisible();
     await expect(frow(32)).toHaveCount(0);
     await expect(frow(15)).toHaveCount(0);
@@ -139,7 +140,7 @@ test.describe('mail', () => {
     await expect(frow(32)).toBeVisible();
     await expect(frow(33)).toHaveCount(0);
     await expect(frow(32).locator('.ml-n-below')).toHaveText('1');
-    await expect(privat).toHaveAttribute('aria-expanded', 'true');
+    await expect(privatFold).toHaveAttribute('aria-expanded', 'true');
     await expect(row(root, 990)).toHaveCount(0);
     const indent = async (id) => frow(id).locator('.ml-it').evaluate((b) => parseFloat(getComputedStyle(b).paddingLeft));
     await arrow(32).click();
@@ -191,24 +192,41 @@ test.describe('mail', () => {
     await setupWithApiKey(page, mock);
     const root = await openMail(page);
 
-    // menu: a tap on the account opens its folders (Posteingang first), another closes them; each account for itself
-    const firma = root.locator('.ml-side .ml-acc').nth(1).locator('.ml-it-acc');
-    await expect(firma).toHaveAttribute('aria-expanded', 'false');
-    await expect(root.locator('.ml-side .ml-it.sub')).toHaveCount(0);
+    // menu: a tap on the account (name / address) opens its inbox and its folders (Posteingang first, marked); the
+    // arrow only opens or closes the folders; each account for itself
+    const firmaAcc = root.locator('.ml-side .ml-acc').nth(1);
+    const firma = firmaAcc.locator('.ml-it-acc');
+    const firmaFold = firmaAcc.locator('.ml-fold');
+    const sub = root.locator('.ml-side .ml-it.sub');
+    await expect(firmaFold).toHaveAttribute('aria-expanded', 'false');
+    await expect(firmaFold).toHaveAttribute('aria-label', /Firma · M365 (aufklappen)|Expand Firma · M365/);
+    await expect(sub).toHaveCount(0);
     await firma.click();
-    await expect(firma).toHaveAttribute('aria-expanded', 'true');
-    await expect(root.locator('.ml-side .ml-it.sub').first()).toContainText(/Posteingang|Inbox/);
-    await expect(root.locator('.ml-side .ml-it.sub')).toHaveCount(3);
-    await firma.click();
-    await expect(firma).toHaveAttribute('aria-expanded', 'false');
-    await expect(root.locator('.ml-side .ml-it.sub')).toHaveCount(0);
-    // the inbox from the tree: shown, the tree stays as it was
-    await firma.click();
-    await root.locator('.ml-side .ml-it.sub').first().click();
+    await expect(firmaFold).toHaveAttribute('aria-expanded', 'true');
+    await expect(sub.first()).toContainText(/Posteingang|Inbox/);
+    await expect(sub.first()).toHaveClass(/\bon\b/);
+    await expect(sub).toHaveCount(3);
     await expect(row(root, 102)).toBeVisible();
-    await expect(firma).toHaveAttribute('aria-expanded', 'true');
+    await expect(row(root, 101)).toHaveCount(0);
+    await expect(root.locator('.ml-it.on').first()).not.toContainText(/Alle Posteingänge|All inboxes/);
+    // the arrow folds only: the inbox stays, the account is marked while closed
+    await firmaFold.click();
+    await expect(firmaFold).toHaveAttribute('aria-expanded', 'false');
+    await expect(sub).toHaveCount(0);
+    await expect(row(root, 102)).toBeVisible();
+    await expect(firma).toHaveClass(/\bon\b/);
+    await firmaFold.click();
+    await expect(firmaFold).toHaveAttribute('aria-expanded', 'true');
+    await expect(sub).toHaveCount(3);
+    // the inbox from the tree: shown, the tree stays as it was
+    await sub.first().click();
+    await expect(row(root, 102)).toBeVisible();
+    await expect(firmaFold).toHaveAttribute('aria-expanded', 'true');
+    // a tap on the account again: its inbox, the folders stay open
     await firma.click();
-    await expect(firma).toHaveAttribute('aria-expanded', 'false', { timeout: 5000 });
+    await expect(firmaFold).toHaveAttribute('aria-expanded', 'true');
+    await firmaFold.click();
+    await expect(firmaFold).toHaveAttribute('aria-expanded', 'false', { timeout: 5000 });
 
     // the conversation: its line with the sender; a tap shows the older mail above this one, unfolding
     await row(root, 102).click();

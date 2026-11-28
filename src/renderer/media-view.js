@@ -8,7 +8,8 @@
  * (a click selects, a double click or Enter plays, the arrow keys move through the grid; a series shows its seasons
  * and episodes there); the search over all sources. NAS shares (Stufe 4h): their films and series (from the file names)
  * sit in the rows and grids with the mark "NAS" — a title Jellyfin has too shows once, Jellyfin's —, "Weiterschauen"
- * runs over all sources, and "Ordner" shows a share's folders and files (picture and title from the name or a picture
+ * runs over all sources, and "Ordner" lists the Jellyfin libraries (as Android #301: a library's folders and titles, a
+ * title opens its tab) beside the shares, and shows a share's folders and files (picture and title from the name or a picture
  * beside it, size, length, "noch 19 Min.", at home SMB, away WebDAV; at home the files Chromium cannot play are marked
  * before, "In VLC öffnen" / "In anderer App öffnen" in the detail and the player). The page
  * "Quellen" is media-sources-view.js (window.GCMediaSources), the card "Weiterschauen" of the
@@ -51,6 +52,7 @@
 		up: 'M12 19V5M5 12l7-7 7 7',
 		external: 'M14 4h6v6M20 4l-9 9|M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
 		moon: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z',
+		heart: 'M12 20s-7-4.4-9.2-8.6C1.3 8.4 3 5 6.4 5c2 0 3.3 1.1 4.1 2.3h3C14.3 6.1 15.6 5 17.6 5 21 5 22.7 8.4 21.2 11.4 19 15.6 12 20 12 20z',
 	};
 
 	function icon(name, size = 16, stroke = '2', fill = false) {
@@ -118,9 +120,10 @@
 			view: 'library',        // library | sources
 			tab: 'overview',
 			sourceId: null,         // the Jellyfin source of the grid
-			rows: { resume: [], latest: [], movies: [], series: [], loading: false, error: null, key: null },
+			rows: { resume: [], nextUp: [], nextUpTotal: 0, latestMovies: [], latestEpisodes: [], favorites: [], favoritesTotal: 0, movies: [], moviesTotal: 0, series: [], seriesTotal: 0, collections: [], collectionsTotal: 0, genres: [], loading: false, error: null, key: null },
 			grids: new Map(),       // `${tab}|${source}|${sort}|${unplayed}|${genre}` → { items, total, next, loading, error }
-			filters: { movies: { sort: 'name', unplayed: false, genre: null }, series: { sort: 'name', unplayed: false, genre: null } },
+			filters: { movies: { sort: 'name', unplayed: false, genre: null, favorite: false }, series: { sort: 'name', unplayed: false, genre: null, favorite: false } },
+			collections: new Map(),  // `${source}|${collection}` → answer of media:collection (its films)
 			selected: { movies: null, series: null, search: null },
 			details: new Map(),     // `${source}|${item}` → answer of media:detail
 			choice: new Map(),      // `${source}|${item}` → { audio, subtitle }
@@ -133,6 +136,12 @@
 			vpn: null,              // the tunnel started for Medien: 'connecting' | 'failed' | null
 			shareTitles: new Map(), // `${tab}|${share ids}` → { items, loading, loaded, error }: all films / series of the shares
 			folder: { sourceId: null, dir: '', items: [], via: null, link: null, loading: false, error: null, seq: 0, loaded: false },
+			// Ordner with Jellyfin (as Android #301): the libraries of the ready servers beside the shares; `open` a library or a
+			// folder in it ({ sourceId, trail: [{ id, name }], folders, items, loading, loaded, error, seq }); `share` the
+			// share opened from that list (null: the list)
+			libs: { key: null, rows: [], loading: false, loaded: false, error: null, seq: 0 },
+			libOpen: null,
+			folderShareOpen: false,
 			checks: new Map(),      // `${source}|${item}` → the core's check of a share's file (or { loading })
 			ext: null,              // media:external:info
 			conv: new Map(),        // `${source}|${item}` → { loading } | { hint, sending }: „Videos umwandeln“ (media:convert:hint)
@@ -344,7 +353,13 @@
 			const g = grid(tab);
 			for (const name of MS.genresOf(g ? g.items : [], f.genre)) genre.appendChild(el('option', { value: name, text: name, selected: f.genre === name }));
 			genre.addEventListener('change', () => { f.genre = genre.value || null; render(); });
-			refs.filters.append(sort, unplayed, genre);
+			const fav = el('button', { type: 'button', class: `md-pill md-toggle md-fav-filter${f.favorite ? ' is-on' : ''}`, 'aria-pressed': f.favorite ? 'true' : 'false', text: t('media.filter.favorites'), on: { click: () => { f.favorite = !f.favorite; render(); } } });
+			// the count under the head (as Android's "412 Filme"): Jellyfin's total and the shares' own titles
+			const sh = MS.sourcesOf(S.status).shares.length ? S.shareTitles.get(shareTitlesKey(tab)) : null;
+			const own = sh && sh.loaded && !f.genre && !f.favorite ? MS.withoutDuplicates(sh.items, g ? g.items : []).filter((x) => !f.unplayed || MS.unwatched(x)).length : 0;
+			const total = g && Number.isInteger(g.total) ? g.total + own : sh && sh.loaded && !S.sourceId ? own : null;
+			const count = el('span', { class: 'md-count', text: total === null ? '' : total === 1 ? t(`media.count.${tab}One`) : t(`media.count.${tab}Other`, { count: total }) });
+			refs.filters.append(count, sort, unplayed, fav, genre);
 		}
 
 		function setTab(tab) {
@@ -470,23 +485,185 @@
 			};
 		}
 
+		// ── Ordner: Jellyfin's libraries (as Android #301) ──
+
+		function libsKey() { return MS.sourcesOf(S.status).ready.map((x) => x.id).join(','); }
+
+		async function loadLibraries(quiet = false) {
+			if (typeof api.libraries !== 'function') { S.libs = { ...S.libs, key: libsKey(), loading: false, loaded: true, rows: [], error: null }; return; }
+			const key = libsKey();
+			const seq = S.libs.seq + 1;
+			S.libs = { ...S.libs, key, loading: true, error: quiet ? S.libs.error : null, seq };
+			const { ready } = MS.sourcesOf(S.status);
+			const answers = await Promise.all(ready.map((x) => api.libraries(x.id).then((r) => ({ sourceId: x.id, r: handle(r, x.id) || r })).catch((err) => ({ sourceId: x.id, r: fail(err) }))));
+			if (seq !== S.libs.seq) return;
+			const { rows, error } = MS.libraryRoots(answers);
+			S.libs = { key, rows, loading: false, loaded: true, error, seq };
+			if (S.shown && S.view === 'library' && S.tab === 'folders' && !S.search.q && !S.libOpen) renderBody();
+		}
+
+		async function loadLibraryPlace(place, quiet = false) {
+			const seq = (S.libOpen && S.libOpen.seq ? S.libOpen.seq : 0) + 1;
+			const same = S.libOpen && S.libOpen.sourceId === place.sourceId && S.libOpen.trail.length === place.trail.length && S.libOpen.trail.every((f, i) => f.id === place.trail[i].id);
+			S.libOpen = { ...place, folders: same && quiet ? S.libOpen.folders : [], items: same && quiet ? S.libOpen.items : [], loading: true, loaded: same && quiet ? S.libOpen.loaded : false, error: null, seq };
+			let r;
+			try { r = await api.libraryItems(place.sourceId, place.trail[place.trail.length - 1].id); } catch (err) { r = fail(err); }
+			handle(r, place.sourceId);
+			if (!S.libOpen || S.libOpen.seq !== seq) return;
+			if (r && r.ok) S.libOpen = { ...S.libOpen, folders: Array.isArray(r.folders) ? r.folders : [], items: Array.isArray(r.items) ? r.items : [], loading: false, loaded: true, error: null };
+			else S.libOpen = { ...S.libOpen, loading: false, loaded: true, error: (r && r.code) || 'failed' };
+			if (S.shown && S.view === 'library' && S.tab === 'folders' && !S.search.q) renderBody();
+		}
+
+		function openLibrary(row) {
+			loadLibraryPlace({ sourceId: row.sourceId, trail: [{ id: row.id, name: row.name }] });
+			renderBody();
+		}
+
+		function openLibraryFolder(f) {
+			const cur = S.libOpen;
+			if (!cur) return;
+			loadLibraryPlace({ sourceId: cur.sourceId, trail: cur.trail.concat([{ id: f.id, name: f.name }]) });
+			renderBody();
+		}
+
+		function openLibraryTrail(i) {
+			const cur = S.libOpen;
+			if (!cur || i < 0 || i >= cur.trail.length - 1) return;
+			loadLibraryPlace({ sourceId: cur.sourceId, trail: cur.trail.slice(0, i + 1) });
+			renderBody();
+		}
+
+		/** Back to the list of libraries and shares. */
+		function folderRoots() {
+			S.libOpen = null;
+			S.folderShareOpen = false;
+			renderBody();
+		}
+
+		function libraryUp() {
+			const cur = S.libOpen;
+			if (cur && cur.trail.length > 1) openLibraryTrail(cur.trail.length - 2);
+			else folderRoots();
+		}
+
+		/** A title of a Jellyfin folder: its tab with it selected (a season: its series with that season). */
+		function openLibraryTitle(it) {
+			if (it.kind === 'season' && it.seriesId) {
+				openItem({ kind: 'episode', id: it.id, sourceId: it.sourceId, seriesId: it.seriesId, seriesName: it.seriesName, seasonId: it.id, name: it.seriesName || it.name });
+				return;
+			}
+			openItem(it);
+		}
+
+		function renderFoldersEmpty() {
+			refs.body.appendChild(el('div', { class: 'md-empty md-folders' }, [
+				el('span', { class: 'md-empty-ic' }, [icon('folder', 26, '1.6')]),
+				el('h2', { class: 'md-empty-h', text: t('media.folders.title') }),
+				el('p', { class: 'md-empty-tx', text: t('media.folders.text') }),
+				el('button', { type: 'button', class: 'btn btn-sec', text: t('media.folders.sources'), on: { click: () => openSources() } }),
+			]));
+		}
+
+		/** The list of the libraries of the Jellyfin servers and the shares (each with its way). */
+		function renderFolderRoots() {
+			const { shares } = MS.sourcesOf(S.status);
+			if (S.libs.key !== libsKey() || (!S.libs.loaded && !S.libs.loading)) loadLibraries();
+			const L = S.libs;
+			const wrap = el('div', { class: 'md-fv md-roots' });
+			wrap.appendChild(el('div', { class: 'md-fv-head' }, [el('nav', { class: 'md-crumbs', 'aria-label': t('media.folders.roots') }, [el('span', { class: 'md-crumb is-cur', 'aria-current': 'location', text: t('media.tabs.folders') })])]));
+			const box = el('div', { class: 'md-fl scroll', role: 'list', 'aria-label': t('media.folders.roots') });
+			if (L.error) {
+				box.appendChild(el('div', { class: 'md-state is-err md-roots-err' }, [
+					el('span', { text: MS.errorText(L.error, t) }), ' ',
+					el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('media.folders.retry'), on: { click: () => { loadLibraries(); renderBody(); } } }),
+				]));
+			}
+			for (const row of L.rows) {
+				box.appendChild(el('button', { type: 'button', class: 'md-fr is-dir is-lib', role: 'listitem', 'data-id': row.id, on: { click: () => openLibrary(row) } }, [
+					el('span', { class: 'md-fr-ic' }, [icon('folder', 20, '1.8')]),
+					el('span', { class: 'md-fr-tx' }, [el('b', { text: row.name }), el('small', { text: t('media.folders.library') })]),
+					icon('right', 16),
+				]));
+			}
+			for (const x of shares) {
+				box.appendChild(el('button', {
+					type: 'button', class: 'md-fr is-dir is-share', role: 'listitem', 'data-id': x.id,
+					on: { click: () => { S.folderShareOpen = true; S.folder = { ...S.folder, sourceId: x.id, dir: '', items: [], loaded: false }; renderBody(); } },
+				}, [
+					el('span', { class: 'md-fr-ic' }, [icon('folder', 20, '1.8')]),
+					el('span', { class: 'md-fr-tx' }, [el('b', { text: MS.sharePath(x) }), el('small', { text: x.pairWith ? t('media.src.smbHomeWebdav') : t(x.kind === 'webdav' ? 'media.folders.webdav' : 'media.folders.smb') })]),
+					icon('right', 16),
+				]));
+			}
+			if (!L.rows.length && !shares.length && !L.error) box.appendChild(el('div', { class: 'md-state md-roots-none', text: L.loading || !L.loaded ? t('media.loading') : t('media.folders.none') }));
+			else if (L.loading && !L.loaded) box.appendChild(el('div', { class: 'md-state', text: t('media.loading') }));
+			wrap.appendChild(box);
+			refs.body.appendChild(wrap);
+		}
+
+		/** A Jellyfin library or folder: the way into it, its folders, then its films, series and videos. */
+		function renderLibraryPlace() {
+			const P = S.libOpen;
+			const wrap = el('div', { class: 'md-fv md-libfv' });
+			const crumbs = el('nav', { class: 'md-crumbs', 'aria-label': t('media.folders.libPath') });
+			P.trail.forEach((c, i) => {
+				if (i) crumbs.appendChild(el('span', { class: 'md-crumb-sep', 'aria-hidden': 'true', text: '›' }));
+				const last = i === P.trail.length - 1;
+				crumbs.appendChild(el('button', { type: 'button', class: `md-crumb${last ? ' is-cur' : ''}`, 'aria-current': last ? 'location' : null, text: c.name, on: { click: () => { if (!last) openLibraryTrail(i); } } }));
+			});
+			const upLabel = P.trail.length > 1 ? t('media.folders.up') : t('media.folders.all');
+			wrap.appendChild(el('div', { class: 'md-fv-head' }, [
+				el('button', { type: 'button', class: 'btn btn-sec btn-sm btn-icon md-fv-up', title: upLabel, 'aria-label': upLabel, on: { click: () => libraryUp() } }, [icon('up', 15)]),
+				crumbs,
+			]));
+			const box = el('div', { class: 'md-fl scroll', role: 'list', 'aria-label': t('media.tabs.folders') });
+			refs.folderList = null;
+			if (P.loading && !P.loaded) box.appendChild(el('div', { class: 'md-state', text: t('media.loading') }));
+			else if (P.error) {
+				box.appendChild(el('div', { class: 'md-state is-err' }, [
+					el('span', { text: MS.errorText(P.error, t) }), ' ',
+					el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('media.folders.retry'), on: { click: () => { loadLibraryPlace(P); renderBody(); } } }),
+				]));
+			} else if (!P.folders.length && !P.items.length) box.appendChild(el('div', { class: 'md-state', text: t('media.folders.emptyDir') }));
+			for (const f of P.folders) {
+				box.appendChild(el('button', { type: 'button', class: 'md-fr is-dir', role: 'listitem', 'data-id': f.id, on: { click: () => openLibraryFolder(f) } }, [
+					el('span', { class: 'md-fr-ic' }, [icon('folder', 20, '1.8')]),
+					el('span', { class: 'md-fr-tx' }, [el('b', { text: f.name })]),
+					icon('right', 16),
+				]));
+			}
+			for (const it of P.items) box.appendChild(libraryTitleRow(it));
+			wrap.appendChild(box);
+			refs.body.appendChild(wrap);
+		}
+
+		function libraryTitleRow(it) {
+			const r = MS.libraryTitle(it, t);
+			return el('div', { class: `md-fr is-title${r.played ? ' is-played' : ''}`, role: 'listitem', 'data-id': it.id }, [
+				el('button', { type: 'button', class: 'md-fr-open', 'aria-label': `${r.title}${r.sub ? ` · ${r.sub}` : ''}`, on: { click: () => openLibraryTitle(it), dblclick: () => { if (r.playable) playItem(it); } } }),
+				el('span', { class: 'md-fr-th' }, [picture(r.picture, 'is-wide', it.id), r.progress ? el('span', { class: 'md-bar' }, [el('span', { style: `width:${r.progress}%` })]) : null]),
+				el('span', { class: 'md-fr-tx' }, [el('b', { text: r.title }), r.sub ? el('small', { text: r.sub }) : null]),
+				r.played ? el('span', { class: 'md-seen is-inline', title: t('media.detail.played') }, [icon('check', 12, '3')]) : null,
+				canPlay() && r.playable ? el('button', { type: 'button', class: 'md-ep-play md-fr-play', 'aria-label': `${t('media.detail.play')}: ${r.title}`, title: t('media.detail.play'), on: { click: () => playItem(it) } }, [icon('play', 13, '2', true)]) : null,
+			]);
+		}
+
 		function renderFolders() {
 			const { shares } = MS.sourcesOf(S.status);
-			if (!shares.length) {
-				refs.body.appendChild(el('div', { class: 'md-empty md-folders' }, [
-					el('span', { class: 'md-empty-ic' }, [icon('folder', 26, '1.6')]),
-					el('h2', { class: 'md-empty-h', text: t('media.folders.title') }),
-					el('p', { class: 'md-empty-tx', text: t('media.folders.text') }),
-					el('button', { type: 'button', class: 'btn btn-sec', text: t('media.folders.sources'), on: { click: () => openSources() } }),
-				]));
-				return;
+			const start = MS.folderStart(S.status);
+			if (start === 'empty') { renderFoldersEmpty(); return; }
+			if (start === 'roots') {
+				if (S.libOpen && !MS.sourcesOf(S.status).ready.some((x) => x.id === S.libOpen.sourceId)) S.libOpen = null;
+				if (S.libOpen) { renderLibraryPlace(); return; }
+				if (!S.folderShareOpen || !shares.some((x) => x.id === S.folder.sourceId)) { S.folderShareOpen = false; renderFolderRoots(); return; }
 			}
 			const share = folderShare();
 			if (S.folder.sourceId !== share.id || (!S.folder.loaded && !S.folder.loading)) { loadFolder(share.id, S.folder.sourceId === share.id ? S.folder.dir : ''); }
 			const f = S.folder;
 			const wrap = el('div', { class: 'md-fv' });
 			// the shares (more than one: chips), the path, the way
-			if (shares.length > 1) {
+			if (shares.length > 1 && start !== 'roots') {
 				const chips = el('div', { class: 'md-chips md-fv-shares' });
 				for (const x of shares) {
 					const on = x.id === share.id;
@@ -506,8 +683,10 @@
 			});
 			const way = MS.shareWay(share, f.via, f.link || share.link, t);
 			const up = MS.parentDir(f.dir);
+			const upLabel = up !== null ? t('media.folders.up') : t('media.folders.all');
+			const upClick = up !== null ? () => openFolder(up) : start === 'roots' ? () => folderRoots() : null;
 			wrap.appendChild(el('div', { class: 'md-fv-head' }, [
-				up !== null ? el('button', { type: 'button', class: 'btn btn-sec btn-sm btn-icon md-fv-up', title: t('media.folders.up'), 'aria-label': t('media.folders.up'), on: { click: () => openFolder(up) } }, [icon('up', 15)]) : null,
+				upClick ? el('button', { type: 'button', class: 'btn btn-sec btn-sm btn-icon md-fv-up', title: upLabel, 'aria-label': upLabel, on: { click: upClick } }, [icon('up', 15)]) : null,
 				crumbs,
 				el('span', { class: `md-pill md-fv-way ${MS.wayOf(f.link || share.link) === 'away' ? 'is-away' : 'is-home'}` }, [icon(MS.wayOf(f.link || share.link) === 'away' ? 'globe' : 'wifi', 13), el('span', { text: way.label })]),
 			]));
@@ -573,7 +752,7 @@
 		/** The Jellyfin titles the page knows so far: a share's twin of one of them is not shown (Jellyfin wins). */
 		function knownJellyfin() {
 			const out = [];
-			for (const k of ['latest', 'movies', 'series']) for (const x of S.rows[k] || []) if (!x.fromShare) out.push(x);
+			for (const k of ['latestMovies', 'latestEpisodes', 'movies', 'series']) for (const x of S.rows[k] || []) if (!x.fromShare) out.push(x);
 			for (const g of S.grids.values()) for (const x of g.items || []) if (!x.fromShare) out.push(x);
 			return out;
 		}
@@ -586,24 +765,55 @@
 			const { library, shares } = MS.sourcesOf(S.status);
 			const main = MS.pickSource(S.status, S.sourceId);
 			const call = (list, fn) => Promise.all(list.map((s) => fn(s).then((r) => handle(r, s.id)).catch(fail)));
-			// Jellyfin's rows of the chosen server, the shares' newest films and series beside them
-			const rowOf = (fn) => call((main ? [main] : []).concat(shares), (s) => fn(s.id, { start: 0, limit: MS.ROW_LIMIT, sort: 'added' }));
-			const [resume, latest, movies, series] = await Promise.all([
+			const has = (name) => typeof api[name] === 'function';
+			const one = (name, ...args) => (main && has(name) ? api[name](main.id, ...args).then((r) => handle(r, main.id)).catch(fail) : Promise.resolve(null));
+			// the overview "Ergänzt" (as Android #309): Weiterschauen, Als Nächstes, Neue Filme, Neue Folgen, Favoriten,
+			// Filme, Serien, Sammlungen, Genres — side by side; the shares' films and series beside Jellyfin's
+			const rowOf = (fn) => call((main ? [main] : []).concat(shares), (s) => fn(s.id, { start: 0, limit: MS.ROW_LIMIT, sort: 'name' }));
+			const [resume, nextUp, latestMovies, latestEpisodes, favorites, movies, series, collections, genres] = await Promise.all([
 				call(library, (s) => api.resume(s.id, MS.ROW_LIMIT)),
-				call(library, (s) => api.latest(s.id, MS.ROW_LIMIT)),
+				one('nextUp', MS.ROW_LIMIT),
+				call(library, (s) => (has('latestMovies') ? api.latestMovies(s.id, MS.ROW_LIMIT) : api.latest(s.id, MS.ROW_LIMIT))),
+				has('latestEpisodes') ? call(library, (s) => api.latestEpisodes(s.id, MS.ROW_LIMIT)) : Promise.resolve([]),
+				one('favorites', MS.ROW_LIMIT),
 				rowOf(api.movies),
 				rowOf(api.series),
+				one('collections', MS.ROW_LIMIT),
+				one('genres', 'movies'),
 			]);
 			if (seq !== rowsSeq) return;
-			const failed = [...resume, ...latest].every((r) => !r || !r.ok);
-			const jf = [...latest, ...movies, ...series].flatMap((r) => (r && r.ok ? r.items : [])).filter((x) => !x.fromShare);
+			const failed = [...resume, ...latestMovies].every((r) => !r || !r.ok);
+			const ok = (r) => !!r && r.ok;
+			const jf = [...latestMovies, ...latestEpisodes, ...movies, ...series].flatMap((r) => (ok(r) ? r.items : [])).filter((x) => !x.fromShare);
+			const resumeRow = MS.mergeResume(resume, MS.ROW_LIMIT, jf);
+			const shown = new Set(resumeRow.map((x) => x.id));
+			const alpha = (answers) => {
+				const j = answers.filter((r) => ok(r) && r.items.every((x) => !x.fromShare));
+				const sh = answers.filter((r) => ok(r) && r.items.some((x) => x.fromShare)).flatMap((r) => r.items);
+				const jItems = j.flatMap((r) => r.items);
+				return { items: MS.mergeGrid(jItems, j.every((r) => r.next == null), sh, { sort: 'name' }).slice(0, MS.ROW_LIMIT), total: answers.reduce((n, r) => n + (ok(r) ? r.total || r.items.length : 0), 0) };
+			};
+			const m = alpha(movies);
+			const sr = alpha(series);
+			const next = MS.nextUpWithout(ok(nextUp) ? nextUp.items : [], resumeRow);
 			S.rows = {
 				key, loading: false, loaded: true,
-				error: failed ? (resume.concat(latest).find((r) => r && r.code) || {}).code || 'failed' : null,
-				resume: MS.mergeResume(resume, MS.ROW_LIMIT, jf),
-				latest: MS.mergeLatest(latest, MS.ROW_LIMIT, jf).filter((x) => x.kind !== 'episode'),
-				movies: MS.mergeLatest(movies, MS.ROW_LIMIT, jf),
-				series: MS.mergeLatest(series, MS.ROW_LIMIT, jf),
+				error: failed ? (resume.concat(latestMovies).find((r) => r && r.code) || {}).code || 'failed' : null,
+				resume: resumeRow,
+				nextUp: next,
+				nextUpTotal: ok(nextUp) ? Math.max(next.length, (nextUp.total || 0) - (nextUp.items.length - next.length)) : 0,
+				// a film begun is in "Weiterschauen" already
+				latestMovies: MS.mergeLatest(latestMovies, MS.ROW_LIMIT, jf).filter((x) => x.kind === 'movie' && !shown.has(x.id)),
+				latestEpisodes: MS.mergeLatest(latestEpisodes, MS.ROW_LIMIT, jf).filter((x) => !shown.has(x.id)),
+				favorites: ok(favorites) ? favorites.items : [],
+				favoritesTotal: ok(favorites) ? favorites.total || favorites.items.length : 0,
+				movies: m.items,
+				moviesTotal: m.total,
+				series: sr.items,
+				seriesTotal: sr.total,
+				collections: ok(collections) ? collections.items : [],
+				collectionsTotal: ok(collections) ? collections.total || collections.items.length : 0,
+				genres: ok(genres) ? MS.mergeGenres(genres.genres) : [],
 			};
 			S.home = { items: S.rows.resume, loaded: true };
 			renderHome();
@@ -614,18 +824,39 @@
 		function renderOverview() {
 			const { jellyfin, shares } = MS.sourcesOf(S.status);
 			const chips = el('div', { class: 'md-chips' });
-			for (const s of jellyfin) {
-				const on = s.id === S.sourceId;
-				chips.appendChild(el('button', {
-					type: 'button', class: `md-pill md-src${on ? ' is-on' : ''}${s.ready ? '' : ' is-off'}`, 'aria-pressed': on ? 'true' : 'false',
-					on: { click: () => { if (!s.ready) { openSources(); return; } S.sourceId = s.id; S.grids.clear(); loadRows(true); render(); } },
-				}, [el('span', { class: 'md-dot' }), el('span', { text: MS.sourceChip(s, t) })]));
+			// the head (as Android #301): only the kind, never a host or server name; several servers: the choice
+			const several = jellyfin.length > 1;
+			if (several) {
+				const sel = el('select', { class: 'md-select md-src-sel', 'aria-label': t('media.src.choose') });
+				for (const s of jellyfin) sel.appendChild(el('option', { value: s.id, text: MS.headLabel(s, t, true), selected: s.id === S.sourceId }));
+				sel.addEventListener('change', () => {
+					const s = jellyfin.find((x) => x.id === sel.value);
+					if (!s) return;
+					if (!s.ready) { openSources(); return; }
+					S.sourceId = s.id; S.grids.clear(); loadRows(true); render();
+				});
+				chips.appendChild(sel);
+			} else {
+				for (const s of jellyfin) {
+					const on = s.id === S.sourceId;
+					chips.appendChild(el('button', {
+						type: 'button', class: `md-pill md-src${on ? ' is-on' : ''}${s.ready ? '' : ' is-off'}`, 'aria-pressed': on ? 'true' : 'false',
+						on: { click: () => { if (!s.ready) { openSources(); return; } S.sourceId = s.id; S.grids.clear(); loadRows(true); render(); } },
+					}, [el('span', { class: 'md-dot' }), el('span', { text: MS.headLabel(s, t, false) })]));
+				}
 			}
-			for (const s of shares) {
+			if (shares.length) {
 				chips.appendChild(el('button', {
-					type: 'button', class: 'md-pill md-src is-share', 'data-id': s.id, title: t('media.folders.open'),
-					on: { click: () => { S.folder = { ...S.folder, sourceId: s.id, dir: '', items: [], loaded: false }; setTab('folders'); } },
-				}, [icon('folder', 13), el('span', { text: MS.sourceChip(s, t) })]));
+					type: 'button', class: 'md-pill md-src is-share', title: t('media.folders.open'),
+					on: {
+						click: () => {
+							S.libOpen = null;
+							S.folderShareOpen = shares.length === 1;
+							S.folder = { ...S.folder, sourceId: shares[0].id, dir: '', items: [], loaded: false };
+							setTab('folders');
+						},
+					},
+				}, [icon('folder', 13), el('span', { text: shares.length === 1 ? t('media.src.sharesOne') : t('media.src.sharesOther', { count: shares.length }) })]));
 			}
 			refs.way = el('span', { class: 'md-pill md-way' });
 			chips.appendChild(refs.way);
@@ -637,21 +868,49 @@
 			if (S.rows.loading && !S.rows.loaded) { wrap.appendChild(el('div', { class: 'md-state', text: t('media.loading') })); return; }
 			if (S.rows.error) wrap.appendChild(el('div', { class: 'md-state is-err', text: MS.errorText(S.rows.error, t) }));
 			const n = now();
-			if (S.rows.resume.length) {
-				wrap.appendChild(row(t('media.row.resume'), t('media.row.count', { count: S.rows.resume.length }), S.rows.resume.map((it) => thumb(it)), null, 'is-wide'));
-			}
-			if (S.rows.latest.length) {
-				wrap.appendChild(row(t('media.row.latest'), MS.latestSub(S.rows.latest, t, n), S.rows.latest.map((it) => poster(it, { full: true })), null));
-			}
-			if (S.rows.movies.length) wrap.appendChild(row(t('media.row.movies'), '', S.rows.movies.map((it) => poster(it, { full: true })), () => setTab('movies')));
-			if (S.rows.series.length) wrap.appendChild(row(t('media.row.series'), '', S.rows.series.map((it) => poster(it, { full: true })), () => setTab('series')));
-			if (!S.rows.resume.length && !S.rows.latest.length && !S.rows.movies.length && !S.rows.series.length && !S.rows.error) {
+			const R = S.rows;
+			const list = (tab, f) => () => openList(tab, f);
+			if (R.resume.length) wrap.appendChild(row(t('media.row.resume'), t('media.row.count', { count: R.resume.length }), R.resume.map((it) => thumb(it)), null, 'is-wide', 'resume'));
+			if (R.nextUp.length) wrap.appendChild(row(t('media.row.nextUp'), String(R.nextUpTotal), R.nextUp.map((it) => nextThumb(it)), list('series', { unplayed: true }), 'is-wide', 'next'));
+			if (R.latestMovies.length) wrap.appendChild(row(t('media.row.latestMovies'), String(R.latestMovies.length), R.latestMovies.map((it) => poster(it, { full: true })), list('movies', { sort: 'added' }), '', 'latest-movies'));
+			if (R.latestEpisodes.length) wrap.appendChild(row(t('media.row.latestEpisodes'), String(MS.newEpisodes(R.latestEpisodes)), R.latestEpisodes.map((it) => poster(it, { full: true, mark: true })), list('series', { sort: 'added' }), '', 'latest-episodes'));
+			if (R.favorites.length) wrap.appendChild(row(t('media.row.favorites'), String(Math.max(R.favoritesTotal, R.favorites.length)), R.favorites.map((it) => poster(it, { full: true, mark: true })), list(R.favorites.some((x) => x.kind === 'movie') ? 'movies' : 'series', { favorite: true }), '', 'favorites'));
+			if (R.movies.length) wrap.appendChild(row(t('media.row.movies'), String(Math.max(R.moviesTotal, R.movies.length)), R.movies.map((it) => poster(it, { full: true })), list('movies', {}), '', 'movies'));
+			if (R.series.length) wrap.appendChild(row(t('media.row.series'), String(Math.max(R.seriesTotal, R.series.length)), R.series.map((it) => poster(it, { full: true })), list('series', {}), '', 'series'));
+			if (R.collections.length) wrap.appendChild(row(t('media.row.collections'), String(Math.max(R.collectionsTotal, R.collections.length)), R.collections.map((it) => poster(it, { full: true })), () => setTab('folders'), '', 'collections'));
+			if (R.genres.length) wrap.appendChild(row(t('media.row.genres'), String(R.genres.length), R.genres.map((g) => genreTile(g)), list('movies', {}), 'is-genres', 'genres'));
+			if (!R.resume.length && !R.nextUp.length && !R.latestMovies.length && !R.latestEpisodes.length && !R.favorites.length && !R.movies.length && !R.series.length && !R.collections.length && !R.error) {
 				wrap.appendChild(el('div', { class: 'md-state', text: t('media.empty.nothing') }));
 			}
+			void n;
+		}
+
+		/** "Alle anzeigen" of a row: Filme or Serien with the fitting order or filter (as Android's "›"). */
+		function openList(tab, f) {
+			S.filters[tab] = { sort: 'name', unplayed: false, genre: null, favorite: false, ...f };
+			S.selected[tab] = null;
+			setTab(tab);
+		}
+
+		/** A card of "Als Nächstes" (16:9 as "Weiterschauen"): a click opens the series, ▶ plays the episode. */
+		function nextThumb(it) {
+			const c = MS.nextCard(it, t);
+			return el('div', { class: 'md-th is-next', 'data-id': it.id }, [
+				picture(c.picture, 'is-wide', it.seriesId || it.id),
+				c.mark ? el('span', { class: 'md-mk', text: c.mark }) : null,
+				el('button', { type: 'button', class: 'md-th-open', 'aria-label': `${c.title}${c.sub ? ` · ${c.sub}` : ''}`, on: { click: () => openItem(it), dblclick: () => playItem(it) } }),
+				canPlay() ? el('button', { type: 'button', class: 'md-th-play', 'aria-label': `${t('media.detail.play')}: ${c.title}`, title: t('media.detail.play'), on: { click: (e) => { e.stopPropagation(); playItem(it); } } }, [icon('play', 18, '2', true)]) : null,
+				el('div', { class: 'md-cap' }, [el('b', { text: c.title }), c.sub ? el('small', { text: c.sub }) : null]),
+			]);
+		}
+
+		/** A tile of "Genres": its name on a calm colour of its own; opens Filme with that genre. */
+		function genreTile(name) {
+			return el('button', { type: 'button', class: `md-genre-tile is-t${MS.genreTone(name)}`, 'data-genre': name, on: { click: () => openList('movies', { genre: name }) } }, [el('span', { text: name })]);
 		}
 
 		/** A row with its head and the arrows at the edges (shown while it can scroll that way). */
-		function row(label, sub, cards, all, cls) {
+		function row(label, sub, cards, all, cls, key) {
 			const track = el('div', { class: `md-row ${cls || ''}`, role: 'list' }, cards.map((c) => { c.setAttribute('role', 'listitem'); return c; }));
 			const prev = el('button', { type: 'button', class: 'md-edge is-prev', tabindex: '-1', 'aria-label': t('media.row.back'), on: { click: () => track.scrollBy({ left: -track.clientWidth * 0.8, behavior: 'smooth' }) } }, [icon('left', 18)]);
 			const next = el('button', { type: 'button', class: 'md-edge is-next', tabindex: '-1', 'aria-label': t('media.row.more'), on: { click: () => track.scrollBy({ left: track.clientWidth * 0.8, behavior: 'smooth' }) } }, [icon('right', 18)]);
@@ -668,7 +927,7 @@
 				el('span', { class: 'md-grow' }),
 				all ? el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('media.row.all'), on: { click: all } }) : null,
 			]);
-			return el('section', { class: 'md-sec' }, [head, el('div', { class: 'md-rowwrap' }, [track, prev, next])]);
+			return el('section', { class: 'md-sec', 'data-row': key || null }, [head, el('div', { class: 'md-rowwrap' }, [track, prev, next])]);
 		}
 
 		/** A card of "Weiterschauen" (16:9). A click opens the title, the ▶ on it plays (with the player). */
@@ -688,15 +947,16 @@
 		}
 
 		/** A poster (2:3) of a row or the grid. */
-		function poster(it, { full = false, grid: inGrid = false, selected = false } = {}) {
+		function poster(it, { full = false, grid: inGrid = false, selected = false, mark = false } = {}) {
 			const c = MS.posterCard(it, t, now(), { full });
+			const own = mark ? MS.posterMark(it, t) : null;
 			const b = el('button', {
 				type: 'button', class: `md-pst${selected ? ' is-cur' : ''}${c.played ? ' is-played' : ''}`, 'data-id': it.id,
 				'aria-label': `${c.title}${c.sub ? ` · ${c.sub}` : ''}`, 'aria-pressed': inGrid ? (selected ? 'true' : 'false') : null,
 			}, [
 				picture(c.picture, '', it.id),
 				// "NAS" on the left (a share's title), "NEU" on the right — both can be
-				c.nas ? el('span', { class: 'md-mk', text: t('media.mark.nas') }) : null,
+				c.nas ? el('span', { class: 'md-mk', text: t('media.mark.nas') }) : own ? el('span', { class: 'md-mk is-own', text: own }) : null,
 				c.isNew ? el('span', { class: 'md-mk is-new', text: t('media.mark.new') }) : null,
 				c.played ? el('span', { class: 'md-seen', title: t('media.detail.played') }, [icon('check', 12, '3')]) : null,
 				c.progress ? el('div', { class: 'md-bar' }, [el('span', { style: `width:${c.progress}%` })]) : null,
@@ -722,6 +982,10 @@
 			} else if (it.kind === 'series') {
 				S.selected.series = it;
 				S.tab = 'series';
+			} else if (it.kind === 'collection') {
+				// a collection: its films in the detail column of Filme
+				S.selected.movies = it;
+				S.tab = 'movies';
 			} else {
 				S.selected.movies = it;
 				S.tab = 'movies';
@@ -735,7 +999,7 @@
 
 		function gridKey(tab) {
 			const f = S.filters[tab];
-			return `${tab}|${S.sourceId}|${f.sort}|${f.unplayed}|${f.genre || ''}`;
+			return `${tab}|${S.sourceId}|${f.sort}|${f.unplayed}|${f.genre || ''}|${f.favorite ? 1 : 0}`;
 		}
 
 		function grid(tab) { return S.grids.get(gridKey(tab)) || null; }
@@ -766,6 +1030,7 @@
 				const top = refs.gridWrap ? refs.gridWrap.scrollTop : 0;
 				renderBody();
 				if (refs.gridWrap) refs.gridWrap.scrollTop = top;
+				renderFilters();
 			}
 		}
 
@@ -780,7 +1045,7 @@
 			const id = S.sourceId;
 			const fn = tab === 'series' ? api.series : api.movies;
 			let r;
-			try { r = await fn(id, { start: g.next, limit: MS.PAGE_SIZE, sort: f.sort, unplayed: f.unplayed, genre: f.genre }); } catch (err) { r = fail(err); }
+			try { r = await fn(id, { start: g.next, limit: MS.PAGE_SIZE, sort: f.sort, unplayed: f.unplayed, genre: f.genre, favorite: f.favorite === true }); } catch (err) { r = fail(err); }
 			handle(r, id);
 			g.loading = false;
 			if (r && r.ok) Object.assign(g, MS.appendPage(g, r), { error: null });
@@ -899,16 +1164,79 @@
 			det.appendChild(picture(title.backdrop || it.backdrop || null, 'is-bd', it.id));
 			const inner = el('div', { class: 'md-det-in' });
 			det.appendChild(inner);
-			inner.appendChild(el('h2', { class: 'md-det-h', text: title.kind === 'episode' && title.seriesName ? title.seriesName : title.name }));
+			const heading = el('h2', { class: 'md-det-h', text: title.kind === 'episode' && title.seriesName ? title.seriesName : title.name });
+			// the heart (as Android #309): kept in Jellyfin for the person; a share's title has none
+			const canFav = !(title.fromShare === true || it.fromShare === true) && typeof api.setFavorite === 'function' && !!d && !d.loading && !d.error;
+			inner.appendChild(canFav ? el('div', { class: 'md-det-hrow' }, [heading, favButton(tab, it, title)]) : heading);
 			if (title.kind === 'episode') inner.appendChild(el('div', { class: 'md-det-ep', text: title.name }));
 			const meta = MS.metaLine(title, t);
 			if (meta) inner.appendChild(el('div', { class: 'md-det-meta', text: meta }));
 			if (title.kind === 'series') { renderSeries(inner, tab, title); return; }
+			if (title.kind === 'collection') { renderCollection(inner, tab, title); if (title.overview) inner.appendChild(el('p', { class: 'md-det-tx', text: title.overview })); return; }
 			if (d && d.loading) inner.appendChild(el('div', { class: 'md-state is-small', text: t('media.loading') }));
 			if (d && d.error) inner.appendChild(el('div', { class: 'md-state is-small is-err', text: MS.errorText(d.error, t) }));
 			if (title.fromShare === true || it.fromShare === true) renderShareFile(inner, tab, title, d);
 			else renderPlayable(inner, tab, title, d && d.versions ? d.versions[0] : null, d && d.link);
 			if (title.overview) inner.appendChild(el('p', { class: 'md-det-tx', text: title.overview }));
+		}
+
+		/** The heart of the detail column: a click keeps or drops the title as a favourite in Jellyfin. */
+		function favButton(tab, it, title) {
+			const on = title.favorite === true;
+			const label = on ? t('media.detail.favoriteRemove') : t('media.detail.favoriteAdd');
+			return el('button', {
+				type: 'button', class: `btn btn-ghost btn-sm btn-icon md-fav${on ? ' is-on' : ''}`, 'aria-pressed': on ? 'true' : 'false', title: label, 'aria-label': label,
+				on: { click: () => toggleFavorite(tab, it, title) },
+			}, [icon('heart', 18, '2', on)]);
+		}
+
+		async function toggleFavorite(tab, it, title) {
+			const want = title.favorite !== true;
+			let r;
+			try { r = await api.setFavorite(it.sourceId, it.id, want); } catch (err) { r = fail(err); }
+			handle(r, it.sourceId);
+			if (!r || !r.ok) { toast(MS.errorText((r && r.code) || 'failed', t), 'error'); return; }
+			const d = S.details.get(dkey(it));
+			if (d && d.title) d.title = { ...d.title, favorite: want };
+			for (const x of [it, title]) if (x) x.favorite = want;
+			// the overview's Favoriten and the grids with the filter: asked again when shown next
+			S.rows = { ...S.rows, loaded: false, key: null };
+			for (const k of [...S.grids.keys()]) if (k.endsWith('|1')) S.grids.delete(k);
+			if (stillSelected(tab, it)) renderDetail(tab);
+		}
+
+		/** A collection (box set): its films, oldest first; a click selects one, ▶ plays it. */
+		function renderCollection(inner, tab, title) {
+			const k = `${title.sourceId}|${title.id}`;
+			const c = S.collections.get(k);
+			if (!c && typeof api.collection === 'function') {
+				S.collections.set(k, { loading: true });
+				api.collection(title.sourceId, title.id).catch(fail).then((r) => {
+					handle(r, title.sourceId);
+					S.collections.set(k, r && r.ok ? r : { error: (r && r.code) || 'failed' });
+					if (stillSelected(tab, title)) renderDetail(tab);
+				});
+			}
+			const cur = S.collections.get(k);
+			const box = el('div', { class: 'md-set', role: 'list' });
+			if (!cur || cur.loading) box.appendChild(el('div', { class: 'md-state is-small', text: t('media.loading') }));
+			else if (cur.error) box.appendChild(el('div', { class: 'md-state is-small is-err', text: MS.errorText(cur.error, t) }));
+			else {
+				const films = cur.items || [];
+				inner.appendChild(el('div', { class: 'md-det-meta md-set-n', text: films.length === 1 ? t('media.count.collectionOne') : t('media.count.collectionOther', { count: films.length }) }));
+				if (!films.length) box.appendChild(el('div', { class: 'md-state is-small', text: t('media.detail.collectionEmpty') }));
+				for (const f of films) {
+					const r = MS.libraryTitle(f, t);
+					box.appendChild(el('div', { class: `md-fr is-title${r.played ? ' is-played' : ''}`, role: 'listitem', 'data-id': f.id }, [
+						el('button', { type: 'button', class: 'md-fr-open', 'aria-label': `${r.title}${r.sub ? ` · ${r.sub}` : ''}`, on: { click: () => openItem(f), dblclick: () => playItem(f) } }),
+						el('span', { class: 'md-fr-th' }, [picture(r.picture, 'is-wide', f.id), r.progress ? el('span', { class: 'md-bar' }, [el('span', { style: `width:${r.progress}%` })]) : null]),
+						el('span', { class: 'md-fr-tx' }, [el('b', { text: r.title }), r.sub ? el('small', { text: r.sub }) : null]),
+						r.played ? el('span', { class: 'md-seen is-inline', title: t('media.detail.played') }, [icon('check', 12, '3')]) : null,
+						canPlay() && r.playable ? el('button', { type: 'button', class: 'md-ep-play md-fr-play', 'aria-label': `${t('media.detail.play')}: ${r.title}`, title: t('media.detail.play'), on: { click: () => playItem(f) } }, [icon('play', 13, '2', true)]) : null,
+					]));
+				}
+			}
+			inner.appendChild(box);
 		}
 
 		/** Film / episode: chips, progress, the buttons, sound / subtitles / quality. */
@@ -1130,7 +1458,7 @@
 			if (!r || !r.ok) { toast(MS.errorText(r && r.code, t), 'error'); return; }
 			const fix = (x) => { if (x && x.id === title.id && x.sourceId === title.sourceId) { x.played = want; if (want) { x.positionMs = 0; x.resumable = false; x.progress = 0; } } };
 			for (const g of S.grids.values()) g.items.forEach(fix);
-			for (const k of ['resume', 'latest', 'movies', 'series']) S.rows[k].forEach(fix);
+			for (const k of ['resume', 'nextUp', 'latestMovies', 'latestEpisodes', 'favorites', 'movies', 'series']) (S.rows[k] || []).forEach(fix);
 			for (const v of S.episodes.values()) if (v && v.items) v.items.forEach(fix);
 			S.search.items.forEach(fix);
 			for (const v of S.shareTitles.values()) v.items.forEach(fix);
@@ -1274,8 +1602,10 @@
 			S.seasons.clear();
 			S.grids.clear();
 			S.shareTitles.clear();
+			S.collections.clear();
 			loadRows(true);
-			if (S.tab === 'folders' && S.folder.sourceId) loadFolder(S.folder.sourceId, S.folder.dir);
+			if (S.tab === 'folders' && S.libOpen) loadLibraryPlace(S.libOpen, true);
+			else if (S.tab === 'folders' && S.folder.sourceId) loadFolder(S.folder.sourceId, S.folder.dir);
 			if (S.shown) render();
 		}
 
@@ -1393,6 +1723,10 @@
 				refs.sb.hidden = false;
 				refreshServer().then(() => {
 					if (S.view === 'library' && S.tab === 'overview') loadRows(true);
+					// Ordner: the libraries and the open one again, quietly (as Android on resume)
+					if (S.view === 'library' && S.tab === 'folders' && MS.folderStart(S.status) === 'roots') {
+						if (S.libOpen) loadLibraryPlace(S.libOpen, true); else if (S.libs.loaded) loadLibraries(true);
+					}
 				});
 				if (S.view === 'sources' && sources) sources.show();
 				render();
@@ -1422,10 +1756,6 @@
 				try { r = await api.setQuality(q); } catch (err) { r = fail(err); }
 				if (r && r.ok && S.status) S.status.quality = r.quality;
 				return r;
-			},
-			sourceName(id) {
-				const s = source(id);
-				return s ? MS.sourceChip(s, t) : '';
 			},
 			refreshAfterPlay,
 			setTab,

@@ -628,6 +628,12 @@
 		return folds;
 	}
 
+	/** A tap on an account's name in the menu: its folders open (folds is changed) → the view of its inbox. */
+	function accountInbox(folds, accountId) {
+		folds.set(accountId, true);
+		return { kind: 'box', box: accountId, folderId: null };
+	}
+
 	/** A conversation (GET threads/<id>) around the open mail: { older, newer }, each oldest first (the newest at the bottom). */
 	function conversation(items, currentId) {
 		const seen = new Set();
@@ -1800,6 +1806,7 @@
 		frameDoc,
 		foldOpen,
 		toggleFold,
+		accountInbox,
 		conversation,
 		participants,
 		fromSender,
