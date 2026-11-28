@@ -103,6 +103,16 @@
         ]
       },
       {
+        "from": "rdp-host/bin/Release/net48/",
+        "to": "rdp-host/",
+        "filter": [
+          "gc-rdp-host.exe",
+          "gc-rdp-host.exe.config",
+          "MSTSCLib.dll",
+          "AxMSTSCLib.dll"
+        ]
+      },
+      {
         "from": "build/update-signing.pub",
         "to": "update-signing.pub"
       }
