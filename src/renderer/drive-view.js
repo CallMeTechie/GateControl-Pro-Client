@@ -168,6 +168,9 @@
 		minus: 'M5 12h14',
 		// Drive 1.31: the photo frame (a picture in a frame)
 		frame: 'M3 4h18v16H3z|M6 7h12v10H6z|M6 15l3.5-3.5 3 3 2-2L18 16',
+		// Drive 1.32 'vaultLocal': a folder only on a phone ("Nur auf Pixel 8"), "Info"
+		phone: 'M7 3h10v18H7z|M11 18h2',
+		info: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 11v5|M12 8h.01',
 	};
 	const KIND_ICON = { folder: 'folder', image: 'image', video: 'video', audio: 'audio', pdf: 'pdf', archive: 'archive', vault: 'vault' };
 	const AREA_ICON = { mine: 'user', family: 'users', child: 'child', team: 'team' };
@@ -719,7 +722,8 @@
 			const hit = canUpload() ? rowUnder(e) : null;
 			endFileDrag();
 			if (!canUpload()) { toast(t('drive.upload.notHere'), 'error'); return; }
-			if (hit && !hit.ok) { toast(t('drive.upload.vaultRow'), 'error'); return; }
+			// Drive 1.32: a placeholder takes nothing — it names the device the folder lies on
+			if (hit && !hit.ok) { toast(hit.node.local ? DS.errorText({ code: hit.node.local.state === 'moving' ? 'local_moving' : 'local_only', deviceName: hit.node.local.deviceName }, t) : t('drive.upload.vaultRow'), 'error'); return; }
 			// the files now: the drop's list is empty once the event is over (the question below waits)
 			const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
 			const folderId = hit ? hit.node.id : S.folder.node.id;
@@ -806,7 +810,7 @@
 		// ── Loading ──────────────────────────────────────
 		const area = () => S.areas.find((a) => a.id === (S.folder ? S.folder.node.areaId : S.areaId)) || null;
 		// a vault folder only while this PC has its key
-		const canUpload = () => S.view === 'folder' && !!S.folder && S.folder.writable && !(S.folder.vault && S.folder.vault.state !== 'open');
+		const canUpload = () => S.view === 'folder' && !!S.folder && S.folder.writable && !(S.folder.vault && S.folder.vault.state !== 'open') && !S.folder.node.local;
 
 		/** Drive 1.9: this PC's vault state and the vaults (requests waiting, a new key needed). */
 		async function loadVaults() {
@@ -1167,6 +1171,9 @@
 		}
 
 		async function openNode(n, { asked = false, tries = 0, external = false } = {}) {
+			// Drive 1.32 'vaultLocal': a placeholder does not open — the note where it lies instead
+			const lv = n.isDir ? DS.localView(n, { t, locale: locale() }) : null;
+			if (lv && lv.placeholder) { localInfo(n); return; }
 			// Drive 1.9: a vault this PC has no key for opens on its card ("Zugriff anfragen")
 			if (n.isDir) { refs.search.value = ''; S.query = ''; loadFolder(n.id); return; }
 			if (n.encrypted && n.locked) { toast(t('drive.err.vaultLocked'), 'error'); return; }
@@ -1203,6 +1210,44 @@
 				return;
 			}
 			done(r);
+		}
+
+		/**
+		 * Drive 1.32 'vaultLocal': the note of a placeholder („„Steuer 2025“ liegt nur auf Pixel 8“) — where its content
+		 * is, since when, how it comes back; "Platzhalter entfernen …" for the person's own once "Rückgängig" is over.
+		 */
+		function localInfo(n) {
+			const lv = DS.localView(n, { t, locale: locale() });
+			if (!lv) return;
+			const dlg = openDialog({ title: lv.title, host, closeLabel: t('drive.close') });
+			dlg.box.classList.add('dv-local-dlg');
+			dlg.body.append(
+				el('div', { class: 'dv-local-head' }, [el('span', { class: 'dv-local-ic', 'aria-hidden': 'true' }, [icon(lv.icon, 18)]), el('p', { class: 'dv-p dv-local-text', text: lv.text })]),
+				lv.more ? el('p', { class: 'dv-p', text: lv.more }) : null,
+			);
+			if (lv.canForget) dlg.foot.append(el('button', { type: 'button', class: 'btn btn-sec btn-sm dv-local-forget', text: t('drive.local.forget'), on: { click: () => { dlg.close(null); forgetLocal(n); } } }));
+			dlg.foot.append(el('span', { class: 'dv-grow' }), el('button', { type: 'button', class: 'btn btn-pri btn-sm', text: t('drive.close'), on: { click: () => dlg.close(null) } }));
+		}
+
+		/** "Platzhalter entfernen …": asked first; the empty folder goes into the trash (Drive 1.32, forget). */
+		function forgetLocal(n) {
+			const lv = DS.localView(n, { t, locale: locale() });
+			const vaultId = (n.local && n.local.vaultId) || n.vaultId;
+			if (!lv || !vaultId || !api.vault || typeof api.vault.localForget !== 'function') return;
+			confirmDialog({
+				title: t('drive.local.forgetTitle', { name: n.name }),
+				text: t('drive.local.forgetText', { device: lv.device }),
+				confirm: t('drive.local.forgetGo'),
+				danger: true,
+				run: async () => {
+					const r = await Promise.resolve(api.vault.localForget(vaultId, n.id)).catch(fail);
+					if (r && r.ok) {
+						toast(t('drive.local.forgotten', { name: n.name }), 'success');
+						if (S.view === 'folder') loadFolder(S.folder ? S.folder.node.id : S.folderId, { quiet: true });
+					}
+					return r;
+				},
+			});
 		}
 
 		/**
@@ -1737,6 +1782,9 @@
 			const acts = DS.actionsFor(n, writable, S.me);
 			const items = [];
 			const item = (ic, label, fn, danger, kbd) => items.push(el('button', { type: 'button', role: 'menuitem', class: `dv-menu-item${danger ? ' is-danger' : ''}`, 'data-item': ic === 'print' ? 'print' : null, on: { click: () => { closeMenu(); fn(); } } }, [icon(ic, 15), el('span', { text: label }), kbd ? el('span', { class: 'dv-menu-kbd', text: kbd }) : null]));
+			// Drive 1.32 'vaultLocal': a placeholder's menu — only "Info" and (the person's own, the device lost)
+			// "Platzhalter entfernen …"; what does not go here is shown greyed with the reason
+			if (acts.local) { localMenu(n, acts, items); showMenu(items, anchor, at); return; }
 			// Drive 1.19: a file the virus scan blocks — the reason instead of "Öffnen" / "Speichern unter" / "Teilen"
 			if (acts.blocked) items.push(el('div', { class: 'dv-menu-item dv-menu-note', role: 'note', 'data-scan': acts.blocked }, [icon('shield', 15), el('span', { text: SCAN.reason(n.scan, t) })]));
 			if (!acts.blocked) item(n.isDir ? 'folder' : 'open', t('drive.open'), () => openNode(n));
@@ -1765,6 +1813,32 @@
 			if (acts.offline) item('offline', t(S.offline.has(n.id) ? 'drive.offline.menuOff' : 'drive.offline.menuOn'), () => toggleOffline(n));
 			if (acts.portal) item('cloud', t('drive.portal.open'), () => openInPortal(n));
 			if (acts.remove) item('trash', t('drive.remove'), () => trashNode(n), true);
+			showMenu(items, anchor, at);
+		}
+
+		/** The menu of a placeholder (Drive 1.32): header, "Info", what does not go greyed, "Platzhalter entfernen …". */
+		function localMenu(n, acts, items) {
+			const lv = DS.localView(n, { t, locale: locale() });
+			const sub = (ic, label, subText, { cls = '', fn = null, key = null } = {}) => el(fn ? 'button' : 'div', {
+				...(fn ? { type: 'button', role: 'menuitem', on: { click: () => { closeMenu(); fn(); } } } : { role: 'menuitem', 'aria-disabled': 'true' }),
+				class: `dv-menu-item has-sub${cls}`, 'data-item': key,
+			}, [icon(ic, 15), el('span', { class: 'dv-menu-tx' }, [el('span', { text: label }), subText ? el('span', { class: 'dv-menu-sub', text: subText }) : null])]);
+			const off = (ic, label, key) => el('div', { role: 'menuitem', 'aria-disabled': 'true', class: 'dv-menu-item is-off', 'data-item': key }, [icon(ic, 15), el('span', { text: label })]);
+			items.push(el('div', { class: 'dv-menu-h', text: t(lv.state === 'moving' ? 'drive.local.menuHeadMoving' : 'drive.local.menuHead', { name: n.name, device: lv.device }) }));
+			items.push(sub('info', t('drive.local.info'), t('drive.local.infoSub'), { fn: () => localInfo(n), key: 'local-info' }));
+			items.push(el('div', { class: 'dv-menu-sep', role: 'separator' }));
+			if (acts.open) items.push(sub('folder', t('drive.open'), null, { fn: () => loadFolder(n.id), key: 'open' }));
+			else items.push(sub('open', t('drive.open'), t('drive.local.openSub', { device: lv.device }), { cls: ' is-off', key: 'open' }));
+			items.push(off('upload', t('drive.local.uploadHere'), 'upload'));
+			if (DS.hasFeature(S.me, 'offline')) items.push(off('offline', t('drive.offline.menuOn'), 'offline'));
+			items.push(off('pen', t('drive.rename'), 'rename'));
+			if (acts.forget) {
+				items.push(el('div', { class: 'dv-menu-sep', role: 'separator' }));
+				items.push(sub('trash', t('drive.local.forget'), t('drive.local.forgetSub', { device: lv.device }), { cls: ' is-danger', fn: () => forgetLocal(n), key: 'local-forget' }));
+			}
+		}
+
+		function showMenu(items, anchor, at) {
 			const menu = el('div', { class: 'dv-menu', role: 'menu' }, items);
 			const layer = el('div', { class: 'dv-menu-layer', on: { mousedown: (e) => { if (e.target === layer) closeMenu(); }, contextmenu: (e) => { e.preventDefault(); closeMenu(); } } }, [menu]);
 			layer.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeMenu(); if (anchor && anchor.focus) anchor.focus(); } });
@@ -2093,6 +2167,9 @@
 			if (!selectable()) { e.preventDefault(); return; }
 			if (!S.sel.has(n.id)) setSel(new Set([n.id]), n.id);
 			const items = selItems();
+			// Drive 1.32: a placeholder among them does not move (its content lies only on one device)
+			const mv = selActions(items).move;
+			if (!mv.on && mv.why === 'drive.bulk.why.local') { e.preventDefault(); toast(t(mv.why), 'info'); return; }
 			S.drag = { items: items.map((x) => ({ id: x.id, name: x.name, isDir: x.isDir, parentId: x.parentId })), vault: currentVault() };
 			if (e.dataTransfer) {
 				e.dataTransfer.setData(BS.DRAG_TYPE, JSON.stringify(items.map((x) => x.id)));
@@ -2124,7 +2201,7 @@
 		}
 
 		function thumb(v) {
-			const ic = v.locked && !v.isDir ? 'lock' : (KIND_ICON[v.kind] || 'file');
+			const ic = v.local && v.local.placeholder ? v.local.icon : v.locked && !v.isDir ? 'lock' : (KIND_ICON[v.kind] || 'file');
 			const box = el('span', { class: `dv-thumb dv-k-${v.kind}${v.encrypted ? ' is-enc' : ''}` }, [icon(ic, 18), v.badge && !v.isDir && !KIND_ICON[v.kind] && !v.locked ? el('span', { class: 'dv-badge', text: v.badge }) : null]);
 			if (v.preview && v.mediaId) {
 				previewUrl(v.mediaId).then((u) => {
@@ -2437,6 +2514,9 @@
 				refs.list.appendChild(vaultUi.gate(fv.id, fv.state || 'none', { safetyNumber: fv.state === 'pending' && S.vaultStatus && S.vaultStatus.device ? S.vaultStatus.device.safetyNumber : null }));
 				return;
 			}
+			// Drive 1.32 'vaultLocal': the folder shown became a placeholder (another device took it) — its note
+			const flv = S.view === 'folder' && S.folder ? DS.localView(S.folder.node, { t, locale: locale() }) : null;
+			if (flv && flv.placeholder) { refs.list.appendChild(emptyState(`${flv.title}. ${flv.text}`)); return; }
 			const items = S.view === 'folder' || S.view === 'search' ? shownItems() : (S.trash || []);
 			const mode = S.view;
 			// Drive 1.12: the selection belongs to the list shown (another folder / search: none); after a reload only
@@ -2479,13 +2559,16 @@
 					// Drive 1.8: the kind of document Drive recognised
 					v.doc && root.GCDriveDocsState ? el('span', { class: 'dv-doc', 'data-doc': v.doc }, [icon(root.GCDriveDocsState.docIcon(v.doc), 12), el('span', { text: root.GCDriveDocsState.docKindLabel(v.doc, t) })]) : null,
 					v.vault ? el('span', { class: 'dv-doc dv-enc' }, [icon('lock', 12), el('span', { text: t('drive.vault.badge') })]) : null,
+					// Drive 1.32 'vaultLocal': „Nur auf Pixel 8“
+					v.local ? el('span', { class: 'dv-doc dv-local', 'data-local': v.local.state }, [icon(v.local.icon, 12), el('span', { text: v.local.badge })]) : null,
 					// Drive 1.19: the host's virus scan
 					v.scan ? scanChip(v.scan) : null,
 					fresh ? el('span', { class: 'dv-new', text: t('drive.bulk.newHere') }) : null,
 				]),
 			]);
 			const cb = cbs ? el('input', { type: 'checkbox', class: 'dv-cb', 'aria-label': t('drive.bulk.selectRow', { name: v.name }), on: { click: (e) => { e.stopPropagation(); checkClick(n, e); } } }) : null;
-			const row = el('div', { class: `dv-row${cbs ? ' has-cb' : ''}${v.encrypted ? ' is-enc' : ''}${fresh ? ' is-new' : ''}`, role: 'listitem', 'data-id': String(v.id), draggable: cbs && !v.locked ? 'true' : null }, [
+			const placeholder = !!(v.local && v.local.placeholder);
+			const row = el('div', { class: `dv-row${cbs ? ' has-cb' : ''}${v.encrypted ? ' is-enc' : ''}${fresh ? ' is-new' : ''}${placeholder ? ' is-local' : ''}`, role: 'listitem', 'data-id': String(v.id), draggable: cbs && !v.locked && !placeholder ? 'true' : null }, [
 				cbs ? el('span', { class: 'dv-c-cb' }, [cb]) : null,
 				main,
 				el('span', { class: 'dv-c-date', text: v.date }),
@@ -2511,7 +2594,8 @@
 				row.addEventListener('dblclick', (e) => { if (!e.target.closest('.dv-open, .dv-more-btn, .dv-cb')) openNode(n); });
 				row.addEventListener('mousedown', (e) => { if (e.shiftKey) e.preventDefault(); });
 				row.addEventListener('dragstart', (e) => dragStart(n, e));
-				if (v.isDir && !v.locked) {
+				// Drive 1.32: a placeholder (also while it moves to the device) takes nothing
+				if (v.isDir && !v.locked && !v.local) {
 					const crumbIds = S.view === 'folder' && S.folder ? (S.folder.crumbs || []).map((c) => c.id).concat(S.folder.node.id) : [];
 					dropTarget(row, () => ({ id: n.id, name: v.name, crumbs: crumbIds, vault: n.encrypted ? n.vaultId || currentVault() : null, path: v.name }));
 				}

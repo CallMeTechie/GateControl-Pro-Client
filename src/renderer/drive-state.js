@@ -198,6 +198,8 @@
 		const n = node || {};
 		const sub = [];
 		const locked = !!(n.encrypted && n.locked);
+		// Drive 1.32 'vaultLocal': a placeholder — greyed, „Nur auf Pixel 8“, the date it went there, no size
+		const local = mode === 'trash' ? null : localView(n, { t, locale });
 		if (mode === 'search') {
 			if (n.path) sub.push(t('drive.search.in', { path: n.path }));
 			if (n.match === 'text' && n.snippet) sub.push(n.snippet);
@@ -213,8 +215,8 @@
 			badge: locked ? '' : badgeOf(n),
 			sub: sub.join(' · '),
 			snippet: mode === 'search' && n.match === 'text' ? str(n.snippet) : '',
-			date: when(stamp, now, locale, t),
-			size: n.isDir ? '' : formatBytes(n.size || 0, locale),
+			date: local && local.date ? local.date : when(stamp, now, locale, t),
+			size: local && local.placeholder ? '–' : n.isDir ? '' : formatBytes(n.size || 0, locale),
 			isDir: !!n.isDir,
 			preview: !!n.preview && !!n.mediaId && !n.encrypted && !SCAN.isBlocked(n.scan),
 			mediaId: n.mediaId || null,
@@ -223,6 +225,54 @@
 			locked,
 			vault: !!(n.encrypted && n.vaultRoot),
 			scan: n.isDir ? null : SCAN.chip(n.scan, t),
+			...(local ? { local } : {}),
+		};
+	}
+
+	// ── „Nur auf diesem Gerät“ (Drive 1.32, 'vaultLocal') ──
+
+	const LOCAL_STATES = ['moving', 'local', 'returning'];
+	const PHONES = ['android', 'ios'];
+
+	/**
+	 * A vault folder whose content lies only on one device of the person (`local`, Drive 1.32) → { state, placeholder,
+	 * device, kind, icon, since, date, badge, title, text, more, canForget } or null (none: shown as before, also with an
+	 * older Drive that has no `local`). placeholder: nothing of it is here (state local / returning); while 'moving' the
+	 * folder still opens (readable, nothing can be changed). canForget: "Platzhalter entfernen …" — the person's own
+	 * placeholder once "Rückgängig" is over (undo === false), not while it moves.
+	 */
+	function localView(node, { t, locale } = {}) {
+		const n = node || {};
+		const l = n.isDir && n.encrypted && n.local && typeof n.local === 'object' ? n.local : null;
+		if (!l || !LOCAL_STATES.includes(l.state)) return null;
+		const device = str(l.deviceName) || t('drive.local.otherDevice');
+		const kind = PHONES.includes(l.platform) ? 'phone' : l.platform === 'windows' ? 'pc' : 'other';
+		const since = Number.isFinite(l.since) ? new Date(l.since).toLocaleDateString(localeTag(locale), { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+		const name = str(n.name);
+		const kindWord = t(`drive.local.kind.${kind}`);
+		const canForget = !!l.mine && l.undo === false && l.state === 'local';
+		let text;
+		if (l.state === 'moving') text = t('drive.local.textMoving', { name, device });
+		else if (l.state === 'returning') text = t('drive.local.textReturning', { name, device });
+		else text = t(since ? 'drive.local.text' : 'drive.local.textNoDate', { device, kind: kindWord, date: since });
+		let more = '';
+		if (l.state === 'local') {
+			more = t(l.mine ? `drive.local.more.${kind}` : 'drive.local.moreOther');
+			if (l.mine && !canForget && Number.isFinite(l.purgeAt)) more += ` ${t('drive.local.forgetLater', { date: longWhen(l.purgeAt, locale) })}`;
+		}
+		return {
+			state: l.state,
+			placeholder: l.state !== 'moving',
+			device,
+			kind,
+			icon: kind === 'phone' ? 'phone' : 'device',
+			since,
+			date: since ? t('drive.local.since', { date: since }) : '',
+			badge: t(l.state === 'moving' ? 'drive.local.badgeMoving' : l.state === 'returning' ? 'drive.local.badgeReturning' : 'drive.local.badge', { device }),
+			title: t(l.state === 'moving' ? 'drive.local.titleMoving' : 'drive.local.title', { name, device }),
+			text,
+			more,
+			canForget,
 		};
 	}
 
@@ -304,6 +354,16 @@
 	 */
 	function actionsFor(node, writable, me) {
 		const n = node || {};
+		// Drive 1.32 'vaultLocal': a placeholder only says where it is ("Info") and may be removed when the device is
+		// lost; while it moves to the device it still opens (read only)
+		const lv = n.isDir && n.encrypted && n.local && LOCAL_STATES.includes(n.local.state) ? n.local : null;
+		if (lv) {
+			return {
+				open: lv.state === 'moving', saveAs: false, share: false, rename: false, move: false, versions: false, remove: false,
+				portal: false, timeTravel: false, details: false, office: null, offline: false, blocked: null, warn: false,
+				local: true, info: true, forget: !!lv.mine && lv.undo === false && lv.state === 'local',
+			};
+		}
 		const enc = !!n.encrypted;
 		const locked = enc && !!n.locked;
 		const blocked = !n.isDir && SCAN.isBlocked(n.scan);
@@ -594,6 +654,8 @@
 	 */
 	function canDropFiles(node, { inVault = false } = {}) {
 		if (!node || !node.isDir || node.locked) return false;
+		// Drive 1.32: nothing goes into a placeholder (also not while it moves to the device)
+		if (node.local && LOCAL_STATES.includes(node.local.state)) return false;
 		return !node.encrypted === !inVault;
 	}
 
@@ -689,7 +751,14 @@
 		const scanText = SCAN.refusalText(res, t);
 		if (scanText) return scanText;
 		const code = res && typeof res.code === 'string' ? res.code : 'failed';
-		// an error on the server (HTTP 5xx, the plugin failed): a text of its own, the code kept for the support
+		// Drive 1.32 'vaultLocal': a write into a folder that lies only on one device — named
+		if (code === 'local_only' || code === 'local_moving' || code === 'local_nested') {
+			return t(`drive.err.${code === 'local_moving' ? 'localMoving' : code === 'local_nested' ? 'localNested' : 'localOnly'}`, { device: str(res.deviceName) || t('drive.local.otherDevice') });
+		}
+		if (code === 'conflict' && res.reason === 'purge_pending') {
+			const at = typeof res.purgeAt === 'string' ? Date.parse(res.purgeAt) : NaN;
+			return Number.isFinite(at) ? t('drive.local.forgetLater', { date: longWhen(at, res.locale) }) : t('drive.local.forgetLaterAny');
+		}		// an error on the server (HTTP 5xx, the plugin failed): a text of its own, the code kept for the support
 		const key = CODES[code] || (/^http_5\d\d$/.test(code) || code === 'internal' || code === 'plugin_error' ? 'server' : null);
 		if (key === 'server') return t('drive.err.server', { code });
 		return key ? t(`drive.err.${key}`) : t('drive.err.generic', { code });
@@ -700,7 +769,7 @@
 		plural, extOf, kindOf, badgeOf, formatBytes, when,
 		validName, nameError,
 		sortAreas, areaLabel, areaHint, usage, currentArea, accessOf,
-		crumbs, rowView, sortQuery, TYPE_ORDER, typeRank, sortRows, docAiSwitch, withDocAi, actionsFor, officeMode, OFFICE_EXTS, hasPortalLinks, hasFeature,
+		crumbs, rowView, localView, sortQuery, TYPE_ORDER, typeRank, sortRows, docAiSwitch, withDocAi, actionsFor, officeMode, OFFICE_EXTS, hasPortalLinks, hasFeature,
 		localInputValue, parseLocalInput, timeTravelPresets, timeTravelError, longWhen, timeTravelView, timeTravelLinked, timeTravelResultText,
 		liveRelevant, throttle, guardView, folderQueuedText,
 		linkModes, pinOk, linkRequest, linkView,
