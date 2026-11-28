@@ -112,6 +112,7 @@ namespace GateControl.RdpHost
 
         private void LayoutButtons()
         {
+            if (Disconnect == null) return; // layout while the constructor adds the buttons
             int x = Width - S(10);
             int y = (Height - S(30)) / 2;
             // right to left: Trennen, Vollbild, Strg+Alt+Entf | Laufwerke, Zwischenablage, Abbrechen

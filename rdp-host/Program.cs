@@ -81,7 +81,8 @@ namespace GateControl.RdpHost
                 int shotAt = Array.IndexOf(args, "--shot");
                 string shot = shotAt >= 0 && shotAt + 1 < args.Length ? args[shotAt + 1] : null;
                 bool light = Array.IndexOf(args, "--light") >= 0;
-                return Demo.Run(view, light, shot);
+                try { return Demo.Run(view, light, shot); }
+                catch (Exception ex) { Console.Error.WriteLine(ex.ToString()); return 2; }
             }
 
             var form = new RdpForm(demo: false);

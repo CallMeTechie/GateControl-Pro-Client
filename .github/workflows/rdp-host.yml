@@ -47,9 +47,18 @@ jobs:
               $name = if ($light) { "$v-hell" } else { $v }
               $argv = @('--demo', $v, '--shot', "rdp-host\shots\$name.png")
               if ($light) { $argv += '--light' }
-              $p = Start-Process -FilePath $exe -ArgumentList $argv -PassThru
+              $psi = New-Object System.Diagnostics.ProcessStartInfo
+              $psi.FileName = $exe
+              $psi.Arguments = $argv -join ' '
+              $psi.RedirectStandardOutput = $true
+              $psi.RedirectStandardError = $true
+              $psi.UseShellExecute = $false
+              $p = [System.Diagnostics.Process]::Start($psi)
+              $out = $p.StandardOutput.ReadToEndAsync(); $err = $p.StandardError.ReadToEndAsync()
               if (-not $p.WaitForExit(30000)) { $p.Kill(); throw "demo $name hängt" }
-              if (-not (Test-Path "rdp-host\shots\$name.png")) { throw "kein Bild für $name" }
+              if ($out.Result) { Write-Host "demo $name stdout: $($out.Result)" }
+              if ($err.Result) { Write-Host "demo $name stderr: $($err.Result)" }
+              if (-not (Test-Path "rdp-host\shots\$name.png")) { throw "kein Bild für $name (exit $($p.ExitCode))" }
             }
           }
           Get-ChildItem rdp-host\shots | Format-Table Name, Length
