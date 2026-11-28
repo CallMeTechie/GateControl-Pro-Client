@@ -163,6 +163,63 @@
 		return changed ? out : pins;
 	}
 
+	// ── The dialog "Schnellaktionen anheften" ───────────
+
+	/** The devices by plugin, in the order the plugins list them: [{ plugin, name, devices, pinned, total }]. */
+	function pickGroups(devices, pins) {
+		const map = new Map();
+		for (const d of devices || []) {
+			if (!map.has(d.plugin)) map.set(d.plugin, { plugin: d.plugin, name: d.pluginName || d.plugin, devices: [], pinned: 0, total: 0 });
+			const g = map.get(d.plugin);
+			g.devices.push(d);
+			g.total += 1;
+			if (isPinned(pins, d.key)) g.pinned += 1;
+		}
+		return [...map.values()];
+	}
+
+	const norm = (s) => String(s || '').toLocaleLowerCase('de-DE');
+
+	/** Whether a device fits the search (its name, its line below — the room —, the plugin); an empty search: all. */
+	function matches(d, q) {
+		const n = norm(q).trim();
+		if (!n) return true;
+		return norm([d.title, d.subtitle, d.pluginName].filter(Boolean).join(' ')).includes(n);
+	}
+
+	/** A text cut at the first hit of the search: [{ text, hit }] (for the highlight; no markup). */
+	function highlight(text, q) {
+		const s = String(text || '');
+		const n = norm(q).trim();
+		const at = n ? norm(s).indexOf(n) : -1;
+		if (at < 0) return [{ text: s, hit: false }];
+		return [{ text: s.slice(0, at), hit: false }, { text: s.slice(at, at + n.length), hit: true }, { text: s.slice(at + n.length), hit: false }].filter((x) => x.text);
+	}
+
+	/** A pinned device one place up (dir -1) or down (+1) → the new list (a copy; the same array when it cannot move). */
+	function movePin(pins, key, dir) {
+		const list = (pins || []).slice();
+		const i = list.findIndex((p) => p.device === key);
+		const j = i + (dir < 0 ? -1 : 1);
+		if (i < 0 || j < 0 || j >= list.length) return pins;
+		[list[i], list[j]] = [list[j], list[i]];
+		return list;
+	}
+
+	/** The pins in the order of `keys` (the rows after a drag); pins not named keep their place at the end. */
+	function orderPins(pins, keys) {
+		const list = pins || [];
+		const out = [];
+		for (const k of keys || []) { const p = list.find((x) => x.device === k); if (p && !out.includes(p)) out.push(p); }
+		for (const p of list) if (!out.includes(p)) out.push(p);
+		return out;
+	}
+
+	/** What the dialog is built from: the state of the list and the devices by plugin (the rows stay while it is the same). */
+	function pickShape(load, devices) {
+		return `${load}|${(devices || []).map((d) => `${d.plugin}/${d.key}`).join(',')}`;
+	}
+
 	// ── Numbers ─────────────────────────────────────────
 
 	const tag = (locale) => (locale === 'en' ? 'en-US' : 'de-DE');
@@ -287,6 +344,7 @@
 		actionKey, deviceKey, isToggle, isOn,
 		group, parts, asButton, shownParts,
 		resolve, isPinned, pinDevice, setHidden, syncPins,
+		pickGroups, matches, highlight, movePin, orderPins, pickShape,
 		formatNumber, valueText, decimals, controlText, snap, isTemperature, readingText,
 		target, needsConfirm, currentLook, displayIcon, optionGlyph, tone, failureText, reloadAfter,
 		choicePerRow, buttonsPerRow,

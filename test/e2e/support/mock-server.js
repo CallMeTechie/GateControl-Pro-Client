@@ -257,7 +257,13 @@ async function startMockServer() {
       if (route === 'actions' || route.startsWith('actions/')) {
         if (req.headers['x-api-token'] !== API_TOKEN) return json(401, { ok: false, error: 'unauthorized' });
         if (!actions) return json(404, { ok: false, error: 'not_found' });
-        if (route === 'actions' && req.method === 'GET') { const r = actions.list(); return json(r.status, r.body); }
+        if (route === 'actions' && req.method === 'GET') {
+          // `listDelay` (ms): the list comes late (while the dialog is used)
+          const delay = actions.state.listDelay || 0;
+          if (delay) { setTimeout(() => { const r = actions.list(); json(r.status, r.body); }, delay); return undefined; }
+          const r = actions.list();
+          return json(r.status, r.body);
+        }
         const m = /^actions\/([^/]+)\/([^/]+)$/.exec(route);
         if (!m || req.method !== 'POST') return json(404, { ok: false, error: 'not_found' });
         let body = {};

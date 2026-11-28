@@ -157,3 +157,41 @@ describe('layout-state: the page', () => {
     }
   });
 });
+
+describe('layout-state: Mail „Ansicht“', () => {
+  it('what is stored, else the standard (right, full, normal, the AI line on)', () => {
+    assert.deepEqual(LS.mailView(null), { reading: 'right', folders: 'full', density: 'normal', ai: true });
+    assert.deepEqual(LS.mailView({ reading: 'bottom', folders: 'narrow', density: 'compact', ai: false }), { reading: 'bottom', folders: 'narrow', density: 'compact', ai: false });
+    assert.deepEqual(LS.mailView({ reading: 'left', folders: 1, density: 'tiny', ai: 'no' }), { reading: 'right', folders: 'full', density: 'normal', ai: true });
+  });
+
+  it('one choice changed; the sizes stay, unknown choices change nothing', () => {
+    const p = { w: { list: 400 }, h: { list: 0.5 } };
+    assert.deepEqual(LS.withMailView(p, 'reading', 'off'), { w: { list: 400 }, h: { list: 0.5 }, reading: 'off' });
+    assert.deepEqual(LS.withMailView(p, 'ai', false), { w: { list: 400 }, h: { list: 0.5 }, ai: false });
+    assert.deepEqual(LS.withMailView(p, 'reading', 'sideways'), p);
+    assert.deepEqual(LS.withMailView(p, 'ai', 'off'), p);
+    assert.deepEqual(LS.withMailView(p, 'w', 3), p);
+    assert.deepEqual(p, { w: { list: 400 }, h: { list: 0.5 } });
+    assert.deepEqual(LS.withoutSizes(LS.withMailView(p, 'density', 'compact')), { density: 'compact' });
+  });
+
+  it('the folder bar narrow for the time being below 1100 px, full in Kalender / Kontakte', () => {
+    assert.deepEqual(LS.mailFolders('full', { width: 1440 }), { folders: 'full', auto: false });
+    assert.deepEqual(LS.mailFolders('full', { width: 1099 }), { folders: 'narrow', auto: true });
+    assert.deepEqual(LS.mailFolders('full', { width: 1100 }), { folders: 'full', auto: false });
+    assert.deepEqual(LS.mailFolders('off', { width: 1000 }), { folders: 'off', auto: false });
+    assert.deepEqual(LS.mailFolders('narrow', { width: 1440 }), { folders: 'narrow', auto: false });
+    assert.deepEqual(LS.mailFolders('off', { width: 1000, area: true }), { folders: 'full', auto: false });
+    assert.deepEqual(LS.mailFolders('bogus', { width: 1440 }), { folders: 'full', auto: false });
+  });
+
+  it('Mail keeps its dividers and the menu wired: keys in backticks (not texts), the button beside the search', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'mail-view.js'), 'utf8');
+    for (const k of ['mail.w.folders', 'mail.w.list', 'mail.h.list']) assert.ok(src.includes(`key: \`${k}\``), k);
+    assert.match(src, /class: 'ml-search-row' \}, \[el\('label', \{ class: 'ml-search' \}, \[icon\('search', 15\), searchIn\]\), viewButton\(\)\]\)/);
+    for (const k of ['title', 'button', 'reading', 'right', 'bottom', 'off', 'folders', 'foldersFull', 'foldersNarrow', 'foldersOff', 'density', 'normal', 'compact', 'ai', 'reset', 'note', 'kbd', 'autoNarrow', 'back', 'colFrom', 'colSubject', 'colDate']) {
+      assert.ok(src.includes(`'mail.view.${k}'`) || src.includes(`mail.view.\${k}`), k);
+    }
+  });
+});

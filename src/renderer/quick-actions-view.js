@@ -109,7 +109,7 @@
 				}
 				cards.clear();
 				o.onChange();
-				if (dialog && !dialog.closed) fillPicker();
+				if (dialog && !dialog.closed) syncPicker();
 			});
 			return loading;
 		}
@@ -425,19 +425,80 @@
 		}
 
 		// ── The dialog "Schnellaktionen anheften" ────────
+		//
+		// Fixed at the top: the search (name, room, plugin) and "5 von 12 angeheftet" with its bar. Then "Angeheftet" in
+		// the order of the cards (dragged by the grip or Alt+↑/↓; "Teile" opens what the card shows) and the devices by
+		// plugin (a group folds; its head stays while scrolling; "2 von 7"). A pinned device is in both places.
+		// A switch changes only its rows (never the whole dialog): the row stays where it is, the focus on the switch;
+		// a list that comes in the background only updates names and lines while the devices are the same.
+
+		const GRIP = 'M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01';
+		let P = null;   // the open dialog's parts and what the person did in it (search, folded groups, open "Teile")
 
 		function openPicker() {
 			if (dialog && !dialog.closed) return;
-			dialog = openDialog({ title: t('home.qa.pick.title'), wide: true, closeLabel: t('home.qa.pick.done'), cls: 'qa-pick' });
-			dialog.foot.append(el('button', { type: 'button', class: 'btn btn-pri btn-sm', text: t('home.qa.pick.done'), on: { click: () => dialog.close() } }));
+			dialog = openDialog({ title: t('home.qa.pick.title'), wide: true, closeLabel: t('home.qa.pick.done'), cls: 'qa-pick qp' });
+			const search = el('input', { type: 'search', class: 'ml-search-in', placeholder: t('home.qa.pick.search'), 'aria-label': t('home.qa.pick.search'), maxlength: '100', spellcheck: 'false', 'data-qp-q': '' });
+			const countTx = el('span', { class: 'qp-count-tx', 'data-qp-n': '' });
+			const bar = el('span', { class: 'qp-bar', 'aria-hidden': 'true' }, [el('i')]);
+			const count = el('div', { class: 'qp-count', role: 'status', 'aria-live': 'polite' }, [countTx, bar]);
+			const full = el('div', { class: 'qp-hint-full', hidden: true }, [icon('alert', 15), el('span', { text: t('home.qa.pick.fullHint', { max: QS.MAX_PINS }) })]);
+			const top = el('div', { class: 'qp-top' }, [el('div', { class: 'qp-tools' }, [el('label', { class: 'ml-search' }, [icon('search', 15), search]), count]), full]);
+			dialog.box.insertBefore(top, dialog.body);
+			dialog.body.classList.add('qp-body');
+			dialog.foot.append(
+				el('p', { class: 'qp-foot-note', text: t('home.qa.pick.note') }),
+				el('button', { type: 'button', class: 'btn btn-pri btn-sm', text: t('home.qa.pick.done'), on: { click: () => dialog.close() } }),
+			);
+			P = { search, count, countTx, bar: bar.firstChild, full, q: '', folded: new Set(), parts: new Set(), shape: null, dragKey: null };
+			search.addEventListener('input', () => { P.q = search.value; filter(); });
+			search.addEventListener('keydown', (e) => { if (e.key === 'Escape' && search.value) { e.stopPropagation(); search.value = ''; P.q = ''; filter(); } });
 			fillPicker();
 			// what the plugins offer now (a device added, one taken away)
 			refresh();
 		}
 
+		/** After a list came in: the same devices → only names and lines; else built again (scroll and focus kept). */
+		function syncPicker() {
+			if (!dialog || dialog.closed || !P) return;
+			if (P.shape === QS.pickShape(S.load, S.devices)) { updateRows(); return; }
+			const body = dialog.body;
+			const anchor = firstRowInView(body);
+			const focusKey = document.activeElement && body.contains(document.activeElement) ? focusId(document.activeElement) : null;
+			fillPicker();
+			if (anchor) {
+				const r = body.querySelector(anchor.sel);
+				if (r) body.scrollTop += r.getBoundingClientRect().top - body.getBoundingClientRect().top - anchor.off;
+			}
+			if (focusKey) {
+				const f = body.querySelector(focusKey);
+				if (f && !f.disabled) f.focus({ preventScroll: true });
+			}
+		}
+
+		const zone = (n) => (n.closest('.qp-pins') ? '.qp-pins' : '.qp-groups');
+		function rowSel(r) { return `${zone(r)} .qa-pick-row[data-device="${CSS.escape(r.dataset.device)}"]`; }
+		function focusId(a) {
+			const r = a.closest('.qa-pick-row');
+			if (r && a.dataset.qpFk) return `${rowSel(r)} [data-qp-fk="${a.dataset.qpFk}"]`;
+			if (a.dataset.qpG) return `[data-qp-g="${CSS.escape(a.dataset.qpG)}"]`;
+			return null;
+		}
+		function firstRowInView(body) {
+			const top = body.getBoundingClientRect().top;
+			for (const r of body.querySelectorAll('.qa-pick-row')) {
+				const b = r.getBoundingClientRect();
+				if (b.height && b.bottom > top + 1) return { sel: rowSel(r), off: b.top - top };
+			}
+			return null;
+		}
+
 		function fillPicker() {
 			const body = clear(dialog.body);
-			body.append(el('p', { class: 'qa-pick-hint', text: t('home.qa.pick.hint', { max: QS.MAX_PINS }) }));
+			P.shape = QS.pickShape(S.load, S.devices);
+			const ready = S.load === 'ok' && S.devices.length > 0;
+			P.search.disabled = !ready;
+			counter();
 			if (S.load === 'idle' || S.load === 'loading') { body.append(el('p', { class: 'qa-pick-empty', text: t('home.qa.loading') })); return; }
 			if (S.load === 'unsupported') { body.append(el('p', { class: 'qa-pick-empty', text: t('home.qa.pick.unsupported') })); return; }
 			if (S.load === 'error') {
@@ -446,15 +507,65 @@
 				return;
 			}
 			if (!S.devices.length) { body.append(el('p', { class: 'qa-pick-empty', text: t('home.qa.pick.none') })); return; }
-			const byPlugin = new Map();
-			for (const d of S.devices) {
-				if (!byPlugin.has(d.plugin)) byPlugin.set(d.plugin, { name: d.pluginName, list: [] });
-				byPlugin.get(d.plugin).list.push(d);
+			const list = pinned();
+			// "Angeheftet": the cards' order
+			const pinRows = el('div', { class: 'qp-rows qp-pins', 'data-qp-pins': '' });
+			list.forEach((p, i) => pinRows.append(...pinnedRow(p, i)));
+			if (!list.length) pinRows.append(el('p', { class: 'qp-empty', text: t('home.qa.pick.nonePinned') }));
+			wirePinDrag(pinRows);
+			body.append(groupBox({ id: '_pins', name: t('home.qa.pick.pinned'), sub: t('home.qa.pick.order'), rows: pinRows, pins: true }));
+			// the devices by plugin
+			const groups = el('div', { class: 'qp-groups' });
+			for (const g of QS.pickGroups(S.devices, list)) {
+				const rows = el('div', { class: 'qp-rows' });
+				for (const d of g.devices) rows.append(groupRow(d));
+				groups.append(groupBox({ id: g.plugin, name: g.name, rows, count: g }));
 			}
-			for (const g of byPlugin.values()) {
-				body.append(el('h3', { class: 'qa-pick-h', text: g.name }));
-				for (const d of g.list) body.append(pickRow(d));
-			}
+			body.append(groups, el('p', { class: 'qp-empty qp-none', hidden: true }));
+			filter();
+		}
+
+		function groupBox({ id, name, sub, rows, pins = false, count = null }) {
+			const open = !P.folded.has(id);
+			const gc = el('span', { class: 'qp-gc' });
+			if (count) gc.append(el('b', { text: String(count.pinned) }), ` ${t('home.qa.pick.of', { total: count.total })}`);
+			else gc.textContent = sub || '';
+			const head = el('button', { type: 'button', class: `qp-gh${pins ? ' is-pins' : ''}`, 'aria-expanded': open ? 'true' : 'false', 'data-qp-g': id }, [
+				el('span', { class: 'qp-chev' }, [icon('chevDown', 15)]),
+				el('span', { class: 'qp-gn qa-pick-h', text: name }),
+				gc,
+			]);
+			const box = el('section', { class: `qp-group${pins ? ' is-pins' : ''}`, 'data-g': id, 'data-open': open ? 'true' : 'false' }, [head, rows]);
+			head.addEventListener('click', () => {
+				const now = box.getAttribute('data-open') !== 'true';
+				if (now) P.folded.delete(id); else P.folded.add(id);
+				box.setAttribute('data-open', now ? 'true' : 'false');
+				head.setAttribute('aria-expanded', now ? 'true' : 'false');
+			});
+			return box;
+		}
+
+		/** The title and the line below with the search's hit marked (text only). */
+		function titleBox(title, sub) {
+			const mark = (s) => QS.highlight(s, P.q).map((x) => (x.hit ? el('mark', { text: x.text }) : document.createTextNode(x.text)));
+			return el('span', { class: 'qa-pick-t' }, [el('span', { class: 'qa-title' }, mark(title)), sub ? el('span', { class: 'qa-sub' }, mark(sub)) : null]);
+		}
+
+		const deviceIcon = (d) => glyph(d.icon || (d.actions[0] && QS.displayIcon(d.actions[0])), 17);
+
+		/** A device in its plugin's group: the switch, "angeheftet" while it is. */
+		function groupRow(d) {
+			const list = pinned();
+			const on = QS.isPinned(list, d.key);
+			const toggle = sw(on, t('home.qa.pick.pin', { name: d.title }), (next) => togglePin(d, next, toggle));
+			toggle.setAttribute('data-qp-fk', 'sw');
+			const row = el('div', { class: `qa-pick-row qp-row${on ? ' is-on' : ''}`, 'data-device': d.key }, [
+				el('span', { class: 'qa-ic' }, [deviceIcon(d)]),
+				titleBox(d.title, d.subtitle),
+				el('span', { class: 'qp-tag', hidden: !on || null }, [icon('pin', 12), el('span', { text: t('home.qa.pick.isPinned') })]),
+				toggle,
+			]);
+			return row;
 		}
 
 		function partLabel(p) {
@@ -465,33 +576,274 @@
 			return p.label;
 		}
 
-		function pickRow(d) {
-			const list = pinned();
-			const on = QS.isPinned(list, d.key);
-			const full = !on && list.length >= QS.MAX_PINS;
-			const toggle = sw(on, t('home.qa.pick.pin', { name: d.title }), (next) => { pins.pinDevice(d.key, d, next); fillPicker(); });
-			if (full) { toggle.disabled = true; toggle.title = t('home.qa.pick.full', { max: QS.MAX_PINS }); }
-			const row = el('div', { class: `qa-pick-row${on ? ' is-on' : ''}`, 'data-device': d.key }, [
-				el('div', { class: 'qa-pick-main' }, [
-					el('span', { class: 'qa-ic' }, [glyph(d.icon || (d.actions[0] && QS.displayIcon(d.actions[0])), 17)]),
-					el('span', { class: 'qa-pick-t' }, [el('span', { class: 'qa-title', text: d.title }), d.subtitle ? el('span', { class: 'qa-sub', text: d.subtitle }) : null]),
-					toggle,
-				]),
+		/** A pinned device in "Angeheftet": grip, place, name, "Teile", the switch; its parts below while open. */
+		function pinnedRow(pin, i) {
+			const d = QS.resolve(pin, S.devices);
+			const key = d ? d.key : pin.device;
+			const name = d ? d.title : (pin.title || pin.device);
+			const sub = d ? [d.pluginName, d.subtitle].filter(Boolean).join(' · ') : t('home.qa.gone');
+			const all = d ? QS.parts(d) : [];
+			const grip = el('button', { type: 'button', class: 'qp-grip', 'data-qp-fk': 'grip', title: t('home.qa.pick.move'), 'aria-label': t('home.qa.pick.moveName', { name }) }, [glyph(GRIP, 16)]);
+			const toggle = sw(true, t('home.qa.pick.pin', { name }), (next) => { if (!next) unpinFrom(key, toggle); });
+			toggle.setAttribute('data-qp-fk', 'sw');
+			const open = P.parts.has(key) && all.length > 1;
+			const partsBtn = all.length > 1 ? el('button', { type: 'button', class: 'qp-parts-btn', 'data-qp-fk': 'parts', 'aria-expanded': open ? 'true' : 'false', title: t('home.qa.pick.parts') }, [
+				el('span', { text: t('home.qa.pick.partsShort') }), icon('chevDown', 13),
+			]) : null;
+			const row = el('div', { class: `qa-pick-row qp-row is-on${d ? '' : ' is-gone'}`, 'data-device': key }, [
+				grip,
+				el('span', { class: 'qp-pos', text: String(i + 1) }),
+				el('span', { class: 'qa-ic' }, [d ? deviceIcon(d) : glyph(QS.BOLT, 17)]),
+				titleBox(name, sub),
+				partsBtn,
+				toggle,
 			]);
-			const all = QS.parts(d);
-			if (on && all.length > 1) {
-				const pin = list.find((p) => p.device === d.key);
-				const hidden = new Set(pin.hidden || []);
-				const box = el('fieldset', { class: 'qa-parts' }, [el('legend', { text: t('home.qa.pick.parts') })]);
-				for (const p of all) {
-					const cb = el('input', { type: 'checkbox', 'data-part': p.id });
-					cb.checked = !hidden.has(p.id);
-					cb.addEventListener('change', () => pins.setHidden(d.key, p.id, !cb.checked));
-					box.append(el('label', { class: 'qa-part' }, [cb, el('span', { text: partLabel(p) })]));
-				}
-				row.append(box);
+			grip.addEventListener('pointerdown', () => { row.draggable = true; });
+			grip.addEventListener('keydown', (e) => moveKey(e, key));
+			row.addEventListener('keydown', (e) => { if (e.target !== grip) moveKey(e, key); });
+			const box = open ? partsBox(d, pin) : null;
+			if (partsBtn) {
+				partsBtn.addEventListener('click', () => {
+					const now = !P.parts.has(key);
+					if (now) P.parts.add(key); else P.parts.delete(key);
+					partsBtn.setAttribute('aria-expanded', now ? 'true' : 'false');
+					const old = row.nextElementSibling && row.nextElementSibling.classList.contains('qa-parts') ? row.nextElementSibling : null;
+					if (old) old.remove();
+					if (now) row.after(partsBox(d, pinned().find((p) => p.device === key) || pin));
+				});
 			}
-			return row;
+			return box ? [row, box] : [row];
+		}
+
+		function partsBox(d, pin) {
+			const hidden = new Set(pin.hidden || []);
+			const box = el('fieldset', { class: 'qa-parts qp-parts', 'data-device': d.key }, [el('legend', { text: t('home.qa.pick.parts') })]);
+			for (const p of QS.parts(d)) {
+				const cb = el('input', { type: 'checkbox', 'data-part': p.id });
+				cb.checked = !hidden.has(p.id);
+				cb.addEventListener('change', () => pins.setHidden(d.key, p.id, !cb.checked));
+				box.append(el('label', { class: 'qa-part' }, [cb, el('span', { text: partLabel(p) })]));
+			}
+			return box;
+		}
+
+		/** Keeps `row` where it is on the screen while `change` adds or removes rows above it. */
+		function keepPlace(row, change) {
+			const body = dialog.body;
+			const before = row && row.isConnected ? row.getBoundingClientRect().top : null;
+			change();
+			if (before !== null && row.isConnected) body.scrollTop += row.getBoundingClientRect().top - before;
+		}
+
+		/** The switch in a group: pinned at the end of "Angeheftet" or loosened; only these rows change. */
+		function togglePin(d, on, toggle) {
+			const row = toggle.closest('.qa-pick-row');
+			keepPlace(row, () => {
+				pins.pinDevice(d.key, d, on);
+				const box = dialog.body.querySelector('[data-qp-pins]');
+				const old = box.querySelector(`.qa-pick-row[data-device="${CSS.escape(d.key)}"]`);
+				if (on && !old) {
+					const list = pinned();
+					const i = list.findIndex((p) => p.device === d.key);
+					if (i >= 0) {
+						const empty = box.querySelector('.qp-empty');
+						if (empty) empty.remove();
+						const made = pinnedRow(list[i], i);
+						box.append(...made);
+						flash(made[0]);
+					}
+				} else if (!on && old) {
+					removePinned(box, old);
+				}
+				markGroupRow(d.key, on);
+				flash(row);
+			});
+			counter();
+		}
+
+		/** The switch of a row in "Angeheftet": loosened; the focus goes to the next row's switch (or the group's). */
+		function unpinFrom(key, toggle) {
+			const box = dialog.body.querySelector('[data-qp-pins]');
+			const row = toggle.closest('.qa-pick-row');
+			let next = row.nextElementSibling;
+			while (next && !next.classList.contains('qa-pick-row')) next = next.nextElementSibling;
+			let prev = row.previousElementSibling;
+			while (prev && !prev.classList.contains('qa-pick-row')) prev = prev.previousElementSibling;
+			const stay = next || prev || dialog.body.querySelector(`.qp-groups .qa-pick-row[data-device="${CSS.escape(key)}"]`);
+			keepPlace(stay, () => {
+				pins.pinDevice(key, null, false);
+				removePinned(box, row);
+				markGroupRow(key, false);
+			});
+			counter();
+			const f = stay && stay.querySelector('[data-qp-fk="sw"]');
+			if (f) f.focus({ preventScroll: true });
+		}
+
+		function removePinned(box, row) {
+			const parts = row.nextElementSibling && row.nextElementSibling.classList.contains('qa-parts') ? row.nextElementSibling : null;
+			if (parts) parts.remove();
+			row.remove();
+			if (!box.querySelector('.qa-pick-row')) box.append(el('p', { class: 'qp-empty', text: t('home.qa.pick.nonePinned') }));
+			numberPins();
+		}
+
+		function markGroupRow(key, on) {
+			const r = dialog.body.querySelector(`.qp-groups .qa-pick-row[data-device="${CSS.escape(key)}"]`);
+			if (!r) return;
+			r.classList.toggle('is-on', on);
+			const s = r.querySelector('.sw');
+			s.classList.toggle('on', on);
+			s.setAttribute('aria-checked', on ? 'true' : 'false');
+			const tag = r.querySelector('.qp-tag');
+			if (tag) tag.hidden = !on;
+		}
+
+		function flash(row) {
+			if (!row) return;
+			row.classList.remove('is-flash');
+			void row.offsetWidth;
+			row.classList.add('is-flash');
+		}
+
+		function numberPins() {
+			const box = dialog.body.querySelector('[data-qp-pins]');
+			if (box) box.querySelectorAll('.qa-pick-row .qp-pos').forEach((p, i) => { p.textContent = String(i + 1); });
+		}
+
+		/** "5 von 12 angeheftet", the bar, the hint when full; the switches of the groups greyed out then; the groups' counts. */
+		function counter() {
+			if (!P) return;
+			const list = pinned();
+			const n = list.length;
+			const isFull = n >= QS.MAX_PINS;
+			clear(P.countTx).append(el('b', { text: String(n) }), ` ${t('home.qa.pick.countOf', { max: QS.MAX_PINS })}`);
+			P.bar.style.width = `${Math.min(100, (n / QS.MAX_PINS) * 100)}%`;
+			P.count.classList.toggle('is-full', isFull);
+			P.full.hidden = !isFull || S.load !== 'ok';
+			const body = dialog.body;
+			for (const r of body.querySelectorAll('.qp-groups .qa-pick-row')) {
+				const s = r.querySelector('.sw');
+				const off = isFull && !QS.isPinned(list, r.dataset.device);
+				s.disabled = off;
+				s.title = off ? t('home.qa.pick.full', { max: QS.MAX_PINS }) : '';
+				r.classList.toggle('qp-dim', off);
+			}
+			for (const g of QS.pickGroups(S.devices, list)) {
+				const gc = body.querySelector(`.qp-group[data-g="${CSS.escape(g.plugin)}"] .qp-gc`);
+				if (gc) clear(gc).append(el('b', { text: String(g.pinned) }), ` ${t('home.qa.pick.of', { total: g.total })}`);
+			}
+		}
+
+		/** The search: rows that do not fit hidden, groups without a hit too; while searching all groups are open. */
+		function filter() {
+			if (!P || !dialog) return;
+			const body = dialog.body;
+			const q = P.q.trim();
+			let any = false;
+			for (const r of body.querySelectorAll('.qa-pick-row')) {
+				const d = S.devices.find((x) => x.key === r.dataset.device);
+				const pin = pinned().find((p) => p.device === r.dataset.device);
+				const fits = d ? QS.matches(d, q) : QS.matches({ title: pin ? pin.title : r.dataset.device }, q);
+				r.hidden = !fits;
+				const parts = r.nextElementSibling && r.nextElementSibling.classList.contains('qa-parts') ? r.nextElementSibling : null;
+				if (parts) parts.hidden = !fits;
+				const tb = r.querySelector('.qa-pick-t');
+				if (tb) tb.replaceWith(titleBox(tb.querySelector('.qa-title').textContent, tb.querySelector('.qa-sub') ? tb.querySelector('.qa-sub').textContent : null));
+				if (fits && r.closest('.qp-groups')) any = true;
+			}
+			for (const g of body.querySelectorAll('.qp-groups .qp-group')) {
+				g.hidden = !g.querySelector('.qa-pick-row:not([hidden])');
+				g.classList.toggle('is-search', !!q);
+			}
+			const pinsGroup = body.querySelector('.qp-group.is-pins');
+			if (pinsGroup) pinsGroup.classList.toggle('is-search', !!q);
+			const none = body.querySelector('.qp-none');
+			if (none) {
+				none.hidden = !q || any;
+				none.textContent = q && !any ? t('home.qa.pick.nothing', { q }) : '';
+			}
+		}
+
+		/** Names and lines from a newer list (the same devices): in place. */
+		function updateRows() {
+			const body = dialog.body;
+			for (const r of body.querySelectorAll('.qa-pick-row')) {
+				const d = S.devices.find((x) => x.key === r.dataset.device);
+				if (!d) continue;
+				const tb = r.querySelector('.qa-pick-t');
+				const sub = r.closest('.qp-pins') ? [d.pluginName, d.subtitle].filter(Boolean).join(' · ') : d.subtitle;
+				if (tb) tb.replaceWith(titleBox(d.title, sub));
+			}
+			counter();
+		}
+
+		// ── Order of "Angeheftet": the grip dragged, Alt+↑/↓ ──
+
+		function moveKey(e, key) {
+			if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+			e.preventDefault();
+			e.stopPropagation();
+			const now = pinned();
+			const next = QS.movePin(now, key, e.key === 'ArrowUp' ? -1 : 1);
+			if (next === now) return;
+			pins.setActions(next);
+			const box = dialog.body.querySelector('[data-qp-pins]');
+			const row = box.querySelector(`.qa-pick-row[data-device="${CSS.escape(key)}"]`);
+			const parts = row.nextElementSibling && row.nextElementSibling.classList.contains('qa-parts') ? row.nextElementSibling : null;
+			const rows = [...box.querySelectorAll('.qa-pick-row')];
+			const i = rows.indexOf(row);
+			if (e.key === 'ArrowUp' && i > 0) box.insertBefore(row, rows[i - 1]);
+			else if (e.key === 'ArrowDown' && i < rows.length - 1) {
+				const after = rows[i + 1];
+				const afterParts = after.nextElementSibling && after.nextElementSibling.classList.contains('qa-parts') ? after.nextElementSibling : null;
+				(afterParts || after).after(row);
+			}
+			if (parts) row.after(parts);
+			numberPins();
+			const g = row.querySelector('.qp-grip');
+			if (g) { g.focus({ preventScroll: true }); g.scrollIntoView({ block: 'nearest' }); }
+		}
+
+		function wirePinDrag(box) {
+			const drop = () => box.querySelector('.qp-drop');
+			box.addEventListener('dragstart', (e) => {
+				const r = e.target.closest && e.target.closest('.qa-pick-row');
+				if (!r || !r.draggable) { e.preventDefault(); return; }
+				P.dragKey = r.dataset.device;
+				r.classList.add('is-ghost');
+				try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', r.dataset.device); } catch { /* no data */ }
+			});
+			box.addEventListener('dragover', (e) => {
+				if (!P.dragKey) return;
+				e.preventDefault();
+				const rows = [...box.querySelectorAll('.qa-pick-row')];
+				const before = rows.find((r) => e.clientY < r.getBoundingClientRect().top + r.offsetHeight / 2) || null;
+				let d = drop();
+				if (!d) d = el('div', { class: 'qp-drop', 'aria-hidden': 'true' });
+				if (before) box.insertBefore(d, before); else box.append(d);
+			});
+			box.addEventListener('drop', (e) => {
+				if (!P.dragKey) return;
+				e.preventDefault();
+				const d = drop();
+				const row = box.querySelector(`.qa-pick-row[data-device="${CSS.escape(P.dragKey)}"]`);
+				if (d && row) {
+					const parts = row.nextElementSibling && row.nextElementSibling.classList.contains('qa-parts') ? row.nextElementSibling : null;
+					box.insertBefore(row, d);
+					if (parts) row.after(parts);
+					pins.setActions(QS.orderPins(pinned(), [...box.querySelectorAll('.qa-pick-row')].map((r) => r.dataset.device)));
+					numberPins();
+					flash(row);
+				}
+				if (d) d.remove();
+			});
+			box.addEventListener('dragend', () => {
+				for (const r of box.querySelectorAll('.qa-pick-row')) { r.classList.remove('is-ghost'); r.draggable = false; }
+				const d = drop();
+				if (d) d.remove();
+				P.dragKey = null;
+			});
 		}
 
 		// ── Keeping it current ───────────────────────────

@@ -4190,6 +4190,30 @@
         "goCopy": "Nach „{{folder}}“ kopieren",
         "choose": "Ordner wählen"
       }
+    },
+    "view": {
+      "title": "Ansicht",
+      "button": "Ansicht (Strg+Umschalt+L)",
+      "reading": "Lesebereich",
+      "right": "Rechts",
+      "bottom": "Unten",
+      "off": "Aus",
+      "folders": "Ordnerleiste",
+      "foldersFull": "Ein",
+      "foldersNarrow": "Schmal",
+      "foldersOff": "Aus",
+      "density": "Dichte",
+      "normal": "Normal",
+      "compact": "Kompakt",
+      "ai": "KI-Zeile in der Liste",
+      "reset": "Spaltenbreiten zurücksetzen",
+      "note": "Gilt nur für diesen PC.",
+      "kbd": "Strg+Umschalt+L",
+      "autoNarrow": "Das Fenster ist schmal: Die Ordnerleiste ist vorübergehend schmal.",
+      "back": "Zurück zur Liste",
+      "colFrom": "Von",
+      "colSubject": "Betreff",
+      "colDate": "Datum"
     }
   },
   "home": {
@@ -4241,7 +4265,6 @@
       },
       "pick": {
         "title": "Schnellaktionen anheften",
-        "hint": "Was du hier einschaltest, erscheint auf der Startseite als Karte. Hier wird nichts geschaltet. Bis zu {{max}} Karten.",
         "pin": "„{{name}}“ auf Start anheften",
         "full": "Schon {{max}} Karten angeheftet. Löse erst eine.",
         "parts": "Auf der Karte zeigen",
@@ -4249,7 +4272,20 @@
         "unsupported": "Dieser Server bietet noch keine Schnellaktionen (GateControl aktualisieren).",
         "failed": "Schnellaktionen konnten nicht geladen werden.",
         "retry": "Erneut versuchen",
-        "done": "Fertig"
+        "done": "Fertig",
+        "search": "Suchen: Gerät, Raum oder Plugin",
+        "countOf": "von {{max}} angeheftet",
+        "of": "von {{total}}",
+        "fullHint": "Schon {{max}} Karten angeheftet. Löse erst eine, um eine andere anzuheften.",
+        "note": "Erscheint auf Start als Karte. Hier wird nichts geschaltet.",
+        "pinned": "Angeheftet",
+        "order": "Reihenfolge wie auf Start",
+        "nonePinned": "Noch nichts angeheftet.",
+        "isPinned": "angeheftet",
+        "move": "Ziehen zum Sortieren (Alt+↑/↓)",
+        "moveName": "„{{name}}“ verschieben (Alt+↑/↓)",
+        "partsShort": "Teile",
+        "nothing": "Nichts gefunden für „{{q}}“."
       },
       "part": {
         "value": "Wert",
@@ -5729,7 +5765,10 @@
       },
       "inbox": "Breite der Mitteilungsliste",
       "notesSide": "Breite des Menüs",
-      "notesDetail": "Breite der Details"
+      "notesDetail": "Breite der Details",
+      "mailFolders": "Breite der Ordnerleiste",
+      "mailList": "Breite der Mailliste",
+      "mailHeight": "Höhe der Mailliste"
     }
   }
 }
