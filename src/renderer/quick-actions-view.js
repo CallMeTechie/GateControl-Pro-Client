@@ -154,7 +154,7 @@
 
 		function confirmRun(a) {
 			return new Promise((resolve) => {
-				const dlg = openDialog({ title: t('home.qa.confirm.title', { name: a.title }), closeLabel: t('home.qa.confirm.cancel'), onClose: (v) => resolve(v === true) });
+				const dlg = openDialog({ title: t('home.qa.confirm.title', { name: QS.confirmLabel(a) }), closeLabel: t('home.qa.confirm.cancel'), onClose: (v) => resolve(v === true) });
 				dlg.box.classList.add('qa-confirm');
 				if (a.subtitle) dlg.body.append(el('p', { class: 'qa-confirm-sub', text: a.subtitle }));
 				dlg.foot.append(

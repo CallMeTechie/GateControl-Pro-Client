@@ -269,6 +269,16 @@
 	/** Whether to ask first: only towards confirmWhen when the plugin gives it, else `confirm`. */
 	const needsConfirm = (a) => (isToggle(a) && a.confirmWhen ? target(a) === a.confirmWhen : a.confirm === true);
 
+	/**
+	 * What the confirmation names: for a toggle the command of the state a run switches to (verbs, e.g. „Aufsperren“
+	 * of a lock showing „Zugesperrt“), else the title.
+	 */
+	function confirmLabel(a) {
+		const want = target(a);
+		const v = want && a.verbs && typeof a.verbs[want] === 'string' ? a.verbs[want].trim() : '';
+		return v || (a && a.title) || '';
+	}
+
 	/** The look of a toggle's current state ({ icon, tone }) or null. */
 	function currentLook(a) {
 		if (!isToggle(a) || !a.look) return null;
@@ -346,7 +356,7 @@
 		resolve, isPinned, pinDevice, setHidden, syncPins,
 		pickGroups, matches, highlight, movePin, orderPins, pickShape,
 		formatNumber, valueText, decimals, controlText, snap, isTemperature, readingText,
-		target, needsConfirm, currentLook, displayIcon, optionGlyph, tone, failureText, reloadAfter,
+		target, needsConfirm, confirmLabel, currentLook, displayIcon, optionGlyph, tone, failureText, reloadAfter,
 		choicePerRow, buttonsPerRow,
 		positionText, timelineView,
 	};

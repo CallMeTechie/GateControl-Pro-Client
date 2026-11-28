@@ -189,6 +189,18 @@ describe('quick-actions-state – running', () => {
     assert.equal(QS.needsConfirm(plan), false);
   });
 
+  it('the confirmation names the command a toggle runs (verbs), else the title', () => {
+    const lock = { plugin: 'gatecontrol-door', id: '1:toggle', kind: 'toggle', title: 'Zugesperrt', state: 'on', confirm: true, confirmWhen: 'off', verbs: { on: 'Zusperren', off: 'Aufsperren' } };
+    assert.equal(QS.needsConfirm(lock), true);
+    assert.equal(QS.confirmLabel(lock), 'Aufsperren');
+    assert.equal(QS.needsConfirm({ ...lock, state: 'off' }), false, 'zusperren asks nothing');
+    assert.equal(QS.confirmLabel({ ...lock, state: 'off' }), 'Zusperren');
+    assert.equal(QS.confirmLabel({ ...lock, state: null }), 'Zusperren', 'unknown: a run switches on');
+    assert.equal(QS.confirmLabel({ ...lock, verbs: null }), 'Zugesperrt');
+    assert.equal(QS.confirmLabel({ ...lock, verbs: { on: 'Zusperren', off: '  ' } }), 'Zugesperrt');
+    assert.equal(QS.confirmLabel(plan), plan.title);
+  });
+
   it('the look and icon of a toggle\'s state', () => {
     const lock = { ...away, icon: 'M0 0h1', look: { on: { icon: 'M1 1h1', tone: 'good' }, off: { icon: null, tone: 'crit' } } };
     assert.deepEqual(QS.currentLook(lock), { icon: null, tone: 'crit' });
