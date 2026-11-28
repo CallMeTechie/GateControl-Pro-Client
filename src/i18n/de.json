@@ -5770,5 +5770,154 @@
       "mailList": "Breite der Mailliste",
       "mailHeight": "Höhe der Mailliste"
     }
+  },
+  "rdpWindow": {
+    "inWindow": "im Fenster",
+    "showWindow": "Fenster anzeigen",
+    "moreWays": "Weitere Arten zu verbinden",
+    "menuWindow": "Im GateControl-Fenster",
+    "menuWindowSub": "Ohne Windows-Warnung",
+    "menuStandard": "Standard",
+    "menuMstsc": "Mit Windows-Remotedesktop öffnen",
+    "menuMstscSub": "mstsc mit .rdp-Datei. Windows fragt vor jeder Verbindung nach.",
+    "unavailable": "Auf diesem PC nicht verfügbar",
+    "local": {
+      "title": "Auf diesem PC",
+      "hint": "Gilt nur für diesen Host auf diesem Gerät",
+      "open": "Öffnen in",
+      "openDesc": "Was „Verbinden“ bei diesem Host tut",
+      "openDefault": "Wie eingestellt",
+      "openWindow": "Fenster",
+      "openMstsc": "Windows-Remotedesktop",
+      "display": "Anzeige",
+      "displayDesc": "„Alle Monitore“ nutzt das Vollbild von Windows mit der Microsoft-Verbindungsleiste",
+      "displayWindow": "Fenster",
+      "displayFull": "Vollbild",
+      "displayAll": "Alle Monitore",
+      "resolution": "Auflösung",
+      "resolutionDesc": "„An Fenster anpassen“ folgt dem Fenster, wenn du es größer oder kleiner ziehst",
+      "resServer": "Wie vom Server",
+      "resDynamic": "An Fenster anpassen",
+      "resFixed": "Feste Größe ({{ w }} × {{ h }})",
+      "keyboard": "Windows-Tasten an den Remote-PC",
+      "keyboardDesc": "Win-Taste, Alt+Tab, Strg+Esc",
+      "kbFull": "Im Vollbild",
+      "kbAlways": "Immer",
+      "kbNever": "Nie",
+      "clipboard": "Zwischenablage teilen",
+      "clipboardDesc": "Text, Bilder und Dateien kopieren und einfügen",
+      "drives": "Laufwerke dieses PCs freigeben",
+      "drivesDesc": "Gilt ab der nächsten Verbindung",
+      "locked": "Vom Administrator nicht freigegeben",
+      "audio": "Ton",
+      "audioDesc": "Wo der Ton des Remote-PCs zu hören ist",
+      "audioLocal": "Auf diesem PC abspielen",
+      "audioRemote": "Auf dem Remote-PC abspielen",
+      "audioOff": "Nicht abspielen",
+      "windowOnly": "Diese Einstellungen gelten für das GateControl-Fenster.",
+      "remoteApp": "Diese Verbindung ist eine RemoteApp und öffnet mit Windows-Remotedesktop."
+    },
+    "settings": {
+      "openIn": "Remotedesktop öffnen in",
+      "openInDesc": "Was „Verbinden“ im Fernzugriff tut. Pro Host änderbar unter „Auf diesem PC“.",
+      "openInWindow": "GateControl-Fenster",
+      "openInMstsc": "Windows-Remotedesktop",
+      "openInUnavailable": "Das GateControl-Fenster ist auf diesem PC nicht verfügbar. „Verbinden“ öffnet Windows-Remotedesktop."
+    },
+    "progress": {
+      "window": "GateControl-Fenster geöffnet",
+      "windowActive": "GateControl-Fenster wird geöffnet …",
+      "opened": "Remotedesktop im GateControl-Fenster"
+    },
+    "notice": {
+      "hostFailed": "Das GateControl-Fenster ließ sich nicht starten. Geöffnet mit Windows-Remotedesktop.",
+      "remoteapp": "RemoteApp öffnet mit Windows-Remotedesktop.",
+      "hostMissing": "Das GateControl-Fenster ist auf diesem PC nicht verfügbar. Geöffnet mit Windows-Remotedesktop."
+    },
+    "host": {
+      "title": "{0} – GateControl",
+      "connected": "Verbunden",
+      "connecting": "Verbinde …",
+      "loggingIn": "Anmeldung …",
+      "interrupted": "Unterbrochen",
+      "disconnected": "Getrennt",
+      "cancel": "Abbrechen",
+      "disconnect": "Trennen",
+      "clipboard": "Zwischenablage",
+      "clipboardPaused": "Zwischenablage pausiert",
+      "clipboardTip": "Zwischenablage teilen – ein Klick pausiert sie ohne Neuverbinden",
+      "drivesOn": "Laufwerke",
+      "drivesOff": "Laufwerke aus",
+      "drivesTip": "Laufwerke: Änderung gilt nach Neuverbinden",
+      "drivesAsk": "Die Freigabe der Laufwerke gilt erst nach einem Neuverbinden. Jetzt neu verbinden?",
+      "cad": "Strg+Alt+Entf",
+      "fullscreen": "Vollbild (Strg+Alt+Pause)",
+      "minimize": "Minimieren",
+      "window": "Fenster",
+      "windowTip": "Vollbild verlassen",
+      "pin": "Leiste anheften",
+      "fsHint": "Strg+Alt+Pause: zurück ins Fenster",
+      "q4": "Sehr gut",
+      "q3": "Gut",
+      "q2": "Mittel",
+      "q1": "Schwach",
+      "q0": "Schlecht",
+      "stepVpn": "VPN-Tunnel aktiv",
+      "stepReach": "Host erreichbar",
+      "stepCreds": "Anmeldedaten Ende-zu-Ende entschlüsselt",
+      "stepConnect": "Verbinde mit dem Remote-PC …",
+      "stepLogin": "Anmelden",
+      "memoryHint": "Die Anmeldedaten bleiben im Arbeitsspeicher dieser Sitzung. Es wird keine Datei und kein Eintrag im Windows-Anmeldeinformationsspeicher angelegt.",
+      "reconnecting": "Verbindung unterbrochen. Verbinde neu, Versuch {0} von {1} …",
+      "errLabel": "Verbindung getrennt",
+      "errTitle": "Die Verbindung wurde getrennt",
+      "errCode": "Grund {0} · erweiterter Code {1} · {2}",
+      "retry": "Erneut verbinden",
+      "mstsc": "Mit Windows-Remotedesktop öffnen",
+      "close": "Schließen",
+      "remoteDesktop": "Remotedesktop"
+    },
+    "err": {
+      "replaced": {
+        "title": "Die Sitzung wurde vom Remote-PC beendet",
+        "text": "Am Remote-PC hat sich jemand anderes angemeldet und deine Sitzung übernommen. Wenn du neu verbindest, wird die andere Person abgemeldet."
+      },
+      "idle": {
+        "title": "Die Sitzung war zu lange untätig",
+        "text": "Der Remote-PC hat die Sitzung nach längerer Untätigkeit getrennt. Deine Programme laufen dort weiter, wenn du neu verbindest."
+      },
+      "admin": {
+        "title": "Die Sitzung wurde am Remote-PC beendet",
+        "text": "Ein Administrator oder ein Programm am Remote-PC hat die Sitzung getrennt."
+      },
+      "denied": {
+        "title": "Der Remote-PC lässt die Anmeldung nicht zu",
+        "text": "Dein Konto darf sich an diesem PC nicht per Remotedesktop anmelden. Frag den Administrator."
+      },
+      "logonTimeout": {
+        "title": "Die Anmeldung hat zu lange gedauert",
+        "text": "Der Remote-PC hat die Anmeldung abgebrochen. Versuch es noch einmal."
+      },
+      "logon": {
+        "title": "Die Anmeldung wurde abgelehnt",
+        "text": "Benutzername oder Passwort stimmen nicht. Prüfe die hinterlegten Anmeldedaten."
+      },
+      "account": {
+        "title": "Das Konto kann sich nicht anmelden",
+        "text": "Das Passwort ist abgelaufen oder das Konto ist gesperrt oder eingeschränkt."
+      },
+      "unreachable": {
+        "title": "Der Remote-PC ist nicht erreichbar",
+        "text": "Die Verbindung kam nicht zustande. Prüfe, ob der PC eingeschaltet ist und Remotedesktop erlaubt."
+      },
+      "network": {
+        "title": "Die Netzwerkverbindung ist abgebrochen",
+        "text": "Das Netz war zu lange weg, um die Sitzung zu halten. Deine Programme laufen am Remote-PC weiter."
+      },
+      "generic": {
+        "title": "Die Verbindung wurde getrennt",
+        "text": "Die Verbindung zum Remote-PC wurde unerwartet getrennt."
+      }
+    }
   }
 }

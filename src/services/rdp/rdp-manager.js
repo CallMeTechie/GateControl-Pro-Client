@@ -2,13 +2,16 @@
 
 const { execFile } = require('child_process');
 const net = require('net');
-const path = require('path');
+const fs = require('fs');
 const EventEmitter = require('events');
 
 const RdpConfigBuilder = require('./rdp-config-builder');
 const RdpCredentialHandler = require('./rdp-credential');
 const RdpMonitor = require('./rdp-monitor');
 const { pickPeerFqdn } = require('./rdp-peer-name');
+const RdpHostSession = require('./rdp-host-session');
+const { buildConnect, redact, hostTexts, describeDisconnect, endReasonOf } = require('./rdp-host-config');
+const GCRdpLocal = require('../../renderer/rdp-local-state');
 
 /**
  * RDP Manager -- Orchestrates the full RDP connection lifecycle.
@@ -16,17 +19,24 @@ const { pickPeerFqdn } = require('./rdp-peer-name');
  * Lifecycle:
  *   1. Pre-flight checks (VPN active, TCP reachability, maintenance, expiry)
  *   2. Credential retrieval (E2EE decryption or password prompt)
- *   3. .rdp file generation
- *   4. cmdkey credential storage
- *   5. mstsc.exe launch
- *   6. Process monitoring + heartbeats
- *   7. Cleanup on exit (credentials, temp files, audit)
+ *   3. Where it opens (GCRdpLocal.openMode): the GateControl window (standard) or Windows-Remotedesktop
+ *   Window (gc-rdp-host.exe, one process per session):
+ *     4w. start the host, credentials only over its stdin (no .rdp file, no cmdkey)
+ *     5w. audit start, the host's 'disconnected' / exit ends the session and its audit
+ *     If the host does not start (missing, no ready line): on to the mstsc way, with a notice.
+ *   Windows-Remotedesktop (the previous way, also for RemoteApp routes):
+ *     4. .rdp file generation
+ *     5. cmdkey credential storage
+ *     6. mstsc.exe launch
+ *   Then: process monitoring + heartbeats, cleanup on exit (credentials, temp files, audit)
  *
  * Events:
- *   'session-start'   - { routeId, pid }
- *   'session-end'     - { routeId, pid, duration, exitCode }
+ *   'session-start'   - { routeId, pid, via }
+ *   'session-end'     - { routeId, pid, duration, exitCode, via }
  *   'session-error'   - { routeId, error }
- *   'progress'        - { routeId, step, status }
+ *   'progress'        - { routeId, step, status }   step 'mode': status 'window' | 'mstsc', reason
+ *   'notice'          - { routeId, kind }           host-failed | remoteapp | host-missing
+ *   'host-action'     - { routeId, action }         reconnect | mstsc (buttons of the window's error view)
  *   'services-update' - rdpServices[]
  */
 class RdpManager extends EventEmitter {
@@ -38,8 +48,15 @@ class RdpManager extends EventEmitter {
    * @param {function} opts.getTunnelState - Returns current tunnel state { connected }
    * @param {function} opts.getPeerInfo - Returns peer info { expiresAt }
    * @param {function} [opts.hasDnsRuleFor] - (name) => whether a DNS rule of this app covers the zone of the name
+   * @param {string}   [opts.hostExePath] - gc-rdp-host.exe (resources\rdp-host in the package)
+   * @param {function} [opts.spawnHost]   - child_process.spawn for the host (tests: a fake)
+   * @param {function} [opts.hostExists]  - (path) => boolean
+   * @param {string}   [opts.platform]    - process.platform (the window needs Windows)
+   * @param {object}   [opts.mstsc]       - { launch(args, done), store(target, u, p, d), clear(target) } (tests)
+   * @param {function} [opts.getTheme]    - () => 'dark' | 'light'
+   * @param {function} [opts.t]           - i18n of the app (texts of the window)
    */
-  constructor({ apiClient, log, store, getTunnelState, getPeerInfo, hasDnsRuleFor }) {
+  constructor({ apiClient, log, store, getTunnelState, getPeerInfo, hasDnsRuleFor, hostExePath, spawnHost, hostExists, platform, mstsc, getTheme, t }) {
     super();
     this.api = apiClient;
     this.log = log;
@@ -54,8 +71,25 @@ class RdpManager extends EventEmitter {
     this.credentialHandler = new RdpCredentialHandler(log);
     this.monitor = new RdpMonitor({ apiClient, log });
 
-    // Active sessions: Map<routeId, { pid, rdpFile, host, startTime, process }>
+    // Active sessions: Map<routeId, { pid, rdpFile, host, startTime, process, via, hostSession? }>
     this.activeSessions = new Map();
+
+    // GateControl window: Map<routeId, RdpHostSession> — also after the session ended while the window
+    // shows its error view ("Erneut verbinden" uses the same window)
+    this.hostSessions = new Map();
+    this.hostExePath = hostExePath || null;
+    this.spawnHost = spawnHost || null;
+    this.hostExists = typeof hostExists === 'function' ? hostExists : (p) => { try { return !!p && fs.existsSync(p); } catch { return false; } };
+    this.platform = platform || process.platform;
+    this.getTheme = typeof getTheme === 'function' ? getTheme : () => 'dark';
+    this.t = typeof t === 'function' ? t : null;
+    const creds = this.credentialHandler;
+    this.mstsc = {
+      launch: (args, done) => execFile('mstsc.exe', args, { windowsHide: false }, done),
+      store: (target, u, p, d) => creds.storeCredentials(target, u, p, d),
+      clear: (target) => creds.clearCredentials(target),
+      ...(mstsc || {}),
+    };
 
     // Cached RDP services list
     this.rdpServices = [];
@@ -159,7 +193,14 @@ class RdpManager extends EventEmitter {
   async connect(routeId, opts = {}) {
     // Re-read E2EE enforcement setting (may have changed since construction)
     this.requireE2ee = this.store?.get('security.requireE2ee', false) || false;
-    this.log.info(`RDP connect requested for route ${routeId} (requireE2ee=${this.requireE2ee})`);
+    this.log.info(`RDP connect requested for route ${routeId} (requireE2ee=${this.requireE2ee}${opts.via ? `, via=${opts.via}` : ''})`);
+
+    // A session in the GateControl window is running: bring its window to the front instead.
+    const running = this.activeSessions.get(routeId);
+    if (running && running.via === 'window' && opts.via !== 'mstsc') {
+      running.hostSession.send({ type: 'focus' });
+      return { success: true, via: 'window', focused: true };
+    }
 
     try {
       // ── Step 1: Pre-Flight Checks ───────────────────────
@@ -349,7 +390,29 @@ class RdpManager extends EventEmitter {
         this._emitProgress(routeId, 'credentials', 'skip');
       }
 
-      // ── Step 3: Generate .rdp file ──────────────────────
+      // ── Step 3: GateControl window or Windows-Remotedesktop ──
+      const local = this.getLocalSettings(routeId);
+      const mode = GCRdpLocal.openMode({
+        via: opts.via, local, global: this.getOpenIn(), route, hostAvailable: this.isHostAvailable(),
+      });
+      this.log.info(`RDP route ${routeId} opens in ${mode.mode} (${mode.reason})`);
+      this.emit('progress', { routeId, step: 'mode', status: mode.mode, reason: mode.reason });
+      if (mode.mode === 'mstsc' && (mode.reason === 'remoteapp' || mode.reason === 'host-missing')) {
+        const wanted = GCRdpLocal.openMode({ via: opts.via, local, global: this.getOpenIn(), route: {}, hostAvailable: true });
+        if (wanted.mode === 'window') this.emit('notice', { routeId, kind: mode.reason });
+      }
+      if (mode.mode === 'window') {
+        const result = await this._connectWindow(routeId, route, { username, password, domain }, local, opts);
+        if (!result.fallback) {
+          password = null;
+          return result;
+        }
+        this.log.warn(`gc-rdp-host did not start (${result.error}) — opening with Windows-Remotedesktop`);
+        this.emit('notice', { routeId, kind: 'host-failed' });
+        this.emit('progress', { routeId, step: 'mode', status: 'mstsc', reason: 'host-failed' });
+      }
+
+      // ── Step 4: Generate .rdp file ──────────────────────
       this._emitProgress(routeId, 'rdp-file', 'active');
       this.log.info('Building .rdp file...');
       const rdpFile = await this.configBuilder.build(route);
@@ -360,12 +423,12 @@ class RdpManager extends EventEmitter {
       if (username && password) {
         this._emitProgress(routeId, 'cmdkey', 'active');
         try {
-          this.credentialHandler.storeCredentials(credTarget, username, password, domain);
+          this.mstsc.store(credTarget, username, password, domain);
           // When using FQDN, ALSO store under IP as a fallback — some
           // scenarios (e.g. first connect before DNS propagation) may
           // have mstsc fall back to the alternate address.
           if (credTarget !== host) {
-            try { this.credentialHandler.storeCredentials(host, username, password, domain); } catch {}
+            try { this.mstsc.store(host, username, password, domain); } catch {}
           }
           this._emitProgress(routeId, 'cmdkey', 'done');
         } catch (err) {
@@ -403,9 +466,7 @@ class RdpManager extends EventEmitter {
       return new Promise((resolve) => {
         const startTime = Date.now();
 
-        const proc = execFile('mstsc.exe', mstscArgs, {
-          windowsHide: false,
-        }, (err) => {
+        const proc = this.mstsc.launch(mstscArgs, (err) => {
           // mstsc.exe has exited
           const duration = Math.floor((Date.now() - startTime) / 1000);
           const exitCode = err ? err.code : 0;
@@ -416,12 +477,12 @@ class RdpManager extends EventEmitter {
           this._cleanupSession(routeId, host, rdpFile, duration, exitCode, credTarget);
         });
 
-        if (!proc.pid) {
+        if (!proc || !proc.pid) {
           this.log.error('Failed to start mstsc.exe');
           this.configBuilder.cleanup(rdpFile);
-          this.credentialHandler.clearCredentials(credTarget);
+          this.mstsc.clear(credTarget);
           if (credTarget !== host) {
-            try { this.credentialHandler.clearCredentials(host); } catch {}
+            try { this.mstsc.clear(host); } catch {}
           }
           resolve({ success: false, error: 'mstsc.exe konnte nicht gestartet werden.' });
           return;
@@ -435,6 +496,7 @@ class RdpManager extends EventEmitter {
           credTarget,
           startTime,
           process: proc,
+          via: 'mstsc',
           sessionTimeout: route.session_timeout || null,
           serverSessionId: sessionData?.session?.id || null,
         });
@@ -443,10 +505,10 @@ class RdpManager extends EventEmitter {
         this.monitor.startTracking(routeId, proc.pid, route.session_timeout);
 
         this._emitProgress(routeId, 'mstsc', 'done');
-        this.emit('session-start', { routeId, pid: proc.pid });
+        this.emit('session-start', { routeId, pid: proc.pid, via: 'mstsc' });
 
         this.log.info(`mstsc.exe started for route ${routeId} (PID: ${proc.pid})`);
-        resolve({ success: true });
+        resolve({ success: true, via: 'mstsc' });
       });
 
     } catch (err) {
@@ -468,6 +530,12 @@ class RdpManager extends EventEmitter {
     }
 
     this.log.info(`Disconnecting RDP session for route ${routeId} (PID: ${session.pid})`);
+
+    if (session.via === 'window') {
+      // the window disconnects (audit through its 'disconnected'), killed when it does not end in time
+      session.hostSession.close();
+      return;
+    }
 
     try {
       // Kill mstsc.exe process
@@ -493,6 +561,7 @@ class RdpManager extends EventEmitter {
       routeId,
       pid: session.pid,
       host: session.host,
+      via: session.via || 'mstsc',
       duration: Math.floor((Date.now() - session.startTime) / 1000),
     };
   }
@@ -508,6 +577,7 @@ class RdpManager extends EventEmitter {
         routeId,
         pid: session.pid,
         host: session.host,
+        via: session.via || 'mstsc',
         duration: Math.floor((Date.now() - session.startTime) / 1000),
       });
     }
@@ -523,6 +593,162 @@ class RdpManager extends EventEmitter {
     return this.activeSessions.has(routeId);
   }
 
+  // ══════════════════════════════════════════════════════════
+  //  GATECONTROL WINDOW (gc-rdp-host.exe)
+  // ══════════════════════════════════════════════════════════
+
+  /** gc-rdp-host.exe is there and this is Windows. */
+  isHostAvailable() {
+    return this.platform === 'win32' && !!this.hostExePath && this.hostExists(this.hostExePath);
+  }
+
+  /** The app setting "Remotedesktop öffnen in": 'window' (standard) | 'mstsc'. */
+  getOpenIn() {
+    const v = this.store?.get('rdp.openIn', 'window');
+    return v === 'mstsc' ? 'mstsc' : 'window';
+  }
+
+  setOpenIn(v) {
+    const mode = v === 'mstsc' ? 'mstsc' : 'window';
+    this.store?.set('rdp.openIn', mode);
+    return mode;
+  }
+
+  /** The local choice of a host ("Auf diesem PC"), restricted by its route as far as it is known. */
+  getLocalSettings(routeId) {
+    const all = this.store?.get('rdp.hosts', {}) || {};
+    const raw = all && typeof all === 'object' ? all[String(routeId)] : null;
+    return GCRdpLocal.restrictLocal(this._routeOf(routeId), raw);
+  }
+
+  /**
+   * Changes the local choice of a host. Only known keys; what the route does not permit is dropped
+   * (a local setting can only restrict). null for a key = back to the server's value.
+   */
+  setLocalSettings(routeId, patch) {
+    const key = String(routeId);
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(key)) return {};
+    const all = { ...(this.store?.get('rdp.hosts', {}) || {}) };
+    const merged = { ...(all[key] || {}) };
+    for (const [k, v] of Object.entries(patch || {})) {
+      if (v === null) delete merged[k]; else merged[k] = v;
+    }
+    const next = GCRdpLocal.restrictLocal(this._routeOf(routeId), merged);
+    if (Object.keys(next).length) all[key] = next; else delete all[key];
+    this.store?.set('rdp.hosts', all);
+    return next;
+  }
+
+  _routeOf(routeId) {
+    return this.rdpServices.find((s) => String(s.id) === String(routeId)) || {};
+  }
+
+  /** "Fenster anzeigen": the session window of a route to the front. */
+  focusWindow(routeId) {
+    const hs = this.hostSessions.get(routeId);
+    return hs ? hs.send({ type: 'focus' }) : false;
+  }
+
+  /** The app's design changed: the bars of all windows follow. */
+  setTheme(theme) {
+    for (const hs of this.hostSessions.values()) hs.send({ type: 'theme', theme: theme === 'light' ? 'light' : 'dark' });
+  }
+
+  /**
+   * Starts (or reuses, for "Erneut verbinden") the window of a route and connects it.
+   * @returns {Promise<{success: boolean, via?: string, fallback?: boolean, error?: string}>}
+   */
+  async _connectWindow(routeId, route, creds, local, opts) {
+    this._emitProgress(routeId, 'window', 'active');
+    let hs = this.hostSessions.get(routeId);
+    if (hs && hs.exited) { this.hostSessions.delete(routeId); hs = null; }
+    if (!hs) {
+      hs = new RdpHostSession({ exePath: this.hostExePath, spawn: this.spawnHost, log: this.log });
+      try {
+        const ready = await hs.start();
+        this.log.info(`gc-rdp-host ready for route ${routeId} (pid ${ready.pid}, host ${ready.version}, mstscax ${ready.mstscax})`);
+      } catch (err) {
+        return { success: false, fallback: true, error: err.code || err.message };
+      }
+      this.hostSessions.set(routeId, hs);
+      this._wireHost(routeId, hs);
+    }
+
+    // Notify server: session start (audit)
+    let sessionData;
+    try {
+      sessionData = await this.api.startRdpSession(routeId);
+    } catch (err) {
+      this.log.warn('Failed to register session start:', err.message);
+    }
+
+    const msg = buildConnect(route, creds, local, { theme: this.getTheme(), texts: hostTexts(this.t) });
+    creds.password = null;
+    this.log.info(`gc-rdp-host connect: ${JSON.stringify(redact(msg))}`);
+    const sent = hs.send(msg);
+    msg.password = null;
+    if (!sent) {
+      this.api.endRdpSession(routeId, { sessionId: sessionData?.session?.id, endReason: 'error', duration: 0 }).catch(() => {});
+      this._emitProgress(routeId, 'window', 'error');
+      return { success: false, error: 'gc-rdp-host' };
+    }
+
+    this.activeSessions.set(routeId, {
+      pid: hs.pid,
+      host: route.host,
+      startTime: Date.now(),
+      via: 'window',
+      hostSession: hs,
+      sessionTimeout: route.session_timeout || null,
+      serverSessionId: sessionData?.session?.id || null,
+    });
+    if (hs.pid) this.monitor.startTracking(routeId, hs.pid, route.session_timeout);
+    this._emitProgress(routeId, 'window', 'done');
+    this.emit('session-start', { routeId, pid: hs.pid, via: 'window' });
+    return { success: true, via: 'window' };
+  }
+
+  _wireHost(routeId, hs) {
+    hs.on('disconnected', (d) => {
+      this.log.info(`gc-rdp-host route ${routeId}: disconnected (reason ${d.reason}, ext ${d.ext}${d.byUser ? ', by the user' : ''})`);
+      this._endWindowSession(routeId, hs, d);
+      if (!d.byUser) {
+        const ex = describeDisconnect(d.reason, d.ext, d.text, this.t);
+        hs.send({ type: 'explain', title: ex.title, text: ex.text });
+      }
+    });
+    hs.on('state', (m) => this.emit('window-state', { routeId, state: m.state }));
+    hs.on('action', (m) => {
+      this.log.info(`gc-rdp-host route ${routeId}: ${m.action}`);
+      if (m.action === 'mstsc') hs.close();
+      this.emit('host-action', { routeId, action: m.action });
+    });
+    hs.on('setting', (m) => {
+      // the bar's "Laufwerke": kept per host, never beyond what the server permits
+      if (m.key === 'drives') this.setLocalSettings(routeId, { drives: m.value });
+    });
+    hs.on('warning', (m) => this.log.warn(`gc-rdp-host route ${routeId}: warning ${m.kind || ''} ${m.code}`));
+    hs.on('error', (m) => this.log.warn(`gc-rdp-host route ${routeId}: error ${m.code} ${m.text || ''}`));
+    hs.on('log', (m) => this.log[m.level === 'info' ? 'info' : 'warn'](`gc-rdp-host route ${routeId}: ${m.msg}`));
+    hs.on('exit', ({ code }) => {
+      this.log.info(`gc-rdp-host route ${routeId} exited (${code})`);
+      this._endWindowSession(routeId, hs, { reason: 0, ext: 0, byUser: code === 0 });
+      if (this.hostSessions.get(routeId) === hs) this.hostSessions.delete(routeId);
+    });
+  }
+
+  /** The session of a window ended: monitor, audit, event (once). */
+  _endWindowSession(routeId, hs, d) {
+    const session = this.activeSessions.get(routeId);
+    if (!session || session.hostSession !== hs) return;
+    this.activeSessions.delete(routeId);
+    this.monitor.stopTracking(routeId);
+    const duration = Math.floor((Date.now() - session.startTime) / 1000);
+    const endReason = endReasonOf(d);
+    this.api.endRdpSession(routeId, { sessionId: session.serverSessionId, endReason, duration, exitCode: d.reason }).catch(() => {});
+    this.emit('session-end', { routeId, duration, exitCode: d.reason, via: 'window', endReason });
+  }
+
   /**
    * Cleanup everything on app exit / crash.
    * Called from main process before-quit handler.
@@ -530,8 +756,14 @@ class RdpManager extends EventEmitter {
   cleanupAll() {
     this.log.info('RDP Manager: cleaning up all sessions...');
 
-    // Kill all active mstsc processes
+    // Kill all active mstsc processes; the windows disconnect and exit when their stdin ends
     for (const [routeId, session] of this.activeSessions) {
+      if (session.via === 'window') {
+        session.hostSession.end();
+        const duration = Math.floor((Date.now() - session.startTime) / 1000);
+        this.api.endRdpSession(routeId, { sessionId: session.serverSessionId, endReason: 'app_exit', duration }).catch(() => {});
+        continue;
+      }
       try {
         process.kill(session.pid, 'SIGTERM');
       } catch {}
@@ -551,6 +783,8 @@ class RdpManager extends EventEmitter {
       this.api.endRdpSession(routeId, { duration, status: 'app_exit' }).catch(() => {});
     }
 
+    for (const hs of this.hostSessions.values()) hs.end();
+    this.hostSessions.clear();
     this.activeSessions.clear();
     this.monitor.stopAll();
     this.stopStatusPolling();
@@ -644,9 +878,9 @@ class RdpManager extends EventEmitter {
     // Clear credentials from Credential Manager — under both the
     // FQDN and the IP, if different, so no stale TERMSRV/* entry
     // lingers after the session ends.
-    this.credentialHandler.clearCredentials(host);
+    this.mstsc.clear(host);
     if (credTarget && credTarget !== host) {
-      try { this.credentialHandler.clearCredentials(credTarget); } catch {}
+      try { this.mstsc.clear(credTarget); } catch {}
     }
 
     // Notify server: session end
@@ -663,7 +897,7 @@ class RdpManager extends EventEmitter {
     this.activeSessions.delete(routeId);
 
     // Emit event
-    this.emit('session-end', { routeId, duration, exitCode });
+    this.emit('session-end', { routeId, duration, exitCode, via: 'mstsc' });
 
     this.log.info(`RDP session cleanup complete for route ${routeId}`);
   }
