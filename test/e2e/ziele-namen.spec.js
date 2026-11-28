@@ -26,7 +26,8 @@ test.describe('Ziele nur mit Namen', () => {
   test('Dienste: only the name on the cards and tiles, the domain only without a name', async ({ launchApp, mock }) => {
     mock.setPermissions({ services: true });
     mock.setServices(SERVICES);
-    const { page } = await launchApp();
+    const { app, page } = await launchApp();
+    await app.evaluate(() => { globalThis.__gcE2E.tunnelWorks = true; });
     await setupWithApiKey(page, mock);
     await page.evaluate(() => window.gatecontrol.locale.set('de'));
     await page.locator('#connect-btn').click();
