@@ -133,8 +133,11 @@
 .nz-banner { font-size: 13px; }
 
 /* ── Details (right) ─────────────────────────────────── */
-.nz-detail { width: 380px; flex-shrink: 0; display: flex; flex-direction: column; padding: 18px 18px 24px; background: var(--panel); border-left: 1px solid var(--line); }
+.nz-detail { width: 460px; flex-shrink: 0; display: flex; flex-direction: column; padding: 18px 18px 24px; background: var(--panel); border-left: 1px solid var(--line); }
 .nz.no-detail .nz-detail { display: none; }
+/* the dividers (gc-split.js) draw the line between the columns */
+.nz.has-split .nz-side { border-right: 0; }
+.nz.has-split .nz-detail { border-left: 0; }
 .nz-pick { margin: auto; color: var(--faint); font-size: 13px; text-align: center; padding: 30px 10px; }
 .nz-d { display: flex; flex-direction: column; gap: 10px; }
 .nz-d-top { display: flex; align-items: center; margin: -6px -6px 0 0; }
@@ -256,7 +259,7 @@
 .nz-bar i { display: block; height: 100%; width: 0; background: var(--acc); transition: width .3s; }
 
 @media (max-width: 1280px) {
-	.nz-detail { width: 340px; }
+	.nz-detail { width: 380px; }
 	.nz-side { width: 212px; }
 }
 

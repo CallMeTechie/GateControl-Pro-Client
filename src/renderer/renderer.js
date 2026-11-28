@@ -3328,6 +3328,15 @@ if (notifyAvailable()) {
 	$('#inbox-source').addEventListener('change', (e) => setInboxFilter({ source: e.currentTarget.value }));
 	$('#inbox-list').addEventListener('keydown', onInboxListKey);
 
+	// the list's width can be dragged (gc-split.js; 40 % of the page by default, kept on this PC)
+	if (window.GCSplit) {
+		const col = $('#page-inbox > .rdp-list-col');
+		const split = window.GCSplit.create({ key: 'inbox.w.list', pane: col, other: $('#page-inbox > .rdp-detail-col'), t, label: () => t('layout.split.inbox') });
+		col.after(split.el);
+		$('#page-inbox').classList.add('has-split');
+		split.attach();
+	}
+
 	$('#inbox-empty-action').addEventListener('click', (e) => {
 		const kind = e.currentTarget.dataset.kind;
 		if (kind === 'off') navigateTo('settings', { tab: 'notify' });
