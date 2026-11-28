@@ -5558,7 +5558,12 @@
       "retry": "Erneut versuchen",
       "smb": "SMB-Freigabe",
       "webdav": "WebDAV-Freigabe",
-      "libPath": "Pfad in der Bibliothek"
+      "libPath": "Pfad in der Bibliothek",
+      "search": "Im Ordner suchen",
+      "searchHint": "Dateiname, auch in Unterordnern",
+      "searching": "Suche in Unterordnern …",
+      "noHits": "Keine Treffer in diesem Ordner.",
+      "in": "in {{path}}"
     },
     "signedOut": "{{name}} ist abgemeldet. Melde dich neu an, um Filme und Serien zu sehen.",
     "src": {
@@ -5578,7 +5583,7 @@
       "smbChecked": "SMB geprüft",
       "smbConflict": "WebDAV, weil Windows schon mit einem anderen Benutzer verbunden ist",
       "awayVpn": "Unterwegs nur über VPN",
-      "awayDirect": "Unterwegs auch ohne VPN über {{address}}",
+      "awayDirect": "Unterwegs auch ohne VPN",
       "jellyfinOnly": "Jellyfin",
       "sharesOne": "NAS-Freigabe",
       "sharesOther": "{{count}} NAS-Freigaben",
@@ -5739,6 +5744,9 @@
       "seriesOther": "{{count}} Serien",
       "collectionOne": "1 Film",
       "collectionOther": "{{count}} Filme"
+    },
+    "menu": {
+      "label": "Aktionen für {{title}}"
     }
   },
   "layout": {

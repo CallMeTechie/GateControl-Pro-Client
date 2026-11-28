@@ -124,15 +124,31 @@
 		return null;
 	}
 
-	/** `\\192.168.1.20\filme` of a share (its UNC), else its address. */
+	/** `\\192.168.1.20\filme` of a share (its UNC), else its address — never shown (the user's rule: no server addresses). */
 	function sharePath(s) {
 		return (s && (s.unc || s.address)) || '';
 	}
 
-	/** The chip of a source on the overview: "Jellyfin · DS918+" / "NAS-Freigabe · \\nas\filme". */
+	/** A name that is an address, a host or a path (an IP, "nas.local", "\\nas\filme", a URL): not shown. */
+	function looksLikeAddress(name) {
+		const n = String(name || '').trim();
+		return !n || /[\\/:@]/.test(n) || /^\d{1,3}(\.\d{1,3}){3}$/.test(n) || /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(n);
+	}
+
+	/**
+	 * What the page shows of a share (the root of its path, the list of Ordner, its chip): its name from the server
+	 * ("Filme") — never its host, UNC path or URL; without a name that is no address "NAS-Freigabe".
+	 */
+	function shareLabel(s, t) {
+		if (!s) return '';
+		return looksLikeAddress(s.name) ? t('media.src.sharesOne') : String(s.name).trim();
+	}
+
+	/** The chip of a source: "Jellyfin · DS918+" / "NAS-Freigabe · Filme" (no address, no host). */
 	function sourceChip(s, t) {
 		if (!s) return '';
-		return s.kind === 'jellyfin' ? t('media.src.jellyfin', { name: s.name || 'Jellyfin' }) : t('media.src.share', { path: sharePath(s) });
+		if (s.kind === 'jellyfin') return t('media.src.jellyfin', { name: looksLikeAddress(s.name) ? 'Jellyfin' : s.name });
+		return looksLikeAddress(s.name) ? t('media.src.sharesOne') : t('media.src.share', { path: String(s.name).trim() });
 	}
 
 	/** The line under a source in Quellen. */
@@ -143,7 +159,6 @@
 			if (s.managed && !s.userName && !s.problem) parts.push(t('media.src.signingIn'));
 			if (s.userName) parts.push(t('media.src.signedInAs', { user: s.userName }));
 			if (s.managed && s.deviceName) deviceName = s.deviceName;
-			if (s.address) parts.push(String(s.address).replace(/^https?:\/\//, ''));
 			if (deviceName) parts.push(t('media.src.device', { device: deviceName }));
 			return parts.join(' · ');
 		}
@@ -173,7 +188,8 @@
 	/** "unterwegs nur über VPN" / "unterwegs auch ohne VPN (https://…)": the rule of a server source. */
 	function awayRule(s, t) {
 		if (!s || !s.managed) return null;
-		return s.awayMode === 'direct' && s.awayAddress ? t('media.src.awayDirect', { address: String(s.awayAddress).replace(/^https:\/\//, '') }) : t('media.src.awayVpn');
+		// away without the VPN: the rule only, not the admin's address
+		return s.awayMode === 'direct' && s.awayAddress ? t('media.src.awayDirect') : t('media.src.awayVpn');
 	}
 
 	/** "vom Server, vor 3 Min." of the list; null when it never came. */
@@ -946,6 +962,72 @@
 		return stored !== 'off' && stored !== false && stored !== 'false';
 	}
 
+	// ── „Im Ordner suchen“ and the menu of a title (as Android's long press) ──
+
+	/**
+	 * A file name (without its extension) or a folder's / title's name (`whole`) holds every word of `text`, in any case
+	 * and spelling of accents ("fussball" finds "Fußball", "oma" finds "Geburtstag.Oma.mkv") — as Android's
+	 * ShareFolders.matches and the core's media-share-names matches.
+	 */
+	function nameMatches(name, text, whole = false) {
+		const words = sortKeyOf(text).split(' ').filter(Boolean);
+		if (!words.length) return false;
+		const n = String(name || '');
+		const dot = whole ? -1 : n.lastIndexOf('.');
+		const base = dot > 0 ? n.slice(0, dot) : n;
+		const hay = sortKeyOf(base.replace(/[._]/g, ' '));
+		return words.every((w) => hay.includes(w));
+	}
+
+	/**
+	 * What a folder shows while searching it: its folders whose name holds the words, its videos (and sound) whose file
+	 * name does, then the hits of the folders below (`below`: the core's answer, without those of the folder itself).
+	 */
+	function folderHits(items, below, q) {
+		const here = folderItems(items).filter((e) => (e.directory ? nameMatches(e.name, q, true) : nameMatches(e.name, q)));
+		const seen = new Set(here.map((e) => e.path));
+		return here.concat(list(below).filter((e) => e && !e.directory && !seen.has(e.path) && (seen.add(e.path), true)));
+	}
+
+	/** The same for a Jellyfin folder: its folders and titles by name, then Jellyfin's hits below (each title once). */
+	function libraryHits(folders, items, below, q) {
+		const f = list(folders).filter((x) => nameMatches(x.name, q, true));
+		const here = list(items).filter((x) => nameMatches(x.name, q, true));
+		const seen = new Set(here.map((x) => x.id));
+		return { folders: f, items: here.concat(list(below).filter((x) => x && !seen.has(x.id) && (seen.add(x.id), true))) };
+	}
+
+	/** Where a hit of the folders below lies, from the folder searched ("Serien/Graufeld" in "Serien" → "Graufeld"). */
+	function hitFolder(folder, dir) {
+		const f = String(folder || '');
+		const d = String(dir || '');
+		if (!f || f === d) return '';
+		return d && f.startsWith(`${d}/`) ? f.slice(d.length + 1) : f;
+	}
+
+	/**
+	 * The menu of a title (a right click, the context-menu key or Umschalt+F10; Android's long press): "Weiter ab …" /
+	 * "Abspielen", "Von vorn" when begun, "Als gesehen markieren" / "Als ungesehen markieren". A collection has none.
+	 * → [{ id: 'play' | 'restart' | 'played', label }]
+	 */
+	function titleMenu(it, t, canPlay) {
+		if (!it || it.kind === 'collection' || it.kind === 'folder') return [];
+		const out = [];
+		const playable = it.kind === 'movie' || it.kind === 'episode' || it.kind === 'video' || it.kind === 'series';
+		const begun = it.kind !== 'series' && it.kind !== 'season' && it.positionMs > 0 && !it.played;
+		if (canPlay && playable) {
+			out.push({ id: 'play', label: it.kind === 'series' ? t('media.detail.play') : playLabel(it, t) });
+			if (begun) out.push({ id: 'restart', label: t('media.detail.restart') });
+		}
+		out.push({ id: 'played', label: it.played ? t('media.detail.markUnplayed') : t('media.detail.markPlayed') });
+		return out;
+	}
+
+	/** The menu's key: the context-menu key or Umschalt+F10 (as Windows). */
+	function isMenuKey(e) {
+		return !!e && (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey === true));
+	}
+
 	return {
 		TABS,
 		SORTS,
@@ -967,6 +1049,8 @@
 		serverNotes,
 		visible,
 		sharePath,
+		shareLabel,
+		looksLikeAddress,
 		sourceChip,
 		sourceSub,
 		alwaysOriginal,
@@ -995,6 +1079,12 @@
 		baseName,
 		folderRow,
 		crumbs,
+		nameMatches,
+		folderHits,
+		libraryHits,
+		hitFolder,
+		titleMenu,
+		isMenuKey,
 		parentDir,
 		folderStart,
 		headLabel,

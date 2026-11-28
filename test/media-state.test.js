@@ -80,8 +80,11 @@ describe('sources and the way', () => {
 
   it('chips and lines of the sources (no secret is ever there to show)', () => {
     assert.equal(MS.sourceChip(jelly(), t), 'media.src.jellyfin(DS918+)');
-    assert.equal(MS.sourceChip(share(), t), 'media.src.share(\\\\192.168.1.20\\filme)');
-    assert.equal(MS.sourceSub(jelly(), t, 'BUERO-PC'), 'media.src.signedInAs(Mila) · 192.168.1.20:8096 · media.src.device(BUERO-PC)');
+    // never an address, host or UNC path (the user's rule): the share's name, else "NAS-Freigabe"
+    assert.equal(MS.sourceChip(share(), t), 'media.src.sharesOne');
+    assert.equal(MS.sourceChip(share({ name: 'Filme' }), t), 'media.src.share(Filme)');
+    assert.equal(MS.sourceChip(jelly({ name: 'jellyfin.example.test' }), t), 'media.src.jellyfin(Jellyfin)');
+    assert.equal(MS.sourceSub(jelly(), t, 'BUERO-PC'), 'media.src.signedInAs(Mila) · media.src.device(BUERO-PC)');
     assert.equal(MS.sourceSub(share(), t), 'media.src.smbHomeWebdav · medien-lesen');
     assert.equal(MS.sourceSub(share({ pairWith: null, useExisting: true, userName: null }), t), 'media.src.smb · media.src.explorer');
     assert.equal(MS.sourceSub(share({ kind: 'webdav', pairWith: null }), t), 'media.src.webdav · medien-lesen');
@@ -436,6 +439,17 @@ describe('Ordner (4h)', () => {
     assert.equal(MS.sizeLabel(0, 'de'), null);
   });
 
+  it('a share shows its name, never its host, UNC path or URL', () => {
+    assert.equal(MS.shareLabel(share({ name: 'Filme' }), t), 'Filme');
+    for (const name of ['192.168.1.20', 'nas.local', '\\\\nas\\filme', 'https://nas.example.test/filme', 'smb://nas/filme', '', null]) {
+      assert.equal(MS.shareLabel(share({ name }), t), 'media.src.sharesOne', String(name));
+    }
+    assert.equal(MS.shareLabel(null, t), '');
+    const view = read('src', 'renderer', 'media-view.js');
+    assert.doesNotMatch(view, /sharePath/, 'the page never shows the address');
+    assert.doesNotMatch(read('src', 'renderer', 'media-sources-view.js'), /sharePath|\.address\b/);
+  });
+
   it('the path as buttons, the folder above, the way of the share', () => {
     assert.deepEqual(MS.crumbs('Filme/Familie', '\\\\nas\\filme'), [{ label: '\\\\nas\\filme', dir: '' }, { label: 'Filme', dir: 'Filme' }, { label: 'Familie', dir: 'Filme/Familie' }]);
     assert.equal(MS.parentDir('Filme/Familie'), 'Filme');
@@ -522,6 +536,72 @@ describe('Ordner (4h)', () => {
   });
 });
 
+describe('„Im Ordner suchen“ and the menu of a title (as Android)', () => {
+  it('every word, any case and accents, without the extension (ShareFolders.matches)', () => {
+    assert.equal(MS.nameMatches('Geburtstag.Oma.mkv', 'oma'), true);
+    assert.equal(MS.nameMatches('Fußball WM 2014.mp4', 'fussball 2014'), true);
+    assert.equal(MS.nameMatches('Fußball WM 2014.mp4', 'fussball 2018'), false, 'every word');
+    assert.equal(MS.nameMatches('Kupferstadt.2025.1080p.mkv', 'mkv'), false, 'not the extension');
+    assert.equal(MS.nameMatches('Strand.Urlaub', 'urlaub', true), true, 'a folder or title keeps its whole name');
+    assert.equal(MS.nameMatches('Strände_2019.mkv', 'STRANDE'), true);
+    assert.equal(MS.nameMatches('x.mkv', '   '), false, 'no words: no hit');
+  });
+
+  it('a share\'s folder: its folders and files by name, then the hits below, each once', () => {
+    const items = [
+      { name: 'Strand 2019', path: 'Urlaub/Strand 2019', directory: true, kind: 'folder' },
+      { name: 'Berge', path: 'Urlaub/Berge', directory: true, kind: 'folder' },
+      { name: 'Strand.Tag1.mkv', path: 'Urlaub/Strand.Tag1.mkv', directory: false, kind: 'video', itemId: 'f:Urlaub/Strand.Tag1.mkv' },
+      { name: 'Strand.jpg', path: 'Urlaub/Strand.jpg', directory: false, kind: 'image' },
+    ];
+    const below = [
+      { name: 'Strand.Tag1.mkv', path: 'Urlaub/Strand.Tag1.mkv', directory: false, kind: 'video', folder: 'Urlaub' },
+      { name: 'Strand.Abend.mkv', path: 'Urlaub/Strand 2019/Strand.Abend.mkv', directory: false, kind: 'video', folder: 'Urlaub/Strand 2019' },
+    ];
+    assert.deepEqual(MS.folderHits(items, below, 'strand').map((e) => e.path), ['Urlaub/Strand 2019', 'Urlaub/Strand.Tag1.mkv', 'Urlaub/Strand 2019/Strand.Abend.mkv']);
+    assert.deepEqual(MS.folderHits(items, [], 'berge').map((e) => e.path), ['Urlaub/Berge']);
+    assert.equal(MS.hitFolder('Urlaub/Strand 2019', 'Urlaub'), 'Strand 2019');
+    assert.equal(MS.hitFolder('Urlaub', 'Urlaub'), '', 'the folder itself: no line');
+    assert.equal(MS.hitFolder('Serien/Graufeld', ''), 'Serien/Graufeld');
+  });
+
+  it('a Jellyfin folder: its folders and titles by name, then Jellyfin\'s hits below', () => {
+    const r = MS.libraryHits([{ id: 'f1', name: 'Klassiker' }, { id: 'f2', name: 'Kobalt-Reihe' }], [title({ id: 'a1' }), title({ id: 'a2', name: 'Moorlicht' })], [title({ id: 'a1' }), title({ id: 'a3', name: 'Kobaltnacht II' })], 'kobalt');
+    assert.deepEqual(r.folders.map((f) => f.id), ['f2']);
+    assert.deepEqual(r.items.map((x) => x.id), ['a1', 'a3']);
+  });
+
+  it('the menu: Weiter ab / Abspielen, Von vorn when begun, Gesehen either way; no player: only Gesehen', () => {
+    assert.deepEqual(MS.titleMenu(title(), t, true), [
+      { id: 'play', label: 'media.detail.resume(42:10)' },
+      { id: 'restart', label: 'media.detail.restart' },
+      { id: 'played', label: 'media.detail.markPlayed' },
+    ]);
+    assert.deepEqual(MS.titleMenu(title({ positionMs: 0, played: true }), t, true).map((a) => [a.id, a.label]), [['play', 'media.detail.play'], ['played', 'media.detail.markUnplayed']]);
+    assert.deepEqual(MS.titleMenu(title({ kind: 'series', positionMs: 0 }), t, true).map((a) => a.id), ['play', 'played']);
+    assert.deepEqual(MS.titleMenu(title({ kind: 'season' }), t, true).map((a) => a.id), ['played']);
+    assert.deepEqual(MS.titleMenu(title(), t, false).map((a) => a.id), ['played']);
+    assert.deepEqual(MS.titleMenu(title({ kind: 'collection' }), t, true), []);
+    assert.deepEqual(MS.titleMenu(null, t, true), []);
+  });
+
+  it('the menu\'s key: the context-menu key or Umschalt+F10', () => {
+    assert.equal(MS.isMenuKey({ key: 'ContextMenu' }), true);
+    assert.equal(MS.isMenuKey({ key: 'F10', shiftKey: true }), true);
+    assert.equal(MS.isMenuKey({ key: 'F10', shiftKey: false }), false);
+    assert.equal(MS.isMenuKey({ key: 'Enter' }), false);
+  });
+
+  it('the page is wired: the searches of the core, the menu on the rows, grids and lists', () => {
+    const view = read('src', 'renderer', 'media-view.js');
+    assert.match(view, /api\.shareSearch\(/);
+    assert.match(view, /api\.librarySearch\(/);
+    assert.match(view, /return withMenu\(b, it, runFor\(it\)/, 'the posters of the grid and the rows');
+    assert.match(view, /withMenu\(card, it, runFor\(it\)\)/, 'Weiterschauen');
+    assert.match(view, /withMenu\(rowEl, folderTitle\(share, e\)/, 'a share\'s file');
+  });
+});
+
 describe('Medien-Plugin (W2): the sources from the server, the network rule', () => {
   const managed = (o = {}) => jelly({ managed: true, sid: 'jf-1', awayMode: 'vpn', deviceName: 'GateControl · Büro-PC', problem: null, ...o });
 
@@ -543,7 +623,7 @@ describe('Medien-Plugin (W2): the sources from the server, the network rule', ()
     assert.deepEqual(MS.sourcePill(managed({ problem: 'no_mapping' }), t), { cls: 'is-warn', text: 'media.problem.no_mapping' });
     assert.equal(MS.sourcePill(managed({ ready: false, userName: null }), t).text, 'media.src.signingInPill', 'signs in by itself');
     assert.equal(MS.awayRule(managed(), t), 'media.src.awayVpn');
-    assert.equal(MS.awayRule(managed({ awayMode: 'direct', awayAddress: 'https://jellyfin.example.test' }), t), 'media.src.awayDirect(jellyfin.example.test)');
+    assert.equal(MS.awayRule(managed({ awayMode: 'direct', awayAddress: 'https://jellyfin.example.test' }), t), 'media.src.awayDirect', 'the rule, not the address');
     assert.equal(MS.awayRule(jelly(), t), null);
   });
 

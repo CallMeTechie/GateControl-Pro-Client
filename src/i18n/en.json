@@ -5558,7 +5558,12 @@
       "retry": "Try again",
       "smb": "SMB share",
       "webdav": "WebDAV share",
-      "libPath": "Path in the library"
+      "libPath": "Path in the library",
+      "search": "Search in folder",
+      "searchHint": "File name, also in sub-folders",
+      "searching": "Searching sub-folders …",
+      "noHits": "Nothing found in this folder.",
+      "in": "in {{path}}"
     },
     "signedOut": "{{name}} is signed out. Sign in again to see movies and shows.",
     "src": {
@@ -5578,7 +5583,7 @@
       "smbChecked": "SMB checked",
       "smbConflict": "WebDAV, because Windows is connected with another user already",
       "awayVpn": "Away only through the VPN",
-      "awayDirect": "Away also without VPN via {{address}}",
+      "awayDirect": "Away also without VPN",
       "jellyfinOnly": "Jellyfin",
       "sharesOne": "NAS share",
       "sharesOther": "{{count}} NAS shares",
@@ -5739,6 +5744,9 @@
       "seriesOther": "{{count}} shows",
       "collectionOne": "1 movie",
       "collectionOther": "{{count}} movies"
+    },
+    "menu": {
+      "label": "Actions for {{title}}"
     }
   },
   "layout": {

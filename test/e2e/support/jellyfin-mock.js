@@ -11,6 +11,7 @@
  *   jf.state.qcConfirmed  true: the Quick Connect code counts as confirmed
  *   jf.log                [{ method, path, query, body }] of every request
  *   jf.reports            the progress reports (Sessions/Playing…)
+ *   /Items?parentId=…&searchTerm=…&recursive=true   „Im Ordner suchen“: the titles below a library or folder
  *   await jf.close()
  *
  * Titles, names and addresses are made up (as the mockups of Stufe 4).
@@ -310,6 +311,21 @@ async function startJellyfin({ password = 'geheim', quickConnect = true, authori
         return send(res, 200, { IsFavorite: it.UserData.IsFavorite });
       }
       if (p === '/UserViews') return send(res, 200, { Items: lib.views, TotalRecordCount: lib.views.length });
+      if (p === '/Items' && q.get('parentId') && q.get('searchTerm') && q.get('recursive') === 'true') {
+        // „Im Ordner suchen“: everything below the folder (its folders, a series' episodes) whose name has the words
+        const types = String(q.get('includeItemTypes') || '').split(',');
+        const below = (pid, seen = new Set()) => {
+          if (seen.has(pid)) return [];
+          seen.add(pid);
+          const kids = lib.children.get(pid) || [];
+          const eps = lib.series.some((x) => x.Id === pid) ? (lib.seasons.get(pid) || []).flatMap((se) => [se, ...(lib.episodes.get(se.Id) || [])]) : [];
+          return [...kids, ...eps].flatMap((x) => [x, ...below(x.Id, seen)]);
+        };
+        const term = q.get('searchTerm').toLowerCase();
+        const list = below(q.get('parentId')).filter((x) => types.includes(x.Type) && x.Name.toLowerCase().includes(term))
+          .sort((a, b) => a.Name.localeCompare(b.Name, 'de'));
+        return send(res, 200, { Items: list.map(pick), TotalRecordCount: list.length });
+      }
       if (p === '/Items' && q.get('parentId')) {
         const list = (lib.children.get(q.get('parentId')) || []).slice().sort((a, b) => a.Name.localeCompare(b.Name, 'de'));
         return send(res, 200, { Items: list.map(pick), TotalRecordCount: list.length });

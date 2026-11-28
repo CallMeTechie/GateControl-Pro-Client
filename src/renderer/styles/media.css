@@ -204,6 +204,13 @@ button.md-src { cursor: pointer; }
 .md-crumb:focus-visible, .md-fr:focus-visible, .md-fr-open:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 .md-crumb-sep { color: var(--faint); }
 .md-fv-way { flex-shrink: 0; }
+/* „Im Ordner suchen“ (as Android): the field at the right of the path; a hit below shows where it lies */
+.md-fs { min-width: 180px; width: 240px; height: 32px; flex-shrink: 0; }
+.md-fr-tx small.md-fr-in { font-family: var(--font-mono); font-size: 11.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-fs-more { padding: 8px 12px; }
+/* the menu of a title (the look of Drive's menu: .dv-menu) */
+.md-menu { min-width: 230px; }
+.md-menu-item:focus-visible { outline: 2px solid var(--info); outline-offset: -2px; }
 .md-fl { display: flex; flex-direction: column; gap: 2px; min-height: 0; flex-grow: 1; padding: 6px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); }
 .md-fr { position: relative; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; text-align: left; min-width: 0; flex: none; }
 .md-fr:hover { background: var(--panel2); }
