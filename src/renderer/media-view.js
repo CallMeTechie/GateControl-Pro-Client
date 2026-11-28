@@ -943,7 +943,11 @@
 			const menu = el('div', { class: 'dv-menu md-menu', role: 'menu', 'aria-label': t('media.menu.label', { title: name || '' }) }, items);
 			const layer = el('div', {
 				class: 'dv-menu-layer md-menu-layer',
-				on: { mousedown: (e) => { if (e.target === layer) closeMenu(false); }, contextmenu: (e) => { e.preventDefault(); closeMenu(false); } },
+				on: {
+					mousedown: (e) => { if (e.target === layer) closeMenu(false); },
+					// Windows sends the context-menu key's contextmenu after the key (to the menu that has the focus now): it stays open
+					contextmenu: (e) => { e.preventDefault(); if (Date.now() - menuAt >= 500 && e.target === layer) closeMenu(false); },
+				},
 			}, [menu]);
 			layer.addEventListener('keydown', (e) => {
 				if (e.key === 'Escape' || e.key === 'Tab' || MS.isMenuKey(e)) { e.preventDefault(); e.stopPropagation(); closeMenu(true); return; }

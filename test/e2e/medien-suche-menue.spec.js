@@ -105,6 +105,9 @@ test.describe('medien suche und menü', () => {
     // the context-menu key, then Enter on "Als gesehen markieren": Jellyfin keeps it, the poster shows it
     await page.keyboard.press('ContextMenu');
     await expect(acts(page)).toHaveCount(3);
+    // Windows sends a contextmenu after the key to what has the focus then (the menu): it stays open
+    await page.evaluate(() => document.activeElement.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })));
+    await expect(acts(page)).toHaveCount(3);
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     await expect.poll(() => jf.log.some((x) => x.method === 'POST' && x.path === `/UserPlayedItems/${jf.lib.kobalt.Id}`)).toBe(true);
