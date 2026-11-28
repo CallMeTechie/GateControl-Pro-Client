@@ -54,7 +54,7 @@ namespace GateControl.RdpHost
 
         private void LayoutCard()
         {
-            if (!ErrorMode) return;
+            if (!ErrorMode || Close == null) return;
             int w = Math.Min(S(620), Width - S(32));
             int pad = S(28);
             var body = Fonts.Get("ui", 15f, FontStyle.Regular, Dpi);
