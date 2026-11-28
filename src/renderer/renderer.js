@@ -3956,7 +3956,6 @@ mediaPlayer = mediaApi && window.GCMediaPlayer
 		awake: (state) => (window.gatecontrol.mediaAwake ? window.gatecontrol.mediaAwake(state) : null),
 		quality: () => (mediaView ? mediaView.quality() : 'auto'),
 		setQuality: (q) => (mediaView ? mediaView.setQuality(q) : null),
-		sourceName: (id) => (mediaView ? mediaView.sourceName(id) : ''),
 		// "Auf TV/PC abspielen": every change of the player, for the phone that sent the title
 		onChange: (why) => mediaCastRemote?.onChange(why),
 	})

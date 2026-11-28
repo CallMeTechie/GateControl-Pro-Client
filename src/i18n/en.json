@@ -1093,7 +1093,10 @@
       "skipped": {
         "one": "1 item left out",
         "other": "{{count}} items left out"
-      }
+      },
+      "dropHere": "Drop to upload into this folder",
+      "dropInto": "Drop to upload into “{{name}}”",
+      "vaultRow": "Open the vault to put files into it."
     },
     "transfer": {
       "title": "Transfers",
@@ -1114,14 +1117,22 @@
         "one": "Folder created · 1 file",
         "other": "Folder created · {{count}} files"
       },
-      "folderMaking": "Creating folders …"
+      "folderMaking": "Creating folders …",
+      "cancelled": "cancelled",
+      "cancel": "Cancel",
+      "cancelAll": "Cancel all",
+      "more": {
+        "one": "… and 1 more transfer",
+        "other": "… and {{count}} more transfers"
+      }
     },
     "conflict": {
       "title": "“{{name}}” already exists here",
       "text": "Save as a new version of the file, keep both or skip?",
       "version": "New version",
       "keep": "Keep both",
-      "skip": "Skip"
+      "skip": "Skip",
+      "all": "Apply to all {{count}} name conflicts"
     },
     "versions": {
       "menu": "Older versions",
@@ -5349,11 +5360,19 @@
       "thisWeek": "this week",
       "all": "Show all",
       "back": "Back",
-      "more": "More"
+      "more": "More",
+      "nextUp": "Next up",
+      "latestMovies": "New movies",
+      "latestEpisodes": "New episodes",
+      "favorites": "Favorites",
+      "collections": "Collections",
+      "genres": "Genres"
     },
     "mark": {
       "nas": "NAS",
-      "new": "NEW"
+      "new": "NEW",
+      "newCount": "{{count}} new",
+      "seasonEpisode": "S{{season}} · E{{episode}}"
     },
     "at": "from {{time}}",
     "left": {
@@ -5395,7 +5414,8 @@
     "filter": {
       "unplayed": "Unwatched",
       "genre": "Genre",
-      "allGenres": "All genres"
+      "allGenres": "All genres",
+      "favorites": "Favorites"
     },
     "detail": {
       "none": "Pick a title to see it here.",
@@ -5407,7 +5427,10 @@
       "markUnplayed": "Mark as unwatched",
       "audio": "Audio",
       "subtitles": "Subtitles",
-      "quality": "Quality"
+      "quality": "Quality",
+      "favoriteAdd": "Add to favorites",
+      "favoriteRemove": "Remove from favorites",
+      "collectionEmpty": "There are no movies in this collection."
     },
     "audio": {
       "converts": "NAS converts to {{target}}",
@@ -5480,8 +5503,8 @@
       "text": "Media needs Windows' encryption for the access data. It isn't available on this PC right now."
     },
     "folders": {
-      "title": "Folders of the NAS shares",
-      "text": "The folders of the NAS shares the admin shares with you appear here with previews and progress.",
+      "title": "No folders yet",
+      "text": "The libraries of your Jellyfin account and the NAS shares the admin shares with you appear here.",
       "sources": "To the sources",
       "path": "Path in the share",
       "up": "One level up",
@@ -5491,7 +5514,15 @@
       "away": "away",
       "pairHint": "Away, the app uses the same share over WebDAV (more robust through the tunnel). Shares always play the original; only Jellyfin converts.",
       "originalHint": "Shares always play the original; only Jellyfin converts.",
-      "fileTitle": "File from the NAS"
+      "fileTitle": "File from the NAS",
+      "library": "Jellyfin library",
+      "all": "All folders",
+      "roots": "Libraries and shares",
+      "none": "No folders yet. The libraries of your Jellyfin account and the NAS shares appear here.",
+      "retry": "Try again",
+      "smb": "SMB share",
+      "webdav": "WebDAV share",
+      "libPath": "Path in the library"
     },
     "signedOut": "{{name}} is signed out. Sign in again to see movies and shows.",
     "src": {
@@ -5511,7 +5542,11 @@
       "smbChecked": "SMB checked",
       "smbConflict": "WebDAV, because Windows is connected with another user already",
       "awayVpn": "Away only through the VPN",
-      "awayDirect": "Away also without VPN via {{address}}"
+      "awayDirect": "Away also without VPN via {{address}}",
+      "jellyfinOnly": "Jellyfin",
+      "sharesOne": "NAS share",
+      "sharesOther": "{{count}} NAS shares",
+      "choose": "Choose the Jellyfin server"
     },
     "original": {
       "title": "Always original",
@@ -5660,6 +5695,14 @@
       "adopted": "Taken over: {{names}}.",
       "dropped": "Removed because the server doesn’t know them: {{names}}.",
       "ok": "OK"
+    },
+    "count": {
+      "moviesOne": "1 movie",
+      "moviesOther": "{{count}} movies",
+      "seriesOne": "1 show",
+      "seriesOther": "{{count}} shows",
+      "collectionOne": "1 movie",
+      "collectionOther": "{{count}} movies"
     }
   },
   "layout": {

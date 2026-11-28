@@ -150,6 +150,8 @@
 			let url = null;
 			let v = null;
 			let tried = false;
+			// the screen stays on only while it really plays (video-awake.js; also in full screen — the same <video>)
+			let awake = null;
 			const holder = el('div', { class: 'dvw-video' });
 			stage.appendChild(holder);
 
@@ -159,6 +161,7 @@
 			};
 			const otherApp = () => (opts.openExternal ? el('button', { type: 'button', class: 'btn btn-sec btn-sm', on: { click: () => opts.openExternal(p) } }, [icon('open', 14), el('span', { text: t('drive.viewer.openOther') })]) : null);
 			const stop = () => {
+				if (awake) { awake.release(); awake = null; }
 				if (!v) return;
 				if (places) places.keep(p, v.currentTime, v.duration);
 				try { v.pause(); } catch { /* not playing */ }
@@ -189,6 +192,7 @@
 				if (!s) { hint(t('drive.viewer.failed'), [otherApp()].filter(Boolean)); return; }
 				url = s.url;
 				v = el('video', { class: 'dvw-player', controls: '', preload: 'metadata', playsinline: '' });
+				if (root.GCVideoAwake) awake = root.GCVideoAwake.watch(v);
 				v.addEventListener('loadedmetadata', () => {
 					const at = places && places.get(p);
 					if (at && Number.isFinite(v.duration) && at < v.duration - VS.KEEP_MS / 1000) { try { v.currentTime = at; } catch { /* not seekable */ } }

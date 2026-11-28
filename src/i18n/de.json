@@ -1093,7 +1093,10 @@
       "skipped": {
         "one": "1 Eintrag ausgelassen",
         "other": "{{count}} Einträge ausgelassen"
-      }
+      },
+      "dropHere": "Loslassen zum Hochladen in diesen Ordner",
+      "dropInto": "Loslassen zum Hochladen in „{{name}}“",
+      "vaultRow": "Öffne den Tresor, um Dateien hineinzulegen."
     },
     "transfer": {
       "title": "Übertragungen",
@@ -1114,14 +1117,22 @@
         "one": "Ordner angelegt · 1 Datei",
         "other": "Ordner angelegt · {{count}} Dateien"
       },
-      "folderMaking": "Ordner werden angelegt …"
+      "folderMaking": "Ordner werden angelegt …",
+      "cancelled": "abgebrochen",
+      "cancel": "Abbrechen",
+      "cancelAll": "Alle abbrechen",
+      "more": {
+        "one": "… und 1 weitere Übertragung",
+        "other": "… und {{count}} weitere Übertragungen"
+      }
     },
     "conflict": {
       "title": "„{{name}}“ gibt es hier schon",
       "text": "Als neue Version der Datei speichern, beide behalten oder überspringen?",
       "version": "Neue Version",
       "keep": "Beide behalten",
-      "skip": "Überspringen"
+      "skip": "Überspringen",
+      "all": "Für alle {{count}} Namenskonflikte übernehmen"
     },
     "versions": {
       "menu": "Ältere Versionen",
@@ -5349,11 +5360,19 @@
       "thisWeek": "diese Woche",
       "all": "Alle anzeigen",
       "back": "Zurück",
-      "more": "Weiter"
+      "more": "Weiter",
+      "nextUp": "Als Nächstes",
+      "latestMovies": "Neue Filme",
+      "latestEpisodes": "Neue Folgen",
+      "favorites": "Favoriten",
+      "collections": "Sammlungen",
+      "genres": "Genres"
     },
     "mark": {
       "nas": "NAS",
-      "new": "NEU"
+      "new": "NEU",
+      "newCount": "{{count}} neu",
+      "seasonEpisode": "S{{season}} · F{{episode}}"
     },
     "at": "ab {{time}}",
     "left": {
@@ -5395,7 +5414,8 @@
     "filter": {
       "unplayed": "Ungesehen",
       "genre": "Genre",
-      "allGenres": "Alle Genres"
+      "allGenres": "Alle Genres",
+      "favorites": "Favoriten"
     },
     "detail": {
       "none": "Wähle einen Titel, um ihn hier zu sehen.",
@@ -5407,7 +5427,10 @@
       "markUnplayed": "Als ungesehen markieren",
       "audio": "Ton",
       "subtitles": "Untertitel",
-      "quality": "Qualität"
+      "quality": "Qualität",
+      "favoriteAdd": "Zu den Favoriten",
+      "favoriteRemove": "Aus den Favoriten entfernen",
+      "collectionEmpty": "In dieser Sammlung sind keine Filme."
     },
     "audio": {
       "converts": "NAS rechnet in {{target}} um",
@@ -5480,8 +5503,8 @@
       "text": "Medien brauchen die Verschlüsselung von Windows für die Zugangsdaten. Sie ist auf diesem PC gerade nicht verfügbar."
     },
     "folders": {
-      "title": "Ordner der NAS-Freigaben",
-      "text": "Hier erscheinen die Ordner der NAS-Freigaben, die der Admin für dich freigibt, mit Vorschau und Fortschritt.",
+      "title": "Noch keine Ordner",
+      "text": "Hier erscheinen die Bibliotheken deines Jellyfin-Kontos und die NAS-Freigaben, die der Admin für dich freigibt.",
       "sources": "Zu den Quellen",
       "path": "Pfad in der Freigabe",
       "up": "Eine Ebene höher",
@@ -5491,7 +5514,15 @@
       "away": "unterwegs",
       "pairHint": "Unterwegs nimmt die App dieselbe Freigabe per WebDAV (robuster über den Tunnel). Freigaben spielen immer das Original, umgerechnet wird nur bei Jellyfin.",
       "originalHint": "Freigaben spielen immer das Original, umgerechnet wird nur bei Jellyfin.",
-      "fileTitle": "Datei von der NAS"
+      "fileTitle": "Datei von der NAS",
+      "library": "Jellyfin-Bibliothek",
+      "all": "Alle Ordner",
+      "roots": "Bibliotheken und Freigaben",
+      "none": "Noch keine Ordner. Hier erscheinen die Bibliotheken deines Jellyfin-Kontos und die NAS-Freigaben.",
+      "retry": "Erneut versuchen",
+      "smb": "SMB-Freigabe",
+      "webdav": "WebDAV-Freigabe",
+      "libPath": "Pfad in der Bibliothek"
     },
     "signedOut": "{{name}} ist abgemeldet. Melde dich neu an, um Filme und Serien zu sehen.",
     "src": {
@@ -5511,7 +5542,11 @@
       "smbChecked": "SMB geprüft",
       "smbConflict": "WebDAV, weil Windows schon mit einem anderen Benutzer verbunden ist",
       "awayVpn": "Unterwegs nur über VPN",
-      "awayDirect": "Unterwegs auch ohne VPN über {{address}}"
+      "awayDirect": "Unterwegs auch ohne VPN über {{address}}",
+      "jellyfinOnly": "Jellyfin",
+      "sharesOne": "NAS-Freigabe",
+      "sharesOther": "{{count}} NAS-Freigaben",
+      "choose": "Jellyfin-Server wählen"
     },
     "original": {
       "title": "Immer Original",
@@ -5660,6 +5695,14 @@
       "adopted": "Übernommen: {{names}}.",
       "dropped": "Entfernt, weil der Server sie nicht kennt: {{names}}.",
       "ok": "OK"
+    },
+    "count": {
+      "moviesOne": "1 Film",
+      "moviesOther": "{{count}} Filme",
+      "seriesOne": "1 Serie",
+      "seriesOther": "{{count}} Serien",
+      "collectionOne": "1 Film",
+      "collectionOther": "{{count}} Filme"
     }
   },
   "layout": {
