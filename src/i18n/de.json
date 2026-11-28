@@ -146,6 +146,7 @@
       "protected": "Geschützt",
       "failed": "Verbindung fehlgeschlagen",
       "disconnected": "Nicht verbunden",
+      "subProtected": "Dein Verkehr läuft verschlüsselt durch den Tunnel.",
       "subConnecting": "Das dauert normalerweise nur wenige Sekunden."
     },
     "stats": {
@@ -2040,16 +2041,22 @@
         "done": "Neuer Schlüssel erzeugt"
       },
       "move": {
-        "button": "In Tresor verschieben",
-        "title": "Dateien verschlüsselt in den Tresor verschieben. Die Originale werden danach endgültig von diesem PC gelöscht.",
-        "files": "Dateien in Tresor verschieben …",
-        "folder": "Ordner in Tresor verschieben …",
-        "dropHint": "Loslassen: in den Tresor verschieben – die Originale werden danach von diesem PC gelöscht",
+        "button": "In den Tresor",
+        "title": "Dateien verschlüsselt in den Tresor kopieren oder verschieben (dann werden die Originale von diesem PC gelöscht).",
+        "files": "Dateien in den Tresor …",
+        "folder": "Ordner in den Tresor …",
+        "dropHint": "Loslassen: in den Tresor kopieren oder verschieben",
+        "mode": {
+          "label": "Kopieren oder verschieben",
+          "copy": "Kopieren",
+          "move": "Verschieben"
+        },
+        "copyText": "Die Dateien werden verschlüsselt in den Tresor gelegt. Die Originale bleiben auf diesem PC.",
+        "copyOk": "Kopieren",
         "confirm": {
-          "title": "In Tresor verschieben",
+          "title": "In den Tresor",
           "text": "Die Dateien werden verschlüsselt in den Tresor gelegt. Die Originale werden danach endgültig von diesem PC gelöscht – nicht in den Papierkorb.",
-          "ok": "Verschieben",
-          "dontAsk": "Nicht mehr fragen"
+          "ok": "Verschieben"
         },
         "done": {
           "one": "1 Datei in den Tresor verschoben – Original gelöscht",

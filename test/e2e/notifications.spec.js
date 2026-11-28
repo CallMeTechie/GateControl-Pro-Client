@@ -226,7 +226,9 @@ test.describe('notification center', () => {
     await openSettingsTab(page, 'notify');
     await expect(page.locator('#notify-state')).toHaveClass(/ok/);
     await expect(page.locator('#notify-state-label')).toHaveText(/Empfangsbereit|Ready to receive/);
-    await expect(page.locator('#notify-server')).toHaveText(new URL(mock.url).host);
+    // no server address on the page (only where the URL is entered)
+    await expect(page.locator('#notify-server')).toHaveCount(0);
+    await expect(page.locator('#notify-state').locator('xpath=..')).not.toContainText(new URL(mock.url).host);
     await expect(page.locator('#notify-via')).toHaveText(/direkt über HTTPS|directly via HTTPS/);
     await expect(page.locator('#notify-enabled')).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator('#notify-ks-note')).toBeHidden();

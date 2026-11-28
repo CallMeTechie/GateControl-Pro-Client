@@ -103,6 +103,30 @@ test.describe('drive: drag & drop from the Explorer', () => {
     await expect(names(root)).toHaveText(['Dokumente', 'Foto.jpg', 'setup.exe']);
   });
 
+  test('"Ordner hochladen": a folder there already takes the files (no "Fotos (2)")', async ({ launchApp, mock }) => {
+    const d = await mock.setDrive();
+    const { page, answerOpenDialogs } = await launchApp();
+    await setupWithApiKey(page, mock);
+    const root = await openDrive(page);
+    await expect(names(root)).toHaveText(['Dokumente', 'Foto.jpg', 'setup.exe']);
+    const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gc-e2e-dir-')), 'Fotos');
+    fs.mkdirSync(path.join(dir, 'Mai'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'a');
+    const upFolder = async () => {
+      await answerOpenDialogs([dir]);
+      await root.locator('.dv-bar .dv-new').click();
+      await page.locator('.dv-menu-item[data-item="dir"]').click();
+    };
+    await upFolder();
+    await expect.poll(() => !!named(d, 1, 'Fotos') && !!named(d, named(d, 1, 'Fotos').id, 'a.txt')).toBe(true);
+    const fotos = named(d, 1, 'Fotos');
+    fs.writeFileSync(path.join(dir, 'Mai', 'b.txt'), 'b');
+    await upFolder();
+    await expect.poll(() => !!named(d, fotos.id, 'Mai') && !!named(d, named(d, fotos.id, 'Mai').id, 'b.txt')).toBe(true);
+    expect(named(d, 1, 'Fotos (2)')).toBeFalsy();
+    await expect(names(root)).toHaveText(['Dokumente', 'Fotos', 'Foto.jpg', 'setup.exe']);
+  });
+
   test('several taken names answered at once; "Abbrechen" of one upload and of all', async ({ launchApp, mock }) => {
     const d = await mock.setDrive();
     const { page } = await launchApp();

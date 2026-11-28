@@ -312,7 +312,6 @@ const el = {
 	connectBtn:      $('#connect-btn'),
 	disconnectBtn:   $('#disconnect-btn'),
 	portalBtn:       $('#portal-btn'),
-	statEndpoint:    $('#stat-endpoint'),
 	statHandshake:   $('#stat-handshake'),
 	statSince:       $('#stat-since'),
 	statRx:          $('#stat-rx'),
@@ -559,9 +558,9 @@ tunnel.getStatus().then(async (s) => {
 
 function updateUI() {
 	const cs = connState();
-	const { status, endpoint, handshake, rxBytes, txBytes, rxSpeed, txSpeed } = state;
+	const { status, handshake, rxBytes, txBytes, rxSpeed, txSpeed } = state;
 	const connected = cs === 'connected';
-	const host = hostOf(endpoint || serverUrl);
+	// no server address or domain anywhere on the page: state, duration, kill switch, rate only
 	// DNS-Schutz: the card notes that only a connected device is filtered
 	if (document.body.dataset.conn !== cs) { document.body.dataset.conn = cs; dnsView?.connection(); }
 
@@ -574,7 +573,7 @@ function updateUI() {
 	el.connLabel.textContent = label;
 	$('#sb-conn-label').textContent = label;
 
-	el.connSub.textContent = connected ? `${formatDuration(connectedSeconds())} · ${host}` : host;
+	el.connSub.textContent = connected ? formatDuration(connectedSeconds()) : '';
 	setSwitch(el.connSwitch, cs === 'connected' || cs === 'connecting');
 	// Always-on policy: no manual disconnect
 	const disconnectLocked = !!policyState.locks.disconnect && cs === 'connected';
@@ -591,15 +590,13 @@ function updateUI() {
 		disconnected: t('ui.hero.disconnected'),
 	};
 	el.statusLabel.textContent = titles[cs];
-	el.heroSub.textContent = cs === 'connected' ? t('ui.hero.subOn', { host: host || '—' })
+	el.heroSub.textContent = cs === 'connected' ? t('ui.hero.subProtected')
 		: cs === 'connecting' ? t('ui.hero.subConnecting')
 		: cs === 'error' ? ''
 		: t('ui.hero.subOff');
 	el.heroErrorText.textContent = cs === 'error' ? (state.error || '') : '';
-	$('#overview-sub').textContent = host;
 
 	// Stats
-	el.statEndpoint.textContent = endpoint ? hostOf(endpoint) : '—';
 	el.statHandshake.textContent = handshake || '—';
 	el.statSince.textContent = connected && state.connectedSince ? formatDuration(connectedSeconds()) : '—';
 	el.statRx.textContent = formatBytes(rxBytes || 0);
@@ -629,7 +626,6 @@ function updateUI() {
 	setSwitch(el.rdpAllowToggle, !!state.rdpAllow);
 
 	// Status bar
-	$('#sb-endpoint').textContent = host;
 	$('#sb-ks').textContent = t(state.killSwitch ? 'ui.statusbar.ksOn' : 'ui.statusbar.ksOff');
 	$('#sb-rate').textContent = showTraffic ? `↓ ${formatSpeed(rxSpeed || 0)}  ↑ ${formatSpeed(txSpeed || 0)}` : '';
 
@@ -645,7 +641,7 @@ setInterval(() => {
 	if (connState() !== 'connected') return;
 	const secs = connectedSeconds();
 	el.statSince.textContent = state.connectedSince ? formatDuration(secs) : '—';
-	el.connSub.textContent = `${formatDuration(secs)} · ${hostOf(state.endpoint || serverUrl)}`;
+	el.connSub.textContent = formatDuration(secs);
 }, 1000);
 
 // ── Connect / Disconnect ────────────────────────────────
@@ -3770,7 +3766,6 @@ function renderNotifySettings() {
 	const reason = $('#notify-reason');
 	reason.hidden = !view.reasonKey;
 	if (view.reasonKey) reason.textContent = t(view.reasonKey);
-	$('#notify-server').textContent = view.server || hostOf(serverUrl) || '—';
 	$('#notify-via').textContent = view.viaKey ? t(view.viaKey) : '—';
 	$('#notify-since').textContent = view.since ? t('ui.notify.sinceValue', { time: view.since }) : '—';
 	$('#notify-test').disabled = !on || inbox.status?.state !== 'connected';
