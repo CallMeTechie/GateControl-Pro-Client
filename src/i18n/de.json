@@ -5712,5 +5712,24 @@
     "menu": {
       "label": "Aktionen für {{title}}"
     }
+  },
+  "layout": {
+    "split": {
+      "w": {
+        "drag": "Ziehen: Breite ändern",
+        "hint": "Doppelklick: Standardbreite · Pfeiltasten: in Schritten",
+        "min": "Mindestbreite {{value}}",
+        "max": "Höchstbreite {{value}}"
+      },
+      "h": {
+        "drag": "Ziehen: Höhe ändern",
+        "hint": "Doppelklick: Standardhöhe · Pfeiltasten: in Schritten",
+        "min": "Mindesthöhe {{value}}",
+        "max": "Höchsthöhe {{value}}"
+      },
+      "inbox": "Breite der Mitteilungsliste",
+      "notesSide": "Breite des Menüs",
+      "notesDetail": "Breite der Details"
+    }
   }
 }
