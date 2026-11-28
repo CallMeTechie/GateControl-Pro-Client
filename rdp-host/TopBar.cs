@@ -87,12 +87,12 @@ namespace GateControl.RdpHost
             BackColor = Theme.Panel;
             Height = S(44);
             var p = View.Phase;
-            Cancel.Visible = p == Phase.Connecting || p == Phase.Idle;
-            Clipboard.Visible = p == Phase.Connected && View.ClipboardAllowed;
-            Drives.Visible = p == Phase.Connected && View.DrivesAllowed;
-            Cad.Visible = p == Phase.Connected;
-            Full.Visible = p == Phase.Connected;
-            Disconnect.Visible = p == Phase.Connected || p == Phase.Reconnecting;
+            Cancel.Shown = p == Phase.Connecting || p == Phase.Idle;
+            Clipboard.Shown = p == Phase.Connected && View.ClipboardAllowed;
+            Drives.Shown = p == Phase.Connected && View.DrivesAllowed;
+            Cad.Shown = p == Phase.Connected;
+            Full.Shown = p == Phase.Connected;
+            Disconnect.Shown = p == Phase.Connected || p == Phase.Reconnecting;
 
             Cancel.Text = Texts.T("cancel");
             Cad.Text = Texts.T("cad");
@@ -107,6 +107,7 @@ namespace GateControl.RdpHost
         }
 
         protected override void OnResize(EventArgs e) { base.OnResize(e); LayoutButtons(); }
+        protected override void OnLayout(LayoutEventArgs e) { base.OnLayout(e); LayoutButtons(); }
         protected override void OnDpiChangedAfterParent(EventArgs e) { base.OnDpiChangedAfterParent(e); Refresh2(); }
 
         private void LayoutButtons()
@@ -117,13 +118,13 @@ namespace GateControl.RdpHost
             var order = new[] { Disconnect, Full, Cad, Drives, Clipboard, Cancel };
             foreach (var b in order)
             {
-                if (!b.Visible) continue;
-                if (b == Drives || (b == Clipboard && !Drives.Visible)) x -= S(17); // the separator between the groups
+                if (!b.Shown) continue;
+                if (b == Drives || (b == Clipboard && !Drives.Shown)) x -= S(17); // the separator between the groups
                 x -= b.Width;
                 b.Location = new Point(x, y);
                 x -= S(8);
             }
-            _sepX = Cad.Visible && (Clipboard.Visible || Drives.Visible) ? Cad.Left - S(12) : -1;
+            _sepX = Cad.Shown && (Clipboard.Shown || Drives.Shown) ? Cad.Left - S(12) : -1;
         }
 
         private int _sepX = -1;

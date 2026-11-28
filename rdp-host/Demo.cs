@@ -85,7 +85,7 @@ namespace GateControl.RdpHost
         /// <summary>The window as it is on the screen (with the frame and the full-screen bar).</summary>
         private static void Capture(RdpForm form, string file)
         {
-            var b = form.Bounds;
+            var b = VisibleBounds(form);
             using (var bmp = new Bitmap(b.Width, b.Height, PixelFormat.Format32bppArgb))
             {
                 using (var g = Graphics.FromImage(bmp)) g.CopyFromScreen(b.Location, Point.Empty, b.Size);
@@ -105,6 +105,24 @@ namespace GateControl.RdpHost
                 }
                 bmp.Save(file, ImageFormat.Png);
             }
+        }
+
+        [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+        private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out RECT value, int size);
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct RECT { public int Left, Top, Right, Bottom; }
+
+        /// <summary>The window without its invisible resize border (DWMWA_EXTENDED_FRAME_BOUNDS).</summary>
+        private static Rectangle VisibleBounds(Form form)
+        {
+            try
+            {
+                if (DwmGetWindowAttribute(form.Handle, 9, out RECT r, System.Runtime.InteropServices.Marshal.SizeOf(typeof(RECT))) == 0)
+                    return Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom);
+            }
+            catch (DllNotFoundException) { }
+            return form.Bounds;
         }
 
         private static bool IsBlank(Bitmap bmp)

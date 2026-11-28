@@ -4,44 +4,17 @@ using System.Windows.Forms;
 
 namespace GateControl.RdpHost
 {
-    /// <summary>
-    /// The bar at the top in full screen (design picture 2): its own top-most window without a frame that
-    /// never takes the focus from the session. Shown for 2 s when full screen starts, afterwards when the
-    /// mouse reaches the top edge in the middle; the pin keeps it.
-    /// </summary>
-    internal sealed class FullscreenBar : Form
+    /// <summary>A top-most window without a frame that never takes the focus from the session.</summary>
+    internal class NoActivateForm : Form
     {
-        private static readonly Color Key = Color.FromArgb(255, 0, 254);
-        private readonly SessionView _view;
-        private readonly Timer _hide = new Timer { Interval = 2000 };
-        private readonly Timer _hint = new Timer { Interval = 2500 };
-        private bool _intro;
-        public Theme Theme = Theme.DarkTheme;
-        public bool Pinned { get; private set; }
-        public bool HintVisible { get; private set; }
-
-        public readonly GcButton Pin, Clipboard, Cad, Minimize, Window, Disconnect;
-
-        public FullscreenBar(SessionView view, Action clipboard, Action cad, Action minimize, Action window, Action disconnect)
+        public NoActivateForm()
         {
-            _view = view;
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
             AutoScaleMode = AutoScaleMode.None;
-            TransparencyKey = Key;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-            Pin = Add("", BtnKind.Bar, "pin", () => { Pinned = !Pinned; Refresh2(); if (!Pinned) _hide.Start(); });
-            Pin.IconOnly = true;
-            Clipboard = Add(Texts.T("clipboard"), BtnKind.BarOn, null, clipboard);
-            Cad = Add(Texts.T("cad"), BtnKind.Bar, null, cad);
-            Minimize = Add("", BtnKind.Bar, "minimize", minimize);
-            Minimize.IconOnly = true;
-            Window = Add(Texts.T("window"), BtnKind.Bar, null, window);
-            Disconnect = Add(Texts.T("disconnect"), BtnKind.BarDanger, null, disconnect);
-            _hide.Tick += (s, e) => { _hide.Stop(); _intro = false; };
-            _hint.Tick += (s, e) => { _hint.Stop(); HintVisible = false; Invalidate(); };
         }
 
         protected override bool ShowWithoutActivation => true;
@@ -56,8 +29,63 @@ namespace GateControl.RdpHost
             }
         }
 
-        private int Dpi => DeviceDpi <= 0 ? 96 : DeviceDpi;
-        private int S(float v) => (int)Math.Round(v * Dpi / 96f);
+        protected int Dpi => DeviceDpi <= 0 ? 96 : DeviceDpi;
+        protected int S(float v) => (int)Math.Round(v * Dpi / 96f);
+    }
+
+    /// <summary>"Strg+Alt+Pause: zurück ins Fenster" below the bar while full screen starts.</summary>
+    internal sealed class HintWindow : NoActivateForm
+    {
+        public void ShowBelow(Rectangle bar)
+        {
+            var f = Fonts.Get("mono", 12f, FontStyle.Regular, Dpi);
+            int w = TextRenderer.MeasureText(Text ?? "", f, Size.Empty, TextFormatFlags.NoPadding).Width + S(24);
+            Bounds = new Rectangle(bar.Left + (bar.Width - w) / 2, bar.Bottom + S(12), w, S(28));
+            BackColor = Color.FromArgb(30, 30, 30);
+            using (var path = Draw.Round(new Rectangle(0, 0, Width, Height), S(9))) Region = new Region(path);
+            if (!Visible) Show();
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.Clear(BackColor);
+            var f = Fonts.Get("mono", 12f, FontStyle.Regular, Dpi);
+            TextRenderer.DrawText(e.Graphics, Text, f, ClientRectangle, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
+    }
+
+    /// <summary>
+    /// The bar at the top in full screen (design picture 2). Shown for 2 s when full screen starts, afterwards
+    /// when the mouse reaches the top edge in the middle; the pin keeps it.
+    /// </summary>
+    internal sealed class FullscreenBar : NoActivateForm
+    {
+        private readonly SessionView _view;
+        private readonly Timer _hide = new Timer { Interval = 2000 };
+        private readonly Timer _hint = new Timer { Interval = 2500 };
+        private readonly HintWindow _hintWin = new HintWindow();
+        private bool _intro;
+        public Theme Theme = Theme.DarkTheme;
+        public bool Pinned { get; private set; }
+        public bool HintVisible { get; private set; }
+
+        public readonly GcButton Pin, Clipboard, Cad, Minimize, Window, Disconnect;
+
+        public FullscreenBar(SessionView view, Action clipboard, Action cad, Action minimize, Action window, Action disconnect)
+        {
+            _view = view;
+            Pin = Add("", BtnKind.Bar, "pin", () => { Pinned = !Pinned; Refresh2(); if (!Pinned) _hide.Start(); });
+            Pin.IconOnly = true;
+            Clipboard = Add(Texts.T("clipboard"), BtnKind.BarOn, null, clipboard);
+            Cad = Add(Texts.T("cad"), BtnKind.Bar, null, cad);
+            Minimize = Add("", BtnKind.Bar, "minimize", minimize);
+            Minimize.IconOnly = true;
+            Window = Add(Texts.T("window"), BtnKind.Bar, null, window);
+            Disconnect = Add(Texts.T("disconnect"), BtnKind.BarDanger, null, disconnect);
+            _hide.Tick += (s, e) => { _hide.Stop(); _intro = false; };
+            _hint.Tick += (s, e) => { _hint.Stop(); HintVisible = false; _hintWin.Hide(); };
+        }
 
         private GcButton Add(string text, BtnKind kind, string icon, Action click)
         {
@@ -67,12 +95,10 @@ namespace GateControl.RdpHost
             return b;
         }
 
-        private int _textW;
-
         public void Refresh2()
         {
             BackColor = Theme.Panel;
-            Clipboard.Visible = _view.ClipboardAllowed;
+            Clipboard.Shown = _view.ClipboardAllowed;
             Clipboard.Text = _view.ClipboardOn ? Texts.T("clipboard") : Texts.T("clipboardPaused");
             Clipboard.Kind = _view.ClipboardOn ? BtnKind.BarOn : BtnKind.BarOff;
             Pin.Kind = Pinned ? BtnKind.BarOn : BtnKind.Bar;
@@ -81,27 +107,29 @@ namespace GateControl.RdpHost
 
             var nameFont = Fonts.Get("ui", 13f, FontStyle.Bold, Dpi);
             var mono = Fonts.Get("mono", 12f, FontStyle.Regular, Dpi);
-            _textW = S(22) + TextRenderer.MeasureText(_view.Name ?? "", nameFont, Size.Empty, TextFormatFlags.NoPadding).Width + S(12)
+            int textW = S(22) + TextRenderer.MeasureText(_view.Name ?? "", nameFont, Size.Empty, TextFormatFlags.NoPadding).Width + S(12)
                 + S(26) + TextRenderer.MeasureText(_view.QualityText(false), mono, Size.Empty, TextFormatFlags.NoPadding).Width + S(14);
 
             int h = S(40);
             int x = S(6);
             Pin.Location = new Point(x, (h - Pin.Height) / 2);
-            x = Pin.Right + _textW;
+            x = Pin.Right + textW;
             foreach (var b in new[] { Clipboard, Cad, Minimize, Window, Disconnect })
             {
-                if (!b.Visible) continue;
+                if (!b.Shown) continue;
                 b.Location = new Point(x, (h - b.Height) / 2);
                 x = b.Right + S(6);
             }
-            int barH = h + (HintVisible ? S(46) : 0);
-            Size = new Size(x, barH);
-            Region?.Dispose();
-            Region = null;
+            Size = new Size(x, h);
+            using (var path = Draw.Round(new Rectangle(0, -S(12), Width, h + S(12)), S(12))) Region = new Region(path);
             Invalidate(true);
         }
 
-        public void PlaceOn(Screen s) => Location = new Point(s.Bounds.Left + (s.Bounds.Width - Width) / 2, s.Bounds.Top);
+        public void PlaceOn(Screen s)
+        {
+            Location = new Point(s.Bounds.Left + (s.Bounds.Width - Width) / 2, s.Bounds.Top);
+            if (HintVisible) { _hintWin.Text = Texts.T("fsHint"); _hintWin.ShowBelow(Bounds); }
+        }
 
         /// <summary>Full screen started: visible for 2 s, with the hint below.</summary>
         public void Intro()
@@ -112,23 +140,33 @@ namespace GateControl.RdpHost
             _hint.Stop(); _hint.Start();
             Refresh2();
             if (!Visible) Show();
+            _hintWin.Text = Texts.T("fsHint");
+            _hintWin.ShowBelow(Bounds);
         }
 
         /// <summary>Called by the edge watch of the window: show while the mouse is at the edge or on the bar.</summary>
         public void Reveal(bool show)
         {
-            bool want = show || Pinned || _intro || HintVisible;
+            bool want = show || Pinned || _intro;
+            if (!want && HintVisible) { HintVisible = false; _hintWin.Hide(); }
             if (want == Visible) return;
             if (want) Show(); else Hide();
+        }
+
+        protected override void OnVisibleChanged(EventArgs e)
+        {
+            base.OnVisibleChanged(e);
+            if (!Visible) _hintWin.Hide();
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
             var t = Theme;
-            int h = S(40);
+            int h = Height;
             g.Clear(t.Panel);
-            using (var p = new Pen(t.Line2)) g.DrawRectangle(p, 0, -1, Width - 1, h);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using (var path = Draw.Round(new Rectangle(0, -S(12), Width - 1, h + S(11)), S(12))) using (var p = new Pen(t.Line2)) g.DrawPath(p, path);
             int x = Pin.Right + S(10);
             int mid = h / 2;
             Draw.Dot(g, new Point(x + S(4), mid), Dpi, _view.Phase == Phase.Connected ? t.Acc : t.Warn);
@@ -141,23 +179,13 @@ namespace GateControl.RdpHost
             if (_view.Quality >= 0) x += Draw.Quality(g, new Point(x, mid + S(6)), _view.Quality, Dpi, t.Acc, t.Line2) + S(6);
             var mono = Fonts.Get("mono", 12f, FontStyle.Regular, Dpi);
             TextRenderer.DrawText(g, _view.QualityText(false), mono, new Rectangle(x, 0, S(80), h), t.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-            using (var p = new Pen(t.Line)) g.DrawLine(p, Clipboard.Visible ? Clipboard.Left - S(8) : Cad.Left - S(8), mid - S(10), Clipboard.Visible ? Clipboard.Left - S(8) : Cad.Left - S(8), mid + S(10));
-
-            if (HintVisible)
-            {
-                var hint = Texts.T("fsHint");
-                var f = Fonts.Get("mono", 12f, FontStyle.Regular, Dpi);
-                int hw = TextRenderer.MeasureText(hint, f, Size.Empty, TextFormatFlags.NoPadding).Width + S(24);
-                var r = new Rectangle((Width - hw) / 2, h + S(12), hw, S(28));
-                using (var b = new SolidBrush(Key)) g.FillRectangle(b, 0, h, Width, Height - h); // see-through below the bar
-                using (var path = Draw.Round(r, S(9))) using (var b = new SolidBrush(Color.FromArgb(30, 30, 30))) g.FillPath(b, path);
-                TextRenderer.DrawText(g, hint, f, r, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-            }
+            int sep = (Clipboard.Shown ? Clipboard.Left : Cad.Left) - S(8);
+            using (var p = new Pen(t.Line)) g.DrawLine(p, sep, mid - S(10), sep, mid + S(10));
         }
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { _hide.Dispose(); _hint.Dispose(); }
+            if (disposing) { _hide.Dispose(); _hint.Dispose(); _hintWin.Dispose(); }
             base.Dispose(disposing);
         }
     }
