@@ -493,6 +493,7 @@ class RdpManager extends EventEmitter {
           pid: proc.pid,
           rdpFile,
           host,
+          name: this._routeName(routeId, route),
           credTarget,
           startTime,
           process: proc,
@@ -561,9 +562,25 @@ class RdpManager extends EventEmitter {
       routeId,
       pid: session.pid,
       host: session.host,
+      name: session.name || this._routeName(routeId),
       via: session.via || 'mstsc',
       duration: Math.floor((Date.now() - session.startTime) / 1000),
     };
+  }
+
+  /**
+   * The name of a route (the connect data, else the cached services list), null without one —
+   * the tray and the session lists show it instead of the host.
+   * @param {number} routeId
+   * @param {object} [route]
+   * @returns {string|null}
+   */
+  _routeName(routeId, route) {
+    const own = typeof route?.name === 'string' ? route.name.trim() : '';
+    if (own) return own;
+    const svc = (this.rdpServices || []).find((r) => String(r.id) === String(routeId));
+    const name = typeof svc?.name === 'string' ? svc.name.trim() : '';
+    return name || null;
   }
 
   /**
@@ -577,6 +594,7 @@ class RdpManager extends EventEmitter {
         routeId,
         pid: session.pid,
         host: session.host,
+        name: session.name || this._routeName(routeId),
         via: session.via || 'mstsc',
         duration: Math.floor((Date.now() - session.startTime) / 1000),
       });
@@ -696,6 +714,7 @@ class RdpManager extends EventEmitter {
     this.activeSessions.set(routeId, {
       pid: hs.pid,
       host: route.host,
+      name: this._routeName(routeId, route),
       startTime: Date.now(),
       via: 'window',
       hostSession: hs,

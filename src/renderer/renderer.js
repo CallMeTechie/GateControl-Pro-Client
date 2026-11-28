@@ -237,6 +237,7 @@ let currentRdpRoute = null; // route being viewed/connected
 // Remotedesktop im GateControl-Fenster: the app setting (rdp.openIn), whether gc-rdp-host is there, the local
 // choice per host („Auf diesem PC“, src/renderer/rdp-local-state.js), the mode of the running connect
 const GCRdpLocal = window.GCRdpLocal;
+const GCTargetLabel = window.GCTargetLabel;
 let rdpOpenIn = 'window';
 let rdpHostAvailable = true;
 const rdpLocal = new Map(); // route id → local choice
@@ -943,10 +944,11 @@ function renderServices() {
 		const tile = h('button', 'row card svc-tile svc-open');
 		tile.type = 'button';
 		tile.disabled = !connected;
-		tile.appendChild(h('span', 'svc-initial', Array.from((svc.name || '?').trim())[0] || '?'));
+		// only the name (its address as the fallback without a name)
+		const label = GCTargetLabel.serviceLabel(svc);
+		tile.appendChild(h('span', 'svc-initial', GCTargetLabel.initial(label)));
 		const meta = h('span', 'svc-meta');
-		meta.appendChild(h('span', 'svc-name', svc.name));
-		meta.appendChild(h('span', 'svc-host', svc.domain || hostOf(svc.url)));
+		meta.appendChild(h('span', 'svc-name', label));
 		tile.appendChild(meta);
 		tile.addEventListener('click', () => openService(svc));
 		quick.appendChild(tile);
@@ -955,10 +957,10 @@ function renderServices() {
 	servicesList.forEach((svc) => {
 		const card = h('div', 'card svc-card');
 		const top = h('div', 'svc-card-top');
-		top.appendChild(h('span', 'svc-initial lg', Array.from((svc.name || '?').trim())[0] || '?'));
+		const label = GCTargetLabel.serviceLabel(svc);
+		top.appendChild(h('span', 'svc-initial lg', GCTargetLabel.initial(label)));
 		const meta = h('div', 'svc-meta');
-		meta.appendChild(h('div', 'svc-name', svc.name));
-		meta.appendChild(h('div', 'svc-host', svc.domain || hostOf(svc.url)));
+		meta.appendChild(h('div', 'svc-name', label));
 		top.appendChild(meta);
 		card.appendChild(top);
 
@@ -1178,10 +1180,10 @@ function createRdpRow(svc) {
 
 	const text = h('span', 'host-text');
 	const nameLine = h('span', 'host-name-line');
-	nameLine.appendChild(h('span', 'host-name', svc.name));
+	// only the name (the address as the fallback without a name)
+	nameLine.appendChild(h('span', 'host-name', GCTargetLabel.rdpLabel(svc)));
 	if (sessionFor(svc)) nameLine.appendChild(h('span', 'chip c-ok chip-sm', t('ui.rdp.sessionActive')));
 	text.appendChild(nameLine);
-	text.appendChild(h('span', 'host-addr', `${svc.host}:${svc.port || 3389}`));
 	row.appendChild(text);
 
 	row.appendChild(h('span', `chip ${st.chip}`, st.label));
@@ -1597,12 +1599,10 @@ function renderRdpDetail() {
 	const titleBlock = h('div', 'grow');
 	titleBlock.style.minWidth = '0';
 	const titleLine = h('div', 'rdp-detail-title');
-	titleLine.appendChild(h('h2', 'disp rdp-detail-name', svc.name));
+	// only the name, no "IP:Port" below it (the address as the fallback without a name)
+	titleLine.appendChild(h('h2', 'disp rdp-detail-name', GCTargetLabel.rdpLabel(svc)));
 	titleLine.appendChild(h('span', `chip ${st.chip}`, st.label));
 	titleBlock.appendChild(titleLine);
-	const addr = h('p', 'mono muted', `${svc.host}:${svc.port || 3389}`);
-	addr.style.marginTop = '4px';
-	titleBlock.appendChild(addr);
 	head.appendChild(titleBlock);
 
 	if (!online && svc.wol_mac) {
@@ -1887,7 +1887,7 @@ async function loadRdpLocal(routeId) {
 
 function sessionName(s) {
 	const svc = rdpServices.find((x) => String(x.id) === String(s.routeId));
-	return svc ? svc.name : (s.host || String(s.routeId));
+	return GCTargetLabel.sessionLabel(s, svc);
 }
 
 function sessionMinutes(s) {
@@ -2044,7 +2044,7 @@ async function startRdpConnect(svc, opts = {}) {
 
 // ── Password Prompt ─────────────────────────────────────
 function showPasswordPrompt(svc) {
-	$('#rdp-password-title').textContent = svc.name;
+	$('#rdp-password-title').textContent = GCTargetLabel.rdpLabel(svc);
 	const username = svc.username || '';
 	const domain = svc.domain || 'WORKGROUP';
 	$('#rdp-password-user').textContent = t('rdp.user', { user: `${domain}\\${username}` });
@@ -2067,7 +2067,7 @@ $('#rdp-password-input').addEventListener('keydown', (e) => {
 
 // ── Maintenance Warning ─────────────────────────────────
 function showMaintenanceWarning(svc, windowText) {
-	$('#rdp-maintenance-title').textContent = svc.name;
+	$('#rdp-maintenance-title').textContent = GCTargetLabel.rdpLabel(svc);
 	$('#rdp-maintenance-window').textContent = windowText
 		? t('rdp.scheduledMaintenance', { window: windowText })
 		: t('rdp.outsideMaintenanceConnect');
@@ -2116,7 +2116,7 @@ function setConnectingChip(kind) {
 }
 
 function showConnectingProgress(svc) {
-	$('#rdp-connecting-title').textContent = svc.name;
+	$('#rdp-connecting-title').textContent = GCTargetLabel.rdpLabel(svc);
 	$('#rdp-connecting-status').textContent = t('rdp.connectionEstablishing');
 	setConnectingChip('running');
 
