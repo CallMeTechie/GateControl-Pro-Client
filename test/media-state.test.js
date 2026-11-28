@@ -80,8 +80,11 @@ describe('sources and the way', () => {
 
   it('chips and lines of the sources (no secret is ever there to show)', () => {
     assert.equal(MS.sourceChip(jelly(), t), 'media.src.jellyfin(DS918+)');
-    assert.equal(MS.sourceChip(share(), t), 'media.src.share(\\\\192.168.1.20\\filme)');
-    assert.equal(MS.sourceSub(jelly(), t, 'BUERO-PC'), 'media.src.signedInAs(Mila) · 192.168.1.20:8096 · media.src.device(BUERO-PC)');
+    // never an address, host or UNC path (the user's rule): the share's name, else "NAS-Freigabe"
+    assert.equal(MS.sourceChip(share(), t), 'media.src.sharesOne');
+    assert.equal(MS.sourceChip(share({ name: 'Filme' }), t), 'media.src.share(Filme)');
+    assert.equal(MS.sourceChip(jelly({ name: 'jellyfin.example.test' }), t), 'media.src.jellyfin(Jellyfin)');
+    assert.equal(MS.sourceSub(jelly(), t, 'BUERO-PC'), 'media.src.signedInAs(Mila) · media.src.device(BUERO-PC)');
     assert.equal(MS.sourceSub(share(), t), 'media.src.smbHomeWebdav · medien-lesen');
     assert.equal(MS.sourceSub(share({ pairWith: null, useExisting: true, userName: null }), t), 'media.src.smb · media.src.explorer');
     assert.equal(MS.sourceSub(share({ kind: 'webdav', pairWith: null }), t), 'media.src.webdav · medien-lesen');
@@ -436,6 +439,17 @@ describe('Ordner (4h)', () => {
     assert.equal(MS.sizeLabel(0, 'de'), null);
   });
 
+  it('a share shows its name, never its host, UNC path or URL', () => {
+    assert.equal(MS.shareLabel(share({ name: 'Filme' }), t), 'Filme');
+    for (const name of ['192.168.1.20', 'nas.local', '\\\\nas\\filme', 'https://nas.example.test/filme', 'smb://nas/filme', '', null]) {
+      assert.equal(MS.shareLabel(share({ name }), t), 'media.src.sharesOne', String(name));
+    }
+    assert.equal(MS.shareLabel(null, t), '');
+    const view = read('src', 'renderer', 'media-view.js');
+    assert.doesNotMatch(view, /sharePath/, 'the page never shows the address');
+    assert.doesNotMatch(read('src', 'renderer', 'media-sources-view.js'), /sharePath|\.address\b/);
+  });
+
   it('the path as buttons, the folder above, the way of the share', () => {
     assert.deepEqual(MS.crumbs('Filme/Familie', '\\\\nas\\filme'), [{ label: '\\\\nas\\filme', dir: '' }, { label: 'Filme', dir: 'Filme' }, { label: 'Familie', dir: 'Filme/Familie' }]);
     assert.equal(MS.parentDir('Filme/Familie'), 'Filme');
@@ -609,7 +623,7 @@ describe('Medien-Plugin (W2): the sources from the server, the network rule', ()
     assert.deepEqual(MS.sourcePill(managed({ problem: 'no_mapping' }), t), { cls: 'is-warn', text: 'media.problem.no_mapping' });
     assert.equal(MS.sourcePill(managed({ ready: false, userName: null }), t).text, 'media.src.signingInPill', 'signs in by itself');
     assert.equal(MS.awayRule(managed(), t), 'media.src.awayVpn');
-    assert.equal(MS.awayRule(managed({ awayMode: 'direct', awayAddress: 'https://jellyfin.example.test' }), t), 'media.src.awayDirect(jellyfin.example.test)');
+    assert.equal(MS.awayRule(managed({ awayMode: 'direct', awayAddress: 'https://jellyfin.example.test' }), t), 'media.src.awayDirect', 'the rule, not the address');
     assert.equal(MS.awayRule(jelly(), t), null);
   });
 

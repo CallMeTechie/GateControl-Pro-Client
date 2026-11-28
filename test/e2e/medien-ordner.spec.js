@@ -89,7 +89,9 @@ test.describe('medien ordner', () => {
     await expect(fl.locator('.md-fr.is-dir')).toHaveCount(4);
     await expect(fl).not.toContainText('@eaDir');
     await expect(p.locator('.md-fv-way')).toContainText(/WebDAV · (unterwegs|away)/);
-    await expect(p.locator('.md-crumb.is-cur')).toContainText('localhost');
+    // the root of the path: the share's name from the server, never its host or URL
+    await expect(p.locator('.md-crumb.is-cur')).toHaveText('Filme');
+    await expect(fl.locator('.md-fr.is-dir').first()).toBeVisible();
     await fl.locator('.md-fr.is-dir', { hasText: 'Leuchtfeuer (2024)' }).click();
     await expect(p.locator('.md-crumb.is-cur')).toHaveText('Leuchtfeuer (2024)');
     const row = fl.locator('.md-fr', { hasText: 'Leuchtfeuer' });

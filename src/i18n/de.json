@@ -5547,7 +5547,7 @@
       "smbChecked": "SMB geprüft",
       "smbConflict": "WebDAV, weil Windows schon mit einem anderen Benutzer verbunden ist",
       "awayVpn": "Unterwegs nur über VPN",
-      "awayDirect": "Unterwegs auch ohne VPN über {{address}}",
+      "awayDirect": "Unterwegs auch ohne VPN",
       "jellyfinOnly": "Jellyfin",
       "sharesOne": "NAS-Freigabe",
       "sharesOther": "{{count}} NAS-Freigaben",

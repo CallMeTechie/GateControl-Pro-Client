@@ -124,15 +124,31 @@
 		return null;
 	}
 
-	/** `\\192.168.1.20\filme` of a share (its UNC), else its address. */
+	/** `\\192.168.1.20\filme` of a share (its UNC), else its address — never shown (the user's rule: no server addresses). */
 	function sharePath(s) {
 		return (s && (s.unc || s.address)) || '';
 	}
 
-	/** The chip of a source on the overview: "Jellyfin · DS918+" / "NAS-Freigabe · \\nas\filme". */
+	/** A name that is an address, a host or a path (an IP, "nas.local", "\\nas\filme", a URL): not shown. */
+	function looksLikeAddress(name) {
+		const n = String(name || '').trim();
+		return !n || /[\\/:@]/.test(n) || /^\d{1,3}(\.\d{1,3}){3}$/.test(n) || /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(n);
+	}
+
+	/**
+	 * What the page shows of a share (the root of its path, the list of Ordner, its chip): its name from the server
+	 * ("Filme") — never its host, UNC path or URL; without a name that is no address "NAS-Freigabe".
+	 */
+	function shareLabel(s, t) {
+		if (!s) return '';
+		return looksLikeAddress(s.name) ? t('media.src.sharesOne') : String(s.name).trim();
+	}
+
+	/** The chip of a source: "Jellyfin · DS918+" / "NAS-Freigabe · Filme" (no address, no host). */
 	function sourceChip(s, t) {
 		if (!s) return '';
-		return s.kind === 'jellyfin' ? t('media.src.jellyfin', { name: s.name || 'Jellyfin' }) : t('media.src.share', { path: sharePath(s) });
+		if (s.kind === 'jellyfin') return t('media.src.jellyfin', { name: looksLikeAddress(s.name) ? 'Jellyfin' : s.name });
+		return looksLikeAddress(s.name) ? t('media.src.sharesOne') : t('media.src.share', { path: String(s.name).trim() });
 	}
 
 	/** The line under a source in Quellen. */
@@ -143,7 +159,6 @@
 			if (s.managed && !s.userName && !s.problem) parts.push(t('media.src.signingIn'));
 			if (s.userName) parts.push(t('media.src.signedInAs', { user: s.userName }));
 			if (s.managed && s.deviceName) deviceName = s.deviceName;
-			if (s.address) parts.push(String(s.address).replace(/^https?:\/\//, ''));
 			if (deviceName) parts.push(t('media.src.device', { device: deviceName }));
 			return parts.join(' · ');
 		}
@@ -173,7 +188,8 @@
 	/** "unterwegs nur über VPN" / "unterwegs auch ohne VPN (https://…)": the rule of a server source. */
 	function awayRule(s, t) {
 		if (!s || !s.managed) return null;
-		return s.awayMode === 'direct' && s.awayAddress ? t('media.src.awayDirect', { address: String(s.awayAddress).replace(/^https:\/\//, '') }) : t('media.src.awayVpn');
+		// away without the VPN: the rule only, not the admin's address
+		return s.awayMode === 'direct' && s.awayAddress ? t('media.src.awayDirect') : t('media.src.awayVpn');
 	}
 
 	/** "vom Server, vor 3 Min." of the list; null when it never came. */
@@ -1033,6 +1049,8 @@
 		serverNotes,
 		visible,
 		sharePath,
+		shareLabel,
+		looksLikeAddress,
 		sourceChip,
 		sourceSub,
 		alwaysOriginal,

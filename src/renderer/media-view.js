@@ -616,7 +616,7 @@
 					on: { click: () => { S.folderShareOpen = true; S.folder = { ...S.folder, sourceId: x.id, dir: '', items: [], loaded: false }; renderBody(); } },
 				}, [
 					el('span', { class: 'md-fr-ic' }, [icon('folder', 20, '1.8')]),
-					el('span', { class: 'md-fr-tx' }, [el('b', { text: MS.sharePath(x) }), el('small', { text: x.pairWith ? t('media.src.smbHomeWebdav') : t(x.kind === 'webdav' ? 'media.folders.webdav' : 'media.folders.smb') })]),
+					el('span', { class: 'md-fr-tx' }, [el('b', { text: MS.shareLabel(x, t) }), el('small', { text: x.pairWith ? t('media.src.smbHomeWebdav') : t(x.kind === 'webdav' ? 'media.folders.webdav' : 'media.folders.smb') })]),
 					icon('right', 16),
 				]));
 			}
@@ -781,12 +781,12 @@
 					chips.appendChild(el('button', {
 						type: 'button', class: `md-pill md-src${on ? ' is-on' : ''}`, 'aria-pressed': on ? 'true' : 'false', 'data-id': x.id,
 						on: { click: () => { if (x.id !== S.folder.sourceId) { S.folder = { ...S.folder, sourceId: x.id, dir: '', items: [], loaded: false }; renderBody(); } } },
-					}, [icon('folder', 13), el('span', { text: MS.sharePath(x) })]));
+					}, [icon('folder', 13), el('span', { text: MS.shareLabel(x, t) })]));
 				}
 				wrap.appendChild(chips);
 			}
 			const crumbs = el('nav', { class: 'md-crumbs', 'aria-label': t('media.folders.path') });
-			const list = MS.crumbs(f.dir, MS.sharePath(share));
+			const list = MS.crumbs(f.dir, MS.shareLabel(share, t));
 			list.forEach((c, i) => {
 				if (i) crumbs.appendChild(el('span', { class: 'md-crumb-sep', 'aria-hidden': 'true', text: '›' }));
 				const last = i === list.length - 1;

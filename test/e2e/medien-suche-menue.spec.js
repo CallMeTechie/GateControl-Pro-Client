@@ -18,6 +18,19 @@ const shot = async (page, name) => { if (SHOTS) await page.screenshot({ path: `$
 const page$ = (page) => page.locator('#page-medien');
 const acts = (page) => page.locator('.md-menu .md-menu-item');
 
+/** Medien shows no server address, host or URL — not in its text, not in a tooltip or label (the user's rule). */
+async function noAddress(page, dav) {
+  const host = new URL(dav.address).hostname;
+  const seen = await page.locator('#page-medien').evaluate((root) => {
+    const out = [root.innerText];
+    for (const n of root.querySelectorAll('[title], [aria-label], [placeholder]')) out.push(n.getAttribute('title') || '', n.getAttribute('aria-label') || '', n.getAttribute('placeholder') || '');
+    return out.join('\n');
+  });
+  expect(seen).not.toMatch(/https?:\/\/|\\\\|127\.0\.0\.1|smb:/);
+  expect(seen).not.toContain(dav.address);
+  expect(seen).not.toContain(host);
+}
+
 test.describe('medien suche und menü', () => {
   let jf;
   let dav;
@@ -158,6 +171,9 @@ test.describe('medien suche und menü', () => {
     await expect(hit.locator('.md-fr-in')).toHaveText('in Leuchtfeuer (2024)');
     await expect(hit.locator('img')).toHaveAttribute('src', /^gcmedia:\/\/image\//);
     await shot(page, 'medien-ordner-suche-nas');
+    // no server address anywhere on the page (text, tooltips, labels): the share is "Filme", the root of its path
+    await expect(p.locator('.md-crumb').first()).toHaveText('Filme');
+    await noAddress(page, dav);
 
     // its menu: Abspielen, Als gesehen markieren (kept on this PC)
     await hit.click({ button: 'right' });
@@ -184,6 +200,16 @@ test.describe('medien suche und menü', () => {
     await row.click({ button: 'right' });
     await page.locator('.md-menu [data-act="played"]').click();
     await expect(row).not.toHaveClass(/is-played/);
+
+    // the chip of the overview and Quellen: no address either
+    await p.locator('.md-tabs [data-tab="overview"]').click();
+    await noAddress(page, dav);
+    await p.locator('.md-srcbtn').click();
+    await expect(p.locator('.md-srccard[data-kind]').first()).toBeVisible();
+    await expect(p.locator('.md-srccard').first()).toContainText(/(NAS-Freigabe|NAS share) · Filme/);
+    await noAddress(page, dav);
+    await p.locator('.md-back').click();
+    await p.locator('.md-tabs [data-tab="folders"]').click();
 
     // a hit plays straight from the share; a click on the row still plays (as before)
     await p.locator('.md-crumb').first().click();
