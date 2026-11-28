@@ -142,6 +142,11 @@ namespace GateControl.RdpHost
 
             int mid = Height / 2;
             int x = S(14);
+            // the status never runs under the buttons (narrow windows): clipped before the leftmost one
+            int limit = Width;
+            foreach (var b in _right) if (b.Shown && b.Left > 0) limit = Math.Min(limit, b.Left - S(10));
+            if (_sepX > 0) limit = Math.Min(limit, _sepX - S(10));
+            g.SetClip(new Rectangle(0, 0, Math.Max(0, limit), Height));
             Color dot = View.Phase == Phase.Connected ? t.Acc : View.Phase == Phase.Disconnected ? t.Faint : t.Warn;
             Draw.Dot(g, new Point(x + S(4), mid), Dpi, dot);
             x += S(16);
