@@ -1,0 +1,71 @@
+name: RDP Host (gc-rdp-host)
+
+# gc-rdp-host.exe (rdp-host/, C# .NET Framework 4.8): the Remote Desktop session window of the Pro
+# client, hosting the Microsoft RDP control (mstscax.dll) like mstsc does.
+#   - Build: aximp makes the interop assemblies from the runner's mstscax.dll, then dotnet build.
+#   - Selbsttest: --version, and --selftest creates the control and sets what every connect sets
+#     (dialog version, redirection warning off, password over the raw BSTR way), no connection.
+#   - Bilder: the window's views (--demo) as PNGs, without a connection, as an artifact.
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rdp-host-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+
+jobs:
+  windows:
+    name: rdp-host (Windows, Build, Selbsttest)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and self-test
+        shell: pwsh
+        run: ./scripts/build-rdp-host.ps1
+
+      - name: Screenshots of the views (no connection)
+        shell: pwsh
+        run: |
+          $exe = 'rdp-host\bin\Release\net48\gc-rdp-host.exe'
+          New-Item -ItemType Directory -Force rdp-host\shots | Out-Null
+          $views = @('connecting', 'connected', 'reconnecting', 'error', 'fullscreen')
+          foreach ($v in $views) {
+            foreach ($light in @($false, $true)) {
+              $name = if ($light) { "$v-hell" } else { $v }
+              $argv = @('--demo', $v, '--shot', "rdp-host\shots\$name.png")
+              if ($light) { $argv += '--light' }
+              $p = Start-Process -FilePath $exe -ArgumentList $argv -PassThru
+              if (-not $p.WaitForExit(30000)) { $p.Kill(); throw "demo $name hängt" }
+              if (-not (Test-Path "rdp-host\shots\$name.png")) { throw "kein Bild für $name" }
+            }
+          }
+          Get-ChildItem rdp-host\shots | Format-Table Name, Length
+
+      - name: Upload gc-rdp-host
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gc-rdp-host
+          path: |
+            rdp-host/bin/Release/net48/
+            rdp-host/interop/
+          retention-days: 7
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gc-rdp-host-screenshots
+          path: rdp-host/shots/
+          retention-days: 7

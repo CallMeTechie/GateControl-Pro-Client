@@ -86,6 +86,11 @@ jobs:
           rustup default stable
           cargo build --release --locked --manifest-path drive-sync/Cargo.toml
 
+      # gc-rdp-host.exe (extraResources → resources\rdp-host), wie im Release.
+      - name: Build gc-rdp-host
+        shell: pwsh
+        run: ./scripts/build-rdp-host.ps1
+
       # Same target as the release (electron-builder --win nsis), but unsigned
       # and without publishing; no signing secrets are used.
       - name: Build NSIS installer

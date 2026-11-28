@@ -25,8 +25,8 @@ $cfg = @{
     DataDir       = 'gatecontrol-client-pro'
     # URL protocol of the toast buttons (app: setAsDefaultProtocolClient, HKCU)
     Protocol      = 'gatecontrol-pro'
-    # Drive „Dateien bei Bedarf“ (drive-sync/, package.json extraResources)
-    ExtraFiles    = @('resources\drive-sync\gc-drive-sync.exe')
+    # Drive „Dateien bei Bedarf“ (drive-sync/) and the Remote Desktop window (rdp-host/), package.json extraResources
+    ExtraFiles    = @('resources\drive-sync\gc-drive-sync.exe', 'resources\rdp-host\gc-rdp-host.exe', 'resources\rdp-host\MSTSCLib.dll', 'resources\rdp-host\AxMSTSCLib.dll')
   }
   community = @{
     Product       = 'GateControl Community Client'
