@@ -79,6 +79,8 @@ const SVG_ICONS = {
 	external: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
 	trash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>',
 	close: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+	caret: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
+	lock: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
 	signinMs: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5M15 12H3"/></svg>',
 	stepIcons: '<svg class="si-done" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
 		+ '<svg class="si-active spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9"/></svg>'
@@ -197,6 +199,7 @@ function refreshTexts() {
 	renderServices();
 	renderTraffic();
 	renderSplit();
+	renderOpenIn();
 	renderLogs();
 	renderSetupProgress();
 	renderUpdateCard();
@@ -231,6 +234,15 @@ let rdpSessions = [];
 let rdpFilter = 'all';
 let selectedRdpId = null;
 let currentRdpRoute = null; // route being viewed/connected
+// Remotedesktop im GateControl-Fenster: the app setting (rdp.openIn), whether gc-rdp-host is there, the local
+// choice per host („Auf diesem PC“, src/renderer/rdp-local-state.js), the mode of the running connect
+const GCRdpLocal = window.GCRdpLocal;
+let rdpOpenIn = 'window';
+let rdpHostAvailable = true;
+const rdpLocal = new Map(); // route id → local choice
+let rdpConnectMode = 'window';
+let rdpMenuOpen = false;
+let rdpConnectVia = null; // the way picked for this connect (kept for the password / maintenance follow-ups)
 // stage 3: SSH devices of the plugin „Fernzugriff“ (selected as 'ssh:<id>'), their tmux lists, the running terminals
 let sshDevices = [];
 let sshRight = true;
@@ -1152,6 +1164,7 @@ function createRdpRow(svc) {
 	const selected = String(svc.id) === String(selectedRdpId);
 	const row = h('button', `row${selected ? ' sel' : ''}`);
 	row.type = 'button';
+	row.dataset.rdp = String(svc.id);
 	if (selected) row.setAttribute('aria-current', 'true');
 	row.addEventListener('click', () => {
 		selectedRdpId = svc.id;
@@ -1572,7 +1585,9 @@ function renderRdpDetail() {
 	}
 	const svc = rdpServices.find((s) => String(s.id) === String(selectedRdpId));
 	$('#rdp-detail-empty').hidden = !!svc || (rdpServices.length === 0 && sshDevices.length === 0);
+	rdpMenuOpen = false;
 	if (!svc) return;
+	if (!rdpLocal.has(String(svc.id))) loadRdpLocal(svc.id);
 
 	const st = rdpStatus(svc);
 	const online = !!svc.status?.online;
@@ -1605,11 +1620,36 @@ function renderRdpDetail() {
 		head.appendChild(wolBtn);
 	}
 
+	// a running session in the GateControl window: "Fenster anzeigen" brings it to the front
+	const sess = sessionFor(svc);
+	if (sess && sess.via === 'window') {
+		const showBtn = h('button', 'btn btn-sec', t('rdpWindow.showWindow'));
+		showBtn.type = 'button';
+		showBtn.id = 'rdp-show-window';
+		showBtn.addEventListener('click', () => rdp.focus(svc.id));
+		head.appendChild(showBtn);
+	}
+
+	// "Verbinden" opens as set (GateControl window by default); the arrow offers both ways
+	const split = h('span', 'rdp-split');
 	const connectBtn = iconButton('btn btn-pri', 'play', t('rdp.connect'));
+	connectBtn.id = 'rdp-connect';
 	connectBtn.disabled = !online && !svc.maintenance_active;
 	connectBtn.addEventListener('click', () => startRdpConnect(svc));
-	head.appendChild(connectBtn);
+	const moreBtn = h('button', 'btn btn-pri rdp-split-more');
+	moreBtn.type = 'button';
+	moreBtn.id = 'rdp-connect-more';
+	moreBtn.disabled = connectBtn.disabled;
+	moreBtn.setAttribute('aria-label', t('rdpWindow.moreWays'));
+	moreBtn.setAttribute('aria-haspopup', 'menu');
+	moreBtn.setAttribute('aria-expanded', 'false');
+	setStaticIcon(moreBtn, 'caret'); // SAFE: static SVG
+	split.append(connectBtn, moreBtn);
+	head.appendChild(split);
 	detail.appendChild(head);
+	const menu = rdpConnectMenu(svc, moreBtn);
+	detail.appendChild(menu);
+	moreBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleRdpMenu(menu, moreBtn, !rdpMenuOpen); });
 
 	// Hints
 	if (!online && !svc.maintenance_active && !svc.wol_mac) {
@@ -1637,6 +1677,9 @@ function renderRdpDetail() {
 	if (!online && svc.wol_mac) grid.appendChild(infoCard('Wake-on-LAN', svc.wol_mac, { mono: true }));
 	detail.appendChild(grid);
 
+	// „Auf diesem PC“: the local choice of this host (only restricts what the server permits)
+	detail.appendChild(rdpLocalCard(svc));
+
 	// Tags
 	const tags = parseTags(svc.tags);
 	if (tags.length > 0) {
@@ -1655,6 +1698,191 @@ function renderRdpDetail() {
 		card.appendChild(p);
 		detail.appendChild(card);
 	}
+}
+
+// ── Remotedesktop: "Verbinden" menu and „Auf diesem PC“ ──
+/** The way "Verbinden" opens this host now (the click without the menu). */
+function rdpDefaultMode(svc) {
+	return GCRdpLocal.openMode({ local: rdpLocal.get(String(svc.id)), global: rdpOpenIn, route: svc, hostAvailable: rdpHostAvailable }).mode;
+}
+
+function rdpConnectMenu(svc, anchor) {
+	const menu = h('div', 'rdp-menu');
+	menu.id = 'rdp-connect-menu';
+	menu.setAttribute('role', 'menu');
+	menu.hidden = true;
+	const def = rdpDefaultMode(svc);
+	const remoteApp = GCRdpLocal.allowed(svc).remoteApp;
+	const item = (via, icon, title, sub, disabled) => {
+		const b = h('button', `rdp-menu-item${via === def ? ' hl' : ''}`);
+		b.type = 'button';
+		b.setAttribute('role', 'menuitem');
+		b.dataset.via = via;
+		b.disabled = !!disabled;
+		const ic = h('span', 'rdp-menu-ic');
+		setStaticIcon(ic, icon); // SAFE: static SVG
+		const text = h('span', 'rdp-menu-text');
+		text.append(h('b', null, title), h('small', null, sub));
+		b.append(ic, text);
+		b.addEventListener('click', () => { toggleRdpMenu(menu, anchor, false); startRdpConnect(svc, { via }); });
+		return b;
+	};
+	const windowSub = !rdpHostAvailable ? t('rdpWindow.unavailable')
+		: remoteApp ? t('rdpWindow.local.remoteApp')
+			: `${t('rdpWindow.menuWindowSub')}${def === 'window' ? `, ${t('rdpWindow.menuStandard')}` : ''}`;
+	menu.append(
+		item('window', 'monitor', t('rdpWindow.menuWindow'), windowSub, !rdpHostAvailable || remoteApp),
+		item('mstsc', 'external', t('rdpWindow.menuMstsc'), `${t('rdpWindow.menuMstscSub')}${def === 'mstsc' ? ` ${t('rdpWindow.menuStandard')}.` : ''}`, false),
+	);
+	menu.addEventListener('keydown', (e) => { if (e.key === 'Escape') { toggleRdpMenu(menu, anchor, false); anchor.focus(); } });
+	return menu;
+}
+
+function toggleRdpMenu(menu, anchor, open) {
+	rdpMenuOpen = !!open;
+	menu.hidden = !open;
+	anchor.setAttribute('aria-expanded', open ? 'true' : 'false');
+	if (open) {
+		const col = menu.offsetParent || menu.parentElement;
+		const a = anchor.getBoundingClientRect();
+		const c = col.getBoundingClientRect();
+		menu.style.top = `${a.bottom - c.top + col.scrollTop + 6}px`;
+		menu.style.right = `${Math.max(8, c.right - a.right)}px`;
+		const first = menu.querySelector('button:not([disabled])');
+		if (first) first.focus();
+	}
+}
+
+document.addEventListener('click', (e) => {
+	if (!rdpMenuOpen) return;
+	const menu = $('#rdp-connect-menu');
+	if (menu && !menu.contains(e.target)) toggleRdpMenu(menu, $('#rdp-connect-more'), false);
+});
+
+/** One row of the card: title, description (or the lock), control. */
+function rdpSetRow(key, title, desc, control, lockedText) {
+	const row = h('div', 'set-row');
+	row.dataset.local = key;
+	const text = h('div', 'grow');
+	text.appendChild(h('div', 'set-row-title', title));
+	const d = h('div', 'set-row-desc');
+	if (lockedText) {
+		const lock = h('span', 'rdp-lock');
+		const ic = h('span');
+		ic.style.display = 'contents';
+		setStaticIcon(ic, 'lock'); // SAFE: static SVG
+		lock.append(ic, h('span', null, lockedText));
+		d.appendChild(lock);
+	} else if (desc) {
+		d.textContent = desc;
+	}
+	text.appendChild(d);
+	row.append(text, control);
+	return row;
+}
+
+function rdpSeg(key, options, value, disabledValues, onPick) {
+	const seg = h('div', 'seg sm');
+	seg.dataset.seg = key;
+	for (const [v, label] of options) {
+		const b = h('button', v === value ? 'on' : '', label);
+		b.type = 'button';
+		b.dataset.v = v;
+		b.setAttribute('aria-pressed', v === value ? 'true' : 'false');
+		if (disabledValues.includes(v)) { b.disabled = true; b.title = t('rdpWindow.local.locked'); }
+		seg.appendChild(b);
+	}
+	bindSeg(seg, 'v', onPick);
+	return seg;
+}
+
+function rdpSelect(key, options, value, disabledValues, onPick) {
+	const sel = h('select', 'inp rdp-select');
+	sel.dataset.select = key;
+	for (const [v, label] of options) {
+		const o = h('option', null, label);
+		o.value = v;
+		if (disabledValues.includes(v)) o.disabled = true;
+		sel.appendChild(o);
+	}
+	sel.value = value;
+	sel.addEventListener('change', () => onPick(sel.value));
+	return sel;
+}
+
+function rdpLocalCard(svc) {
+	const card = h('section', 'card rdp-local');
+	card.id = 'rdp-local';
+	const id = String(svc.id);
+	const allow = GCRdpLocal.allowed(svc);
+	const local = rdpLocal.get(id) || {};
+	const eff = GCRdpLocal.effective(svc, local);
+	const save = async (patch) => {
+		const next = await rdp.localSet(svc.id, patch).catch(() => null);
+		if (next) rdpLocal.set(id, next);
+		renderRdpDetail();
+	};
+
+	const head = h('div', 'rdp-local-head');
+	head.append(h('h3', 'h-sec grow', t('rdpWindow.local.title')), h('span', 'hint', t('rdpWindow.local.hint')));
+	card.appendChild(head);
+
+	const openVal = local.open || 'default';
+	card.appendChild(rdpSetRow('open', t('rdpWindow.local.open'), allow.remoteApp ? t('rdpWindow.local.remoteApp') : t('rdpWindow.local.openDesc'),
+		rdpSeg('open', [['default', t('rdpWindow.local.openDefault')], ['window', t('rdpWindow.local.openWindow')], ['mstsc', t('rdpWindow.local.openMstsc')]],
+			openVal, rdpHostAvailable && !allow.remoteApp ? [] : ['window'], (v) => save({ open: v === 'default' ? null : v }))));
+
+	card.appendChild(rdpSetRow('display', t('rdpWindow.local.display'), t('rdpWindow.local.displayDesc'),
+		rdpSeg('display', [['window', t('rdpWindow.local.displayWindow')], ['fullscreen', t('rdpWindow.local.displayFull')], ['multimon', t('rdpWindow.local.displayAll')]],
+			eff.display.mode, allow.multimon ? [] : ['multimon'], (v) => save({ display: v }))));
+
+	const w = Number.isInteger(svc.resolution_width) && svc.resolution_width >= 200 ? svc.resolution_width : 1920;
+	const hh = Number.isInteger(svc.resolution_height) && svc.resolution_height >= 200 ? svc.resolution_height : 1080;
+	card.appendChild(rdpSetRow('resolution', t('rdpWindow.local.resolution'), t('rdpWindow.local.resolutionDesc'),
+		rdpSelect('resolution', [['server', t('rdpWindow.local.resServer')], ['dynamic', t('rdpWindow.local.resDynamic')], ['fixed', t('rdpWindow.local.resFixed', { w, h: hh })]],
+			local.resolution || 'server', [], (v) => save({ resolution: v === 'server' ? null : v }))));
+
+	card.appendChild(rdpSetRow('keyboard', t('rdpWindow.local.keyboard'), t('rdpWindow.local.keyboardDesc'),
+		rdpSeg('keyboard', [['fullscreen', t('rdpWindow.local.kbFull')], ['always', t('rdpWindow.local.kbAlways')], ['never', t('rdpWindow.local.kbNever')]],
+			eff.keyboard, [], (v) => save({ keyboard: v === 'fullscreen' ? null : v }))));
+
+	const sw = (key, on, enabled, label, onChange) => {
+		const b = h('button', 'sw');
+		b.type = 'button';
+		b.setAttribute('role', 'switch');
+		b.setAttribute('aria-label', label);
+		b.dataset.switch = key;
+		setSwitch(b, on);
+		b.disabled = !enabled;
+		bindSwitch(b, onChange);
+		b.appendChild(h('span'));
+		return b;
+	};
+	card.appendChild(rdpSetRow('clipboard', t('rdpWindow.local.clipboard'), t('rdpWindow.local.clipboardDesc'),
+		sw('clipboard', eff.redirect.clipboard, allow.clipboard, t('rdpWindow.local.clipboard'), (on) => save({ clipboard: on ? null : false })),
+		allow.clipboard ? null : t('rdpWindow.local.locked')));
+	card.appendChild(rdpSetRow('drives', t('rdpWindow.local.drives'), t('rdpWindow.local.drivesDesc'),
+		sw('drives', eff.redirect.drives, allow.drives, t('rdpWindow.local.drives'), (on) => save({ drives: on ? null : false })),
+		allow.drives ? null : t('rdpWindow.local.locked')));
+
+	const audioOpts = [['local', t('rdpWindow.local.audioLocal')], ['remote', t('rdpWindow.local.audioRemote')], ['off', t('rdpWindow.local.audioOff')]];
+	card.appendChild(rdpSetRow('audio', t('rdpWindow.local.audio'), t('rdpWindow.local.audioDesc'),
+		rdpSelect('audio', audioOpts, eff.redirect.audio, GCRdpLocal.AUDIO.filter((a) => !allow.audio.includes(a)), (v) => save({ audio: v === allow.audio[0] ? null : v }))));
+
+	card.appendChild(h('p', 'hint rdp-local-foot', t('rdpWindow.local.windowOnly')));
+	return card;
+}
+
+/** The local choice of the selected host (once per selection; changes come back from localSet). */
+async function loadRdpLocal(routeId) {
+	const id = String(routeId);
+	if (rdpLocal.has(id)) return;
+	try {
+		const r = await rdp.localGet(routeId);
+		rdpLocal.set(id, (r && r.local) || {});
+		if (r && typeof r.hostAvailable === 'boolean') rdpHostAvailable = r.hostAvailable;
+	} catch { rdpLocal.set(id, {}); }
+	if (String(selectedRdpId) === id) renderRdpDetail();
 }
 
 function sessionName(s) {
@@ -1692,12 +1920,15 @@ function renderSessions() {
 		btn.appendChild(h('span', 'dot'));
 		const text = h('span', 'side-session-text');
 		text.appendChild(h('span', 'side-session-name', sessionName(s)));
-		text.appendChild(h('span', 'side-session-sub', t('ui.rdp.runningFor', { minutes: sessionMinutes(s) })));
+		const sub = t('ui.rdp.runningFor', { minutes: sessionMinutes(s) });
+		text.appendChild(h('span', 'side-session-sub', s.via === 'window' ? `${sub} · ${t('rdpWindow.inWindow')}` : sub));
 		btn.appendChild(text);
 		btn.addEventListener('click', () => {
 			selectedRdpId = s.routeId;
 			navigateTo('rdp');
 			renderRdp();
+			// a session in the GateControl window: its window to the front as well
+			if (s.via === 'window') rdp.focus(s.routeId);
 		});
 		sideList.appendChild(btn);
 	});
@@ -1712,6 +1943,12 @@ function renderSessions() {
 		row.appendChild(h('span', 'dot'));
 		row.appendChild(h('span', null, sessionName(s))).style.fontWeight = '600';
 		row.appendChild(h('span', 'muted grow', t('ui.rdp.runningFor', { minutes: sessionMinutes(s) })));
+		if (s.via === 'window') {
+			const showBtn = h('button', 'btn btn-ghost btn-xs', t('rdpWindow.showWindow'));
+			showBtn.type = 'button';
+			showBtn.addEventListener('click', () => rdp.focus(s.routeId));
+			row.appendChild(showBtn);
+		}
 		const endBtn = h('button', 'btn btn-ghost btn-xs', t('ui.rdp.endSession'));
 		endBtn.type = 'button';
 		endBtn.addEventListener('click', async () => {
@@ -1768,6 +2005,9 @@ document.addEventListener('keydown', (e) => {
 
 async function startRdpConnect(svc, opts = {}) {
 	currentRdpRoute = svc;
+	// the expected way (the main process confirms or changes it with progress step 'mode')
+	rdpConnectMode = GCRdpLocal.openMode({ via: opts.via, local: rdpLocal.get(String(svc.id)), global: rdpOpenIn, route: svc, hostAvailable: rdpHostAvailable }).mode;
+	rdpConnectVia = opts.via || null;
 
 	// Show progress view BEFORE starting connect
 	showConnectingProgress(svc);
@@ -1786,8 +2026,15 @@ async function startRdpConnect(svc, opts = {}) {
 		}
 
 		// Connection started successfully — progress updates come via IPC events
+		if (result && result.focused) {
+			closeRdpDialog(); // its window was already open: brought to the front
+			return;
+		}
 		if (result && result.success !== false) {
-			$('#rdp-connecting-status').textContent = t('rdp.connectionActive');
+			$('#rdp-connecting-status').textContent = result.via === 'window' ? t('rdpWindow.progress.opened') : t('rdp.connectionActive');
+		} else if (result && result.error) {
+			setConnectingChip('error');
+			$('#rdp-connecting-status').textContent = result.error;
 		}
 	} catch (err) {
 		setConnectingChip('error');
@@ -1811,7 +2058,7 @@ $('#rdp-password-cancel').addEventListener('click', closeRdpDialog);
 $('#rdp-password-submit').addEventListener('click', () => {
 	const password = $('#rdp-password-input').value;
 	if (!password || !currentRdpRoute) return;
-	startRdpConnect(currentRdpRoute, { password });
+	startRdpConnect(currentRdpRoute, { password, ...(rdpConnectVia ? { via: rdpConnectVia } : {}) });
 });
 
 $('#rdp-password-input').addEventListener('keydown', (e) => {
@@ -1831,18 +2078,33 @@ $('#rdp-maintenance-cancel').addEventListener('click', closeRdpDialog);
 
 $('#rdp-maintenance-force').addEventListener('click', () => {
 	if (!currentRdpRoute) return;
-	startRdpConnect(currentRdpRoute, { forceMaintenanceBypass: true });
+	startRdpConnect(currentRdpRoute, { forceMaintenanceBypass: true, ...(rdpConnectVia ? { via: rdpConnectVia } : {}) });
 });
 
 // ── Connecting Progress ─────────────────────────────────
-function getProgressSteps() {
-	return [
+function getProgressSteps(mode = rdpConnectMode) {
+	const first = [
 		{ id: 'vpn-check',   label: t('rdpProgress.vpnCheck') },
 		{ id: 'tcp-check',   label: t('rdpProgress.tcpCheck') },
 		{ id: 'credentials', label: t('rdpProgress.credentials') },
+	];
+	if (mode === 'window') return [...first, { id: 'window', label: t('rdpWindow.progress.window') }];
+	return [
+		...first,
 		{ id: 'rdp-file',    label: t('rdpProgress.rdpFile') },
 		{ id: 'mstsc',       label: t('rdpProgress.mstsc') },
 	];
+}
+
+/** The way of this connect became known (or changed: fallback): the steps after the credentials follow it. */
+function setProgressMode(mode) {
+	if (mode === rdpConnectMode) return;
+	rdpConnectMode = mode;
+	const stepsContainer = $('#rdp-progress-steps');
+	const kept = new Map();
+	stepsContainer.querySelectorAll('li.step').forEach((li) => kept.set(li.id, li.className));
+	renderProgressSteps();
+	stepsContainer.querySelectorAll('li.step').forEach((li) => { if (kept.has(li.id)) li.className = kept.get(li.id); });
 }
 
 function setConnectingChip(kind) {
@@ -1858,6 +2120,11 @@ function showConnectingProgress(svc) {
 	$('#rdp-connecting-status').textContent = t('rdp.connectionEstablishing');
 	setConnectingChip('running');
 
+	renderProgressSteps();
+	showRdpView('connecting');
+}
+
+function renderProgressSteps() {
 	const stepsContainer = $('#rdp-progress-steps');
 	stepsContainer.textContent = '';
 
@@ -1870,8 +2137,6 @@ function showConnectingProgress(svc) {
 		stepEl.appendChild(h('span', null, step.label));
 		stepsContainer.appendChild(stepEl);
 	});
-
-	showRdpView('connecting');
 }
 
 function updateProgressStep(stepId, status) {
@@ -1892,6 +2157,10 @@ $('#rdp-connecting-back').addEventListener('click', closeRdpDialog);
 //  IPC EVENT BINDINGS (RDP)
 // ══════════════════════════════════════════════════════════
 rdp.onProgress((data) => {
+	if (data.step === 'mode') {
+		setProgressMode(data.status === 'window' ? 'window' : 'mstsc');
+		return;
+	}
 	if (data.step && data.status) {
 		// Treat 'skip', 'fallback' as done
 		const normalizedStatus = ['skip', 'fallback'].includes(data.status) ? 'done' : data.status;
@@ -1904,6 +2173,7 @@ rdp.onProgress((data) => {
 			'rdp-file': t('rdpProgress.rdpFileActive'),
 			'mstsc': t('rdpProgress.mstscActive'),
 			'cmdkey': t('rdpProgress.cmdkeyActive'),
+			'window': t('rdpWindow.progress.windowActive'),
 		};
 		if (data.status === 'active' && statusMessages[data.step]) {
 			$('#rdp-connecting-status').textContent = statusMessages[data.step];
@@ -1912,6 +2182,13 @@ rdp.onProgress((data) => {
 			$('#rdp-connecting-status').textContent = t('rdp.connectionActive');
 			setConnectingChip('done');
 			$('#rdp-connecting-back').textContent = t('ui.rdp.done');
+		}
+		if (data.status === 'done' && data.step === 'window') {
+			// the window shows the rest (connecting, signing in): this dialog closes
+			$('#rdp-connecting-status').textContent = t('rdpWindow.progress.opened');
+			setConnectingChip('done');
+			$('#rdp-connecting-back').textContent = t('ui.rdp.done');
+			setTimeout(() => { if ($('#rdp-view-connecting').classList.contains('active')) closeRdpDialog(); }, 900);
 		}
 	}
 	if (data.message) {
@@ -1935,6 +2212,38 @@ rdp.onSessionError((data) => {
 	const msg = data.message || data.error;
 	if (msg) $('#rdp-connecting-status').textContent = msg;
 });
+
+// Opened with Windows-Remotedesktop instead of the window (host did not start, RemoteApp, not available here)
+rdp.onNotice((data) => {
+	const key = { 'host-failed': 'hostFailed', remoteapp: 'remoteapp', 'host-missing': 'hostMissing' }[data && data.kind];
+	if (key) showToast(t(`rdpWindow.notice.${key}`), 'info', 7000);
+});
+
+// A button of the window's error view: "Erneut verbinden" / "Mit Windows-Remotedesktop öffnen"
+rdp.onRequestConnect((data) => {
+	const svc = rdpServices.find((x) => String(x.id) === String(data && data.routeId));
+	if (!svc) return;
+	startRdpConnect(svc, { via: data.via === 'mstsc' ? 'mstsc' : 'window' });
+});
+
+// Settings → Anwendung: „Remotedesktop öffnen in“
+function renderOpenIn() {
+	selectSeg($('#rdp-openin-seg'), 'open-in', rdpHostAvailable ? rdpOpenIn : 'mstsc');
+	const winBtn = $('#rdp-openin-seg [data-open-in="window"]');
+	if (winBtn) winBtn.disabled = !rdpHostAvailable;
+	$('#rdp-openin-desc').textContent = rdpHostAvailable ? t('rdpWindow.settings.openInDesc') : t('rdpWindow.settings.openInUnavailable');
+}
+bindSeg($('#rdp-openin-seg'), 'open-in', async (mode) => {
+	rdpOpenIn = await rdp.openInSet(mode).catch(() => rdpOpenIn);
+	renderOpenIn();
+	if (currentPage === 'rdp') renderRdpDetail();
+});
+rdp.openInGet().then((r) => {
+	if (!r) return;
+	rdpOpenIn = r.openIn === 'mstsc' ? 'mstsc' : 'window';
+	rdpHostAvailable = r.hostAvailable !== false;
+	renderOpenIn();
+}).catch(() => {});
 
 rdp.onServicesUpdate((data) => {
 	rdpServices = data || [];

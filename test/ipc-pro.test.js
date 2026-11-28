@@ -242,7 +242,8 @@ describe('Pro IPC on core handlers', { skip }, () => {
       // Pro-specific / overrides
       'autostart:set', 'dns:leak-test', 'dns:check-system', 'peer:info', 'update:check',
       'panel:open', 'panel:close', 'rdp:list', 'rdp:connect', 'rdp:disconnect', 'rdp:detail',
-      'rdp:wol', 'rdp:status', 'rdp:active-sessions', 'rdp:pin-toggle', 'locale:set', 'locale:get', 'app:device-id',
+      'rdp:wol', 'rdp:status', 'rdp:active-sessions', 'rdp:pin-toggle',
+      'rdp:focus', 'rdp:local-get', 'rdp:local-set', 'rdp:open-in-get', 'rdp:open-in-set', 'locale:set', 'locale:get', 'app:device-id',
       // notification center (core, opt-in via ctx.notificationCenter)
       'notify:list', 'notify:read', 'notify:action', 'notify:prefs:get', 'notify:prefs:set',
       'notify:test', 'notify:status', 'notify:dnd',

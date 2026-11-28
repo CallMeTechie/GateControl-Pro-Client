@@ -75,7 +75,7 @@ api.rdp = {
   /** Fetch all RDP services available to this token */
   list: () => ipcRenderer.invoke('rdp:list'),
 
-  /** Connect to an RDP host. opts: { password?, forceMaintenanceBypass? } */
+  /** Connect to an RDP host. opts: { password?, forceMaintenanceBypass?, via?: 'window' | 'mstsc' } */
   connect: (routeId, opts) => ipcRenderer.invoke('rdp:connect', routeId, opts),
 
   /** Disconnect an active RDP session */
@@ -93,6 +93,17 @@ api.rdp = {
   /** Get active sessions */
   activeSessions: () => ipcRenderer.invoke('rdp:active-sessions'),
 
+  /** "Fenster anzeigen": the GateControl window of a running session to the front */
+  focus: (routeId) => ipcRenderer.invoke('rdp:focus', routeId),
+
+  /** „Auf diesem PC“ of a host: { local, hostAvailable } / change (only restricts the server's route) */
+  localGet: (routeId) => ipcRenderer.invoke('rdp:local-get', routeId),
+  localSet: (routeId, patch) => ipcRenderer.invoke('rdp:local-set', routeId, patch),
+
+  /** „Remotedesktop öffnen in“: { openIn: 'window' | 'mstsc', hostAvailable } / set */
+  openInGet: () => ipcRenderer.invoke('rdp:open-in-get'),
+  openInSet: (mode) => ipcRenderer.invoke('rdp:open-in-set', mode),
+
   /** Toggle pin state */
   pinToggle: (pinned) => ipcRenderer.invoke('rdp:pin-toggle', pinned),
 
@@ -109,6 +120,12 @@ api.rdp = {
   onProgress: (cb) => subscribe('rdp:progress', cb),
   onServicesUpdate: (cb) => subscribe('rdp:services-update', cb),
   onSessionTimeoutWarning: (cb) => subscribe('rdp:session-timeout-warning', cb),
+  /** { routeId, kind: 'host-failed' | 'remoteapp' | 'host-missing' } — opened with Windows-Remotedesktop instead */
+  onNotice: (cb) => subscribe('rdp:notice', cb),
+  /** { routeId, via } — a button of the window's error view asks for a connect */
+  onRequestConnect: (cb) => subscribe('rdp:request-connect', cb),
+  /** { routeId, state } — the window's connection state */
+  onWindowState: (cb) => subscribe('rdp:window-state', cb),
 };
 
 // ══════════════════════════════════════════════════════

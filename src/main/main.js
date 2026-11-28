@@ -318,6 +318,10 @@ const proSchema = {
     type: 'object',
     properties: {
       panelPinned: { type: 'boolean', default: false },
+      // „Remotedesktop öffnen in“: the GateControl window (gc-rdp-host.exe) or Windows-Remotedesktop (mstsc)
+      openIn: { type: 'string', enum: ['window', 'mstsc'], default: 'window' },
+      // „Auf diesem PC“ per host (route id → choice, src/renderer/rdp-local-state.js; only restricts the route)
+      hosts: { type: 'object', default: {} },
     },
     default: {},
   },
@@ -1519,7 +1523,17 @@ function initializeServices() {
     getPeerInfo: () => apiClient.getPeerInfo(),
     // „Namen im VPN“: a name of the chosen zone only when Windows is pinned to the VPN resolver for it.
     hasDnsRuleFor: (name) => !!(dnsPolicy && dnsPolicy.coversName(name)),
+    // Remotedesktop im GateControl-Fenster: gc-rdp-host.exe (resources\rdp-host, extraResources)
+    hostExePath: app.isPackaged
+      ? path.join(process.resourcesPath, 'rdp-host', 'gc-rdp-host.exe')
+      : path.join(__dirname, '..', '..', 'rdp-host', 'bin', 'Release', 'net48', 'gc-rdp-host.exe'),
+    getTheme: () => resolvedAppTheme(),
+    t,
+    // e2e runs: a fake host and a recorded mstsc instead of the real ones (test/e2e/support/rdp-host-fake.js)
+    ...(e2e && e2e.rdpHost ? e2e.rdpHost : {}),
   });
+  store.onDidChange('app.theme', () => rdpManager?.setTheme(resolvedAppTheme()));
+  require('electron').nativeTheme.on('updated', () => rdpManager?.setTheme(resolvedAppTheme()));
 
   rdpWolClient = new RdpWolClient({ apiClient, log });
 
@@ -1625,6 +1639,18 @@ function initializeServices() {
 
   rdpManager.on('progress', (data) => {
     mainWindow?.webContents.send('rdp:progress', data);
+  });
+
+  // GateControl window: a notice (fell back to Windows-Remotedesktop), and the buttons of its error view —
+  // "Erneut verbinden" / "Mit Windows-Remotedesktop öffnen" run the app's connect (password, maintenance …)
+  rdpManager.on('notice', (data) => {
+    mainWindow?.webContents.send('rdp:notice', data);
+  });
+  rdpManager.on('host-action', (data) => {
+    mainWindow?.webContents.send('rdp:request-connect', { routeId: data.routeId, via: data.action === 'mstsc' ? 'mstsc' : 'window' });
+  });
+  rdpManager.on('window-state', (data) => {
+    mainWindow?.webContents.send('rdp:window-state', data);
   });
 
   rdpManager.on('services-update', (services) => {

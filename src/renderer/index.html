@@ -662,6 +662,14 @@
 									<button type="button" data-theme-mode="dark" class="on" data-i18n="ui.app.themeDark">Dunkel</button>
 								</div>
 							</div>
+							<!-- Remotedesktop im GateControl-Fenster: what "Verbinden" does by default (rdp.openIn) -->
+							<div class="set-row" id="rdp-openin-row">
+								<div class="grow"><div class="set-row-title" data-i18n="rdpWindow.settings.openIn">Remotedesktop öffnen in</div><div class="set-row-desc" id="rdp-openin-desc">Was „Verbinden“ im Fernzugriff tut. Pro Host änderbar unter „Auf diesem PC“.</div></div>
+								<div class="seg" id="rdp-openin-seg">
+									<button type="button" data-open-in="window" class="on" aria-pressed="true" data-i18n="rdpWindow.settings.openInWindow">GateControl-Fenster</button>
+									<button type="button" data-open-in="mstsc" aria-pressed="false" data-i18n="rdpWindow.settings.openInMstsc">Windows-Remotedesktop</button>
+								</div>
+							</div>
 							<div class="set-row">
 								<div class="grow"><label for="locale-select" class="set-row-title" data-i18n="settings.language">Sprache</label></div>
 								<select class="inp" id="locale-select" style="width:180px">
@@ -1040,6 +1048,7 @@
 	<script src="media-player-state.js"></script>
 	<script src="media-player.js"></script>
 	<script src="media-cast-remote.js"></script>
+	<script src="rdp-local-state.js"></script>
 	<script src="renderer.js"></script>
 </body>
 </html>
