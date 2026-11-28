@@ -162,8 +162,9 @@ test.describe('signed auto-update', () => {
       await checkForUpdatesManually(page);
       await expect(page.locator('#update-status-desc')).not.toBeEmpty();
       expect(mock.count('/api/v1/client/update/check')).toBeGreaterThanOrEqual(2);
-      // Signature/manifest problems are rejected before any download.
-      expect(mock.count(DOWNLOAD(offer))).toBe(mode === 'bad-download' ? 2 : 0);
+      // Signature/manifest problems are rejected before any download. A bad download is fetched once per check —
+      // the second one can still be counting when the status line shows (polled, not read once).
+      await expect.poll(() => mock.count(DOWNLOAD(offer))).toBe(mode === 'bad-download' ? 2 : 0);
 
       await expect(updateBanner(page)).toBeHidden();
       expect((await trayLabels()).some((l) => VERSION_RE.test(l))).toBe(false);
