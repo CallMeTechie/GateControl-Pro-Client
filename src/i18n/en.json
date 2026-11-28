@@ -5522,7 +5522,12 @@
       "retry": "Try again",
       "smb": "SMB share",
       "webdav": "WebDAV share",
-      "libPath": "Path in the library"
+      "libPath": "Path in the library",
+      "search": "Search in folder",
+      "searchHint": "File name, also in sub-folders",
+      "searching": "Searching sub-folders …",
+      "noHits": "Nothing found in this folder.",
+      "in": "in {{path}}"
     },
     "signedOut": "{{name}} is signed out. Sign in again to see movies and shows.",
     "src": {
@@ -5703,6 +5708,9 @@
       "seriesOther": "{{count}} shows",
       "collectionOne": "1 movie",
       "collectionOther": "{{count}} movies"
+    },
+    "menu": {
+      "label": "Actions for {{title}}"
     }
   }
 }

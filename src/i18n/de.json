@@ -5522,7 +5522,12 @@
       "retry": "Erneut versuchen",
       "smb": "SMB-Freigabe",
       "webdav": "WebDAV-Freigabe",
-      "libPath": "Pfad in der Bibliothek"
+      "libPath": "Pfad in der Bibliothek",
+      "search": "Im Ordner suchen",
+      "searchHint": "Dateiname, auch in Unterordnern",
+      "searching": "Suche in Unterordnern …",
+      "noHits": "Keine Treffer in diesem Ordner.",
+      "in": "in {{path}}"
     },
     "signedOut": "{{name}} ist abgemeldet. Melde dich neu an, um Filme und Serien zu sehen.",
     "src": {
@@ -5703,6 +5708,9 @@
       "seriesOther": "{{count}} Serien",
       "collectionOne": "1 Film",
       "collectionOther": "{{count}} Filme"
+    },
+    "menu": {
+      "label": "Aktionen für {{title}}"
     }
   }
 }

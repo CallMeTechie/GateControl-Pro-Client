@@ -946,6 +946,72 @@
 		return stored !== 'off' && stored !== false && stored !== 'false';
 	}
 
+	// ── „Im Ordner suchen“ and the menu of a title (as Android's long press) ──
+
+	/**
+	 * A file name (without its extension) or a folder's / title's name (`whole`) holds every word of `text`, in any case
+	 * and spelling of accents ("fussball" finds "Fußball", "oma" finds "Geburtstag.Oma.mkv") — as Android's
+	 * ShareFolders.matches and the core's media-share-names matches.
+	 */
+	function nameMatches(name, text, whole = false) {
+		const words = sortKeyOf(text).split(' ').filter(Boolean);
+		if (!words.length) return false;
+		const n = String(name || '');
+		const dot = whole ? -1 : n.lastIndexOf('.');
+		const base = dot > 0 ? n.slice(0, dot) : n;
+		const hay = sortKeyOf(base.replace(/[._]/g, ' '));
+		return words.every((w) => hay.includes(w));
+	}
+
+	/**
+	 * What a folder shows while searching it: its folders whose name holds the words, its videos (and sound) whose file
+	 * name does, then the hits of the folders below (`below`: the core's answer, without those of the folder itself).
+	 */
+	function folderHits(items, below, q) {
+		const here = folderItems(items).filter((e) => (e.directory ? nameMatches(e.name, q, true) : nameMatches(e.name, q)));
+		const seen = new Set(here.map((e) => e.path));
+		return here.concat(list(below).filter((e) => e && !e.directory && !seen.has(e.path) && (seen.add(e.path), true)));
+	}
+
+	/** The same for a Jellyfin folder: its folders and titles by name, then Jellyfin's hits below (each title once). */
+	function libraryHits(folders, items, below, q) {
+		const f = list(folders).filter((x) => nameMatches(x.name, q, true));
+		const here = list(items).filter((x) => nameMatches(x.name, q, true));
+		const seen = new Set(here.map((x) => x.id));
+		return { folders: f, items: here.concat(list(below).filter((x) => x && !seen.has(x.id) && (seen.add(x.id), true))) };
+	}
+
+	/** Where a hit of the folders below lies, from the folder searched ("Serien/Graufeld" in "Serien" → "Graufeld"). */
+	function hitFolder(folder, dir) {
+		const f = String(folder || '');
+		const d = String(dir || '');
+		if (!f || f === d) return '';
+		return d && f.startsWith(`${d}/`) ? f.slice(d.length + 1) : f;
+	}
+
+	/**
+	 * The menu of a title (a right click, the context-menu key or Umschalt+F10; Android's long press): "Weiter ab …" /
+	 * "Abspielen", "Von vorn" when begun, "Als gesehen markieren" / "Als ungesehen markieren". A collection has none.
+	 * → [{ id: 'play' | 'restart' | 'played', label }]
+	 */
+	function titleMenu(it, t, canPlay) {
+		if (!it || it.kind === 'collection' || it.kind === 'folder') return [];
+		const out = [];
+		const playable = it.kind === 'movie' || it.kind === 'episode' || it.kind === 'video' || it.kind === 'series';
+		const begun = it.kind !== 'series' && it.kind !== 'season' && it.positionMs > 0 && !it.played;
+		if (canPlay && playable) {
+			out.push({ id: 'play', label: it.kind === 'series' ? t('media.detail.play') : playLabel(it, t) });
+			if (begun) out.push({ id: 'restart', label: t('media.detail.restart') });
+		}
+		out.push({ id: 'played', label: it.played ? t('media.detail.markUnplayed') : t('media.detail.markPlayed') });
+		return out;
+	}
+
+	/** The menu's key: the context-menu key or Umschalt+F10 (as Windows). */
+	function isMenuKey(e) {
+		return !!e && (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey === true));
+	}
+
 	return {
 		TABS,
 		SORTS,
@@ -995,6 +1061,12 @@
 		baseName,
 		folderRow,
 		crumbs,
+		nameMatches,
+		folderHits,
+		libraryHits,
+		hitFolder,
+		titleMenu,
+		isMenuKey,
 		parentDir,
 		folderStart,
 		headLabel,

@@ -11,7 +11,11 @@
  * runs over all sources, and "Ordner" lists the Jellyfin libraries (as Android #301: a library's folders and titles, a
  * title opens its tab) beside the shares, and shows a share's folders and files (picture and title from the name or a picture
  * beside it, size, length, "noch 19 Min.", at home SMB, away WebDAV; at home the files Chromium cannot play are marked
- * before, "In VLC öffnen" / "In anderer App öffnen" in the detail and the player). The page
+ * before, "In VLC öffnen" / "In anderer App öffnen" in the detail and the player). „Im Ordner suchen“ (as Android) in a
+ * share's folder (its videos and those of the folders below, from the share's index) and in a Jellyfin library or folder
+ * (Jellyfin's search below it); a right click, the context-menu key or Umschalt+F10 on a title (grid, rows, folder lists,
+ * episodes) opens its menu (Android's long press): "Weiter ab …" / "Abspielen", "Von vorn", "Als gesehen markieren" /
+ * "Als ungesehen markieren" (Jellyfin keeps it, a share's file on this PC). The page
  * "Quellen" is media-sources-view.js (window.GCMediaSources), the card "Weiterschauen" of the
  * app's overview is built here as well (homeCard()).
  *
@@ -147,9 +151,15 @@
 			conv: new Map(),        // `${source}|${item}` → { loading } | { hint, sending }: „Videos umwandeln“ (media:convert:hint)
 			convPre: new Set(),     // `${source}|${series}|${season}`: the season's episodes asked ahead once
 			capsProbed: false,      // what Chromium plays, told to the core before the first hint
+			// „Im Ordner suchen“ of the folder shown (`key`: the place; a new place starts empty, as Android): `below` the
+			// core's hits of the folders below for `belowQ`
+			fsearch: { key: null, q: '', below: [], belowQ: '', loading: false, seq: 0, error: null },
+			menu: null,             // the open menu of a title: { layer, anchor }
 		};
 		let rowsSeq = 0;
 		let searchTimer = null;
+		let fsTimer = null;
+		let menuAt = 0;
 		const homeOnKey = MS.HOME_CARD_KEY;
 		const storage = (() => { try { return root.localStorage || null; } catch { return null; } })();
 		const homeCardOn = () => { try { return MS.homeCardOn(storage ? storage.getItem(homeOnKey) : null); } catch { return true; } };
@@ -172,6 +182,11 @@
 		refs.srcBtnLabel = el('span');
 		refs.srcBtn = el('button', { type: 'button', class: 'btn btn-sec btn-sm md-srcbtn', on: { click: () => openSources() } }, [icon('sliders', 15), refs.srcBtnLabel]);
 		refs.filters = el('div', { class: 'md-filters', hidden: true });
+		// „Im Ordner suchen“: one field kept over the renders of Ordner (the caret stays where it is)
+		refs.fsInp = el('input', { class: 'md-search-inp md-fs-inp', type: 'search', spellcheck: 'false', autocomplete: 'off' });
+		refs.fsInp.addEventListener('input', () => onFolderSearch());
+		refs.fsInp.addEventListener('keydown', (e) => { if (e.key === 'Escape' && refs.fsInp.value) { e.stopPropagation(); refs.fsInp.value = ''; onFolderSearch(); } });
+		refs.fsBox = el('label', { class: 'md-search md-fs' }, [icon('search', 15), refs.fsInp]);
 		refs.head = el('div', { class: 'md-head' }, [refs.h, refs.tabs, el('span', { class: 'md-grow' }), refs.filters, refs.search, refs.srcBtn]);
 		refs.banner = el('div', { class: 'md-banner', role: 'status', hidden: true });
 		refs.body = el('div', { class: 'md-body' });
@@ -379,8 +394,15 @@
 		}
 
 		function renderBody() {
+			const typing = document.activeElement === refs.fsInp;
 			clear(refs.body);
 			refs.grid = null;
+			refs.fillList = null;
+			renderBodyIn();
+			if (typing && refs.fsInp.isConnected) refs.fsInp.focus();
+		}
+
+		function renderBodyIn() {
 			if (!S.status) {
 				refs.body.appendChild(el('div', { class: 'md-state', text: S.statusError ? MS.errorText(S.statusError.code, t) : t('media.loading') }));
 				return;
@@ -440,7 +462,9 @@
 		async function checkFolder(sourceId) {
 			if (!S.folder.link || S.folder.link.atHome !== true || typeof api.shareCheck !== 'function') return;
 			const seq = S.folder.seq;
-			const todo = S.folder.items.filter((e) => e.kind === 'video' && e.itemId && !S.checks.has(`${sourceId}|${e.itemId}`)).slice(0, 40);
+			// the folder's files and the hits of the folders below („Im Ordner suchen“)
+			const pool = S.folder.items.concat(S.fsearch.key && S.fsearch.key.startsWith('share|') ? S.fsearch.below : []);
+			const todo = pool.filter((e) => e.kind === 'video' && e.itemId && !S.checks.has(`${sourceId}|${e.itemId}`)).slice(0, 40);
 			let at = 0;
 			const worker = async () => {
 				while (at < todo.length && seq === S.folder.seq) {
@@ -613,40 +637,127 @@
 				crumbs.appendChild(el('button', { type: 'button', class: `md-crumb${last ? ' is-cur' : ''}`, 'aria-current': last ? 'location' : null, text: c.name, on: { click: () => { if (!last) openLibraryTrail(i); } } }));
 			});
 			const upLabel = P.trail.length > 1 ? t('media.folders.up') : t('media.folders.all');
+			syncFolderSearch(folderSearchKey());
 			wrap.appendChild(el('div', { class: 'md-fv-head' }, [
 				el('button', { type: 'button', class: 'btn btn-sec btn-sm btn-icon md-fv-up', title: upLabel, 'aria-label': upLabel, on: { click: () => libraryUp() } }, [icon('up', 15)]),
 				crumbs,
+				folderSearchBox(),
 			]));
 			const box = el('div', { class: 'md-fl scroll', role: 'list', 'aria-label': t('media.tabs.folders') });
 			refs.folderList = null;
+			refs.folderBox = box;
+			refs.fillList = () => fillLibraryList(box);
+			refs.fillList();
+			wrap.appendChild(box);
+			refs.body.appendChild(wrap);
+		}
+
+		/** The list of a Jellyfin folder; while searching its folders and titles by name, then Jellyfin's hits below. */
+		function fillLibraryList(box) {
+			const P = S.libOpen;
+			clear(box);
+			if (!P) return;
+			const q = S.fsearch.q;
+			const shown = q ? MS.libraryHits(P.folders, P.items, belowHits(true), q) : { folders: P.folders, items: P.items };
 			if (P.loading && !P.loaded) box.appendChild(el('div', { class: 'md-state', text: t('media.loading') }));
 			else if (P.error) {
 				box.appendChild(el('div', { class: 'md-state is-err' }, [
 					el('span', { text: MS.errorText(P.error, t) }), ' ',
 					el('button', { type: 'button', class: 'btn btn-ghost btn-xs', text: t('media.folders.retry'), on: { click: () => { loadLibraryPlace(P); renderBody(); } } }),
 				]));
-			} else if (!P.folders.length && !P.items.length) box.appendChild(el('div', { class: 'md-state', text: t('media.folders.emptyDir') }));
-			for (const f of P.folders) {
+			} else if (!shown.folders.length && !shown.items.length) box.appendChild(el('div', { class: 'md-state md-fs-none', text: emptyText(q) }));
+			for (const f of shown.folders) {
 				box.appendChild(el('button', { type: 'button', class: 'md-fr is-dir', role: 'listitem', 'data-id': f.id, on: { click: () => openLibraryFolder(f) } }, [
 					el('span', { class: 'md-fr-ic' }, [icon('folder', 20, '1.8')]),
 					el('span', { class: 'md-fr-tx' }, [el('b', { text: f.name })]),
 					icon('right', 16),
 				]));
 			}
-			for (const it of P.items) box.appendChild(libraryTitleRow(it));
-			wrap.appendChild(box);
-			refs.body.appendChild(wrap);
+			for (const it of shown.items) box.appendChild(libraryTitleRow(it));
+			searchingNote(box, shown.folders.length + shown.items.length);
+		}
+
+		// ── „Im Ordner suchen“ (as Android) ──────────────────
+
+		function folderSearchKey() {
+			const P = S.libOpen;
+			if (P) return `lib|${P.sourceId}|${P.trail[P.trail.length - 1].id}`;
+			return `share|${S.folder.sourceId}|${S.folder.dir}`;
+		}
+
+		/** Another folder, library or share: the search starts empty (as Android). */
+		function syncFolderSearch(key) {
+			if (S.fsearch.key === key) return;
+			clearTimeout(fsTimer);
+			S.fsearch = { key, q: '', below: [], belowQ: '', loading: false, seq: S.fsearch.seq + 1, error: null };
+			refs.fsInp.value = '';
+		}
+
+		function folderSearchBox() {
+			refs.fsInp.placeholder = t('media.folders.search');
+			refs.fsInp.setAttribute('aria-label', t('media.folders.search'));
+			refs.fsBox.title = t('media.folders.searchHint');
+			return refs.fsBox;
+		}
+
+		/** The core's hits below for the words typed now (those of an earlier word narrowed down until the answer comes). */
+		function belowHits(whole) {
+			const F = S.fsearch;
+			if (!F.q) return [];
+			return F.belowQ === F.q ? F.below : F.below.filter((x) => MS.nameMatches(x.name, F.q, whole));
+		}
+
+		function emptyText(q) {
+			if (!q) return t('media.folders.emptyDir');
+			return S.fsearch.loading ? t('media.folders.searching') : S.fsearch.error ? MS.errorText(S.fsearch.error, t) : t('media.folders.noHits');
+		}
+
+		/** While the folders below are still asked: "Suche in Unterordnern …" under what was found already. */
+		function searchingNote(box, shown) {
+			if (S.fsearch.q && S.fsearch.loading && shown > 0) box.appendChild(el('div', { class: 'md-state is-small md-fs-more', text: t('media.folders.searching') }));
+		}
+
+		function fillFolderList() {
+			if (refs.fillList && refs.folderBox && refs.folderBox.isConnected) refs.fillList();
+		}
+
+		/** Typing: the folder's own hits at once, those of the folders below after a moment (as Android, 300 ms). */
+		function onFolderSearch() {
+			clearTimeout(fsTimer);
+			const q = refs.fsInp.value.trim();
+			S.fsearch = { ...S.fsearch, q, below: q ? S.fsearch.below : [], belowQ: q ? S.fsearch.belowQ : '', loading: !!q, seq: S.fsearch.seq + 1, error: null };
+			fillFolderList();
+			if (!q) return;
+			const { key, seq } = S.fsearch;
+			fsTimer = setTimeout(() => runFolderSearch(key, q, seq), 300);
+		}
+
+		async function runFolderSearch(key, q, seq) {
+			const P = S.libOpen;
+			const share = { sourceId: S.folder.sourceId, dir: S.folder.dir };
+			let r;
+			try {
+				if (key.startsWith('lib|')) {
+					r = P && typeof api.librarySearch === 'function' ? await api.librarySearch(P.sourceId, P.trail[P.trail.length - 1].id, q) : { ok: true, items: [] };
+					if (P) handle(r, P.sourceId);
+				} else r = typeof api.shareSearch === 'function' ? await api.shareSearch(share.sourceId, share.dir, q) : { ok: true, items: [] };
+			} catch (err) { r = fail(err); }
+			if (S.fsearch.seq !== seq || S.fsearch.key !== key) return;
+			const ok = r && r.ok;
+			S.fsearch = { ...S.fsearch, below: ok && Array.isArray(r.items) ? r.items : [], belowQ: q, loading: false, error: ok ? null : (r && r.code) || 'failed' };
+			fillFolderList();
+			if (!key.startsWith('lib|')) checkFolder(share.sourceId);
 		}
 
 		function libraryTitleRow(it) {
 			const r = MS.libraryTitle(it, t);
-			return el('div', { class: `md-fr is-title${r.played ? ' is-played' : ''}`, role: 'listitem', 'data-id': it.id }, [
+			return withMenu(el('div', { class: `md-fr is-title${r.played ? ' is-played' : ''}`, role: 'listitem', 'data-id': it.id }, [
 				el('button', { type: 'button', class: 'md-fr-open', 'aria-label': `${r.title}${r.sub ? ` · ${r.sub}` : ''}`, on: { click: () => openLibraryTitle(it), dblclick: () => { if (r.playable) playItem(it); } } }),
 				el('span', { class: 'md-fr-th' }, [picture(r.picture, 'is-wide', it.id), r.progress ? el('span', { class: 'md-bar' }, [el('span', { style: `width:${r.progress}%` })]) : null]),
 				el('span', { class: 'md-fr-tx' }, [el('b', { text: r.title }), r.sub ? el('small', { text: r.sub }) : null]),
 				r.played ? el('span', { class: 'md-seen is-inline', title: t('media.detail.played') }, [icon('check', 12, '3')]) : null,
 				canPlay() && r.playable ? el('button', { type: 'button', class: 'md-ep-play md-fr-play', 'aria-label': `${t('media.detail.play')}: ${r.title}`, title: t('media.detail.play'), on: { click: () => playItem(it) } }, [icon('play', 13, '2', true)]) : null,
-			]);
+			]), it, runFor(it));
 		}
 
 		function renderFolders() {
@@ -685,21 +796,36 @@
 			const up = MS.parentDir(f.dir);
 			const upLabel = up !== null ? t('media.folders.up') : t('media.folders.all');
 			const upClick = up !== null ? () => openFolder(up) : start === 'roots' ? () => folderRoots() : null;
+			syncFolderSearch(folderSearchKey());
 			wrap.appendChild(el('div', { class: 'md-fv-head' }, [
 				upClick ? el('button', { type: 'button', class: 'btn btn-sec btn-sm btn-icon md-fv-up', title: upLabel, 'aria-label': upLabel, on: { click: upClick } }, [icon('up', 15)]) : null,
 				crumbs,
 				el('span', { class: `md-pill md-fv-way ${MS.wayOf(f.link || share.link) === 'away' ? 'is-away' : 'is-home'}` }, [icon(MS.wayOf(f.link || share.link) === 'away' ? 'globe' : 'wifi', 13), el('span', { text: way.label })]),
+				folderSearchBox(),
 			]));
 			const box = el('div', { class: 'md-fl scroll', role: 'list', 'aria-label': t('media.tabs.folders') });
 			refs.folderList = box;
-			if (f.loading && !f.items.length) box.appendChild(el('div', { class: 'md-state', text: t('media.loading') }));
-			else if (f.error) box.appendChild(el('div', { class: 'md-state is-err', text: MS.errorText(f.error, t) }));
-			else if (!f.items.length) box.appendChild(el('div', { class: 'md-state', text: t('media.folders.emptyDir') }));
-			const videos = f.items.filter((e) => !e.directory && e.itemId);
-			for (const e of f.items) box.appendChild(folderRow(share, e, videos));
+			refs.folderBox = box;
+			refs.fillList = () => fillShareList(box, share);
+			refs.fillList();
 			wrap.appendChild(box);
 			wrap.appendChild(el('div', { class: 'md-fv-hint', text: way.hint }));
 			refs.body.appendChild(wrap);
+		}
+
+		/** The list of a share's folder; while searching its folders and files by name, then the hits of the folders below. */
+		function fillShareList(box, share) {
+			const f = S.folder;
+			clear(box);
+			const q = S.fsearch.q;
+			const items = q ? MS.folderHits(f.items, belowHits(false), q) : f.items;
+			if (f.loading && !f.items.length) box.appendChild(el('div', { class: 'md-state', text: t('media.loading') }));
+			else if (f.error) box.appendChild(el('div', { class: 'md-state is-err', text: MS.errorText(f.error, t) }));
+			else if (!items.length) box.appendChild(el('div', { class: `md-state${q ? ' md-fs-none' : ''}`, text: emptyText(q) }));
+			// what plays after a file: the list shown (the folder's, or the search's — as Android)
+			const videos = items.filter((e) => !e.directory && e.itemId);
+			for (const e of items) box.appendChild(folderRow(share, e, videos));
+			searchingNote(box, items.length);
 		}
 
 		function folderRow(share, e, videos) {
@@ -714,33 +840,132 @@
 			const playable = !!e.itemId || r.kind === 'audio';
 			const note = e.itemId ? MS.checkNote(S.checks.get(`${share.id}|${e.itemId}`), t) : null;
 			const play = () => { if (e.itemId) playFile(share, e, videos); };
+			// a hit of a folder below: where it lies
+			const where = typeof e.folder === 'string' ? MS.hitFolder(e.folder, S.folder.dir) : '';
 			const thumb = r.kind === 'audio'
 				? el('span', { class: 'md-fr-th is-audio' }, [icon('music', 18, '1.8')])
 				: el('span', { class: 'md-fr-th' }, [picture(r.picture, 'is-wide', e.path), r.progress ? el('span', { class: 'md-bar' }, [el('span', { style: `width:${r.progress}%` })]) : null]);
-			return el('div', { class: `md-fr${r.played ? ' is-played' : ''}`, role: 'listitem', 'data-path': e.path, title: r.file }, [
-				el('button', { type: 'button', class: 'md-fr-open', 'aria-label': `${r.title}${r.sub ? ` · ${r.sub}` : ''}`, disabled: !playable || !canPlay() || !e.itemId, on: { click: play } }),
+			const rowEl = el('div', { class: `md-fr${r.played ? ' is-played' : ''}${where ? ' is-hit' : ''}`, role: 'listitem', 'data-path': e.path, title: r.file }, [
+				el('button', { type: 'button', class: 'md-fr-open', 'aria-label': `${r.title}${r.sub ? ` · ${r.sub}` : ''}${where ? ` · ${t('media.folders.in', { path: where })}` : ''}`, disabled: !playable || !canPlay() || !e.itemId, on: { click: play } }),
 				thumb,
 				el('span', { class: 'md-fr-tx' }, [
 					el('b', { text: r.title }),
 					el('small', { text: r.sub }),
+					where ? el('small', { class: 'md-fr-in', text: t('media.folders.in', { path: where }) }) : null,
 					el('span', { class: `md-fr-note is-${note ? note.level : 'unknown'}`, hidden: !note || note.level === 'ok' || note.level === 'unknown', text: note ? note.text : '' }),
 				]),
 				r.played ? el('span', { class: 'md-seen is-inline', title: t('media.detail.played') }, [icon('check', 12, '3')]) : null,
 				canPlay() && e.itemId ? el('button', { type: 'button', class: 'md-ep-play md-fr-play', 'aria-label': `${t('media.detail.play')}: ${r.title}`, title: t('media.detail.play'), on: { click: play } }, [icon('play', 13, '2', true)]) : null,
 			]);
+			// the menu of a file (Android's long press): Abspielen, Von vorn, Gesehen — kept on this PC
+			if (e.itemId) {
+				withMenu(rowEl, folderTitle(share, e), {
+					play,
+					restart: () => playFile(share, e, videos, { fromStart: true }),
+					played: () => { const x = folderTitle(share, e); setPlayedFor(x, !x.played); },
+				});
+			}
+			return rowEl;
 		}
 
-		function playFile(share, e, videos) {
+		function playFile(share, e, videos, opts = {}) {
 			if (!canPlay()) return;
 			const it = folderTitle(share, e);
 			const list = videos.map((x) => folderTitle(share, x));
 			o.player.play({
 				item: it,
 				detail: null,
-				startMs: it.played ? 0 : it.positionMs || 0,
+				startMs: opts.fromStart || it.played ? 0 : it.positionMs || 0,
 				next: (cur) => { const i = list.findIndex((x) => x.id === (cur || it).id); return i >= 0 && i + 1 < list.length ? list[i + 1] : null; },
 				onEnd: () => refreshAfterPlay(),
 			});
+		}
+
+		// ── The menu of a title (Android's long press) ───────
+
+		/** Abspielen / Von vorn / Gesehen of a title of the rows, grids, Jellyfin folders and episodes. */
+		function runFor(it, opts = {}) {
+			return {
+				play: () => playItem(it, opts),
+				restart: () => playItem(it, { ...opts, fromStart: true }),
+				played: () => setPlayedFor(it, !it.played),
+			};
+		}
+
+		/**
+		 * A right click, the context-menu key or Umschalt+F10 on `node` opens the menu of `it` (a click keeps opening the
+		 * detail, a double click or ▶ plays). `before`: what happens first (the grid selects the title).
+		 */
+		function withMenu(node, it, run, before = null) {
+			node.addEventListener('contextmenu', (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				// the key opened it already (Chromium sends contextmenu after the key as well)
+				if (S.menu && Date.now() - menuAt < 500) return;
+				if (before) before();
+				const mouse = e.button === 2 || e.clientX > 0 || e.clientY > 0;
+				openMenu(it, node, mouse ? { left: e.clientX, top: e.clientY } : null, run);
+			});
+			node.addEventListener('keydown', (e) => {
+				if (!MS.isMenuKey(e)) return;
+				e.preventDefault();
+				e.stopPropagation();
+				menuAt = Date.now();
+				if (before) before();
+				openMenu(it, node, null, run);
+			});
+			return node;
+		}
+
+		function closeMenu(refocus) {
+			const m = S.menu;
+			if (!m) return;
+			S.menu = null;
+			m.layer.remove();
+			if (refocus && m.anchor && m.anchor.isConnected) {
+				const f = m.anchor.matches('button') ? m.anchor : m.anchor.querySelector('button:not([disabled])');
+				if (f) f.focus();
+			}
+		}
+
+		const MENU_ICONS = { play: 'play', restart: 'restart', played: 'check' };
+
+		/** The menu at the pointer (a right click) or below the title (the key); the first entry has the focus. */
+		function openMenu(it, anchor, at, run) {
+			closeMenu(false);
+			const acts = MS.titleMenu(it, t, canPlay());
+			if (!acts.length) return;
+			const items = acts.map((a) => el('button', {
+				type: 'button', role: 'menuitem', class: 'dv-menu-item md-menu-item', 'data-act': a.id,
+				on: { click: () => { closeMenu(a.id === 'played'); if (run && typeof run[a.id] === 'function') run[a.id](); } },
+			}, [icon(MENU_ICONS[a.id], 15, '2', a.id === 'play'), el('span', { text: a.label })]));
+			const name = it.kind === 'episode' && it.seriesName ? `${it.seriesName} · ${it.name}` : it.name;
+			const menu = el('div', { class: 'dv-menu md-menu', role: 'menu', 'aria-label': t('media.menu.label', { title: name || '' }) }, items);
+			const layer = el('div', {
+				class: 'dv-menu-layer md-menu-layer',
+				on: { mousedown: (e) => { if (e.target === layer) closeMenu(false); }, contextmenu: (e) => { e.preventDefault(); closeMenu(false); } },
+			}, [menu]);
+			layer.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape' || e.key === 'Tab' || MS.isMenuKey(e)) { e.preventDefault(); e.stopPropagation(); closeMenu(true); return; }
+				if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+				e.preventDefault();
+				const b = [...menu.querySelectorAll('button')];
+				const n = b.length;
+				const i = b.indexOf(document.activeElement);
+				const j = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (i + (e.key === 'ArrowDown' ? 1 : n - 1) + n) % n;
+				b[j].focus();
+			});
+			rootEl.appendChild(layer);
+			S.menu = { layer, anchor };
+			const r = anchor.getBoundingClientRect();
+			const mr = menu.getBoundingClientRect();
+			const x = at ? at.left : r.left + Math.min(16, r.width / 4);
+			const y = at ? at.top : r.top + Math.min(r.height, 44);
+			const left = Math.max(8, Math.min(window.innerWidth - mr.width - 8, x));
+			const top = y + mr.height + 8 < window.innerHeight ? y : Math.max(8, y - mr.height);
+			menu.style.left = `${left}px`;
+			menu.style.top = `${top}px`;
+			items[0].focus();
 		}
 
 		// ── Overview: chips, the way, the rows ───────────────
@@ -895,13 +1120,13 @@
 		/** A card of "Als Nächstes" (16:9 as "Weiterschauen"): a click opens the series, ▶ plays the episode. */
 		function nextThumb(it) {
 			const c = MS.nextCard(it, t);
-			return el('div', { class: 'md-th is-next', 'data-id': it.id }, [
+			return withMenu(el('div', { class: 'md-th is-next', 'data-id': it.id }, [
 				picture(c.picture, 'is-wide', it.seriesId || it.id),
 				c.mark ? el('span', { class: 'md-mk', text: c.mark }) : null,
 				el('button', { type: 'button', class: 'md-th-open', 'aria-label': `${c.title}${c.sub ? ` · ${c.sub}` : ''}`, on: { click: () => openItem(it), dblclick: () => playItem(it) } }),
 				canPlay() ? el('button', { type: 'button', class: 'md-th-play', 'aria-label': `${t('media.detail.play')}: ${c.title}`, title: t('media.detail.play'), on: { click: (e) => { e.stopPropagation(); playItem(it); } } }, [icon('play', 18, '2', true)]) : null,
 				el('div', { class: 'md-cap' }, [el('b', { text: c.title }), c.sub ? el('small', { text: c.sub }) : null]),
-			]);
+			]), it, runFor(it));
 		}
 
 		/** A tile of "Genres": its name on a calm colour of its own; opens Filme with that genre. */
@@ -943,7 +1168,7 @@
 				el('div', { class: 'md-cap' }, [el('b', { text: c.title }), c.sub ? el('small', { text: c.sub }) : null]),
 				el('div', { class: 'md-bar' }, [el('span', { style: `width:${c.progress}%` })]),
 			]);
-			return card;
+			return withMenu(card, it, runFor(it));
 		}
 
 		/** A poster (2:3) of a row or the grid. */
@@ -970,7 +1195,8 @@
 				b.addEventListener('click', () => openItem(it));
 				b.addEventListener('dblclick', () => playItem(it));
 			}
-			return b;
+			// the menu (a right click in the grid selects the title too, as a click)
+			return withMenu(b, it, runFor(it), inGrid ? () => { if (!S.selected[S.search.q ? 'search' : S.tab] || S.selected[S.search.q ? 'search' : S.tab].id !== it.id) select(it); } : null);
 		}
 
 		/** A title of a row: its tab with the title selected (an episode: its series). */
@@ -1227,13 +1453,13 @@
 				if (!films.length) box.appendChild(el('div', { class: 'md-state is-small', text: t('media.detail.collectionEmpty') }));
 				for (const f of films) {
 					const r = MS.libraryTitle(f, t);
-					box.appendChild(el('div', { class: `md-fr is-title${r.played ? ' is-played' : ''}`, role: 'listitem', 'data-id': f.id }, [
+					box.appendChild(withMenu(el('div', { class: `md-fr is-title${r.played ? ' is-played' : ''}`, role: 'listitem', 'data-id': f.id }, [
 						el('button', { type: 'button', class: 'md-fr-open', 'aria-label': `${r.title}${r.sub ? ` · ${r.sub}` : ''}`, on: { click: () => openItem(f), dblclick: () => playItem(f) } }),
 						el('span', { class: 'md-fr-th' }, [picture(r.picture, 'is-wide', f.id), r.progress ? el('span', { class: 'md-bar' }, [el('span', { style: `width:${r.progress}%` })]) : null]),
 						el('span', { class: 'md-fr-tx' }, [el('b', { text: r.title }), r.sub ? el('small', { text: r.sub }) : null]),
 						r.played ? el('span', { class: 'md-seen is-inline', title: t('media.detail.played') }, [icon('check', 12, '3')]) : null,
 						canPlay() && r.playable ? el('button', { type: 'button', class: 'md-ep-play md-fr-play', 'aria-label': `${t('media.detail.play')}: ${r.title}`, title: t('media.detail.play'), on: { click: () => playItem(f) } }, [icon('play', 13, '2', true)]) : null,
-					]));
+					]), f, runFor(f)));
 				}
 			}
 			inner.appendChild(box);
@@ -1450,8 +1676,10 @@
 			renderDetail(tab);
 		}
 
-		async function togglePlayed(tab, title) {
-			const want = !title.played;
+		function togglePlayed(_tab, title) { return setPlayedFor(title, !title.played); }
+
+		/** „Als gesehen markieren“ / „ungesehen“ (detail column and menu): Jellyfin keeps it, a share's file this PC. */
+		async function setPlayedFor(title, want) {
 			let r;
 			try { r = await api.setPlayed(title.sourceId, title.id, want); } catch (err) { r = fail(err); }
 			handle(r, title.sourceId);
@@ -1462,6 +1690,21 @@
 			for (const v of S.episodes.values()) if (v && v.items) v.items.forEach(fix);
 			S.search.items.forEach(fix);
 			for (const v of S.shareTitles.values()) v.items.forEach(fix);
+			for (const v of S.collections.values()) if (v && v.items) v.items.forEach(fix);
+			if (S.libOpen) S.libOpen.items.forEach(fix);
+			if (S.fsearch.key && S.fsearch.key.startsWith('lib|')) S.fsearch.below.forEach(fix);
+			// a share's file in Ordner (and the search's hits): its progress on this PC
+			if (title.fromShare === true) {
+				const mark = (e) => { if (e && e.itemId === title.id && S.folder.sourceId === title.sourceId) e.progress = { ...(e.progress || {}), played: want, positionMs: 0 }; };
+				S.folder.items.forEach(mark);
+				if (S.fsearch.key && S.fsearch.key.startsWith('share|')) S.fsearch.below.forEach(mark);
+			}
+			// a series or season: its episodes asked again when shown next
+			if (title.kind === 'series' || title.kind === 'season') {
+				const sid = title.kind === 'series' ? title.id : title.seriesId;
+				for (const k of [...S.episodes.keys()]) if (k.startsWith(`${title.sourceId}|${sid}|`)) S.episodes.delete(k);
+				S.seasons.delete(`${title.sourceId}|${sid}`);
+			}
 			Object.values(S.selected).forEach(fix);
 			const d = S.details.get(dkey(title));
 			if (d && d.title) fix(d.title);
@@ -1557,7 +1800,7 @@
 					canPlay() ? el('button', { type: 'button', class: 'md-ep-play', 'aria-label': `${t('media.detail.play')}: ${r.title}`, title: t('media.detail.play'), on: { click: () => playItem(e, { list: episodes }) } }, [icon('play', 13, '2', true)]) : null,
 				]);
 				rowEl.addEventListener('dblclick', () => playItem(e, { list: episodes }));
-				listEl.appendChild(rowEl);
+				listEl.appendChild(withMenu(rowEl, e, runFor(e, { list: episodes })));
 			}
 			inner.appendChild(listEl);
 		}
