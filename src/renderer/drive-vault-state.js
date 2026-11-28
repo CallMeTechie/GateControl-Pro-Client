@@ -89,12 +89,17 @@
 		return parts.join(' · ');
 	}
 
-	// "In Tresor verschieben": asked once before the first move (then remembered on this PC)
-	const MOVE_OK_KEY = 'gc.drive.vaultMoveOk';
+	// Into a vault: "Kopieren" (the originals stay) or "Verschieben" (they are deleted once in the vault), asked every
+	// time — "Kopieren" picked at first
+	const VAULT_MODES = ['copy', 'move'];
+	const VAULT_MODE_DEFAULT = 'copy';
 
-	/** Must the person confirm a move into a vault first? (`remembered`: the stored value of MOVE_OK_KEY) */
-	function moveNeedsConfirm(remembered) {
-		return remembered !== '1';
+	/** The question's text and button for a mode → { mode, text, ok } ("Verschieben": the originals are deleted for good). */
+	function vaultModeView(mode, { t } = {}) {
+		const m = VAULT_MODES.includes(mode) ? mode : VAULT_MODE_DEFAULT;
+		return m === 'move'
+			? { mode: m, text: t('drive.vault.move.confirm.text'), ok: t('drive.vault.move.confirm.ok') }
+			: { mode: m, text: t('drive.vault.move.copyText'), ok: t('drive.vault.move.copyOk') };
 	}
 
 	const plural = (t, key, n, params) => t(`${key}.${Number(n) === 1 ? 'one' : 'other'}`, { ...(params || {}), count: Number(n) || 0 });
@@ -126,5 +131,5 @@
 		return out;
 	}
 
-	return { vaultAvailable, gateView, deviceRows, recoveryKeyClean, recoveryKeyShape, recoveryKeyLines, safetyMatches, folderNote, MOVE_OK_KEY, moveNeedsConfirm, moveToasts };
+	return { vaultAvailable, gateView, deviceRows, recoveryKeyClean, recoveryKeyShape, recoveryKeyLines, safetyMatches, folderNote, VAULT_MODES, VAULT_MODE_DEFAULT, vaultModeView, moveToasts };
 });

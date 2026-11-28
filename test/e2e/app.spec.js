@@ -47,4 +47,39 @@ test.describe('app start', () => {
     await openSettingsTab(page, 'conn');
     await expect(page.locator('#server-url')).toHaveValue(mock.url);
   });
+
+  test('no server address on the page: status bar, connection card, overview — only in the settings', async ({ launchApp, mock }) => {
+    const launched = await launchApp();
+    const { page } = launched;
+    await launched.app.evaluate(() => { globalThis.__gcE2E.tunnelWorks = true; });
+    await setupWithApiKey(page, mock);
+    const host = new URL(mock.url).host;
+    const hostname = new URL(mock.url).hostname;
+    await page.locator('#nav-status').click();
+    await expect(page.locator('#page-status')).toHaveClass(/active/);
+    const shown = ['#statusbar', '.conn-card', '#overview-sub', '#hero'];
+    const noHost = async () => {
+      for (const sel of shown) {
+        await expect(page.locator(sel).first()).not.toContainText(host);
+        await expect(page.locator(sel).first()).not.toContainText(hostname);
+      }
+    };
+    // disconnected: state and kill switch only
+    await expect(page.locator('#sb-conn-label')).toHaveText(/Getrennt|Disconnected|Nicht verbunden|Not connected/);
+    await expect(page.locator('#sb-endpoint')).toHaveCount(0);
+    await expect(page.locator('#stat-endpoint')).toHaveCount(0);
+    await expect(page.locator('#sb-ks')).toHaveText(/Kill-Switch|Kill switch/);
+    await expect(page.locator('#conn-sub')).toHaveText('');
+    await noHost();
+    // connected: the duration in the card, no address after it
+    await page.locator('#connect-btn').click();
+    await expect(page.locator('#sb-conn-label')).toHaveText(/Verbunden|Connected/);
+    await expect(page.locator('#conn-sub')).toHaveText(/^\d/);
+    await expect(page.locator('#hero-sub')).toHaveText(/verschlüsselt durch den Tunnel|encrypted through the tunnel/);
+    await noHost();
+    await page.screenshot({ path: test.info().outputPath('status-no-host.png') });
+    // the settings still show the URL entered there
+    await openSettingsTab(page, 'conn');
+    await expect(page.locator('#server-url')).toHaveValue(mock.url);
+  });
 });

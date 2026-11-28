@@ -146,6 +146,7 @@
       "protected": "Protected",
       "failed": "Connection failed",
       "disconnected": "Not connected",
+      "subProtected": "Your traffic is encrypted through the tunnel.",
       "subConnecting": "This usually takes only a few seconds."
     },
     "stats": {
@@ -2040,16 +2041,22 @@
         "done": "New key created"
       },
       "move": {
-        "button": "Move to vault",
-        "title": "Move files into the vault, encrypted. The originals are then deleted from this PC for good.",
-        "files": "Move files to vault …",
-        "folder": "Move folder to vault …",
-        "dropHint": "Drop to move into the vault – the originals are then deleted from this PC",
+        "button": "Into the vault",
+        "title": "Copy or move files into the vault, encrypted (moving deletes the originals from this PC).",
+        "files": "Files into the vault …",
+        "folder": "Folder into the vault …",
+        "dropHint": "Drop to copy or move into the vault",
+        "mode": {
+          "label": "Copy or move",
+          "copy": "Copy",
+          "move": "Move"
+        },
+        "copyText": "The files are put into the vault, encrypted. The originals stay on this PC.",
+        "copyOk": "Copy",
         "confirm": {
-          "title": "Move to vault",
+          "title": "Into the vault",
           "text": "The files are put into the vault, encrypted. The originals are then deleted from this PC for good – not moved to the recycle bin.",
-          "ok": "Move",
-          "dontAsk": "Don't ask again"
+          "ok": "Move"
         },
         "done": {
           "one": "1 file moved to the vault – original deleted",

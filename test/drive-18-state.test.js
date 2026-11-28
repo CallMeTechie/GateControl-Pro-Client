@@ -143,12 +143,16 @@ describe('vault folders (drive-vault-state.js)', () => {
   });
 });
 
-describe('"In Tresor verschieben" (drive-vault-state.js)', () => {
-  it('asked until "Nicht mehr fragen"', () => {
-    assert.equal(VS.MOVE_OK_KEY, 'gc.drive.vaultMoveOk');
-    assert.equal(VS.moveNeedsConfirm(null), true);
-    assert.equal(VS.moveNeedsConfirm('0'), true);
-    assert.equal(VS.moveNeedsConfirm('1'), false);
+describe('"In den Tresor": kopieren oder verschieben (drive-vault-state.js)', () => {
+  it('asked every time, "Kopieren" first; "Verschieben" says the originals are deleted', () => {
+    assert.deepEqual(VS.VAULT_MODES, ['copy', 'move']);
+    assert.equal(VS.VAULT_MODE_DEFAULT, 'copy');
+    assert.equal(VS.moveNeedsConfirm, undefined);
+    assert.deepEqual(VS.vaultModeView('copy', { t }), { mode: 'copy', text: 'drive.vault.move.copyText', ok: 'drive.vault.move.copyOk' });
+    assert.deepEqual(VS.vaultModeView('move', { t }), { mode: 'move', text: 'drive.vault.move.confirm.text', ok: 'drive.vault.move.confirm.ok' });
+    // anything else: "Kopieren" (the originals stay)
+    assert.equal(VS.vaultModeView('weg', { t }).mode, 'copy');
+    assert.equal(VS.vaultModeView(undefined, { t }).mode, 'copy');
   });
 
   it('the toasts of a batch: moved and deleted, originals kept by their reason, files not moved', () => {
@@ -180,14 +184,16 @@ describe('"In Tresor verschieben" (drive-vault-state.js)', () => {
     const flat = (o, pre = '', out = {}) => { for (const [k, v] of Object.entries(o)) { const key = pre ? `${pre}.${k}` : k; if (v && typeof v === 'object') flat(v, key, out); else out[key] = v; } return out; };
     const de = flat(JSON.parse(read('src', 'i18n', 'de.json')));
     const en = flat(JSON.parse(read('src', 'i18n', 'en.json')));
-    const keys = ['button', 'title', 'files', 'folder', 'dropHint', 'confirm.title', 'confirm.text', 'confirm.ok', 'confirm.dontAsk'];
+    const keys = ['button', 'title', 'files', 'folder', 'dropHint', 'mode.label', 'mode.copy', 'mode.move', 'copyText', 'copyOk', 'confirm.title', 'confirm.text', 'confirm.ok'];
     for (const g of ['done', 'notMoved']) for (const n of ['one', 'other']) keys.push(`${g}.${n}`);
     for (const g of ['locked', 'changed', 'other']) for (const n of ['named', 'one', 'other']) keys.push(`${g}.${n}`);
     for (const k of keys) {
       assert.ok(typeof de[`drive.vault.move.${k}`] === 'string' && de[`drive.vault.move.${k}`], `de: ${k}`);
       assert.ok(typeof en[`drive.vault.move.${k}`] === 'string' && en[`drive.vault.move.${k}`], `en: ${k}`);
     }
-    assert.equal(de['drive.vault.move.button'], 'In Tresor verschieben');
+    assert.equal(de['drive.vault.move.button'], 'In den Tresor');
+    assert.equal(de['drive.vault.move.mode.copy'], 'Kopieren');
+    assert.match(de['drive.vault.move.copyText'], /Originale bleiben auf diesem PC/);
     assert.equal(de['drive.vault.move.done.other'], '{{count}} Dateien in den Tresor verschoben – Originale gelöscht');
     assert.match(de['drive.vault.move.confirm.text'], /endgültig von diesem PC gelöscht/);
     assert.match(de['drive.vault.move.locked.named'], /geöffnet oder schreibgeschützt\) – bitte selbst löschen/);
