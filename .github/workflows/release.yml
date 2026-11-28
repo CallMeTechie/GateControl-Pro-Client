@@ -251,6 +251,15 @@ jobs:
           test -f drive-sync/target/release/gc-drive-sync.exe
           drive-sync/target/release/gc-drive-sync.exe --version
 
+      # gc-rdp-host.exe (Remotedesktop im GateControl-Fenster) nach
+      # rdp-host/bin/Release/net48; electron-builder legt es mit den Interop-DLLs
+      # über extraResources nach resources\rdp-host\. Signiert wie gc-drive-sync:
+      # kein Authenticode, das Paket ist über das Update-Manifest abgesichert.
+      - name: Build gc-rdp-host
+        if: steps.check_tag.outputs.exists == 'false'
+        shell: pwsh
+        run: ./scripts/build-rdp-host.ps1
+
       - name: Build installer
         if: steps.check_tag.outputs.exists == 'false'
         run: npm run build:installer
@@ -268,6 +277,9 @@ jobs:
           # gc-drive-sync.exe must be in the package (checked before the cd below)
           DRIVE_SYNC_DIR=dist/win-unpacked/resources/drive-sync
           test -f "$DRIVE_SYNC_DIR/gc-drive-sync.exe"
+          # gc-rdp-host.exe and its interop assemblies as well
+          RDP_HOST_DIR=dist/win-unpacked/resources/rdp-host
+          for f in gc-rdp-host.exe gc-rdp-host.exe.config MSTSCLib.dll AxMSTSCLib.dll; do test -f "$RDP_HOST_DIR/$f"; done
           cd dist && powershell Compress-Archive -Path "win-unpacked/*" -DestinationPath "GateControl-Pro-Client-Portable.zip" -Force
           echo "Portable ZIP created"
         env:

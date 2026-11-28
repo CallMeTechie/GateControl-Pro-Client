@@ -234,7 +234,6 @@
 								</div>
 							</div>
 							<dl class="hero-dl" id="stats-grid">
-								<div><dt class="lbl" data-i18n="stats.endpoint">Endpunkt</dt><dd class="mono" id="stat-endpoint">&mdash;</dd></div>
 								<div><dt class="lbl" data-i18n="stats.handshake">Letzter Handshake</dt><dd class="mono" id="stat-handshake">&mdash;</dd></div>
 								<div><dt class="lbl" data-i18n="ui.stats.since">Verbunden seit</dt><dd class="mono" id="stat-since">&mdash;</dd></div>
 								<div><dt class="lbl" data-i18n="ui.stats.transferred">Übertragen</dt><dd class="mono">&#8595; <span id="stat-rx">0 B</span> &nbsp;&#8593; <span id="stat-tx">0 B</span></dd></div>
@@ -663,6 +662,14 @@
 									<button type="button" data-theme-mode="dark" class="on" data-i18n="ui.app.themeDark">Dunkel</button>
 								</div>
 							</div>
+							<!-- Remotedesktop im GateControl-Fenster: what "Verbinden" does by default (rdp.openIn) -->
+							<div class="set-row" id="rdp-openin-row">
+								<div class="grow"><div class="set-row-title" data-i18n="rdpWindow.settings.openIn">Remotedesktop öffnen in</div><div class="set-row-desc" id="rdp-openin-desc">Was „Verbinden“ im Fernzugriff tut. Pro Host änderbar unter „Auf diesem PC“.</div></div>
+								<div class="seg" id="rdp-openin-seg">
+									<button type="button" data-open-in="window" class="on" aria-pressed="true" data-i18n="rdpWindow.settings.openInWindow">GateControl-Fenster</button>
+									<button type="button" data-open-in="mstsc" aria-pressed="false" data-i18n="rdpWindow.settings.openInMstsc">Windows-Remotedesktop</button>
+								</div>
+							</div>
 							<div class="set-row">
 								<div class="grow"><label for="locale-select" class="set-row-title" data-i18n="settings.language">Sprache</label></div>
 								<select class="inp" id="locale-select" style="width:180px">
@@ -730,7 +737,6 @@
 									<div class="notify-state" id="notify-state"><span class="dot"></span><strong id="notify-state-label"></strong></div>
 									<p class="set-row-desc" id="notify-reason" hidden></p>
 									<dl class="notify-dl">
-										<dt class="lbl" data-i18n="ui.notify.server">Server</dt><dd class="mono" id="notify-server">—</dd>
 										<dt class="lbl" data-i18n="ui.notify.path">Weg</dt><dd id="notify-via">—</dd>
 										<dt class="lbl" data-i18n="ui.notify.since">Verbunden seit</dt><dd id="notify-since">—</dd>
 									</dl>
@@ -949,7 +955,6 @@
 	<!-- ── Status bar ──────────────────────────────────── -->
 	<footer class="statusbar" id="statusbar">
 		<span class="statusbar-item"><span class="dot conn-dot"></span><span id="sb-conn-label" data-i18n="status.disconnected">Getrennt</span></span>
-		<span class="statusbar-item mono" id="sb-endpoint"></span>
 		<span class="statusbar-item" id="sb-ks"></span>
 		<span class="statusbar-item mono" id="sb-rate"></span>
 		<span class="grow"></span>
@@ -1043,6 +1048,7 @@
 	<script src="media-player-state.js"></script>
 	<script src="media-player.js"></script>
 	<script src="media-cast-remote.js"></script>
+	<script src="rdp-local-state.js"></script>
 	<script src="renderer.js"></script>
 </body>
 </html>

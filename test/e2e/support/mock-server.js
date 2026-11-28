@@ -182,6 +182,7 @@ async function startMockServer() {
   let notes = null; // support/notes-mock.js, null = no Notizen & Aufgaben plugin
   let places = null; // support/places-mock.js, null = a server before „Meine Orte“ (404)
   let actions = null; // support/actions-mock.js, null = a server before quick actions (404)
+  let rdp = null; // setRdp(): Remote Desktops of Fernzugriff (/client/rdp*), null = an empty list
   const acks = [];
   const prefs = [];
   let geocode = {
@@ -457,6 +458,29 @@ async function startMockServer() {
         if (messenger.handle(ctx, json, sendRaw)) return undefined;
       }
 
+      // Fernzugriff: Remote Desktops (the plugin's /client/rdp*), the connect data with plain-text credentials
+      // (no ECDH in the mock) and the audit of the sessions
+      if (rdp && (route === 'rdp' || route.startsWith('rdp/'))) {
+        const m = /^rdp\/([^/]+)\/(connect|session)$/.exec(route);
+        if (route === 'rdp' && req.method === 'GET') return json(200, { ok: true, routes: rdp.routes.map((r) => ({ ...r, status: { online: true } })) });
+        const r = m ? rdp.routes.find((x) => String(x.id) === m[1]) : null;
+        if (!r) return json(404, { ok: false });
+        if (m[2] === 'connect') {
+          const port = server.address().port;
+          // a gateway route to this mock: no tunnel needed, the TCP check reaches it
+          return json(200, { ok: true, connection: { ...r, connect_address: '127.0.0.1', connect_port: port, username: rdp.username, password: rdp.password, domain: rdp.domain } });
+        }
+        let body = {};
+        try { body = raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { body = {}; }
+        if (req.method === 'POST') {
+          const id = rdp.sessions.length + 1;
+          rdp.sessions.push({ op: 'start', route: r.id, id });
+          return json(200, { ok: true, session: { id } });
+        }
+        if (req.method === 'DELETE') { rdp.sessions.push({ op: 'end', route: r.id, ...body }); return json(200, { ok: true }); }
+        return json(200, { ok: true });
+      }
+
       switch (route) {
         case 'ping': return json(200, { ok: true });
         case 'register': return json(200, { ok: true, peerId: PEER_ID, hash: null, config: null });
@@ -614,6 +638,11 @@ async function startMockServer() {
     setSignin(opts = {}) {
       signin = createSignin(opts);
       return signin;
+    },
+    /** Remote Desktops of Fernzugriff: { routes, username, password, domain }; returns its state ({ sessions }). */
+    setRdp(opts = {}) {
+      rdp = { routes: opts.routes || [], username: opts.username || 'anna', password: opts.password || 'e2e-pass-1', domain: opts.domain || 'BUERO', sessions: [] };
+      return rdp;
     },
     count(pathname) { return requests.filter((r) => r.path === pathname).length; },
     close: () => new Promise((resolve) => {

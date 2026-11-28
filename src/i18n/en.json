@@ -146,6 +146,7 @@
       "protected": "Protected",
       "failed": "Connection failed",
       "disconnected": "Not connected",
+      "subProtected": "Your traffic is encrypted through the tunnel.",
       "subConnecting": "This usually takes only a few seconds."
     },
     "stats": {
@@ -2043,16 +2044,22 @@
         "done": "New key created"
       },
       "move": {
-        "button": "Move to vault",
-        "title": "Move files into the vault, encrypted. The originals are then deleted from this PC for good.",
-        "files": "Move files to vault …",
-        "folder": "Move folder to vault …",
-        "dropHint": "Drop to move into the vault – the originals are then deleted from this PC",
+        "button": "Into the vault",
+        "title": "Copy or move files into the vault, encrypted (moving deletes the originals from this PC).",
+        "files": "Files into the vault …",
+        "folder": "Folder into the vault …",
+        "dropHint": "Drop to copy or move into the vault",
+        "mode": {
+          "label": "Copy or move",
+          "copy": "Copy",
+          "move": "Move"
+        },
+        "copyText": "The files are put into the vault, encrypted. The originals stay on this PC.",
+        "copyOk": "Copy",
         "confirm": {
-          "title": "Move to vault",
+          "title": "Into the vault",
           "text": "The files are put into the vault, encrypted. The originals are then deleted from this PC for good – not moved to the recycle bin.",
-          "ok": "Move",
-          "dontAsk": "Don't ask again"
+          "ok": "Move"
         },
         "done": {
           "one": "1 file moved to the vault – original deleted",
@@ -5813,6 +5820,155 @@
       "mailFolders": "Width of the folder bar",
       "mailList": "Width of the mail list",
       "mailHeight": "Height of the mail list"
+    }
+  },
+  "rdpWindow": {
+    "inWindow": "in window",
+    "showWindow": "Show window",
+    "moreWays": "More ways to connect",
+    "menuWindow": "In the GateControl window",
+    "menuWindowSub": "No Windows warning",
+    "menuStandard": "Default",
+    "menuMstsc": "Open with Windows Remote Desktop",
+    "menuMstscSub": "mstsc with an .rdp file. Windows asks before every connection.",
+    "unavailable": "Not available on this PC",
+    "local": {
+      "title": "On this PC",
+      "hint": "Only for this host on this device",
+      "open": "Open in",
+      "openDesc": "What “Connect” does for this host",
+      "openDefault": "As set",
+      "openWindow": "Window",
+      "openMstsc": "Windows Remote Desktop",
+      "display": "Display",
+      "displayDesc": "“All monitors” uses the Windows full screen with the Microsoft connection bar",
+      "displayWindow": "Window",
+      "displayFull": "Full screen",
+      "displayAll": "All monitors",
+      "resolution": "Resolution",
+      "resolutionDesc": "“Fit to window” follows the window when you make it larger or smaller",
+      "resServer": "As set by the server",
+      "resDynamic": "Fit to window",
+      "resFixed": "Fixed size ({{ w }} × {{ h }})",
+      "keyboard": "Windows keys to the remote PC",
+      "keyboardDesc": "Windows key, Alt+Tab, Ctrl+Esc",
+      "kbFull": "In full screen",
+      "kbAlways": "Always",
+      "kbNever": "Never",
+      "clipboard": "Share clipboard",
+      "clipboardDesc": "Copy and paste text, images and files",
+      "drives": "Share this PC's drives",
+      "drivesDesc": "Applies from the next connection",
+      "locked": "Not permitted by the administrator",
+      "audio": "Sound",
+      "audioDesc": "Where the remote PC's sound plays",
+      "audioLocal": "Play on this PC",
+      "audioRemote": "Play on the remote PC",
+      "audioOff": "Do not play",
+      "windowOnly": "These settings apply to the GateControl window.",
+      "remoteApp": "This connection is a RemoteApp and opens with Windows Remote Desktop."
+    },
+    "settings": {
+      "openIn": "Open Remote Desktop in",
+      "openInDesc": "What “Connect” does in Remote access. Can be changed per host under “On this PC”.",
+      "openInWindow": "GateControl window",
+      "openInMstsc": "Windows Remote Desktop",
+      "openInUnavailable": "The GateControl window is not available on this PC. “Connect” opens Windows Remote Desktop."
+    },
+    "progress": {
+      "window": "GateControl window opened",
+      "windowActive": "Opening the GateControl window …",
+      "opened": "Remote Desktop in the GateControl window"
+    },
+    "notice": {
+      "hostFailed": "The GateControl window could not start. Opened with Windows Remote Desktop.",
+      "remoteapp": "RemoteApp opens with Windows Remote Desktop.",
+      "hostMissing": "The GateControl window is not available on this PC. Opened with Windows Remote Desktop."
+    },
+    "host": {
+      "title": "{0} – GateControl",
+      "connected": "Connected",
+      "connecting": "Connecting …",
+      "loggingIn": "Signing in …",
+      "interrupted": "Interrupted",
+      "disconnected": "Disconnected",
+      "cancel": "Cancel",
+      "disconnect": "Disconnect",
+      "clipboard": "Clipboard",
+      "clipboardPaused": "Clipboard paused",
+      "clipboardTip": "Share the clipboard – one click pauses it without reconnecting",
+      "drivesOn": "Drives",
+      "drivesOff": "Drives off",
+      "drivesTip": "Drives: the change applies after reconnecting",
+      "drivesAsk": "Sharing the drives only applies after reconnecting. Reconnect now?",
+      "cad": "Ctrl+Alt+Del",
+      "fullscreen": "Full screen (Ctrl+Alt+Break)",
+      "minimize": "Minimize",
+      "window": "Window",
+      "windowTip": "Leave full screen",
+      "pin": "Pin the bar",
+      "fsHint": "Ctrl+Alt+Break: back to the window",
+      "q4": "Very good",
+      "q3": "Good",
+      "q2": "Fair",
+      "q1": "Weak",
+      "q0": "Poor",
+      "stepVpn": "VPN tunnel active",
+      "stepReach": "Host reachable",
+      "stepCreds": "Credentials decrypted end to end",
+      "stepConnect": "Connecting to the remote PC …",
+      "stepLogin": "Signing in",
+      "memoryHint": "The credentials stay in the memory of this session. No file and no entry in the Windows Credential Manager is created.",
+      "reconnecting": "Connection interrupted. Reconnecting, attempt {0} of {1} …",
+      "errLabel": "Disconnected",
+      "errTitle": "The connection was closed",
+      "errCode": "Reason {0} · extended code {1} · {2}",
+      "retry": "Reconnect",
+      "mstsc": "Open with Windows Remote Desktop",
+      "close": "Close",
+      "remoteDesktop": "Remote Desktop"
+    },
+    "err": {
+      "replaced": {
+        "title": "The session was ended by the remote PC",
+        "text": "Someone else signed in on the remote PC and took over your session. If you reconnect, the other person is signed out."
+      },
+      "idle": {
+        "title": "The session was idle for too long",
+        "text": "The remote PC disconnected the session after a long idle time. Your programs keep running there when you reconnect."
+      },
+      "admin": {
+        "title": "The session was ended on the remote PC",
+        "text": "An administrator or a program on the remote PC disconnected the session."
+      },
+      "denied": {
+        "title": "The remote PC does not allow the sign-in",
+        "text": "Your account may not sign in to this PC with Remote Desktop. Ask the administrator."
+      },
+      "logonTimeout": {
+        "title": "Signing in took too long",
+        "text": "The remote PC cancelled the sign-in. Try again."
+      },
+      "logon": {
+        "title": "The sign-in was refused",
+        "text": "The user name or password is wrong. Check the stored credentials."
+      },
+      "account": {
+        "title": "The account cannot sign in",
+        "text": "The password has expired or the account is locked or restricted."
+      },
+      "unreachable": {
+        "title": "The remote PC cannot be reached",
+        "text": "The connection could not be made. Check that the PC is on and allows Remote Desktop."
+      },
+      "network": {
+        "title": "The network connection was lost",
+        "text": "The network was gone too long to keep the session. Your programs keep running on the remote PC."
+      },
+      "generic": {
+        "title": "The connection was closed",
+        "text": "The connection to the remote PC was closed unexpectedly."
+      }
     }
   }
 }

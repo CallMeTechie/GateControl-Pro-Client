@@ -206,38 +206,89 @@ test.describe('drive 1.8 / 1.9', () => {
     // "In Tresor verschieben": the original is gone from this PC for good, the toast says so
     await expect.poll(() => fs.existsSync(src)).toBe(false);
     await expect(page.locator('#toasts .toast-success').filter({ hasText: /1 Datei in den Tresor verschoben – Original gelöscht|1 file moved to the vault – original deleted/ })).toBeVisible();
-    // the button says it; asked before the first move — a read-only file goes into the vault, its original stays
+    // the button: "In den Tresor"; asked every time: "Kopieren" (picked first, the originals stay) or "Verschieben"
+    // (its text says the originals are deleted) — a read-only file moved goes into the vault, its original stays
     const moveBtn = root.locator('.dv-bar .dv-upload');
-    await expect(moveBtn).toHaveText(/In Tresor verschieben|Move to vault/);
+    await expect(moveBtn).toHaveText(/In den Tresor|Into the vault/);
     const ro = testInfo.outputPath('Nur-lesen.txt');
     fs.writeFileSync(ro, 'schreibgeschützt');
     fs.chmodSync(ro, 0o444);
     await answerOpenDialogs([ro]);
     await moveBtn.click();
     const moveAsk = page.locator('.dv-dlg.dv-move-dlg');
+    const modeBtn = (m) => moveAsk.locator(`.dv-move-mode [data-mode="${m}"]`);
+    await expect(modeBtn('copy')).toHaveAttribute('aria-checked', 'true');
+    await expect(modeBtn('move')).toHaveAttribute('aria-checked', 'false');
+    await expect(moveAsk.locator('.dv-move-text')).toHaveText(/Originale bleiben auf diesem PC|originals stay on this PC/);
+    await expect(moveAsk.locator('.dv-dlg-foot .btn-pri')).toHaveText(/Kopieren|Copy/);
+    await page.screenshot({ path: testInfo.outputPath('drive-vault-copy-ask.png') });
+    await modeBtn('move').click();
+    await expect(modeBtn('move')).toHaveAttribute('aria-checked', 'true');
     await expect(moveAsk).toContainText(/endgültig von diesem PC gelöscht|deleted from this PC for good/);
+    await expect(moveAsk.locator('.dv-dlg-foot .btn-pri')).toHaveText(/Verschieben|Move/);
     await page.screenshot({ path: testInfo.outputPath('drive-vault-move-ask.png') });
     await moveAsk.locator('.dv-dlg-foot .btn-pri').click();
     await expect(page.locator('#toasts .toast-warning').filter({ hasText: /Nur-lesen\.txt/ }).first()).toContainText(/schreibgeschützt|read-only/);
     await expect(root.locator('.dv-row', { hasText: 'Nur-lesen.txt' })).toBeVisible();
     expect(fs.existsSync(ro)).toBe(true);
     fs.chmodSync(ro, 0o644);
-    // "Nicht mehr fragen": asked this once more, then not again
+    // "Kopieren" (as it comes): into the vault, the original stays; asked again next time ("Verschieben": gone)
     const second = testInfo.outputPath('Zweite.txt');
     fs.writeFileSync(second, 'zwei');
     await answerOpenDialogs([second]);
     await moveBtn.click();
-    await expect(moveAsk).toBeVisible();
-    await moveAsk.locator('.dv-check input').check();
+    await expect(modeBtn('copy')).toHaveAttribute('aria-checked', 'true');
     await moveAsk.locator('.dv-dlg-foot .btn-pri').click();
-    await expect.poll(() => fs.existsSync(second)).toBe(false);
+    await expect(root.locator('.dv-row', { hasText: 'Zweite.txt' })).toBeVisible();
+    expect(fs.readFileSync(second, 'utf8')).toBe('zwei');
     const third = testInfo.outputPath('Dritte.txt');
     fs.writeFileSync(third, 'drei');
     await answerOpenDialogs([third]);
     await moveBtn.click();
+    await expect(moveAsk).toBeVisible();
+    await modeBtn('move').click();
+    await moveAsk.locator('.dv-dlg-foot .btn-pri').click();
     await expect.poll(() => fs.existsSync(third)).toBe(false);
     await expect(page.locator('.dv-dlg.dv-move-dlg')).toHaveCount(0);
     await expect(root.locator('.dv-row', { hasText: 'Dritte.txt' })).toBeVisible();
+    // dropped from the Explorer: the same question, "Kopieren" picked first — the original stays
+    const dropped = testInfo.outputPath('Notiz.txt');
+    fs.writeFileSync(dropped, 'notiz');
+    await page.evaluate(() => {
+      const i = document.createElement('input');
+      i.type = 'file';
+      i.id = 'e2e-vault-drop';
+      i.style.display = 'none';
+      document.body.appendChild(i);
+    });
+    await page.locator('#e2e-vault-drop').setInputFiles(dropped);
+    await page.evaluate(() => {
+      const dt = new DataTransfer();
+      for (const f of document.getElementById('e2e-vault-drop').files) dt.items.add(f);
+      const list = document.querySelector('#page-drive .dv-list');
+      for (const type of ['dragenter', 'dragover', 'drop']) list.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
+    });
+    await expect(modeBtn('copy')).toHaveAttribute('aria-checked', 'true');
+    await moveAsk.locator('.dv-dlg-foot .btn-pri').click();
+    await expect(root.locator('.dv-row', { hasText: 'Notiz.txt' })).toBeVisible();
+    expect(fs.readFileSync(dropped, 'utf8')).toBe('notiz');
+    // a folder whose (decrypted) name is there already takes the files: no "Belege (2)"
+    const kids = (pid, dir) => [...d.srv.state.nodes.values()].filter((n) => n.parentId === pid && !n.deleted && !!n.isDir === dir);
+    const dirsBefore = kids(vault.nodeId, true).length;
+    const belegeDir = path.join(testInfo.outputPath('ordner'), 'Belege');
+    fs.mkdirSync(path.join(belegeDir, 'Mai'), { recursive: true });
+    fs.writeFileSync(path.join(belegeDir, 'Mai', 'eins.txt'), 'eins');
+    await page.evaluate(([id, p]) => window.gatecontrol.drive.upload(id, [p], { copy: true }), [vault.nodeId, belegeDir]);
+    await expect.poll(() => kids(vault.nodeId, true).length).toBe(dirsBefore + 1);
+    const belegeNode = kids(vault.nodeId, true).find((n) => kids(n.id, true).length === 1);
+    const maiNode = kids(belegeNode.id, true)[0];
+    await expect.poll(() => kids(maiNode.id, false).length).toBe(1);
+    fs.rmSync(path.join(belegeDir, 'Mai', 'eins.txt'));
+    fs.writeFileSync(path.join(belegeDir, 'Mai', 'zwei.txt'), 'zwei');
+    await page.evaluate(([id, p]) => window.gatecontrol.drive.upload(id, [p], { copy: true }), [vault.nodeId, belegeDir]);
+    await expect.poll(() => kids(maiNode.id, false).length).toBe(2);
+    expect(kids(vault.nodeId, true).length).toBe(dirsBefore + 1);
+    expect(kids(belegeNode.id, true).length).toBe(1);
     // opened (Drive plugin 1.22): in the app's viewer, decrypted in memory — no other program
     await fileRow.locator('.dv-open').click();
     await expect(page.locator('.dv-dlg.dv-vv .dv-vv-text')).toHaveText(SECRET);

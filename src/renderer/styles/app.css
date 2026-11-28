@@ -408,6 +408,30 @@ body:not([data-conn="connected"]) .show-connected { display: none !important; }
 .sess-row { display: flex; align-items: center; gap: 12px; }
 .sess-row .dot { background: var(--acc); }
 
+/* ── Fernzugriff: "Verbinden" with its menu, „Auf diesem PC“ (Remotedesktop im GateControl-Fenster) ── */
+#rdp-detail { position: relative; }
+.rdp-split { display: inline-flex; }
+.rdp-split > .btn-pri:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.rdp-split-more { width: 36px; padding: 0; justify-content: center; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 1px solid rgba(0, 0, 0, .18); }
+.rdp-menu { position: absolute; z-index: 10; min-width: 300px; max-width: 420px; padding: 6px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line2); box-shadow: var(--shadow); }
+.rdp-menu-item { display: flex; width: 100%; gap: 10px; align-items: flex-start; padding: 9px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; }
+.rdp-menu-item:hover:not(:disabled), .rdp-menu-item:focus-visible, .rdp-menu-item.hl { background: var(--panel2); }
+.rdp-menu-item:disabled { opacity: .5; cursor: not-allowed; }
+.rdp-menu-ic { display: inline-flex; color: var(--acc-t); padding-top: 1px; }
+.rdp-menu-item:last-child .rdp-menu-ic { color: var(--muted); }
+.rdp-menu-text { display: flex; flex-direction: column; gap: 2px; }
+.rdp-menu-text b { font-weight: 600; font-size: 13.5px; }
+.rdp-menu-text small { color: var(--muted); font-size: 12px; }
+.rdp-local { padding: 6px 18px 12px; }
+.rdp-local-head { display: flex; align-items: center; gap: 10px; padding: 14px 0 4px; flex-wrap: wrap; }
+.rdp-local .set-row { padding: 13px 0; }
+.rdp-local .set-row:last-of-type { border-bottom: 0; }
+.rdp-local-foot { padding-top: 2px; }
+.rdp-lock { display: inline-flex; align-items: center; gap: 5px; color: var(--faint); font-size: 12px; }
+.seg.sm button { height: 28px; font-size: 12.5px; padding: 0 10px; }
+.seg button:disabled { opacity: .45; cursor: not-allowed; }
+.rdp-select { width: auto; min-width: 200px; max-width: 260px; }
+
 /* ── Logs ──────────────────────────────────────────────── */
 .logs-page { height: 100%; min-height: 0; }
 .log-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

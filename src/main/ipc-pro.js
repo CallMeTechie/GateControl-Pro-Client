@@ -66,6 +66,12 @@ function remoteHostChannels(rh) {
   return Object.fromEntries(REMOTE_HOST_CHANNELS.map((c) => [c, rh && rh.channels && rh.channels[c] ? rh.channels[c] : off]));
 }
 
+/** A route id from the renderer: a positive integer or a short id string. */
+function validRouteId(id) {
+  if (Number.isSafeInteger(id) && id > 0) return true;
+  return typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id);
+}
+
 function registerProIpc(ipcMain, ctx) {
   const { store, log, apiClient, rdpManager, rdpWolClient } = ctx;
   const getUpdater = ctx.getUpdater || (() => null);
@@ -136,6 +142,16 @@ function registerProIpc(ipcMain, ctx) {
     'rdp:wol': (_, routeId) => rdpWolClient.wake(routeId),
     'rdp:status': (_, routeId) => (routeId ? apiClient.getRdpStatus(routeId) : apiClient.getRdpBulkStatus()),
     'rdp:active-sessions': () => rdpManager.getActiveSessions(),
+    // Remotedesktop im GateControl-Fenster (gc-rdp-host.exe): "Fenster anzeigen", „Auf diesem PC“ per host,
+    // the app setting „Remotedesktop öffnen in“
+    'rdp:focus': (_, routeId) => (validRouteId(routeId) ? rdpManager.focusWindow(routeId) : false),
+    'rdp:local-get': (_, routeId) => (validRouteId(routeId)
+      ? { local: rdpManager.getLocalSettings(routeId), hostAvailable: rdpManager.isHostAvailable() }
+      : { local: {}, hostAvailable: false }),
+    'rdp:local-set': (_, routeId, patch) => (validRouteId(routeId) && patch && typeof patch === 'object'
+      ? rdpManager.setLocalSettings(routeId, patch) : {}),
+    'rdp:open-in-get': () => ({ openIn: rdpManager.getOpenIn(), hostAvailable: rdpManager.isHostAvailable() }),
+    'rdp:open-in-set': (_, mode) => rdpManager.setOpenIn(mode),
     'rdp:pin-toggle': (_, pinned) => {
       pinned = pinned === true;
       store.set('rdp.panelPinned', pinned);

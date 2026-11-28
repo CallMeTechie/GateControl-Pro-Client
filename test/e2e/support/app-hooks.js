@@ -360,6 +360,23 @@ function install({ app, env }) {
     openPath: async (p) => { state.openedPaths.push(p); record('drive.openPath', { path: p }); return ''; },
   };
 
+  // Remotedesktop im GateControl-Fenster: a fake gc-rdp-host (rdp-host-fake.js, no window, no RDP control) and a
+  // recorded Windows-Remotedesktop way (no .rdp launch, no cmdkey). state.rdpHostFake steers it; the host counts as
+  // present on Linux runs, too.
+  const { createRdpHostFake } = require('./rdp-host-fake');
+  const rhf = createRdpHostFake();
+  state.rdpHostFake = rhf.fake;
+  state.rdpHost = {
+    hostExePath: path.join(APP_ROOT, 'rdp-host', 'gc-rdp-host-e2e.exe'),
+    spawnHost: (file, args, opts) => { record('rdphost.spawn', { args }); return rhf.spawn(file, args, opts); },
+    hostExists: () => state.rdpHostPresent !== false,
+    platform: 'win32',
+    mstsc: {
+      ...rhf.mstsc,
+      launch: (args, done) => { record('mstsc.launch', { args }); return rhf.mstsc.launch(args, done); },
+    },
+  };
+
   globalThis.__gcE2E = state;
   record('e2e.installed', { pid: process.pid });
   return state;

@@ -672,7 +672,7 @@
 		let dragDepth = 0;
 		let fileRow = null;
 		const hasFiles = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
-		// into a vault: "In Tresor verschieben" — the hint at the pointer says the originals go
+		// into a vault: the hint at the pointer says it asks "Kopieren" or "Verschieben"
 		const moveHint = (e) => {
 			if (!canUpload() || !inVault()) { if (refs.dropHint.dataset.move) { refs.dropHint.hidden = true; delete refs.dropHint.dataset.move; } return; }
 			refs.dropHint.dataset.move = '1';
@@ -727,8 +727,9 @@
 			// the files now: the drop's list is empty once the event is over (the question below waits)
 			const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
 			const folderId = hit ? hit.node.id : S.folder.node.id;
-			if (!(await confirmMove())) return;
-			const r = await Promise.resolve(api.uploadDropped(folderId, files)).catch(fail);
+			const how = await askVaultMode();
+			if (!how) return;
+			const r = await Promise.resolve(api.uploadDropped(folderId, files, how)).catch(fail);
 			afterQueue(r);
 		});
 
@@ -1333,8 +1334,9 @@
 			const folderId = S.folder.node.id;
 			const p = await Promise.resolve(api.pick()).catch(fail);
 			if (!p || !p.ok) { if (p && p.code !== 'cancelled') done(p); return; }
-			if (!(await confirmMove())) return;
-			const r = await Promise.resolve(api.upload(folderId, p.paths)).catch(fail);
+			const how = await askVaultMode();
+			if (!how) return;
+			const r = await Promise.resolve(api.upload(folderId, p.paths, how)).catch(fail);
 			afterQueue(r);
 		}
 
@@ -1343,39 +1345,46 @@
 			const folderId = S.folder.node.id;
 			const p = await Promise.resolve(api.pickFolders()).catch(fail);
 			if (!p || !p.ok) { if (p && p.code !== 'cancelled') done(p); return; }
-			if (!(await confirmMove())) return;
-			const r = await Promise.resolve(api.upload(folderId, p.paths)).catch(fail);
+			const how = await askVaultMode();
+			if (!how) return;
+			const r = await Promise.resolve(api.upload(folderId, p.paths, how)).catch(fail);
 			afterQueue(r);
 		}
 
-		/** The folder shown lies in a vault (Drive 1.9): an upload there moves the files ("In Tresor verschieben"). */
+		/** The folder shown lies in a vault (Drive 1.9): an upload there copies or moves the files (askVaultMode). */
 		function inVault() {
 			return !!(S.folder && S.folder.vault);
 		}
 
 		/**
-		 * Before a move into a vault: the originals are deleted from this PC afterwards — asked until the person ticks
-		 * "Nicht mehr fragen" → true (go on) | false. Outside a vault: true.
+		 * Into a vault: "Kopieren" (the originals stay; the default) or "Verschieben" (the originals are deleted from
+		 * this PC afterwards — its text says so before the person confirms) → { copy } | null (cancelled).
+		 * Outside a vault: { copy: false } at once (a plain upload).
 		 */
-		function confirmMove() {
+		function askVaultMode() {
 			const VS = root.GCDriveVaultState;
-			if (!inVault() || !VS || !VS.moveNeedsConfirm(remembered(VS.MOVE_OK_KEY))) return Promise.resolve(true);
+			if (!inVault() || !VS) return Promise.resolve({ copy: false });
 			return new Promise((resolve) => {
-				let answer = false;
+				let answer = null;
+				let mode = VS.VAULT_MODE_DEFAULT;
 				const dlg = openDialog({ title: t('drive.vault.move.confirm.title'), host, closeLabel: t('drive.close'), onClose: () => resolve(answer) });
 				dlg.box.classList.add('dv-move-dlg');
-				const id = nextId('dv-move-ask');
-				const check = el('input', { id, type: 'checkbox' });
-				const ok = el('button', { type: 'button', class: 'btn btn-pri', text: t('drive.vault.move.confirm.ok') });
+				const seg = el('div', { class: 'seg dv-seg dv-move-mode', role: 'radiogroup', 'aria-label': t('drive.vault.move.mode.label') });
+				const text = el('p', { class: 'dv-p dv-move-text' });
+				const ok = el('button', { type: 'button', class: 'btn btn-pri' });
+				const draw = () => {
+					const v = VS.vaultModeView(mode, { t });
+					clear(seg);
+					for (const m of VS.VAULT_MODES) seg.appendChild(el('button', { type: 'button', role: 'radio', 'data-mode': m, 'aria-checked': m === mode ? 'true' : 'false', class: m === mode ? 'on' : '', text: t(`drive.vault.move.mode.${m}`), on: { click: () => { mode = m; draw(); } } }));
+					text.textContent = v.text;
+					ok.textContent = v.ok;
+				};
+				draw();
 				ok.addEventListener('click', () => {
-					answer = true;
-					if (check.checked) keep(VS.MOVE_OK_KEY, '1');
+					answer = { copy: mode === 'copy' };
 					dlg.close(true);
 				});
-				dlg.body.append(
-					el('p', { class: 'dv-p', text: t('drive.vault.move.confirm.text') }),
-					el('label', { class: 'dv-check', for: id }, [check, el('span', { text: t('drive.vault.move.confirm.dontAsk') })]),
-				);
+				dlg.body.append(seg, text);
 				dlg.foot.append(el('span', { class: 'dv-grow' }), el('button', { type: 'button', class: 'btn btn-sec', text: t('drive.cancel'), on: { click: () => dlg.close(null) } }), ok);
 				setTimeout(() => ok.focus(), 0);
 			});
