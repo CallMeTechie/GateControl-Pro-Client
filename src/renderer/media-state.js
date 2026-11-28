@@ -411,7 +411,8 @@
 	/**
 	 * A grid of Jellyfin (its pages in the server's order) with the shares' titles in their places — a title Jellyfin
 	 * has too once, Jellyfin's. While Jellyfin has more pages (`complete` false) a share's title after the last one
-	 * loaded waits for the next page. Filters: only unwatched ones; a genre leaves the shares out (they have none).
+	 * loaded waits for the next page. Filters: only unwatched ones; a genre or "Favoriten" leaves the shares out (they have
+	 * none).
 	 */
 	function mergeGrid(jellyfin, complete, shares, f) {
 		const o = f || {};
@@ -419,7 +420,7 @@
 		if (!complete && !j.length) return [];
 		const cmp = comparator(o.sort);
 		const last = j.length ? j[j.length - 1] : null;
-		const waiting = stable(withoutDuplicates(shares, j).filter((t) => (!o.unplayed || unwatched(t)) && !o.genre), cmp)
+		const waiting = stable(withoutDuplicates(shares, j).filter((t) => (!o.unplayed || unwatched(t)) && !o.genre && !o.favorite), cmp)
 			.filter((t) => complete || !last || cmp(t, last) <= 0);
 		const out = [];
 		let i = 0;
@@ -783,6 +784,63 @@
 		return parts.length ? parts.slice(0, -1).join('/') : null;
 	}
 
+	// ── the overview "Ergänzt" (as Android #309) and the head without server names (#301) ──
+
+	/**
+	 * The chip of the overview's head: only the kind, never a host or server name (as Android #301) — "Jellyfin";
+	 * with several servers to choose from "Jellyfin · DS918+" (the names only in that choice, as Android's menu).
+	 */
+	function headLabel(s, t, several) {
+		if (!s) return '';
+		return several ? t('media.src.jellyfin', { name: s.name || 'Jellyfin' }) : t('media.src.jellyfinOnly');
+	}
+
+	/** "Als Nächstes" without what "Weiterschauen" shows already (as Android's nextUpWithout). */
+	function nextUpWithout(nextUp, resume) {
+		const shown = new Set(list(resume).map((x) => x.id));
+		return list(nextUp).filter((x) => !shown.has(x.id));
+	}
+
+	/** "Neue Folgen" counted as episodes: a series' entry its new ones ("3 neu"), an episode one. */
+	function newEpisodes(items) {
+		return list(items).reduce((n, x) => n + (Number.isInteger(x.newCount) && x.newCount > 0 ? x.newCount : 1), 0);
+	}
+
+	/** The mark of a poster in "Neue Folgen" / Favoriten: "3 neu" on a series with new episodes, "S2 · F5" on an episode. */
+	function posterMark(item, t) {
+		if (Number.isInteger(item.newCount) && item.newCount > 0) return t('media.mark.newCount', { count: item.newCount });
+		if (item.kind === 'episode' && Number.isInteger(item.season) && Number.isInteger(item.episode)) return t('media.mark.seasonEpisode', { season: item.season, episode: item.episode });
+		return null;
+	}
+
+	/** A card of "Als Nächstes" (16:9 as "Weiterschauen", "S1 · F6" top left): the series, the episode and its length. */
+	function nextCard(item, t) {
+		return {
+			id: item.id,
+			title: item.seriesName || item.name,
+			sub: [item.seriesName ? item.name : null, runtime(item.runtimeMs, t)].filter(Boolean).join(' · '),
+			mark: Number.isInteger(item.season) && Number.isInteger(item.episode) ? t('media.mark.seasonEpisode', { season: item.season, episode: item.episode }) : null,
+			picture: item.backdrop || item.poster || null,
+		};
+	}
+
+	/** The colour of a genre's tile: one of five calm tones, always the same for the same genre (as Android). */
+	function genreTone(name) {
+		let h = 0;
+		for (const ch of String(name || '').toLowerCase()) h = (h * 31 + ch.codePointAt(0)) | 0;
+		return (h >>> 0) % 5;
+	}
+
+	/** The genres of several lists once each (case does not count), A–Z. */
+	function mergeGenres(...lists) {
+		const seen = new Map();
+		for (const l of lists) for (const g of Array.isArray(l) ? l : []) {
+			const n = typeof g === 'string' ? g.trim() : '';
+			if (n && !seen.has(n.toLowerCase())) seen.set(n.toLowerCase(), n);
+		}
+		return [...seen.values()].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
+	}
+
 	// ── Ordner: Jellyfin's libraries beside the shares (as Android #301) ──
 
 	/**
@@ -939,6 +997,13 @@
 		crumbs,
 		parentDir,
 		folderStart,
+		headLabel,
+		nextUpWithout,
+		newEpisodes,
+		posterMark,
+		nextCard,
+		genreTone,
+		mergeGenres,
 		libraryRoots,
 		libraryTitle,
 		shareWay,

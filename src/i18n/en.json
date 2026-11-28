@@ -5360,11 +5360,19 @@
       "thisWeek": "this week",
       "all": "Show all",
       "back": "Back",
-      "more": "More"
+      "more": "More",
+      "nextUp": "Next up",
+      "latestMovies": "New movies",
+      "latestEpisodes": "New episodes",
+      "favorites": "Favorites",
+      "collections": "Collections",
+      "genres": "Genres"
     },
     "mark": {
       "nas": "NAS",
-      "new": "NEW"
+      "new": "NEW",
+      "newCount": "{{count}} new",
+      "seasonEpisode": "S{{season}} · E{{episode}}"
     },
     "at": "from {{time}}",
     "left": {
@@ -5406,7 +5414,8 @@
     "filter": {
       "unplayed": "Unwatched",
       "genre": "Genre",
-      "allGenres": "All genres"
+      "allGenres": "All genres",
+      "favorites": "Favorites"
     },
     "detail": {
       "none": "Pick a title to see it here.",
@@ -5418,7 +5427,10 @@
       "markUnplayed": "Mark as unwatched",
       "audio": "Audio",
       "subtitles": "Subtitles",
-      "quality": "Quality"
+      "quality": "Quality",
+      "favoriteAdd": "Add to favorites",
+      "favoriteRemove": "Remove from favorites",
+      "collectionEmpty": "There are no movies in this collection."
     },
     "audio": {
       "converts": "NAS converts to {{target}}",
@@ -5530,7 +5542,11 @@
       "smbChecked": "SMB checked",
       "smbConflict": "WebDAV, because Windows is connected with another user already",
       "awayVpn": "Away only through the VPN",
-      "awayDirect": "Away also without VPN via {{address}}"
+      "awayDirect": "Away also without VPN via {{address}}",
+      "jellyfinOnly": "Jellyfin",
+      "sharesOne": "NAS share",
+      "sharesOther": "{{count}} NAS shares",
+      "choose": "Choose the Jellyfin server"
     },
     "original": {
       "title": "Always original",
@@ -5679,6 +5695,14 @@
       "adopted": "Taken over: {{names}}.",
       "dropped": "Removed because the server doesn’t know them: {{names}}.",
       "ok": "OK"
+    },
+    "count": {
+      "moviesOne": "1 movie",
+      "moviesOther": "{{count}} movies",
+      "seriesOne": "1 show",
+      "seriesOther": "{{count}} shows",
+      "collectionOne": "1 movie",
+      "collectionOther": "{{count}} movies"
     }
   }
 }

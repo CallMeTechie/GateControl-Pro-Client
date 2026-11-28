@@ -5360,11 +5360,19 @@
       "thisWeek": "diese Woche",
       "all": "Alle anzeigen",
       "back": "Zurück",
-      "more": "Weiter"
+      "more": "Weiter",
+      "nextUp": "Als Nächstes",
+      "latestMovies": "Neue Filme",
+      "latestEpisodes": "Neue Folgen",
+      "favorites": "Favoriten",
+      "collections": "Sammlungen",
+      "genres": "Genres"
     },
     "mark": {
       "nas": "NAS",
-      "new": "NEU"
+      "new": "NEU",
+      "newCount": "{{count}} neu",
+      "seasonEpisode": "S{{season}} · F{{episode}}"
     },
     "at": "ab {{time}}",
     "left": {
@@ -5406,7 +5414,8 @@
     "filter": {
       "unplayed": "Ungesehen",
       "genre": "Genre",
-      "allGenres": "Alle Genres"
+      "allGenres": "Alle Genres",
+      "favorites": "Favoriten"
     },
     "detail": {
       "none": "Wähle einen Titel, um ihn hier zu sehen.",
@@ -5418,7 +5427,10 @@
       "markUnplayed": "Als ungesehen markieren",
       "audio": "Ton",
       "subtitles": "Untertitel",
-      "quality": "Qualität"
+      "quality": "Qualität",
+      "favoriteAdd": "Zu den Favoriten",
+      "favoriteRemove": "Aus den Favoriten entfernen",
+      "collectionEmpty": "In dieser Sammlung sind keine Filme."
     },
     "audio": {
       "converts": "NAS rechnet in {{target}} um",
@@ -5530,7 +5542,11 @@
       "smbChecked": "SMB geprüft",
       "smbConflict": "WebDAV, weil Windows schon mit einem anderen Benutzer verbunden ist",
       "awayVpn": "Unterwegs nur über VPN",
-      "awayDirect": "Unterwegs auch ohne VPN über {{address}}"
+      "awayDirect": "Unterwegs auch ohne VPN über {{address}}",
+      "jellyfinOnly": "Jellyfin",
+      "sharesOne": "NAS-Freigabe",
+      "sharesOther": "{{count}} NAS-Freigaben",
+      "choose": "Jellyfin-Server wählen"
     },
     "original": {
       "title": "Immer Original",
@@ -5679,6 +5695,14 @@
       "adopted": "Übernommen: {{names}}.",
       "dropped": "Entfernt, weil der Server sie nicht kennt: {{names}}.",
       "ok": "OK"
+    },
+    "count": {
+      "moviesOne": "1 Film",
+      "moviesOther": "{{count}} Filme",
+      "seriesOne": "1 Serie",
+      "seriesOther": "{{count}} Serien",
+      "collectionOne": "1 Film",
+      "collectionOther": "{{count}} Filme"
     }
   }
 }
