@@ -169,7 +169,14 @@
 		refs.main = el('section', { class: 'nz-main scroll', 'aria-live': 'polite' });
 		refs.detail = el('aside', { class: 'nz-detail scroll', 'aria-label': t('notes.details') });
 		refs.gate = el('div', { class: 'nz-gate', hidden: true });
-		rootEl.append(refs.side, refs.main, refs.detail, refs.gate);
+		// the menu's and the details' widths can be dragged (gc-split.js, kept on this PC; the details 520 px wide while a note is open)
+		const splits = root.GCSplit ? [
+			root.GCSplit.create({ key: 'notes.w.side', pane: refs.side, other: refs.main, t, label: () => t('layout.split.notesSide') }),
+			root.GCSplit.create({ key: 'notes.w.detail', pane: refs.detail, other: refs.main, end: true, t, label: () => t('layout.split.notesDetail'), opts: () => ({ note: !!(S.detail && S.detail.type === 'note') }) }),
+		] : [];
+		rootEl.append(...[refs.side, splits[0] && splits[0].el, refs.main, splits[1] && splits[1].el, refs.detail, refs.gate].filter(Boolean));
+		if (splits.length) rootEl.classList.add('has-split');
+		for (const s of splits) s.attach();
 
 		// ── loading ──────────────────────────────────────────
 		async function loadMe() {
@@ -382,7 +389,8 @@
 
 		function renderGate(kind) {
 			refs.gate.hidden = !kind;
-			for (const n of [refs.side, refs.main, refs.detail]) n.hidden = !!kind;
+			for (const n of [refs.side, refs.main, refs.detail, ...splits.map((x) => x.el)]) n.hidden = !!kind;
+			if (!kind) for (const x of splits) x.apply();
 			if (!kind) return;
 			clear(refs.gate).append(icon('note', 40), el('b', { text: t('notes.unavailable') }),
 				el('button', { type: 'button', class: 'btn btn-sec btn-sm', text: t('notes.retry'), on: { click: () => { S.me = null; reloadAll(); } } }));
@@ -1237,6 +1245,7 @@
 			const d = clear(refs.detail);
 			const wide = S.view.kind === 'sources' || S.view.kind === 'import';
 			rootEl.classList.toggle('no-detail', wide);
+			if (splits[1]) { splits[1].el.hidden = wide || !refs.gate.hidden; splits[1].apply(); }
 			if (wide) return;
 			if (!S.detail) { d.appendChild(el('div', { class: 'nz-pick', text: S.view.kind === 'notes' ? t('notes.pickNote') : t('notes.pick') })); return; }
 			if (!S.detailData) { d.appendChild(el('p', { class: 'nz-muted', text: t('notes.loading') })); return; }

@@ -4190,6 +4190,30 @@
         "goCopy": "Nach „{{folder}}“ kopieren",
         "choose": "Ordner wählen"
       }
+    },
+    "view": {
+      "title": "Ansicht",
+      "button": "Ansicht (Strg+Umschalt+L)",
+      "reading": "Lesebereich",
+      "right": "Rechts",
+      "bottom": "Unten",
+      "off": "Aus",
+      "folders": "Ordnerleiste",
+      "foldersFull": "Ein",
+      "foldersNarrow": "Schmal",
+      "foldersOff": "Aus",
+      "density": "Dichte",
+      "normal": "Normal",
+      "compact": "Kompakt",
+      "ai": "KI-Zeile in der Liste",
+      "reset": "Spaltenbreiten zurücksetzen",
+      "note": "Gilt nur für diesen PC.",
+      "kbd": "Strg+Umschalt+L",
+      "autoNarrow": "Das Fenster ist schmal: Die Ordnerleiste ist vorübergehend schmal.",
+      "back": "Zurück zur Liste",
+      "colFrom": "Von",
+      "colSubject": "Betreff",
+      "colDate": "Datum"
     }
   },
   "home": {
@@ -5715,6 +5739,28 @@
       "seriesOther": "{{count}} Serien",
       "collectionOne": "1 Film",
       "collectionOther": "{{count}} Filme"
+    }
+  },
+  "layout": {
+    "split": {
+      "w": {
+        "drag": "Ziehen: Breite ändern",
+        "hint": "Doppelklick: Standardbreite · Pfeiltasten: in Schritten",
+        "min": "Mindestbreite {{value}}",
+        "max": "Höchstbreite {{value}}"
+      },
+      "h": {
+        "drag": "Ziehen: Höhe ändern",
+        "hint": "Doppelklick: Standardhöhe · Pfeiltasten: in Schritten",
+        "min": "Mindesthöhe {{value}}",
+        "max": "Höchsthöhe {{value}}"
+      },
+      "inbox": "Breite der Mitteilungsliste",
+      "notesSide": "Breite des Menüs",
+      "notesDetail": "Breite der Details",
+      "mailFolders": "Breite der Ordnerleiste",
+      "mailList": "Breite der Mailliste",
+      "mailHeight": "Höhe der Mailliste"
     }
   }
 }
