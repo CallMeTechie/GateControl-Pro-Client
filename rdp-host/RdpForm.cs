@@ -108,7 +108,7 @@ namespace GateControl.RdpHost
         }
 
         // ══ messages of the app ══════════════════════════════════════════════════
-        public void Handle(Dictionary<string, object> m)
+        public void HandleMessage(Dictionary<string, object> m)
         {
             switch (J.Str(m, "type"))
             {

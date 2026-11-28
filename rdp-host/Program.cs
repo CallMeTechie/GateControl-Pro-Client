@@ -104,7 +104,7 @@ namespace GateControl.RdpHost
                     catch { Send(new { type = "log", level = "warn", msg = "invalid json" }); continue; }
                     line = null; // the line may hold the password
                     if (msg == null) continue;
-                    form.Post(() => form.Handle(msg));
+                    form.Post(() => form.HandleMessage(msg));
                 }
                 // stdin closed: the app is gone -> disconnect cleanly and exit
                 form.Post(form.ShutdownFromParent);
