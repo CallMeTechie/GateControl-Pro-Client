@@ -4265,7 +4265,6 @@
       },
       "pick": {
         "title": "Pin quick actions",
-        "hint": "What you switch on here appears on Home as a card. Nothing is switched here. Up to {{max}} cards.",
         "pin": "Pin “{{name}}” to Home",
         "full": "{{max}} cards pinned already. Unpin one first.",
         "parts": "Show on the card",
@@ -4273,7 +4272,20 @@
         "unsupported": "This server does not offer quick actions yet (update GateControl).",
         "failed": "Quick actions could not be loaded.",
         "retry": "Try again",
-        "done": "Done"
+        "done": "Done",
+        "search": "Search: device, room or plugin",
+        "countOf": "of {{max}} pinned",
+        "of": "of {{total}}",
+        "fullHint": "{{max}} cards are pinned already. Unpin one to pin another.",
+        "note": "Shows on Start as a card. Nothing is switched here.",
+        "pinned": "Pinned",
+        "order": "Order as on Start",
+        "nonePinned": "Nothing pinned yet.",
+        "isPinned": "pinned",
+        "move": "Drag to reorder (Alt+↑/↓)",
+        "moveName": "Move “{{name}}” (Alt+↑/↓)",
+        "partsShort": "Parts",
+        "nothing": "Nothing found for “{{q}}”."
       },
       "part": {
         "value": "Value",

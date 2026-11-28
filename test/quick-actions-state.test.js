@@ -256,3 +256,61 @@ describe('quick actions – wiring, texts, safety', () => {
     }
   });
 });
+
+describe('quick actions: the dialog "Schnellaktionen anheften"', () => {
+  const dev = (plugin, pluginName, id, title, subtitle = null) => ({ key: `${plugin}/${id}`, plugin, pluginName, title, subtitle, actions: [] });
+  const devices = [
+    dev('sh', 'Smart Home', 'licht', 'Wohnzimmer Licht', 'Schalter · Wohnzimmer'),
+    dev('rk', 'Raumklima', 'kind', 'Kinderzimmer', 'Heizung · 20,0 °C'),
+    dev('sh', 'Smart Home', 'tuer', 'Haustür', 'Schloss · Eingang'),
+    dev('rk', 'Raumklima', 'arbeit', 'Arbeitszimmer', 'Heizung · 21,5 °C'),
+  ];
+  const pins = [{ device: 'rk/arbeit' }, { device: 'sh/tuer' }, { device: 'rk/kind' }];
+
+  it('groups the devices by plugin in the order they come, with the pinned count', () => {
+    assert.deepEqual(QS.pickGroups(devices, pins).map((g) => [g.plugin, g.name, g.devices.map((d) => d.title), g.pinned, g.total]), [
+      ['sh', 'Smart Home', ['Wohnzimmer Licht', 'Haustür'], 1, 2],
+      ['rk', 'Raumklima', ['Kinderzimmer', 'Arbeitszimmer'], 2, 2],
+    ]);
+    assert.deepEqual(QS.pickGroups([], pins), []);
+  });
+
+  it('the search: name, the line below (room) and the plugin, any case', () => {
+    assert.equal(QS.matches(devices[0], ''), true);
+    assert.equal(QS.matches(devices[0], '  '), true);
+    assert.equal(QS.matches(devices[0], 'WOHN'), true);
+    assert.equal(QS.matches(devices[2], 'eingang'), true);
+    assert.equal(QS.matches(devices[1], 'raumklima'), true);
+    assert.equal(QS.matches(devices[1], 'licht'), false);
+    assert.deepEqual(QS.highlight('Arbeitszimmer', 'ZIMMER'), [{ text: 'Arbeits', hit: false }, { text: 'zimmer', hit: true }]);
+    assert.deepEqual(QS.highlight('Haustür', 'haus'), [{ text: 'Haus', hit: true }, { text: 'tür', hit: false }]);
+    assert.deepEqual(QS.highlight('Haustür', 'x'), [{ text: 'Haustür', hit: false }]);
+    assert.deepEqual(QS.highlight('Haustür', ''), [{ text: 'Haustür', hit: false }]);
+  });
+
+  it('moves a pin up and down (Alt+↑/↓) and orders them after a drag', () => {
+    assert.deepEqual(QS.movePin(pins, 'sh/tuer', -1).map((p) => p.device), ['sh/tuer', 'rk/arbeit', 'rk/kind']);
+    assert.deepEqual(QS.movePin(pins, 'sh/tuer', 1).map((p) => p.device), ['rk/arbeit', 'rk/kind', 'sh/tuer']);
+    assert.equal(QS.movePin(pins, 'rk/arbeit', -1), pins);
+    assert.equal(QS.movePin(pins, 'rk/kind', 1), pins);
+    assert.equal(QS.movePin(pins, 'nope', 1), pins);
+    assert.deepEqual(pins.map((p) => p.device), ['rk/arbeit', 'sh/tuer', 'rk/kind']);
+    assert.deepEqual(QS.orderPins(pins, ['rk/kind', 'rk/arbeit', 'sh/tuer']).map((p) => p.device), ['rk/kind', 'rk/arbeit', 'sh/tuer']);
+    // keys not pinned are ignored, pins not named stay at the end
+    assert.deepEqual(QS.orderPins(pins, ['x', 'sh/tuer']).map((p) => p.device), ['sh/tuer', 'rk/arbeit', 'rk/kind']);
+  });
+
+  it('the dialog is built again only when the devices change (not for new names)', () => {
+    const a = QS.pickShape('ok', devices);
+    assert.equal(QS.pickShape('ok', devices.map((d) => ({ ...d, title: `${d.title}!` }))), a);
+    assert.notEqual(QS.pickShape('ok', devices.slice(1)), a);
+    assert.notEqual(QS.pickShape('loading', devices), a);
+  });
+
+  it('the view changes rows in place: no fillPicker() from a switch, refresh() only syncs', () => {
+    const view = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'quick-actions-view.js'), 'utf8');
+    assert.match(view, /if \(dialog && !dialog\.closed\) syncPicker\(\);/);
+    const toggle = view.slice(view.indexOf('function togglePin('), view.indexOf('function unpinFrom('));
+    assert.doesNotMatch(toggle, /fillPicker|clear\(dialog\.body\)/);
+  });
+});

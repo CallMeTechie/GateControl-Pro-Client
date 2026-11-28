@@ -4265,7 +4265,6 @@
       },
       "pick": {
         "title": "Schnellaktionen anheften",
-        "hint": "Was du hier einschaltest, erscheint auf der Startseite als Karte. Hier wird nichts geschaltet. Bis zu {{max}} Karten.",
         "pin": "„{{name}}“ auf Start anheften",
         "full": "Schon {{max}} Karten angeheftet. Löse erst eine.",
         "parts": "Auf der Karte zeigen",
@@ -4273,7 +4272,20 @@
         "unsupported": "Dieser Server bietet noch keine Schnellaktionen (GateControl aktualisieren).",
         "failed": "Schnellaktionen konnten nicht geladen werden.",
         "retry": "Erneut versuchen",
-        "done": "Fertig"
+        "done": "Fertig",
+        "search": "Suchen: Gerät, Raum oder Plugin",
+        "countOf": "von {{max}} angeheftet",
+        "of": "von {{total}}",
+        "fullHint": "Schon {{max}} Karten angeheftet. Löse erst eine, um eine andere anzuheften.",
+        "note": "Erscheint auf Start als Karte. Hier wird nichts geschaltet.",
+        "pinned": "Angeheftet",
+        "order": "Reihenfolge wie auf Start",
+        "nonePinned": "Noch nichts angeheftet.",
+        "isPinned": "angeheftet",
+        "move": "Ziehen zum Sortieren (Alt+↑/↓)",
+        "moveName": "„{{name}}“ verschieben (Alt+↑/↓)",
+        "partsShort": "Teile",
+        "nothing": "Nichts gefunden für „{{q}}“."
       },
       "part": {
         "value": "Wert",
