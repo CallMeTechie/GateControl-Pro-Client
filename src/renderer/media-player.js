@@ -262,8 +262,9 @@
 			const it = P.req && P.req.item;
 			const tt = PS.titleOf(it, t);
 			R.title.textContent = tt.title;
-			const srcName = it && typeof o.sourceName === 'function' ? o.sourceName(it.sourceId) : '';
-			R.sub.textContent = [tt.sub, srcName].filter(Boolean).join(' · ');
+			// under the title only "Staffel 2 · Folge 4" / year and length: never the source's name or the server's address
+			// (as Android #311)
+			R.sub.textContent = tt.sub || '';
 			const info = P.play ? PS.infoLine(P.play, audioTarget(), t, lang()) : null;
 			if (info && P.play.via) info.text = [info.text, P.play.via === 'webdav' ? 'WebDAV' : 'SMB'].filter(Boolean).join(' · ');
 			R.info.hidden = !info || !info.text;

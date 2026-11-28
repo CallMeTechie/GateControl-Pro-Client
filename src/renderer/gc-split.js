@@ -167,15 +167,25 @@
 			if (set) for (const s of set) if (s !== api) s.apply();
 		}
 
+		/** The reset's animation ends at once: a key or a drag right after it sets the size without easing. */
+		let animTimer = null;
+		function stopAnim() {
+			if (animTimer === null) return;
+			clearTimeout(animTimer);
+			animTimer = null;
+			o.pane.style.transition = '';
+		}
+
 		/** Back to the standard size (double click, Eingabe, "Spaltenbreiten zurücksetzen"); animated. */
 		function reset({ animate = true } = {}) {
 			save(null, 0);
 			const r = room();
 			if (!r || !shownEl(o.pane)) return;
 			const s = LS.shown(key, null, r, o.opts ? o.opts() : {});
+			stopAnim();
 			if (animate && !reduced()) {
 				o.pane.style.transition = `${prop} .18s ease`;
-				setTimeout(() => { o.pane.style.transition = ''; siblings(); }, 220);
+				animTimer = setTimeout(() => { animTimer = null; o.pane.style.transition = ''; siblings(); }, 220);
 			}
 			setSize(s.px, r);
 			if (!animate || reduced()) siblings();
@@ -189,6 +199,7 @@
 			e.preventDefault();
 			const r = room();
 			if (!r) return;
+			stopAnim();
 			try { handle.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
 			drag = { pos: h ? e.clientY : e.clientX, px: size(o.pane), room: r, id: e.pointerId };
 			handle.classList.add('is-drag');
@@ -229,6 +240,7 @@
 			if (v === null) return;
 			e.preventDefault();
 			e.stopPropagation();
+			if (v !== 'reset') stopAnim();
 			if (v === 'reset') { reset(); showBadge(LS.badgeText(key, px, b, r, t, false), 1400); return; }
 			setSize(v, r, b);
 			save(v, r);

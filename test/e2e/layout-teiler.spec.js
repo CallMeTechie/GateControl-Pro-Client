@@ -97,6 +97,13 @@ test.describe('layout dividers', () => {
     await expect(split).toHaveAttribute('aria-valuemax', '640');
     await page.keyboard.press('Enter');
     await expect.poll(() => width(list)).toBe(480);
+    // a key right after the animated reset (still easing): set at once, not eased
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowLeft');
+    expect(await width(list)).toBe(464);
+    await page.keyboard.press('Enter');
+    await expect.poll(() => width(list)).toBe(480);
     await page.keyboard.press('Shift+ArrowLeft');
     await page.keyboard.press('Shift+ArrowLeft');
     expect(await width(list)).toBe(352);

@@ -52,6 +52,21 @@ test.describe('mail: several mails at once (Mail 1.13)', () => {
     // the bar: Kopieren with Mail 1.13, „Nach Sonstige“ in the inbox
     await expect(bar.locator('[data-act="copy"]')).toBeVisible();
     await expect(bar.locator('[data-act="toOther"]')).toBeVisible();
+    // the actions as icons in one row, the text as tooltip and label (no text on the buttons)
+    const btns = bar.locator('.ml-selbar-btn');
+    await expect(btns).toHaveCount(9);
+    const shape = await btns.evaluateAll((list) => list.map((b) => ({ text: b.textContent.trim(), title: b.title, label: b.getAttribute('aria-label'), svg: !!b.querySelector('svg'), top: Math.round(b.getBoundingClientRect().top), w: b.getBoundingClientRect().width })));
+    for (const b of shape) {
+      expect(b.text).toBe('');
+      expect(b.svg).toBe(true);
+      expect(b.title).not.toBe('');
+      expect(b.label).toBe(b.title);
+      expect(b.w).toBeLessThanOrEqual(32);
+    }
+    expect(new Set(shape.map((b) => b.top)).size).toBe(1);
+    await expect(bar.locator('[data-act="archive"]')).toHaveAttribute('title', /^(Archivieren|Archive)$/);
+    await expect(bar.locator('[data-act="clear"]')).toHaveAttribute('aria-label', /Auswahl aufheben|Clear selection/);
+    await expect(bar.locator('.ml-selbar-n')).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('mail-multi-selected.png') });
 
     // Verschieben: the picker with Verschieben / Kopieren, the search, then „Nach „Rechnungen“ verschieben“
@@ -94,6 +109,7 @@ test.describe('mail: several mails at once (Mail 1.13)', () => {
     await expect(bar.locator('.ml-selbar-n')).toHaveText(new RegExp(`^${total} `));
     // two accounts: no moving, the hint says why
     await expect(bar.locator('[data-act="move"]')).toBeDisabled();
+    await expect(bar.locator('[data-act="move"]')).toHaveAttribute('title', /^(Verschieben|Move)[^·]* · .+/);
     await expect(bar.locator('.ml-selbar-hint')).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('mail-multi-all.png') });
     // Esc ends it
@@ -149,7 +165,7 @@ test.describe('mail: several mails at once (Mail 1.13)', () => {
     await expect(row(root, 208)).toBeVisible();
     await row(root, 208).click();
     await row(root, 209).click({ modifiers: ['Control'] });
-    await expect(bar.locator('[data-act="delete"]')).toHaveText(/Endgültig löschen|Delete for good/);
+    await expect(bar.locator('[data-act="delete"]')).toHaveAttribute('aria-label', /Endgültig löschen|Delete for good/);
     await bar.locator('[data-act="delete"]').click();
     await expect(ask.locator('.ml-dlg-h')).toHaveText(/endgültig löschen\?|for good\?/);
     await expect(ask.locator('.ml-dont-ask')).toHaveCount(0);

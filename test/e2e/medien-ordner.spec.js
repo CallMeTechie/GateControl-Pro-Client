@@ -33,7 +33,7 @@ test.describe('medien ordner', () => {
     expect(await page.content()).not.toContain(dav.password);
 
     // the overview: the share's chip; Leuchtfeuer from the NAS with its mark, Kobaltnacht once (Jellyfin's)
-    await expect(p.locator('.md-src.is-share')).toContainText('localhost');
+    await expect(p.locator('.md-src.is-share')).toHaveText(/^(NAS-Freigabe|NAS share)$/);
     await p.locator('.md-tabs [data-tab="movies"]').click();
     const grid = p.locator('.md-grid');
     const leucht = grid.locator('.md-pst', { hasText: 'Leuchtfeuer' });
@@ -78,9 +78,14 @@ test.describe('medien ordner', () => {
     await expect(p.locator('.md-grid .md-pst').first()).toContainText('Leuchtfeuer');
     await p.locator('.md-search-inp').fill('');
 
-    // Ordner: the root with its folders (no hidden ones), the way, a folder with its files
+    // Ordner: Jellyfin's libraries and the share as a list (as Android #301: beside libraries a share is not opened by
+    // itself); the share: the root with its folders (no hidden ones), the way, a folder with its files
     await p.locator('.md-tabs [data-tab="folders"]').click();
     const fl = p.locator('.md-fl');
+    await expect(fl.locator('.md-fr.is-lib b')).toHaveText(['Filme', 'Serien']);
+    await expect(fl.locator('.md-fr.is-share')).toHaveCount(1);
+    await expect(fl.locator('.md-fr.is-share small')).toHaveText(/WebDAV/);
+    await fl.locator('.md-fr.is-share').click();
     await expect(fl.locator('.md-fr.is-dir')).toHaveCount(4);
     await expect(fl).not.toContainText('@eaDir');
     await expect(p.locator('.md-fv-way')).toContainText(/WebDAV · (unterwegs|away)/);

@@ -399,6 +399,7 @@
 			listError: null,
 			listSeq: 0,
 			selectedId: null,
+			listSel: null,          // the open mail when the list was drawn last (pulled into view only when it changes)
 			shownIds: [],           // the mails the list showed last (ids in order)
 			seenIds: new Set(),     // every mail shown in this list (box, folder, tab, filter, search)
 			newAbove: [],           // mails that came in above the view while it was scrolled down (the pill)
@@ -897,14 +898,15 @@
 			if (S.outbox.length) side.append(menuItem({ label: t('mail.outbox.title'), ic: 'send', count: S.outbox.length, on: v.kind === 'outbox', onClick: () => go({ kind: 'outbox' }) }));
 			if (me.accounts.length) side.append(el('div', { class: 'ml-lab', text: t('mail.accountsLabel') }));
 			for (const a of me.accounts) {
-				// a tap on the account (or its arrow) opens or closes its folders; its inbox is the tree's first entry
+				// a tap on the account (name / address) opens its inbox, its folders open with it; the arrow only opens or
+				// closes the folders (the inbox is the tree's first entry)
 				const open = MS.foldOpen(S.folds, a.id, v);
 				const fold = () => { MS.toggleFold(S.folds, a.id, S.view); renderMenu(); };
-				const item = accountItem(a, { count: (me.unread.byAccount || {})[String(a.id)] || 0, on: !open && v.kind === 'box' && v.box === a.id, onClick: fold });
-				item.setAttribute('aria-expanded', open ? 'true' : 'false');
+				const item = accountItem(a, { count: (me.unread.byAccount || {})[String(a.id)] || 0, on: !open && v.kind === 'box' && v.box === a.id, onClick: () => go(MS.accountInbox(S.folds, a.id)) });
+				const foldKey = open ? 'mail.folderClose' : 'mail.folderOpen';
 				const row = el('div', { class: 'ml-acc' }, [
 					item,
-					el('button', { type: 'button', class: `ml-fold${open ? ' open' : ''}`, tabindex: '-1', 'aria-hidden': 'true', title: t('mail.folders', { name: a.name }), on: { click: fold } }, [icon('chevDown', 14)]),
+					el('button', { type: 'button', class: `ml-fold${open ? ' open' : ''}`, 'aria-expanded': open ? 'true' : 'false', 'aria-label': t(foldKey, { name: a.name }), title: t(foldKey, { name: a.name }), on: { click: fold } }, [icon('chevDown', 14)]),
 				]);
 				side.append(row);
 				if (open) {
@@ -1118,9 +1120,11 @@
 			const kept = !fresh.toTop && anchor && rows.querySelector(`.ml-row[data-id="${anchor.id}"]`);
 			if (kept) rows.scrollTop = kept.getBoundingClientRect().top - rows.getBoundingClientRect().top - anchor.off;
 			else if (keepScroll && !fresh.toTop) rows.scrollTop = keepScroll;
-			// the mail open further down is not pulled into view when new mails came in at the top
-			const sel = !fresh.toTop && S.selectedId && rows.querySelector(`[data-id="${S.selectedId}"]`);
+			// the mail open further down is not pulled into view when new mails came in at the top, nor when the list is
+			// only drawn again (a change from the server): only a newly opened one (the arrow keys) or a new list
+			const sel = !fresh.toTop && S.selectedId && (reset || S.selectedId !== S.listSel) && rows.querySelector(`[data-id="${S.selectedId}"]`);
 			if (sel) sel.scrollIntoView({ block: 'nearest' });
+			S.listSel = S.selectedId;
 			if (S.newAbove.length) {
 				const pill = el('button', { type: 'button', class: 'ml-newabove', on: { click: () => rows.scrollTo({ top: 0, behavior: 'smooth' }) } }, [
 					icon('up', 14),
@@ -1498,14 +1502,15 @@
 				head.append(el('button', { type: 'button', class: 'ml-link ml-selbar-every', text: has('bulkAll') && S.view.kind === 'box' && S.next ? t('mail.bulk.every') : MB.plural(t, 'mail.bulk.allN', loaded), on: { click: () => selectEvery() } }));
 			}
 			head.append(el('span', { class: 'ml-grow' }), el('button', { type: 'button', class: 'ml-ib ml-ib-sm ml-selbar-clear', title: t('mail.bulk.clear'), 'aria-label': t('mail.bulk.clear'), on: { click: () => clearSel() } }, [icon('close', 15)]));
+			// the actions as icons in one row, the text as the tooltip and for screen readers (a disabled one says why)
 			const acts = el('div', { class: 'ml-selbar-acts' });
 			for (const a of MB.barActions(f, { me: S.me, inbox: MS.isInbox(S.view, S.folders) && S.view.kind === 'box', tab: S.tab })) {
 				acts.append(el('button', {
-					type: 'button', class: `ml-selbar-btn is-${a.id}`, 'data-act': a.id, disabled: a.disabled || null, title: a.why ? t(a.why) : t(a.label), 'aria-label': t(a.label),
+					type: 'button', class: `ml-selbar-btn is-${a.id}`, 'data-act': a.id, disabled: a.disabled || null, title: a.why ? `${t(a.label)} · ${t(a.why)}` : t(a.label), 'aria-label': t(a.label),
 					on: { click: () => runBar(a.id) },
-				}, [icon(a.icon, 15), el('span', { text: t(a.label) })]));
+				}, [icon(a.icon, 15)]));
 			}
-			acts.append(el('button', { type: 'button', class: 'ml-selbar-btn is-clear', 'data-act': 'clear', on: { click: () => clearSel() } }, [icon('close', 15), el('span', { text: t('mail.bulk.clear') })]));
+			acts.append(el('button', { type: 'button', class: 'ml-selbar-btn is-clear', 'data-act': 'clear', title: t('mail.bulk.clear'), 'aria-label': t('mail.bulk.clear'), on: { click: () => clearSel() } }, [icon('close', 15)]));
 			const bar = el('div', { class: 'ml-selbar', role: 'toolbar', 'aria-label': t('mail.bulk.barLabel') }, [head, acts]);
 			if (f.mixed) bar.append(el('div', { class: 'ml-selbar-hint' }, [icon('alert', 13), el('span', { text: t('mail.bulk.oneAccount') })]));
 			return bar;
@@ -1839,6 +1844,11 @@
 
 		function renderPane() {
 			if (S.compose && S.compose.frame && S.compose.frame.isConnected) editorHtml();
+			// the same mail drawn again (its body, pictures, the theme): it stays where the wheel left it
+			const was = pane.querySelector('.ml-read[data-id]');
+			const wasFrame = was && was.querySelector('iframe.ml-frame');
+			const keep = was && S.pane === 'read' && S.read && S.read.message && was.dataset.id === String(S.read.message.id)
+				? { top: was.scrollTop, frameH: wasFrame ? wasFrame.style.height : '' } : null;
 			clear(pane);
 			if (S.view.kind === 'filing' || S.view.kind === 'outbox') { pane.hidden = S.pane !== 'compose'; if (S.pane === 'compose') renderCompose(); return; }
 			pane.hidden = false;
@@ -1880,7 +1890,7 @@
 					].filter(Boolean));
 				}),
 			].filter(Boolean));
-			const scroll = el('div', { class: 'ml-read' });
+			const scroll = el('div', { class: 'ml-read', 'data-id': String(m.id) });
 			if (R.offline) scroll.append(el('div', { class: 'ml-banner' }, [icon('offline', 15), el('span', { text: t('mail.offlineMail') })]));
 			scroll.append(el('h2', { class: 'ml-read-subj', text: m.subject || t('mail.noSubject') }));
 			// the conversation: its line (a tap shows all its mails), the mails before this one above, those after it below
@@ -1946,6 +1956,8 @@
 			if (!m.bodyMissing || m.html || m.text) {
 				R.frameDark = readDark();
 				R.frame = mailFrame(MS.frameDoc(R, R.frameDark), { title: m.subject || t('mail.noSubject'), dark: R.frameDark });
+				// until it is measured again: the height it had (so the place in the mail can be kept)
+				if (keep && keep.frameH) R.frame.style.height = keep.frameH;
 				scroll.append(el('div', { class: `ml-frame-wrap${R.frameDark ? ' is-dark' : ''}` }, [R.frame]));
 			}
 			const notes = [];
@@ -1971,6 +1983,7 @@
 				scroll.append(bottom);
 			}
 			pane.append(bar, scroll);
+			if (keep && keep.top) scroll.scrollTop = keep.top;
 		}
 
 		function aiCard(m, R) {
