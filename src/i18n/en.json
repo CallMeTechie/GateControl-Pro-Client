@@ -4190,6 +4190,30 @@
         "goCopy": "Copy to “{{folder}}”",
         "choose": "Choose a folder"
       }
+    },
+    "view": {
+      "title": "View",
+      "button": "View (Ctrl+Shift+L)",
+      "reading": "Reading pane",
+      "right": "Right",
+      "bottom": "Bottom",
+      "off": "Off",
+      "folders": "Folder bar",
+      "foldersFull": "On",
+      "foldersNarrow": "Narrow",
+      "foldersOff": "Off",
+      "density": "Density",
+      "normal": "Normal",
+      "compact": "Compact",
+      "ai": "AI line in the list",
+      "reset": "Reset column widths",
+      "note": "Applies to this PC only.",
+      "kbd": "Ctrl+Shift+L",
+      "autoNarrow": "The window is narrow: the folder bar is narrow for now.",
+      "back": "Back to the list",
+      "colFrom": "From",
+      "colSubject": "Subject",
+      "colDate": "Date"
     }
   },
   "home": {
@@ -5721,7 +5745,10 @@
       },
       "inbox": "Width of the notification list",
       "notesSide": "Width of the menu",
-      "notesDetail": "Width of the details"
+      "notesDetail": "Width of the details",
+      "mailFolders": "Width of the folder bar",
+      "mailList": "Width of the mail list",
+      "mailHeight": "Height of the mail list"
     }
   }
 }

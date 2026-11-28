@@ -179,9 +179,48 @@
 		return t(`layout.split.${h ? 'h' : 'w'}.${which}`, { value });
 	}
 
+	// ── Mail: "Ansicht" (reading pane, folder bar, density, the AI line) ──
+
+	const READING = ['right', 'bottom', 'off'];
+	const FOLDERS = ['full', 'narrow', 'off'];
+	const DENSITY = ['normal', 'compact'];
+	// a narrower window shows the folder bar narrow for the time being (not stored)
+	const NARROW_BELOW = 1100;
+
+	/** What Mail's page stored (anything else: the standard: right, full, normal, the AI line on). */
+	function mailView(page) {
+		const p = isObj(page) ? page : {};
+		return {
+			reading: READING.includes(p.reading) ? p.reading : 'right',
+			folders: FOLDERS.includes(p.folders) ? p.folders : 'full',
+			density: DENSITY.includes(p.density) ? p.density : 'normal',
+			ai: p.ai !== false,
+		};
+	}
+
+	/** One choice of "Ansicht" changed → the page (a copy; the sizes stay). Unknown choices change nothing. */
+	function withMailView(page, what, value) {
+		const out = { ...(isObj(page) ? page : {}) };
+		const ok = { reading: READING, folders: FOLDERS, density: DENSITY }[what];
+		if (ok && ok.includes(value)) out[what] = value;
+		else if (what === 'ai' && typeof value === 'boolean') out.ai = value;
+		return out;
+	}
+
+	/**
+	 * The folder bar as shown: the stored one, but "full" turns narrow while the window is narrower than 1100 px
+	 * (`auto`: that is why). In the areas Kalender / Kontakte the bar is their menu: always full.
+	 */
+	function mailFolders(stored, { width = 0, area = false } = {}) {
+		if (area) return { folders: 'full', auto: false };
+		if (stored === 'full' && width > 0 && width < NARROW_BELOW) return { folders: 'narrow', auto: true };
+		return { folders: FOLDERS.includes(stored) ? stored : 'full', auto: false };
+	}
+
 	return {
 		PREFIX, PAGES, LIMITS, STEP, STEP_BIG,
 		parseKey, storageKey, readPage, sizeOf, withSize, withoutSizes,
 		clamp, standard, bounds, shown, toStored, keyStep, dragSize, badgeText,
+		READING, FOLDERS, DENSITY, NARROW_BELOW, mailView, withMailView, mailFolders,
 	};
 });

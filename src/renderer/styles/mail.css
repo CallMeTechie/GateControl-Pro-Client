@@ -774,3 +774,92 @@
 .ml-set-note { margin: 0 0 4px; font-size: 12px; }
 .ml-dont-ask { margin-top: 4px; }
 .ml-list.is-selecting .ml-row { user-select: none; }
+
+/* ── Ansicht (Menü „Ansicht“, Lesebereich rechts / unten / aus, Ordnerleiste, Dichte) ── */
+.ml-search-row { display: flex; align-items: center; gap: 6px; margin: 0 16px 8px; }
+.ml-search-row .ml-search { flex: 1; margin: 0; min-width: 0; }
+.ml-ib.ml-view-btn.on { background: var(--acc-bg); color: var(--acc-t); border-color: transparent; }
+.ml-menu.vw-pop { width: 312px; max-width: calc(100vw - 16px); padding: 12px; gap: 8px; z-index: 46; }
+.vw-h { display: flex; align-items: center; gap: 8px; margin: 0 2px 2px; font-size: 14px; font-weight: 700; }
+.vw-lab { margin: 6px 2px 0; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.vw-lays { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.vw-lay { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 6px 7px; border-radius: 10px; border: 1px solid var(--line2); background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.vw-lay:hover { background: var(--panel2); color: var(--text); }
+.vw-lay.on { border-color: var(--acc); background: var(--acc-bg); color: var(--acc-t); }
+.vw-lay:focus-visible, .vw-reset:focus-visible { outline: 2px solid var(--info); outline-offset: 1px; }
+.vw-pic { width: 62px; height: 40px; border-radius: 6px; border: 1.5px solid currentColor; display: grid; gap: 2px; padding: 3px; opacity: .9; box-sizing: border-box; }
+.vw-pic i { display: block; border-radius: 2px; background: currentColor; opacity: .28; }
+.vw-pic i.r { opacity: .6; }
+.vw-pic.p-right { grid-template-columns: 9px 16px 1fr; }
+.vw-pic.p-bottom { grid-template-columns: 9px 1fr; grid-template-rows: 1fr 1fr; }
+.vw-pic.p-bottom i:first-child { grid-row: span 2; }
+.vw-pic.p-off { grid-template-columns: 9px 1fr; }
+.vw-seg { display: flex; align-self: stretch; }
+.vw-seg button { flex: 1 1 0; }
+.vw-auto { margin: 0 2px; font-size: 12px; }
+.vw-auto[hidden] { display: none; }
+.vw-row { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 0 2px; font-size: 13.5px; }
+.vw-foot { display: flex; align-items: center; gap: 8px; margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--line); }
+.vw-foot .ml-note { flex: 1; margin: 0; padding: 0; }
+.vw-kbd { padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line2); font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+
+/* the dividers draw the lines between the columns */
+.ml > .ml-list:has(+ .gc-split:not([hidden])) { border-right: 0; }
+.ml-side:has(+ .gc-split:not([hidden])) { border-right: 0; }
+
+/* Ordnerleiste schmal: nur Icons, ungelesen als Zahl am Icon, der Name als Tooltip */
+.ml-it-nic { display: none; color: var(--muted); }
+.ml-it.on .ml-it-nic { color: var(--acc-t); }
+.ml.is-folders-narrow .ml-side { width: 60px !important; padding: 14px 8px 10px; align-items: center; overflow-x: hidden; }
+.ml.is-folders-narrow .ml-side-h, .ml.is-folders-narrow .ml-it-tx, .ml.is-folders-narrow .ml-fold, .ml.is-folders-narrow .ml-ffold,
+.ml.is-folders-narrow .ml-n-below, .ml.is-folders-narrow .ml-quota, .ml.is-folders-narrow .ml-it-warn, .ml.is-folders-narrow .ml-foot-row .ml-grow { display: none; }
+.ml.is-folders-narrow .ml-it { width: 42px; height: 40px; min-height: 40px; padding: 0 !important; justify-content: center; position: relative; flex: none; }
+.ml.is-folders-narrow .ml-it.sub .ml-it-nic { display: inline-flex; }
+.ml.is-folders-narrow .ml-it .ml-n { position: absolute; top: 2px; right: -2px; min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; background: var(--acc); color: var(--acc-on); }
+.ml.is-folders-narrow .ml-acc { justify-content: center; }
+.ml.is-folders-narrow .ml-acc .ml-it { flex: none; }
+.ml.is-folders-narrow .ml-lab { width: 28px; height: 1px; margin: 8px 0; padding: 0; overflow: hidden; font-size: 0; background: var(--line); }
+.ml.is-folders-narrow .ml-side-foot { align-items: center; width: 100%; }
+.ml.is-folders-narrow .ml-foot-row { flex-direction: column; padding: 0; gap: 6px; }
+.ml.is-folders-off .ml-side { display: none; }
+
+/* Dichte kompakt: kürzere Zeilen ohne Vorschau und KI-Zeile */
+.ml.is-compact .ml-row { padding-top: 6px; padding-bottom: 6px; gap: 10px; }
+.ml.is-compact .ml-row .ml-row-pick, .ml.is-compact .ml-row .ml-av { width: 28px; height: 28px; font-size: 11px; }
+.ml.is-compact .ml-row-snip, .ml.is-compact .ml-row-ai { display: none; }
+.ml.is-compact .ml-row-side { padding-top: 16px; }
+.ml.no-ai .ml-row-ai { display: none; }
+
+/* Lesebereich unten: Liste oben (einzeilig wie eine Tabelle), darunter der Lesebereich */
+.ml-stack { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.ml-stack .ml-list { width: auto; height: 42%; border-right: 0; flex: none; min-height: 0; }
+.ml-stack .ml-pane { flex: 1 1 auto; min-height: 0; }
+.ml.is-wide .ml-stack .ml-list { height: auto !important; flex: 1 1 auto; }
+.ml.is-area .ml-stack { display: none; }
+.ml.is-read-bottom .ml-head { padding-top: 12px; }
+.ml-head .ml-search-row { flex: 0 1 340px; margin: 0; }
+.ml-cols { display: flex; align-items: center; gap: 12px; padding: 6px 16px; border-bottom: 1px solid var(--line); font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.ml-cols-av { width: 26px; flex: none; }
+.ml-row.is-line { align-items: center; padding: 7px 16px; gap: 12px; }
+.ml-row.is-line .ml-row-pick, .ml-row.is-line .ml-av { width: 26px; height: 26px; font-size: 10.5px; }
+.ml-line-from { width: 200px; flex: none; display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13.5px; }
+.ml-line-from .ml-row-from { font-size: 13.5px; }
+.ml-line-tx { flex: 1; min-width: 0; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ml-line-tx b { font-weight: 500; color: var(--text); }
+.ml-line-snip { color: var(--muted); }
+.ml-line-ic { width: 44px; flex: none; display: flex; gap: 4px; justify-content: flex-end; color: var(--faint); }
+.ml-line-time { width: 64px; flex: none; text-align: right; }
+.ml-row.is-line.is-unread .ml-row-from, .ml-row.is-line.is-unread .ml-line-tx b { font-weight: 700; }
+.ml-row.is-line.is-unread .ml-line-time { color: var(--acc-t); font-weight: 600; }
+.ml.is-read-bottom .ml-pane .ml-read { padding: 14px 24px 20px; }
+
+/* Lesebereich aus: die Liste füllt die Breite; eine Mail öffnet sich in voller Breite mit „Zurück“ */
+.ml.is-read-off .ml-list { width: auto !important; flex: 1 1 auto; border-right: 0; }
+.ml.is-read-off:not(.is-showing) .ml-pane { display: none; }
+.ml.is-read-off.is-showing:not(.is-wide) .ml-list { display: none; }
+.ml-read-back { gap: 6px; margin-right: 4px; }
+.ml-linebar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 4px 14px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+.ml-linebar .ml-chips { padding: 0 0 6px; }
+.ml-linebar .ml-tabs { padding: 0; border-bottom: 0; }
+.ml-linebar .ml-tab { flex: none; padding: 0 16px; }
+.ml-linebar .ml-filters { padding: 0 0 6px; margin-left: auto; }
