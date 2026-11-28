@@ -20,6 +20,12 @@ namespace GateControl.RdpHost
         public int Pad = 10;
         public float FontPx = 12.5f;
         public int HeightPx = 30;
+        /// <summary>The color behind the button (its rounded corners); default the parent's.</summary>
+        public Color Surface = Color.Empty;
+        private bool _shown = true;
+
+        /// <summary>Whether the button belongs on screen (Visible reads false while the window is not shown yet).</summary>
+        public bool Shown { get => _shown; set { _shown = value; Visible = value; } }
 
         public GcButton(string text, BtnKind kind, string icon = null)
         {
@@ -60,7 +66,7 @@ namespace GateControl.RdpHost
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
             var t = Theme;
-            Color parentBg = Parent?.BackColor ?? t.Panel;
+            Color parentBg = Surface != Color.Empty ? Surface : Parent?.BackColor ?? t.Panel;
             g.Clear(parentBg);
 
             Color fill = Color.Empty, border = t.Line2, fg = t.Text;

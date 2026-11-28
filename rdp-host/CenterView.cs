@@ -40,12 +40,13 @@ namespace GateControl.RdpHost
         {
             BackColor = Theme.Center;
             Retry.Text = Texts.T("retry"); Mstsc.Text = Texts.T("mstsc"); Close.Text = Texts.T("close");
-            foreach (var b in new[] { Retry, Mstsc, Close }) { b.Theme = Theme; b.Fit(); b.Visible = ErrorMode; }
+            foreach (var b in new[] { Retry, Mstsc, Close }) { b.Theme = Theme; b.Surface = Theme.Panel; b.Fit(); b.Shown = ErrorMode; }
             LayoutCard();
             Invalidate(true);
         }
 
         protected override void OnResize(EventArgs e) { base.OnResize(e); LayoutCard(); }
+        protected override void OnLayout(LayoutEventArgs e) { base.OnLayout(e); LayoutCard(); }
         protected override void OnDpiChangedAfterParent(EventArgs e) { base.OnDpiChangedAfterParent(e); Refresh2(); }
 
         private Rectangle _card;
