@@ -208,6 +208,46 @@ test.describe('schnellaktionen', () => {
     await expect(c.locator('.qa-act[data-action="fan:1"]')).toHaveAttribute('aria-checked', 'true');
   });
 
+  test('a lock (Tür & Kamera 1.11): one switch Zugesperrt ⇄ Aufgesperrt with the battery, asks before aufsperren with the command', async ({ launchApp, mock }) => {
+    const DOOR = 'gatecontrol-door';
+    const LOCK = 'M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5z';
+    const UNLOCK = 'M7 11V7a5 5 0 0 1 9.9-1M5 11h14v10H5z';
+    const dev = { id: 'lock:1', title: 'Haustür', icon: LOCK };
+    const list = [
+      {
+        plugin: DOOR, pluginName: 'Tür & Kamera', id: '1:toggle', kind: 'toggle', title: 'Zugesperrt', subtitle: 'Haustür · Tür zu', icon: LOCK,
+        state: 'on', confirm: true, confirmWhen: 'off', look: { on: { icon: LOCK, tone: 'good' }, off: { icon: UNLOCK, tone: 'warn' } },
+        verbs: { on: 'Zusperren', off: 'Aufsperren' }, targets: true, device: dev,
+        widget: { value: 'Zugesperrt', status: 'Tür zu', state: 'good', power: false, readings: [], controls: [], badge: { icon: 'M2 7h16v10H2zM21 10v4M6 10v4M10 10v4', value: 44, unit: '%', state: 'good', label: 'Batterie' } },
+      },
+      { plugin: DOOR, pluginName: 'Tür & Kamera', id: '1:open', kind: 'button', title: 'Haustür öffnen', subtitle: 'Zugesperrt', confirm: true, device: dev },
+    ];
+    const { page, qa } = await open(launchApp, mock, { actions: list });
+    await page.locator('#home-qa-open').click();
+    const dlg = page.locator('.qa-pick');
+    const row = dlg.locator(`.qp-groups .qa-pick-row[data-device="${DOOR}/lock:1"]`);
+    await row.locator('.sw').click();
+    await expect(row).toHaveClass(/is-on/);
+    await page.keyboard.press('Escape');
+    const c = page.locator(`${PINS} .qa-card[data-device="${DOOR}/lock:1"]`);
+    await expect(c).toBeVisible();
+    // the battery in the card's head, the switch and „öffnen“ as its buttons
+    await expect(c.locator('.qa-badge')).toHaveText(/^44 %$/);
+    await expect(c.locator('.qa-act')).toHaveText(['Zugesperrt', 'Haustür öffnen']);
+    const sw = c.locator('.qa-act[data-action="1:toggle"]');
+    await expect(sw).toHaveAttribute('aria-checked', 'true');
+    if (process.env.GC_E2E_SHOTS) await c.screenshot({ path: `${process.env.GC_E2E_SHOTS}/schloss-zugesperrt.png` });
+    // aufsperren asks first and names the command
+    await sw.click();
+    const confirm = page.locator('.qa-confirm');
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText('Aufsperren');
+    await expect(confirm).toContainText('Haustür · Tür zu');
+    if (process.env.GC_E2E_SHOTS) await page.screenshot({ path: `${process.env.GC_E2E_SHOTS}/schloss-nachfrage.png` });
+    await confirm.locator('[data-qa-confirm]').click();
+    await expect.poll(() => runs(qa)).toEqual([['1:toggle', { source: 'app', state: 'off' }]]);
+  });
+
   test('parts hidden in the dialog, × loosens the card, gone actions say so', async ({ launchApp, mock }) => {
     const { page, qa } = await open(launchApp, mock);
     const dlg = await pin(page, 'heat:3');
