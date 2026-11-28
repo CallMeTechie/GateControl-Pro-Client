@@ -1292,7 +1292,10 @@
       "notPicture": "Only pictures can be converted into a document.",
       "noOcr": "No language for text recognition is installed on this PC.",
       "scanNoFile": "Drive made no document.",
-      "server": "Drive reported an error on the server ({{code}}). Please try again later – if it stays, update Drive on the server."
+      "server": "Drive reported an error on the server ({{code}}). Please try again later – if it stays, update Drive on the server.",
+      "localOnly": "This folder is only on “{{device}}” – nothing can go in here.",
+      "localMoving": "This folder is being moved to “{{device}}” – changes only afterwards.",
+      "localNested": "A folder below is already only on “{{device}}”."
     },
     "sync": {
       "title": "Back up folders",
@@ -2390,7 +2393,8 @@
         "needsGc": "Needs GateControl 1.215",
         "linksOff": "Links are switched off",
         "zipLimit": "ZIP works for one folder or up to 20 files",
-        "linkLimit": "One link works for up to 20 files"
+        "linkLimit": "One link works for up to 20 files",
+        "local": "Only on one device"
       },
       "target": {
         "title": "Choose destination",
@@ -2462,7 +2466,9 @@
         "not_found": "no longer exists",
         "failed": "not possible",
         "same_folder": "already there",
-        "root": "top folder of an area"
+        "root": "top folder of an area",
+        "local_only": "only on one device",
+        "local_moving": "being moved to a device"
       },
       "op": {
         "moveOne": "Moving “{{name}}” to {{target}}",
@@ -3003,6 +3009,44 @@
         "year": "Year in review",
         "place": "Places"
       }
+    },
+    "local": {
+      "otherDevice": "another device",
+      "kind": {
+        "phone": "phone",
+        "pc": "PC",
+        "other": "device"
+      },
+      "badge": "Only on {{device}}",
+      "badgeMoving": "Being moved to {{device}}",
+      "badgeReturning": "Being brought back from {{device}}",
+      "since": "since {{date}}",
+      "title": "“{{name}}” is only on {{device}}",
+      "titleMoving": "“{{name}}” is being moved to {{device}}",
+      "text": "Since {{date}} this folder is only on your {{kind}} “{{device}}”. There is no copy on the server or on this PC, so it cannot be opened here.",
+      "textNoDate": "This folder is only on your {{kind}} “{{device}}”. There is no copy on the server or on this PC, so it cannot be opened here.",
+      "textMoving": "“{{name}}” is being moved to “{{device}}”. You can still look at its content, but nothing in it can be changed until that is done.",
+      "textReturning": "“{{name}}” is being brought back from “{{device}}” to the server. Afterwards you can open it here again.",
+      "more": {
+        "phone": "On the phone you can bring it back to the server from the folder's menu. If the phone is lost, remove the placeholder here. The content can then no longer be found.",
+        "pc": "On the PC you can bring it back to the server from the folder's menu. If the PC is lost, remove the placeholder here. The content can then no longer be found.",
+        "other": "On the device you can bring it back to the server from the folder's menu. If the device is lost, remove the placeholder here. The content can then no longer be found."
+      },
+      "moreOther": "Only the owner of the folder can bring it back.",
+      "forgetLater": "“Remove placeholder” is possible from {{date}}.",
+      "forgetLaterAny": "“Remove placeholder” is possible only 24 hours after the move.",
+      "menuHead": "{{name}} · only on {{device}}",
+      "menuHeadMoving": "{{name}} · being moved to {{device}}",
+      "info": "Info",
+      "infoSub": "Where this folder is and since when",
+      "openSub": "Only on {{device}}",
+      "forget": "Remove placeholder …",
+      "forgetSub": "Only if {{device}} is lost",
+      "forgetTitle": "Remove the placeholder “{{name}}”?",
+      "forgetText": "Only do this if “{{device}}” is lost. The empty folder goes into the trash, its content can then not be found anywhere. All your devices get a notification.",
+      "forgetGo": "Remove placeholder",
+      "forgotten": "Placeholder “{{name}}” removed.",
+      "uploadHere": "Upload here"
     }
   },
   "mail": {

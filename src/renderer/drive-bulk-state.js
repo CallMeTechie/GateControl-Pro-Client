@@ -124,6 +124,8 @@
 		const mixedOk = has(me, 'zipMixed');
 		const dirs = list.filter((x) => x && x.isDir).length;
 		const locked = list.some((x) => x && x.encrypted && x.locked);
+		// Drive 1.32 'vaultLocal': a placeholder (its content lies only on one device) is not moved, renamed or trashed
+		const local = list.some((x) => x && x.isDir && x.encrypted && x.local && typeof x.local === 'object' && ['moving', 'local', 'returning'].includes(x.local.state));
 		const off = (why) => ({ on: false, why });
 		const on = { on: true, why: null };
 		// a Drive 1.12 without the feature: GateControl's links are switched off
@@ -136,7 +138,7 @@
 		else if (!mixedOk && !(dirs === 1 && n === 1) && (dirs > 0 || n > FILES_MAX)) out.zip = off('drive.bulk.why.zipLimit');
 		else out.zip = on;
 		// moving: the loop of single calls on an older Drive, inside the same vault too
-		out.move = !n ? off(null) : locked ? off('drive.bulk.why.locked') : write;
+		out.move = !n ? off(null) : locked ? off('drive.bulk.why.locked') : local ? off('drive.bulk.why.local') : write;
 		// copying needs only the right to read the nodes
 		if (!n) out.copy = off(null);
 		else if (vault) out.copy = off('drive.bulk.why.vault');
@@ -151,8 +153,8 @@
 		else if (!mixedOk && dirs) out.link = off('drive.bulk.why.mixed');
 		else if (!mixedOk && n > FILES_MAX) out.link = off('drive.bulk.why.linkLimit');
 		else out.link = on;
-		out.trash = !n ? off(null) : write;
-		out.rename = n !== 1 ? off('drive.bulk.why.one') : locked ? off('drive.bulk.why.locked') : write;
+		out.trash = !n ? off(null) : local ? off('drive.bulk.why.local') : write;
+		out.rename = n !== 1 ? off('drive.bulk.why.one') : locked ? off('drive.bulk.why.locked') : local ? off('drive.bulk.why.local') : write;
 		out.cut = out.move;
 		out.copyClip = out.copy;
 		// "Rückgängig" only with Drive 1.12
@@ -305,7 +307,8 @@
 		};
 	}
 
-	const REASONS = ['forbidden', 'into_itself', 'encrypted', 'locked', 'same_folder', 'root', 'not_found'];
+	// local_only / local_moving: Drive 1.32 'vaultLocal' (a placeholder: its content lies only on one device)
+	const REASONS = ['forbidden', 'into_itself', 'encrypted', 'locked', 'same_folder', 'root', 'not_found', 'local_only', 'local_moving'];
 
 	/** "2 Elemente können nicht mit: liegen schon dort" (grouped by reason) or '' */
 	function blockedText(blocked, t) {

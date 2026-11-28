@@ -1292,7 +1292,10 @@
       "notPicture": "Nur Bilder lassen sich in ein Dokument umwandeln.",
       "noOcr": "Auf diesem PC ist keine Sprache für die Texterkennung installiert.",
       "scanNoFile": "Drive hat kein Dokument erzeugt.",
-      "server": "Drive hat auf dem Server einen Fehler gemeldet ({{code}}). Bitte später erneut versuchen – bleibt es so, Drive auf dem Server aktualisieren."
+      "server": "Drive hat auf dem Server einen Fehler gemeldet ({{code}}). Bitte später erneut versuchen – bleibt es so, Drive auf dem Server aktualisieren.",
+      "localOnly": "Dieser Ordner liegt nur auf „{{device}}“ – hier kann nichts hinein.",
+      "localMoving": "Dieser Ordner wird gerade auf „{{device}}“ verschoben – Änderungen erst danach.",
+      "localNested": "Darunter liegt schon ein Ordner nur auf „{{device}}“."
     },
     "sync": {
       "title": "Ordner sichern",
@@ -2390,7 +2393,8 @@
         "needsGc": "Braucht GateControl 1.215",
         "linksOff": "Links sind ausgeschaltet",
         "zipLimit": "ZIP geht für einen Ordner oder bis zu 20 Dateien",
-        "linkLimit": "Ein Link geht für bis zu 20 Dateien"
+        "linkLimit": "Ein Link geht für bis zu 20 Dateien",
+        "local": "Liegt nur auf einem Gerät"
       },
       "target": {
         "title": "Ziel wählen",
@@ -2462,7 +2466,9 @@
         "not_found": "gibt es nicht mehr",
         "failed": "geht nicht",
         "same_folder": "liegt schon dort",
-        "root": "oberster Ordner eines Bereichs"
+        "root": "oberster Ordner eines Bereichs",
+        "local_only": "liegt nur auf einem Gerät",
+        "local_moving": "wird gerade auf ein Gerät verschoben"
       },
       "op": {
         "moveOne": "Verschiebe „{{name}}“ nach {{target}}",
@@ -3003,6 +3009,44 @@
         "year": "Jahresrückblick",
         "place": "Orte"
       }
+    },
+    "local": {
+      "otherDevice": "einem anderen Gerät",
+      "kind": {
+        "phone": "Handy",
+        "pc": "PC",
+        "other": "Gerät"
+      },
+      "badge": "Nur auf {{device}}",
+      "badgeMoving": "Wird gerade auf {{device}} verschoben",
+      "badgeReturning": "Wird von {{device}} zurückgeholt",
+      "since": "seit {{date}}",
+      "title": "„{{name}}“ liegt nur auf {{device}}",
+      "titleMoving": "„{{name}}“ wird auf {{device}} verschoben",
+      "text": "Dieser Ordner liegt seit dem {{date}} nur auf deinem {{kind}} „{{device}}“. Auf dem Server und auf diesem PC gibt es keine Kopie, deshalb kann er hier nicht geöffnet werden.",
+      "textNoDate": "Dieser Ordner liegt nur auf deinem {{kind}} „{{device}}“. Auf dem Server und auf diesem PC gibt es keine Kopie, deshalb kann er hier nicht geöffnet werden.",
+      "textMoving": "„{{name}}“ wird gerade auf „{{device}}“ verschoben. Du kannst den Inhalt noch ansehen, aber bis das fertig ist, nichts darin ändern.",
+      "textReturning": "„{{name}}“ wird gerade von „{{device}}“ zurück auf den Server geholt. Danach kannst du ihn hier wieder öffnen.",
+      "more": {
+        "phone": "Auf dem Handy kannst du ihn im Menü des Ordners zurück auf den Server holen. Ist das Handy verloren, entfernst du hier den Platzhalter. Der Inhalt ist dann nicht mehr zu finden.",
+        "pc": "Auf dem PC kannst du ihn im Menü des Ordners zurück auf den Server holen. Ist der PC verloren, entfernst du hier den Platzhalter. Der Inhalt ist dann nicht mehr zu finden.",
+        "other": "Auf dem Gerät kannst du ihn im Menü des Ordners zurück auf den Server holen. Ist das Gerät verloren, entfernst du hier den Platzhalter. Der Inhalt ist dann nicht mehr zu finden."
+      },
+      "moreOther": "Zurückholen kann ihn nur, wem der Ordner gehört.",
+      "forgetLater": "„Platzhalter entfernen“ geht ab {{date}}.",
+      "forgetLaterAny": "„Platzhalter entfernen“ geht erst 24 Stunden nach dem Verschieben.",
+      "menuHead": "{{name}} · nur auf {{device}}",
+      "menuHeadMoving": "{{name}} · wird auf {{device}} verschoben",
+      "info": "Info",
+      "infoSub": "Wo liegt dieser Ordner und seit wann",
+      "openSub": "Nur auf {{device}}",
+      "forget": "Platzhalter entfernen …",
+      "forgetSub": "Nur wenn {{device}} verloren ist",
+      "forgetTitle": "Platzhalter „{{name}}“ entfernen?",
+      "forgetText": "Mach das nur, wenn „{{device}}“ verloren ist. Der leere Ordner kommt in den Papierkorb, sein Inhalt ist dann nirgends mehr zu finden. Alle deine Geräte bekommen eine Mitteilung.",
+      "forgetGo": "Platzhalter entfernen",
+      "forgotten": "Platzhalter „{{name}}“ entfernt.",
+      "uploadHere": "Hierher hochladen"
     }
   },
   "mail": {
