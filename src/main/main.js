@@ -261,6 +261,8 @@ const fsSync = require('fs');
 const { execFile: _execFile } = require('child_process');
 const { promisify: _promisify } = require('util');
 const execFileAsync = _promisify(_execFile);
+// what the tray shows for an RDP session (its name, the address only without one; same as the window)
+const targetLabel = require('../renderer/target-label');
 
 const keyStore = new Store({ name: 'gatecontrol-pro-keyfile', encryptionKey: 'gc-pro-bootstrap' });
 
@@ -625,7 +627,8 @@ function updateTray(connState) {
       { type: 'separator' },
       { label: `RDP Sessions (${rdpSessions.length})`, enabled: false },
       ...rdpSessions.map(s => ({
-        label: `  ${s.host} (${Math.floor(s.duration / 60)}m)`,
+        // the host's name as in Fernzugriff, its address only as the fallback without a name
+        label: `  ${targetLabel.sessionLabel(s)} (${Math.floor(s.duration / 60)}m)`,
         enabled: false,
       })),
     ] : []),

@@ -183,6 +183,8 @@ async function startMockServer() {
   let places = null; // support/places-mock.js, null = a server before „Meine Orte“ (404)
   let actions = null; // support/actions-mock.js, null = a server before quick actions (404)
   let rdp = null; // setRdp(): Remote Desktops of Fernzugriff (/client/rdp*), null = an empty list
+  let services = []; // setServices(): the Dienste page (/client/services)
+  let perms = {}; // setPermissions(): the permissions of /client/permissions (e.g. { services: true })
   const acks = [];
   const prefs = [];
   let geocode = {
@@ -488,8 +490,8 @@ async function startMockServer() {
         case 'config/check': return json(200, { ok: true, changed: false });
         case 'heartbeat': return json(200, { ok: true });
         case 'status': return json(200, { ok: true });
-        case 'permissions': return json(200, { ok: true, permissions: {}, portalUrl: null, autoOpenPortal: false, ...(dns ? { vpnDns: dns.vpnDns() } : {}) });
-        case 'services': return json(200, { ok: true, services: [] });
+        case 'permissions': return json(200, { ok: true, permissions: perms, portalUrl: null, autoOpenPortal: false, ...(dns ? { vpnDns: dns.vpnDns() } : {}) });
+        case 'services': return json(200, { ok: true, services });
         case 'policy':
           if (!policy) return json(404, { ok: false });
           return json(200, { ok: true, version: policyVersion, managed: true, policy, sources: {} });
@@ -644,6 +646,9 @@ async function startMockServer() {
       rdp = { routes: opts.routes || [], username: opts.username || 'anna', password: opts.password || 'e2e-pass-1', domain: opts.domain || 'BUERO', sessions: [] };
       return rdp;
     },
+    /** The services of the Dienste page: [{ id, name, domain, url, protocol, hasAuth }]. */
+    setServices(list = []) { services = list.map((x) => ({ ...x })); },
+    setPermissions(p = {}) { perms = { ...p }; },
     count(pathname) { return requests.filter((r) => r.path === pathname).length; },
     close: () => new Promise((resolve) => {
       if (drive) drive.close().catch(() => {});

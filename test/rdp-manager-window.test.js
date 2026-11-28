@@ -262,3 +262,31 @@ describe('RdpManager: GateControl window', () => {
     assert.deepEqual(fake.messages('theme')[0], { type: 'theme', theme: 'light' });
   });
 });
+
+describe('RdpManager: the name of a running session (tray, session lists)', () => {
+  it('a session carries the name of its route, the window and Windows-Remotedesktop alike', async () => {
+    const { m, fake } = setup();
+    await m.connect(7);
+    assert.equal(m.getActiveSessions()[0].name, 'Buchhaltung-PC');
+    assert.equal(m.getActiveSession(7).name, 'Buchhaltung-PC');
+    await tick();
+    fake.disconnect(1, 0, true);
+    await tick();
+
+    const r = await m.connect(7, { via: 'mstsc' });
+    assert.equal(r.via, 'mstsc');
+    assert.equal(m.getActiveSessions()[0].name, 'Buchhaltung-PC');
+  });
+
+  it('connect data without a name: the name from the services list, none at all → null (the host is the fallback)', async () => {
+    const nameless = { ...ROUTE, name: undefined };
+    const { m } = setup({ route: nameless });
+    m.rdpServices = [{ ...ROUTE, name: 'Aus der Liste' }];
+    await m.connect(7);
+    assert.equal(m.getActiveSessions()[0].name, 'Aus der Liste');
+    m.rdpServices = [];
+    m.activeSessions.get(7).name = null;
+    assert.equal(m.getActiveSessions()[0].name, null);
+    assert.equal(m.getActiveSessions()[0].host, '10.0.0.21');
+  });
+});
