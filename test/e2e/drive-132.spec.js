@@ -125,7 +125,7 @@ test.describe('drive 1.32: a vault folder only on another device', () => {
 
     // a double click / a click on the name: the note, the folder does not open
     const crumbs = await root.locator('.dv-crumbs').textContent();
-    await steuer.dblclick({ position: { x: 600, y: 10 } });
+    await steuer.locator('.dv-c-date').dblclick();
     await expect(note).toBeVisible();
     await page.keyboard.press('Escape');
     await steuer.locator('.dv-open').click();
